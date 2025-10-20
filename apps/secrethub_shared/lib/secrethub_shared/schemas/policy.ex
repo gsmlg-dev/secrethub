@@ -16,8 +16,8 @@ defmodule SecretHub.Shared.Schemas.Policy do
   @foreign_key_type :binary_id
 
   schema "policies" do
-    field :name, :string
-    field :description, :string
+    field(:name, :string)
+    field(:description, :string)
 
     # Policy document contains the full policy definition
     # Format:
@@ -31,15 +31,15 @@ defmodule SecretHub.Shared.Schemas.Policy do
     #     "ip_ranges" => ["10.0.0.0/8"]
     #   }
     # }
-    field :policy_document, :map
+    field(:policy_document, :map)
 
     # Entity bindings: list of agent_id, app_id, or certificate fingerprints
     # that this policy applies to
-    field :entity_bindings, {:array, :string}, default: []
+    field(:entity_bindings, {:array, :string}, default: [])
 
     # Quick access fields for common conditions
-    field :max_ttl_seconds, :integer
-    field :deny_policy, :boolean, default: false
+    field(:max_ttl_seconds, :integer)
+    field(:deny_policy, :boolean, default: false)
 
     timestamps(type: :utc_datetime)
   end

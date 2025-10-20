@@ -19,43 +19,43 @@ defmodule SecretHub.Shared.Schemas.Lease do
 
   schema "leases" do
     # Lease identification
-    field :lease_id, :binary_id
-    field :secret_id, :string
+    field(:lease_id, :binary_id)
+    field(:secret_id, :string)
 
     # Entity information (who requested this lease)
-    field :agent_id, :string
-    field :app_id, :string
-    field :app_cert_fingerprint, :string
+    field(:agent_id, :string)
+    field(:app_id, :string)
+    field(:app_cert_fingerprint, :string)
 
     # Lease timing
-    field :issued_at, :utc_datetime
-    field :expires_at, :utc_datetime
-    field :ttl_seconds, :integer
+    field(:issued_at, :utc_datetime)
+    field(:expires_at, :utc_datetime)
+    field(:ttl_seconds, :integer)
 
     # Renewal tracking
-    field :renewed_count, :integer, default: 0
-    field :last_renewed_at, :utc_datetime
-    field :max_renewals, :integer
+    field(:renewed_count, :integer, default: 0)
+    field(:last_renewed_at, :utc_datetime)
+    field(:max_renewals, :integer)
 
     # Revocation
-    field :revoked, :boolean, default: false
-    field :revoked_at, :utc_datetime
-    field :revocation_reason, :string
+    field(:revoked, :boolean, default: false)
+    field(:revoked_at, :utc_datetime)
+    field(:revocation_reason, :string)
 
     # Encrypted credentials (stored for lease renewal/revocation)
     # Format depends on secret engine:
     # PostgreSQL: %{"username" => "...", "password" => "..."}
     # Redis: %{"username" => "...", "password" => "..."}
     # AWS: %{"access_key_id" => "...", "secret_access_key" => "...", "session_token" => "..."}
-    field :credentials, :map
+    field(:credentials, :map)
 
     # Engine-specific data for revocation
-    field :engine_type, :string
-    field :engine_metadata, :map, default: %{}
+    field(:engine_type, :string)
+    field(:engine_metadata, :map, default: %{})
 
     # Context
-    field :source_ip, EctoNetwork.INET
-    field :correlation_id, :binary_id
+    field(:source_ip, EctoNetwork.INET)
+    field(:correlation_id, :binary_id)
 
     timestamps(type: :utc_datetime)
   end

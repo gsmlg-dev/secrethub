@@ -20,52 +20,52 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
 
   schema "audit_logs" do
     # Event identification
-    field :event_id, :binary_id
-    field :sequence_number, :integer
-    field :timestamp, :utc_datetime
-    field :event_type, :string
+    field(:event_id, :binary_id)
+    field(:sequence_number, :integer)
+    field(:timestamp, :utc_datetime)
+    field(:event_type, :string)
 
     # Actor information
-    field :actor_type, :string
-    field :actor_id, :string
-    field :agent_id, :string
-    field :app_id, :string
-    field :admin_id, :string
+    field(:actor_type, :string)
+    field(:actor_id, :string)
+    field(:agent_id, :string)
+    field(:app_id, :string)
+    field(:admin_id, :string)
 
     # Certificate fingerprints for non-repudiation
-    field :agent_cert_fingerprint, :string
-    field :app_cert_fingerprint, :string
+    field(:agent_cert_fingerprint, :string)
+    field(:app_cert_fingerprint, :string)
 
     # Secret information
-    field :secret_id, :string
-    field :secret_version, :integer
-    field :secret_type, :string
-    field :lease_id, :binary_id
+    field(:secret_id, :string)
+    field(:secret_version, :integer)
+    field(:secret_type, :string)
+    field(:lease_id, :binary_id)
 
     # Access control
-    field :access_granted, :boolean
-    field :policy_matched, :string
-    field :denial_reason, :string
+    field(:access_granted, :boolean)
+    field(:policy_matched, :string)
+    field(:denial_reason, :string)
 
     # Source context
-    field :source_ip, EctoNetwork.INET
-    field :hostname, :string
-    field :kubernetes_namespace, :string
-    field :kubernetes_pod, :string
+    field(:source_ip, EctoNetwork.INET)
+    field(:hostname, :string)
+    field(:kubernetes_namespace, :string)
+    field(:kubernetes_pod, :string)
 
     # Full event data (flexible storage for event-specific fields)
-    field :event_data, :map
+    field(:event_data, :map)
 
     # Tamper-evidence fields (hash chain)
-    field :previous_hash, :string
-    field :current_hash, :string
-    field :signature, :string
+    field(:previous_hash, :string)
+    field(:current_hash, :string)
+    field(:signature, :string)
 
     # Performance tracking
-    field :response_time_ms, :integer
-    field :correlation_id, :binary_id
+    field(:response_time_ms, :integer)
+    field(:correlation_id, :binary_id)
 
-    field :created_at, :utc_datetime
+    field(:created_at, :utc_datetime)
   end
 
   @doc """

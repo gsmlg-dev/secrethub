@@ -19,41 +19,42 @@ defmodule SecretHub.Shared.Schemas.Certificate do
 
   schema "certificates" do
     # Certificate identification
-    field :serial_number, :string
-    field :fingerprint, :string
+    field(:serial_number, :string)
+    field(:fingerprint, :string)
 
     # Certificate data
-    field :certificate_pem, :string
-    field :private_key_encrypted, :binary
+    field(:certificate_pem, :string)
+    field(:private_key_encrypted, :binary)
 
     # Certificate details
-    field :subject, :string
-    field :issuer, :string
-    field :common_name, :string
-    field :organization, :string
-    field :organizational_unit, :string
+    field(:subject, :string)
+    field(:issuer, :string)
+    field(:common_name, :string)
+    field(:organization, :string)
+    field(:organizational_unit, :string)
 
     # Validity period
-    field :valid_from, :utc_datetime
-    field :valid_until, :utc_datetime
+    field(:valid_from, :utc_datetime)
+    field(:valid_until, :utc_datetime)
 
     # Certificate type and usage
-    field :cert_type, Ecto.Enum,
+    field(:cert_type, Ecto.Enum,
       values: [:root_ca, :intermediate_ca, :agent_client, :app_client, :admin_client]
+    )
 
-    field :key_usage, {:array, :string}, default: []
+    field(:key_usage, {:array, :string}, default: [])
 
     # Revocation tracking
-    field :revoked, :boolean, default: false
-    field :revoked_at, :utc_datetime
-    field :revocation_reason, :string
+    field(:revoked, :boolean, default: false)
+    field(:revoked_at, :utc_datetime)
+    field(:revocation_reason, :string)
 
     # Entity binding (who owns this certificate)
-    field :entity_id, :string
-    field :entity_type, :string
+    field(:entity_id, :string)
+    field(:entity_type, :string)
 
     # Metadata
-    field :metadata, :map, default: %{}
+    field(:metadata, :map, default: %{})
 
     timestamps(type: :utc_datetime)
   end

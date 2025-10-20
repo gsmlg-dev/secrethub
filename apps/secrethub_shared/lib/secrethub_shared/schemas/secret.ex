@@ -20,15 +20,15 @@ defmodule SecretHub.Shared.Schemas.Secret do
   @foreign_key_type :binary_id
 
   schema "secrets" do
-    field :secret_path, :string
-    field :secret_type, Ecto.Enum, values: [:static, :dynamic_role]
-    field :encrypted_data, :binary
-    field :version, :integer, default: 1
-    field :metadata, :map, default: %{}
-    field :description, :string
-    field :rotation_enabled, :boolean, default: false
-    field :rotation_schedule, :string
-    field :last_rotated_at, :utc_datetime
+    field(:secret_path, :string)
+    field(:secret_type, Ecto.Enum, values: [:static, :dynamic_role])
+    field(:encrypted_data, :binary)
+    field(:version, :integer, default: 1)
+    field(:metadata, :map, default: %{})
+    field(:description, :string)
+    field(:rotation_enabled, :boolean, default: false)
+    field(:rotation_schedule, :string)
+    field(:last_rotated_at, :utc_datetime)
 
     timestamps(type: :utc_datetime)
   end

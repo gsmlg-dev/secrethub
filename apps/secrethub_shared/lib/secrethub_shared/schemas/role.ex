@@ -22,36 +22,36 @@ defmodule SecretHub.Shared.Schemas.Role do
 
   schema "roles" do
     # Role identification
-    field :role_id, :binary_id
-    field :role_name, :string
+    field(:role_id, :binary_id)
+    field(:role_name, :string)
 
     # SecretID is hashed and stored (never stored in plaintext)
     # The actual SecretID is only shown once during generation
-    field :secret_id_hash, :string
-    field :secret_id_accessor, :string
+    field(:secret_id_hash, :string)
+    field(:secret_id_accessor, :string)
 
     # Policy bindings
-    field :policies, {:array, :string}, default: []
-    field :token_policies, {:array, :string}, default: []
+    field(:policies, {:array, :string}, default: [])
+    field(:token_policies, {:array, :string}, default: [])
 
     # TTL configuration
-    field :ttl_seconds, :integer, default: 3600
-    field :max_ttl_seconds, :integer, default: 86400
+    field(:ttl_seconds, :integer, default: 3600)
+    field(:max_ttl_seconds, :integer, default: 86_400)
 
     # Secret ID configuration
-    field :bind_secret_id, :boolean, default: true
-    field :secret_id_num_uses, :integer, default: 0
-    field :secret_id_ttl_seconds, :integer
+    field(:bind_secret_id, :boolean, default: true)
+    field(:secret_id_num_uses, :integer, default: 0)
+    field(:secret_id_ttl_seconds, :integer)
 
     # CIDR restrictions (optional)
-    field :bound_cidr_list, {:array, :string}, default: []
+    field(:bound_cidr_list, {:array, :string}, default: [])
 
     # Metadata
-    field :metadata, :map, default: %{}
-    field :description, :string
+    field(:metadata, :map, default: %{})
+    field(:description, :string)
 
     # Enable/disable role
-    field :enabled, :boolean, default: true
+    field(:enabled, :boolean, default: true)
 
     timestamps(type: :utc_datetime)
   end

@@ -9,11 +9,11 @@ defmodule SecretHub.MixProject do
       deps: deps(),
       aliases: aliases(),
       releases: releases(),
-      
+
       # Documentation
       name: "SecretHub",
       docs: docs(),
-      
+
       # Testing
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [
@@ -34,7 +34,7 @@ defmodule SecretHub.MixProject do
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:mix_test_watch, "~> 1.1", only: [:dev, :test], runtime: false},
-      
+
       # Shared utilities
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.2"}
@@ -45,14 +45,14 @@ defmodule SecretHub.MixProject do
     [
       # Setup
       setup: ["deps.get", "cmd cd apps/secrethub_web/assets && bun install"],
-      
+
       # Testing
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "test.watch": ["test.watch --stale"],
-      
+
       # Code quality
       quality: ["format", "credo --strict", "dialyzer"],
-      
+
       # Database
       "ecto.setup": ["ecto.create", "ecto.migrate", "run apps/secrethub_core/priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"]
@@ -90,8 +90,8 @@ defmodule SecretHub.MixProject do
         "docs/api/authentication.md"
       ],
       groups_for_extras: [
-        "Architecture": Path.wildcard("docs/architecture/*.md"),
-        "API": Path.wildcard("docs/api/*.md")
+        Architecture: Path.wildcard("docs/architecture/*.md"),
+        API: Path.wildcard("docs/api/*.md")
       ],
       groups_for_modules: [
         "Core - Authentication": [
@@ -102,7 +102,7 @@ defmodule SecretHub.MixProject do
           SecretHub.Core.Engines.Static,
           SecretHub.Core.Engines.Dynamic.PostgreSQL
         ],
-        "Agent": [
+        Agent: [
           SecretHub.Agent.Connection,
           SecretHub.Agent.Cache
         ]
