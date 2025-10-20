@@ -1,20 +1,101 @@
-# The directory Mix will write compiled artifacts to.
+# Elixir / Mix
 /_build/
-
-# If you run "mix test --cover", coverage assets end up here.
-/cover/
-
-# The directory Mix downloads your dependencies sources to.
 /deps/
-
-# Where third-party dependencies like ExDoc output generated docs.
+/*.ez
+/cover/
 /doc/
-
-# If the VM crashes, it generates a dump, let's ignore it too.
 erl_crash.dump
+*.beam
+.elixir_ls/
+.fetch
 
-# Also ignore archive artifacts (built via "mix archive.build").
-*.ez
+# Phoenix
+/priv/static/
+/priv/cert/
+/apps/*/priv/static/
 
-# Temporary files, for example, from tests.
-/tmp/
+# Testing
+coveralls.json
+.test_coverage/
+
+# Build artifacts
+*.o
+*.so
+*.a
+*.dylib
+
+# Logs
+*.log
+log/
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+.vscode/
+
+# Environment files (if using for secrets - we use devenv instead)
+.env
+.env.local
+.env.*.local
+
+# devenv / Nix
+.devenv/
+.devenv.flake.nix
+devenv.lock
+.direnv/
+result
+result-*
+
+# Node.js (for Phoenix assets)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Generated files
+/apps/*/priv/gettext/*.pot
+
+# Release builds
+/apps/*/rel/
+_build/prod/
+
+# CI/CD artifacts
+.github/outputs/
+
+# Documentation builds
+/docs/_build/
+
+# Editor specific
+.elixir_ls/
+.vscode/
+.idea/
+*.iml
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Prometheus data (from devenv)
+infrastructure/prometheus/data/
+
+# Backup files
+*.backup
+*.bak
+
+# Credentials and secrets (never commit these!)
+/config/*.secret.exs
+/config/prod.secret.exs
+/apps/*/config/*.secret.exs
+priv/cert/*.pem
+priv/cert/*.key
+*.pem
+*.key
+*.p12
+*.jks

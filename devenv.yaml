@@ -1,0 +1,14 @@
+# devenv.yaml - Project configuration for devenv
+# See: https://devenv.sh/reference/yaml-options/
+
+# Allow unfree packages (for some monitoring tools)
+allowUnfree: true
+
+# Inputs configuration
+inputs:
+  nixpkgs:
+    url: github:NixOS/nixpkgs/nixos-unstable
+
+# Devenv modules to import (if you create any)
+# imports:
+#   - ./modules/custom-module.nix

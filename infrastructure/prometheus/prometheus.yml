@@ -1,0 +1,58 @@
+# Prometheus configuration for SecretHub development
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Alerting configuration (optional for development)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: []
+
+# Scrape configurations
+scrape_configs:
+  # SecretHub Core metrics
+  - job_name: 'secrethub_core'
+    static_configs:
+      - targets: ['localhost:4000']
+        labels:
+          service: 'core'
+          environment: 'development'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # SecretHub Agent metrics (when running locally)
+  - job_name: 'secrethub_agent'
+    static_configs:
+      - targets: ['localhost:9091']
+        labels:
+          service: 'agent'
+          environment: 'development'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # PostgreSQL metrics (using postgres_exporter if installed)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['localhost:9187']
+        labels:
+          service: 'postgres'
+          environment: 'development'
+    scrape_interval: 10s
+
+  # Redis metrics (using redis_exporter if installed)
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['localhost:9121']
+        labels:
+          service: 'redis'
+          environment: 'development'
+    scrape_interval: 10s
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          environment: 'development'
