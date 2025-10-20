@@ -8,6 +8,8 @@ defmodule SecretHub.Core.Application do
   @impl true
   def start(_type, _args) do
     children = [
+      # Start the Ecto repository
+      SecretHub.Core.Repo
       # Starts a worker by calling: SecretHub.Core.Worker.start_link(arg)
       # {SecretHub.Core.Worker, arg}
     ]

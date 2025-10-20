@@ -1,5 +1,16 @@
 import Config
 
+# Configure the database
+config :secrethub_core, SecretHub.Core.Repo,
+  username: "secrethub",
+  password: "secrethub_dev_password",
+  hostname: "localhost",
+  database: "secrethub_dev",
+  port: 5432,
+  stacktrace: true,
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #

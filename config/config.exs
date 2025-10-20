@@ -16,9 +16,14 @@
 # General application configuration
 import Config
 
+# Configure Ecto repositories
+config :secrethub_core,
+  ecto_repos: [SecretHub.Core.Repo]
+
 config :secrethub_web,
   namespace: SecretHub.Web,
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  ecto_repos: [SecretHub.Core.Repo]
 
 # Configures the endpoint
 config :secrethub_web, SecretHub.WebWeb.Endpoint,

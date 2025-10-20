@@ -12,7 +12,7 @@
 ## 📊 Overall Progress
 
 ### Phase 1: Foundation & MVP (Weeks 1-12)
-- **Week 1**: 🟡 In Progress (40% complete)
+- **Week 1**: 🟡 In Progress (75% complete)
 - **Week 2-3**: ⚪ Not Started
 - **Week 4-5**: ⚪ Not Started
 - **Week 6-7**: ⚪ Not Started
@@ -43,31 +43,31 @@
 ### Engineer 1 (Core Lead) - Tasks
 
 - [x] Initialize Elixir/Phoenix project for Core service
-- [ ] Set up PostgreSQL schema design
-  - [ ] Design secrets table schema
-  - [ ] Design policies table schema
-  - [ ] Design audit_logs table schema
-  - [ ] Design certificates table schema
-  - [ ] Design leases table schema
-  - [ ] Design roles table schema (AppRole)
-- [ ] Create Ecto schemas for core entities
-  - [ ] `SecretHub.Shared.Schemas.Secret`
-  - [ ] `SecretHub.Shared.Schemas.Policy`
-  - [ ] `SecretHub.Shared.Schemas.AuditLog`
-  - [ ] `SecretHub.Shared.Schemas.Certificate`
-  - [ ] `SecretHub.Shared.Schemas.Lease`
-  - [ ] `SecretHub.Shared.Schemas.Role`
-- [ ] Write database migrations
-  - [ ] Create initial secrets migration
-  - [ ] Create policies migration
-  - [ ] Create audit_logs migration with hash chain fields
-  - [ ] Create certificates migration
-  - [ ] Create leases migration
-  - [ ] Create roles migration
-- [ ] Set up Repo configuration in secrethub_core
-  - [ ] Configure `SecretHub.Core.Repo`
-  - [ ] Add repo to supervision tree
-  - [ ] Test database connection
+- [x] Set up PostgreSQL schema design
+  - [x] Design secrets table schema
+  - [x] Design policies table schema
+  - [x] Design audit_logs table schema
+  - [x] Design certificates table schema
+  - [x] Design leases table schema
+  - [x] Design roles table schema (AppRole)
+- [x] Create Ecto schemas for core entities
+  - [x] `SecretHub.Shared.Schemas.Secret`
+  - [x] `SecretHub.Shared.Schemas.Policy`
+  - [x] `SecretHub.Shared.Schemas.AuditLog`
+  - [x] `SecretHub.Shared.Schemas.Certificate`
+  - [x] `SecretHub.Shared.Schemas.Lease`
+  - [x] `SecretHub.Shared.Schemas.Role`
+- [x] Write database migrations
+  - [x] Create initial secrets migration
+  - [x] Create policies migration
+  - [x] Create audit_logs migration with hash chain fields (PARTITIONED)
+  - [x] Create certificates migration
+  - [x] Create leases migration
+  - [x] Create roles migration
+- [x] Set up Repo configuration in secrethub_core
+  - [x] Configure `SecretHub.Core.Repo`
+  - [x] Add repo to supervision tree
+  - [ ] ⏳ Test database connection (requires PostgreSQL service running)
 
 ### Engineer 2 (Agent/Infra Lead) - Tasks
 
