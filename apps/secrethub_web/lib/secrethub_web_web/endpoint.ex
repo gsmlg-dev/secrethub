@@ -15,6 +15,13 @@ defmodule SecretHub.WebWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # Agent WebSocket connection
+  socket "/agent/socket", SecretHub.Web.AgentSocket,
+    websocket: [
+      connect_info: [:peer_data, :x_headers]
+    ],
+    longpoll: false
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),

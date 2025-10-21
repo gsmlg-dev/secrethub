@@ -8,8 +8,13 @@ defmodule SecretHub.Agent.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Starts a worker by calling: SecretHub.Agent.Worker.start_link(arg)
-      # {SecretHub.Agent.Worker, arg}
+      # WebSocket connection to Core service
+      {SecretHub.Agent.Connection,
+       agent_id: Application.get_env(:secrethub_agent, :agent_id, "agent-dev-01"),
+       core_url: Application.get_env(:secrethub_agent, :core_url, "ws://localhost:4000"),
+       cert_path: Application.get_env(:secrethub_agent, :cert_path),
+       key_path: Application.get_env(:secrethub_agent, :key_path),
+       ca_path: Application.get_env(:secrethub_agent, :ca_path)}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

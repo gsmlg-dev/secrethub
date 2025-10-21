@@ -87,3 +87,12 @@ config :phoenix_live_view,
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# Agent configuration (for testing)
+config :secrethub_agent,
+  agent_id: "agent-dev-01",
+  core_url: "ws://localhost:4000",
+  # TLS certificates (will be used in production with wss://)
+  cert_path: nil,
+  key_path: nil,
+  ca_path: nil

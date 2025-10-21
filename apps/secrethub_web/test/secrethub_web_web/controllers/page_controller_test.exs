@@ -1,4 +1,4 @@
-defmodule SecretHub.WebWeb.PageControllerTest do
+defmodule SecretHub.Web.PageControllerTest do
   use SecretHub.WebWeb.ConnCase
 
   test "GET /", %{conn: conn} do

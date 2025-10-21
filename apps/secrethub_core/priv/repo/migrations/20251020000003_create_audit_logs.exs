@@ -1,13 +1,13 @@
 defmodule SecretHub.Core.Repo.Migrations.CreateAuditLogs do
   use Ecto.Migration
 
-  def up do
+  def change do
     # Create the partitioned table
-    execute """
+    execute("""
     CREATE TABLE audit_logs (
         id BIGSERIAL,
-        event_id UUID UNIQUE NOT NULL,
-        sequence_number BIGINT UNIQUE NOT NULL,
+        event_id UUID NOT NULL,
+        sequence_number BIGINT NOT NULL,
         timestamp TIMESTAMPTZ NOT NULL,
         event_type VARCHAR(100) NOT NULL,
 
@@ -55,25 +55,36 @@ defmodule SecretHub.Core.Repo.Migrations.CreateAuditLogs do
 
         PRIMARY KEY (id, timestamp)
     ) PARTITION BY RANGE (timestamp)
-    """
+    """)
 
     # Create indexes on the partitioned table
-    create index(:audit_logs, [:timestamp])
-    create index(:audit_logs, [:event_id])
-    create index(:audit_logs, [:sequence_number])
-    create index(:audit_logs, [:event_type, :timestamp])
-    create index(:audit_logs, [:actor_id, :timestamp])
-    create index(:audit_logs, [:agent_id, :timestamp])
-    create index(:audit_logs, [:secret_id, :timestamp])
+    create(index(:audit_logs, [:timestamp]))
+    create(index(:audit_logs, [:event_id]))
+    create(index(:audit_logs, [:sequence_number]))
+    create(index(:audit_logs, [:event_type, :timestamp]))
+    create(index(:audit_logs, [:actor_id, :timestamp]))
+    create(index(:audit_logs, [:agent_id, :timestamp]))
+    create(index(:audit_logs, [:secret_id, :timestamp]))
+
+    # Add unique constraints that include the partitioning column
+    execute("""
+    ALTER TABLE audit_logs 
+    ADD CONSTRAINT unique_event_id_timestamp UNIQUE (event_id, timestamp)
+    """)
+
+    execute("""
+    ALTER TABLE audit_logs 
+    ADD CONSTRAINT unique_sequence_number_timestamp UNIQUE (sequence_number, timestamp)
+    """)
 
     # Index for denied access queries
-    execute """
+    execute("""
     CREATE INDEX idx_audit_logs_access_denied ON audit_logs(timestamp DESC)
     WHERE access_granted = false
-    """
+    """)
 
     # GIN index on JSONB event_data
-    create index(:audit_logs, [:event_data], using: :gin)
+    create(index(:audit_logs, [:event_data], using: :gin))
 
     # Create initial partition for current month
     # In production, partitions should be created automatically or via scheduled job
@@ -88,13 +99,9 @@ defmodule SecretHub.Core.Repo.Migrations.CreateAuditLogs do
     from_date = "#{year}-#{String.pad_leading(to_string(month), 2, "0")}-01"
     to_date = "#{next_year}-#{String.pad_leading(to_string(next_month), 2, "0")}-01"
 
-    execute """
+    execute("""
     CREATE TABLE #{partition_name} PARTITION OF audit_logs
     FOR VALUES FROM ('#{from_date}') TO ('#{to_date}')
-    """
-  end
-
-  def down do
-    drop table(:audit_logs)
+    """)
   end
 end
