@@ -49,7 +49,7 @@ defmodule SecretHub.Agent.Connection do
 
   require Logger
 
-  alias PhoenixClient.{Socket, Channel, Message}
+  alias PhoenixClient.{Channel, Message, Socket}
 
   @type state :: %{
           socket: pid() | nil,
