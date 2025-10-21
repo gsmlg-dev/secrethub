@@ -36,6 +36,7 @@ assets-install
 ```bash
 server          # Start Phoenix server (http://localhost:4000)
 console         # Start IEx shell with application loaded
+iex -S mix      # Alternative way to start console
 ```
 
 **Database:**
@@ -57,6 +58,7 @@ mix test                              # Run all tests
 mix test apps/secrethub_core/test/... # Test specific app
 mix coveralls.html                     # Generate coverage report
 test-watch                             # Watch mode for tests
+mix test.watch                        # Alternative watch mode
 ```
 
 **Code Quality:**
@@ -72,6 +74,12 @@ quality                 # Run all quality checks (format, credo, dialyzer)
 # Generate new migration (run from app directory)
 cd apps/secrethub_core
 mix ecto.gen.migration create_table_name
+
+# Run migrations from specific app
+cd apps/secrethub_core && mix ecto.migrate
+
+# Rollback migration
+cd apps/secrethub_core && mix ecto.rollback
 ```
 
 ## Project Structure (Umbrella App)
@@ -130,6 +138,8 @@ apps/
 - Tailwind CSS v4.1.7 for styling
 - esbuild v0.25.4 for JavaScript bundling
 - Phoenix LiveView for interactive components
+- DaisyUI for UI components (pre-configured)
+- Heroicons for icons (optimized version)
 
 ### Authentication & Security
 - mTLS everywhere between Core and Agents
@@ -159,6 +169,8 @@ apps/
 - Pre-commit hooks enforce: formatting, Credo linting, and compilation checks
 - Run `mix format` before committing
 - Run `quality` script to ensure all checks pass
+- Use `mix compile --warnings-as-errors` to treat warnings as errors
+- Pre-commit hooks are configured in `devenv.nix` and run automatically
 
 ### Database Changes
 - Always create migrations in `apps/secrethub_core/`
@@ -182,13 +194,15 @@ Secret engines live in `apps/secrethub_core/lib/secrethub_core/engines/`:
 
 Default development environment variables are set in `devenv.nix`:
 
-```
+```bash
 DATABASE_URL=postgresql://secrethub:secrethub_dev_password@localhost:5432/secrethub_dev
 DATABASE_TEST_URL=postgresql://secrethub:secrethub_dev_password@localhost:5432/secrethub_test
 MIX_ENV=dev
+SECRET_KEY_BASE=dev-secret-key-base-change-in-production
 PHX_HOST=localhost
 PHX_PORT=4000
 REDIS_URL=redis://localhost:6379
+ELIXIR_ERL_OPTIONS=+sbwt none +sbwtdcpu none +sbwtdio none
 ```
 
 Production deployments require:
@@ -196,17 +210,42 @@ Production deployments require:
 - `DATABASE_URL` for production database
 - Proper mTLS certificates for Core-Agent communication
 
+### devenv Scripts
+The project includes convenient scripts in devenv.nix:
+- `db-setup`, `db-reset`, `db-migrate` - Database operations
+- `assets-install`, `assets-build` - Frontend asset management
+- `server`, `console` - Development operations
+- `test-all`, `test-watch` - Testing operations
+- `format`, `lint`, `quality` - Code quality checks
+- `gen-secret` - Generate Phoenix secrets
+
+## Development Services
+
+devenv automatically manages these services:
+- **PostgreSQL 16**: `localhost:5432` (databases: `secrethub_dev`, `secrethub_test`)
+- **Redis**: `localhost:6379` (caching and sessions)
+- **Prometheus**: `localhost:9090` (metrics collection)
+
 ## Deployment
 
-The project has two separate release configurations:
+The project has two separate release configurations in `mix.exs`:
 
 1. **secrethub_core**: Includes `secrethub_core`, `secrethub_web`, and `secrethub_shared`
 2. **secrethub_agent**: Includes `secrethub_agent` and `secrethub_shared`
+
+Both releases:
+- Include executables for Unix only
+- Use standard `:assemble, :tar` steps
 
 Infrastructure code is in `/infrastructure/`:
 - Docker configs in `infrastructure/docker/`
 - Terraform modules in `infrastructure/terraform/`
 - Kubernetes manifests in `infrastructure/kubernetes/`
+
+### Asset Build Configuration
+- **esbuild**: v0.25.4, bundles JavaScript to `priv/static/assets/js/`
+- **Tailwind CSS**: v4.1.7, compiles to `priv/static/assets/css/app.css`
+- Assets are managed through mix aliases: `assets.setup`, `assets.build`, `assets.deploy`
 
 ## Team & Development Process
 
