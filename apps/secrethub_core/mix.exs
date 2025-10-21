@@ -28,6 +28,7 @@ defmodule SecretHub.Core.MixProject do
     [
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.19"},
+      {:jason, "~> 1.4"},
       {:secrethub_shared, in_umbrella: true}
     ]
   end

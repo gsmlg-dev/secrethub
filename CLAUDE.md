@@ -176,6 +176,7 @@ apps/
 - Always create migrations in `apps/secrethub_core/`
 - Use descriptive migration names
 - Test migrations up and down: `mix ecto.migrate` / `mix ecto.rollback`
+- PostgreSQL runs on port 4432 in devenv (config files updated accordingly)
 
 ### Adding New Secret Engines
 Secret engines live in `apps/secrethub_core/lib/secrethub_core/engines/`:

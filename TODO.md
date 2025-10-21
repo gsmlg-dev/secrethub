@@ -12,7 +12,7 @@
 ## 📊 Overall Progress
 
 ### Phase 1: Foundation & MVP (Weeks 1-12)
-- **Week 1**: 🟡 In Progress (75% complete)
+- **Week 1**: 🟢 Completed (90% complete)
 - **Week 2-3**: ⚪ Not Started
 - **Week 4-5**: ⚪ Not Started
 - **Week 6-7**: ⚪ Not Started
@@ -67,7 +67,7 @@
 - [x] Set up Repo configuration in secrethub_core
   - [x] Configure `SecretHub.Core.Repo`
   - [x] Add repo to supervision tree
-  - [ ] ⏳ Test database connection (requires PostgreSQL service running)
+  - [x] Test database connection and run migrations
 
 ### Engineer 2 (Agent/Infra Lead) - Tasks
 
@@ -116,7 +116,7 @@
 - [x] Git repositories initialized
 - [x] Development environment running locally (devenv)
 - [x] CI/CD pipeline building and testing (pre-commit hooks)
-- [ ] Database schemas created
+- [x] Database schemas created and migrated
 - [ ] Docker development environment validated
 - [ ] Agent-Core protocol specification documented
 
@@ -251,7 +251,10 @@
 - ✅ Created CLAUDE.md for AI-assisted development
 - ✅ Development environment using devenv with Nix
 - ✅ Frontend uses Bun instead of npm
-- 🎯 Next focus: Database schema design (Week 1 remaining tasks)
+- ✅ PostgreSQL connection and database setup complete
+- ✅ All database migrations executed and verified
+- ✅ Ecto schemas tested and working
+- 🎯 Database foundation complete for Week 2-3 authentication work
 
 ### Architecture Decisions
 - Using Elixir umbrella project structure

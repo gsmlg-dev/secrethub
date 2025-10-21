@@ -6,7 +6,7 @@ config :secrethub_core, SecretHub.Core.Repo,
   password: "secrethub_dev_password",
   hostname: "localhost",
   database: "secrethub_test#{System.get_env("MIX_TEST_PARTITION")}",
-  port: 5432,
+  port: 4432,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 

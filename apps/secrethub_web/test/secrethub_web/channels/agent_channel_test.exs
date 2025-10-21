@@ -1,7 +1,7 @@
 defmodule SecretHub.Web.AgentChannelTest do
   use SecretHub.WebWeb.ChannelCase
 
-  alias SecretHub.Web.{AgentSocket, AgentChannel}
+  alias SecretHub.Web.{AgentChannel, AgentSocket}
 
   setup do
     agent_id = "agent-test-01"
