@@ -1,0 +1,37 @@
+# Docker build ignore patterns
+
+# Mix artifacts
+_mix/
+deps/
+!deps/
+build/
+.lock
+
+# Testing
+_test/
+cover/
+.coveralls
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Logs
+logs/
+*.log
+
+# Local development
+.env.local
+.env.dev
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db

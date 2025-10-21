@@ -1,0 +1,144 @@
+# SecretHub Development Environment with Docker Compose
+# Runs Core, Agent, PostgreSQL, and Redis services together
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: secrethub-postgres
+    environment:
+      POSTGRES_DB: secrethub_dev
+      POSTGRES_USER: secrethub
+      POSTGRES_PASSWORD: secrethub_dev_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - secrethub-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secrethub -d secrethub_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: secrethub-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - secrethub-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # SecretHub Core Service
+  secrethub-core:
+    build:
+      context: .
+      dockerfile: ./apps/secrethub_core/Dockerfile
+    container_name: secrethub-core
+    environment:
+      - MIX_ENV=dev
+      - DATABASE_URL=postgresql://secrethub:secrethub_dev_password@postgres:5432/secrethub_dev
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY_BASE=dev-secret-key-base-change-in-production
+      - PHX_HOST=0.0.0.0
+      - PHX_PORT=4000
+      - AGENT_SOCKET_PATH=/tmp/secrethub-agent.sock
+    ports:
+      - "4000:4000"
+      - "4001:4001"  # WebSocket port for agents
+    volumes:
+      - ./logs/secrethub-core:/app/var/log
+      - agent_socket:/tmp
+    networks:
+      - secrethub-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # SecretHub Agent
+  secrethub-agent:
+    build:
+      context: .
+      dockerfile: ./apps/secrethub_agent/Dockerfile
+    container_name: secrethub-agent
+    environment:
+      - AGENT_ID=agent-dev-01
+      - CORE_URL=ws://secrethub-core:4001
+      - AGENT_SOCKET_PATH=/tmp/secrethub-agent.sock
+    volumes:
+      - agent_socket:/tmp
+      - ./configs/agent:/app/etc/certs
+    networks:
+      - secrethub-network
+    depends_on:
+      secrethub-core:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-S", "/app/var/log"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: secrethub-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - secrethub-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/web/ui/libraries'
+      - '--web.console.templates=/usr/share/prometheus/web/ui/templates'
+    restart: unless-stopped
+
+# Named Volumes
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  agent_socket:
+    driver: local
+
+# Networks
+networks:
+  secrethub-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
