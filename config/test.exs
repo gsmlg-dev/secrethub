@@ -1,12 +1,15 @@
 import Config
 
+# Set test environment flag
+config :secrethub_core, env: :test
+
 # Configure the database
 config :secrethub_core, SecretHub.Core.Repo,
   username: "secrethub",
   password: "secrethub_dev_password",
   hostname: "localhost",
   database: "secrethub_test#{System.get_env("MIX_TEST_PARTITION")}",
-  port: 4432,
+  port: 5432,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 

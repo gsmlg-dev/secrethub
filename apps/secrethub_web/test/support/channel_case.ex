@@ -1,7 +1,7 @@
 defmodule SecretHub.WebWeb.ChannelCase do
   @moduledoc """
   This module defines the test case to be used by
-  tests that require setting up a channel.
+  channel tests.
 
   Such tests rely on `Phoenix.ChannelTest` and also
   import other functionality to make it easier
@@ -11,7 +11,7 @@ defmodule SecretHub.WebWeb.ChannelCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use SecretHub.Web.ChannelCase, async: true`, although
+  by setting `use SecretHub.WebWeb.ChannelCase, async: true`, although
   this option is not recommended for other databases.
   """
 
@@ -19,25 +19,25 @@ defmodule SecretHub.WebWeb.ChannelCase do
 
   using do
     quote do
-      # The default endpoint for testing
-      @endpoint SecretHub.WebWeb.Endpoint
-
-      use SecretHub.WebWeb, :verified_routes
-
       # Import conveniences for testing with channels
       import Phoenix.ChannelTest
+      import SecretHub.WebWeb.ChannelCase
+
+      # The default endpoint for testing
+      @endpoint SecretHub.WebWeb.Endpoint
     end
   end
 
-  setup _tags do
-    {:ok,
-     socket:
-       Phoenix.ChannelTest.__socket__(
-         SecretHub.WebWeb.AgentSocket,
-         "user_id",
-         %{},
-         SecretHub.WebWeb.Endpoint,
-         []
-       )}
+  setup tags do
+    SecretHub.WebWeb.ChannelCase.setup_sandbox(tags)
+    :ok
+  end
+
+  @doc """
+  Sets up the sandbox based on the test tags.
+  """
+  def setup_sandbox(tags) do
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(SecretHub.Core.Repo, shared: not tags[:async])
+    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
   end
 end

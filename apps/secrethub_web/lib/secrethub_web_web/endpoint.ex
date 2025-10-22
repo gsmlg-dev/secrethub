@@ -16,7 +16,7 @@ defmodule SecretHub.WebWeb.Endpoint do
     longpoll: [connect_info: [session: @session_options]]
 
   # Agent WebSocket connection
-  socket "/agent/socket", SecretHub.Web.AgentSocket,
+  socket "/agent/socket", SecretHub.WebWeb.UserSocket,
     websocket: [
       connect_info: [:peer_data, :x_headers]
     ],

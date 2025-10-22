@@ -14,13 +14,103 @@ defmodule SecretHub.WebWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Admin authentication plug
+  defp require_admin_auth(conn, _opts) do
+    SecretHub.WebWeb.AdminAuthController.require_admin_auth(conn, [])
+  end
+
+  pipeline :admin_browser do
+    plug :browser
+    plug :require_admin_auth
+  end
+
+  pipeline :admin_api do
+    plug :api
+    plug :require_admin_auth
+  end
+
   scope "/", SecretHub.WebWeb do
     pipe_through :browser
 
     get "/", PageController, :home
   end
 
-  # Other scopes may use custom stacks.
+  # Vault management routes (no auth required - needed for initial setup)
+  scope "/vault", SecretHub.WebWeb do
+    pipe_through :browser
+
+    live "/init", VaultInitLive, :index
+    live "/unseal", VaultUnsealLive, :index
+  end
+
+  # Admin authentication routes (no auth required)
+  scope "/admin/auth", SecretHub.WebWeb do
+    pipe_through :browser
+
+    get "/login", AdminPageController, :login_form
+    post "/login", AdminAuthController, :login
+    get "/health", AdminAuthController, :health_check
+  end
+
+  # Admin routes with authentication
+  scope "/admin", SecretHub.WebWeb do
+    pipe_through :admin_browser
+
+    get "/", AdminPageController, :index
+    live "/dashboard", AdminDashboardLive, :index
+    live "/agents", AgentMonitoringLive, :index
+    live "/agents/:id", AgentMonitoringLive, :show
+    live "/secrets", SecretManagementLive, :index
+    live "/audit", AuditLogLive, :index
+    live "/certificates", AdminCertificateLive, :index
+
+    delete "/logout", AdminAuthController, :logout
+  end
+
+  # Admin API routes
+  scope "/admin/api", SecretHub.WebWeb do
+    pipe_through :admin_api
+
+    get "/dashboard/stats", AdminDashboardController, :system_stats
+    get "/dashboard/agents", AdminDashboardController, :connected_agents
+    get "/dashboard/secrets", AdminDashboardController, :secret_stats
+    get "/dashboard/audit", AdminDashboardController, :audit_logs
+    post "/export/audit", AdminDashboardController, :export_audit_logs
+    post "/actions/rotate-leases", AdminDashboardController, :rotate_all_leases
+    post "/actions/cleanup-expired", AdminDashboardController, :cleanup_expired_secrets
+    post "/agents/:id/disconnect", AgentController, :disconnect
+    post "/agents/:id/reconnect", AgentController, :reconnect
+    post "/agents/:id/restart", AgentController, :restart
+  end
+
+  # System API routes (initialization, unsealing, health)
+  # These do not require authentication as they are needed before the vault is operational
+  scope "/v1/sys", SecretHub.WebWeb do
+    pipe_through :api
+
+    post "/init", SysController, :init
+    post "/unseal", SysController, :unseal
+    post "/seal", SysController, :seal
+    get "/seal-status", SysController, :status
+    get "/health", SysController, :health
+  end
+
+  # Authentication API routes (AppRole management)
+  scope "/v1/auth/approle", SecretHub.WebWeb do
+    pipe_through :api
+
+    # Role management
+    post "/role/:role_name", AuthController, :create_role
+    get "/role/:role_name", AuthController, :get_role
+    get "/role", AuthController, :list_roles
+    delete "/role/:role_name", AuthController, :delete_role
+
+    # SecretID operations
+    post "/role/:role_name/secret-id", AuthController, :rotate_secret_id
+    get "/role/:role_name/role-id", AuthController, :get_role_id
+  end
+
+  # Other API scopes may use custom stacks.
   # scope "/api", SecretHub.WebWeb do
   #   pipe_through :api
   # end

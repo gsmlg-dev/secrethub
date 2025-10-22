@@ -14,21 +14,30 @@ defmodule SecretHub.Shared.Schemas.Secret do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @type secret_type :: :static | :dynamic_role
+  @type secret_type :: :static | :dynamic
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
 
   schema "secrets" do
+    field(:name, :string)
     field(:secret_path, :string)
-    field(:secret_type, Ecto.Enum, values: [:static, :dynamic_role])
+    field(:secret_type, Ecto.Enum, values: [:static, :dynamic])
+    field(:engine_type, :string, default: "static")
     field(:encrypted_data, :binary)
     field(:version, :integer, default: 1)
     field(:metadata, :map, default: %{})
     field(:description, :string)
     field(:rotation_enabled, :boolean, default: false)
     field(:rotation_schedule, :string)
+    field(:rotation_period_hours, :integer, default: 168) # 7 days
+    field(:ttl_hours, :integer, default: 24)
     field(:last_rotated_at, :utc_datetime)
+    field(:next_rotation_at, :utc_datetime)
+    field(:status, :string, default: "active") # active, rotating, error
+
+    # Relationships
+    many_to_many(:policies, SecretHub.Shared.Schemas.Policy, join_through: "secrets_policies")
 
     timestamps(type: :utc_datetime)
   end
@@ -39,19 +48,93 @@ defmodule SecretHub.Shared.Schemas.Secret do
   def changeset(secret, attrs) do
     secret
     |> cast(attrs, [
+      :name,
       :secret_path,
       :secret_type,
+      :engine_type,
       :encrypted_data,
       :version,
       :metadata,
       :description,
       :rotation_enabled,
       :rotation_schedule,
-      :last_rotated_at
+      :rotation_period_hours,
+      :ttl_hours,
+      :last_rotated_at,
+      :next_rotation_at,
+      :status
     ])
-    |> validate_required([:secret_path, :secret_type, :encrypted_data])
+    |> validate_required([:name, :secret_path, :secret_type, :engine_type])
     |> validate_secret_path()
+    |> validate_format(:name, ~r/^[a-zA-Z0-9\s\-_]+$/,
+      message: "must contain only letters, numbers, spaces, hyphens, and underscores"
+    )
+    |> validate_length(:name, min: 1, max: 100)
+    |> validate_inclusion(:secret_type, [:static, :dynamic])
+    |> validate_inclusion(:engine_type, ["static", "postgresql", "redis", "aws", "gcp"])
+    |> validate_number(:rotation_period_hours, greater_than: 0)
+    |> validate_number(:ttl_hours, greater_than: 0)
     |> unique_constraint(:secret_path)
+  end
+
+  @doc """
+  Create a new secret in the database.
+  """
+  def create(changeset) do
+    # TODO: Implement actual Secret creation logic with SecretHub.Core.Secrets
+    case changeset.valid? do
+      true ->
+        # Mock successful creation
+        secret = %{
+          id: Ecto.UUID.generate(),
+          name: changeset.changes.name,
+          secret_path: changeset.changes.secret_path,
+          secret_type: changeset.changes.secret_type,
+          engine_type: changeset.changes.engine_type,
+          description: Map.get(changeset.changes, :description),
+          rotation_period_hours: Map.get(changeset.changes, :rotation_period_hours, 168),
+          ttl_hours: Map.get(changeset.changes, :ttl_hours, 24),
+          status: "active",
+          last_rotated_at: DateTime.utc_now(),
+          next_rotation_at: calculate_next_rotation(Map.get(changeset.changes, :rotation_period_hours, 168))
+        }
+        {:ok, secret}
+
+      false ->
+        {:error, changeset}
+    end
+  end
+
+  @doc """
+  Update an existing secret.
+  """
+  def update(secret_id, attrs) do
+    # TODO: Implement actual Secret update logic with SecretHub.Core.Secrets
+    secret = %{
+      id: secret_id,
+      name: Map.get(attrs, "name"),
+      secret_path: Map.get(attrs, "secret_path"),
+      secret_type: String.to_atom(Map.get(attrs, "type", "static")),
+      engine_type: Map.get(attrs, "engine_type"),
+      description: Map.get(attrs, "description"),
+      rotation_period_hours: String.to_integer(Map.get(attrs, "rotation_period_hours", "168")),
+      ttl_hours: String.to_integer(Map.get(attrs, "ttl_hours", "24")),
+      status: "active",
+      updated_at: DateTime.utc_now()
+    }
+    {:ok, secret}
+  end
+
+  @doc """
+  Delete a secret.
+  """
+  def delete(_secret_id) do
+    # TODO: Implement actual Secret deletion logic with SecretHub.Core.Secrets
+    :ok
+  end
+
+  defp calculate_next_rotation(rotation_hours) do
+    DateTime.add(DateTime.utc_now(), rotation_hours * 3600, :second)
   end
 
   defp validate_secret_path(changeset) do
