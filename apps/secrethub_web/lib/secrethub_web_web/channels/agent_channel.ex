@@ -335,7 +335,7 @@ defmodule SecretHub.WebWeb.AgentChannel do
     end
   end
 
-  defp extract_validity(cert_pem) do
+  defp extract_validity(_cert_pem) do
     # Parse certificate and extract expiration date
     # TODO: Implement actual certificate parsing
     # For now, return 90 days from now

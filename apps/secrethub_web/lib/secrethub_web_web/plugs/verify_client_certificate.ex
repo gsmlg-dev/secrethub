@@ -57,6 +57,7 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificate do
   """
 
   import Plug.Conn
+  import Ecto.Query
   require Logger
 
   alias SecretHub.Core.PKI.CA
@@ -301,7 +302,7 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificate do
     end
   end
 
-  defp verify_against_ca_chain(cert_der) do
+  defp verify_against_ca_chain(_cert_der) do
     # TODO: Implement proper certificate chain validation
     # For now, we'll do basic validation
 

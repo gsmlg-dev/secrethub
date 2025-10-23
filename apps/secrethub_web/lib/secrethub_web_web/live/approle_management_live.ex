@@ -11,6 +11,7 @@ defmodule SecretHub.WebWeb.AppRoleManagementLive do
   """
 
   use SecretHub.WebWeb, :live_view
+  import Ecto.Query
 
   alias SecretHub.Core.Auth.AppRole
   alias SecretHub.Shared.Schemas.Role
