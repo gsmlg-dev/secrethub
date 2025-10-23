@@ -32,6 +32,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   @impl true
   def handle_params(%{"id" => secret_id}, _url, socket) do
     secret = Enum.find(socket.assigns.secrets, &(&1.id == secret_id))
+
     socket =
       socket
       |> assign(:selected_secret, secret)
@@ -78,6 +79,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
     # TODO: Call SecretHub.Core.Secrets.delete_secret(secret_id)
 
     secrets = fetch_secrets()
+
     socket =
       socket
       |> assign(:secrets, secrets)
@@ -130,6 +132,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
     case socket.assigns.form_mode do
       :create ->
         create_secret(socket, secret_params)
+
       :edit ->
         update_secret(socket, socket.assigns.selected_secret.id, secret_params)
     end
@@ -148,6 +151,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   @impl true
   def handle_info(:refresh_secrets, socket) do
     secrets = fetch_secrets()
+
     socket =
       socket
       |> assign(:secrets, secrets)
@@ -161,6 +165,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
     case create_secret(socket, secret_params) do
       {:ok, _secret} ->
         secrets = fetch_secrets()
+
         socket =
           socket
           |> assign(:secrets, secrets)
@@ -184,6 +189,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
     case update_secret(socket, secret_id, secret_params) do
       {:ok, _secret} ->
         secrets = fetch_secrets()
+
         socket =
           socket
           |> assign(:secrets, secrets)
@@ -230,13 +236,13 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
           phx-click="new_secret"
         >
           <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
           New Secret
         </button>
       </div>
-
-      <!-- Filters and Search -->
+      
+    <!-- Filters and Search -->
       <div class="bg-white p-4 rounded-lg shadow">
         <div class="flex flex-wrap gap-4 items-center">
           <div class="flex items-center space-x-2">
@@ -249,7 +255,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
             >
               <option value="all">All</option>
               <%= for engine <- @engines do %>
-                <option value={engine.type}><%= engine.name %></option>
+                <option value={engine.type}>{engine.name}</option>
               <% end %>
             </select>
           </div>
@@ -267,8 +273,8 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
           </div>
         </div>
       </div>
-
-      <!-- Secret Form Modal -->
+      
+    <!-- Secret Form Modal -->
       <%= if @show_form do %>
         <.live_component
           module={SecretHub.WebWeb.SecretFormComponent}
@@ -280,8 +286,8 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
           return_to="/admin/secrets"
         />
       <% end %>
-
-      <!-- Secret List -->
+      
+    <!-- Secret List -->
       <div class="bg-white rounded-lg shadow">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
@@ -317,31 +323,31 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
               <%= for secret <- filtered_secrets(@secrets, @filter_engine, @search_query) do %>
                 <tr class="hover:bg-gray-50 transition-colors">
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="text-sm font-medium text-gray-900"><%= secret.name %></div>
-                    <div class="text-sm text-gray-500"><%= secret.description %></div>
+                    <div class="text-sm font-medium text-gray-900">{secret.name}</div>
+                    <div class="text-sm text-gray-500">{secret.description}</div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <code class="text-sm bg-gray-100 px-1 py-0.5 rounded"><%= secret.path %></code>
+                    <code class="text-sm bg-gray-100 px-1 py-0.5 rounded">{secret.path}</code>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <%= secret.engine_type %>
+                    {secret.engine_type}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{secret_type_badge_color(secret.type)}"}>
-                      <%= Atom.to_string(secret.type) %>
+                      {Atom.to_string(secret.type)}
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
                       <div class={"w-2 h-2 rounded-full mr-2 #{status_color(secret.status)}"}></div>
-                      <span class="text-sm text-gray-900"><%= secret.status %></span>
+                      <span class="text-sm text-gray-900">{secret.status}</span>
                     </div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <%= format_datetime(secret.last_rotation) %>
+                    {format_datetime(secret.last_rotation)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <%= format_datetime(secret.next_rotation) %>
+                    {format_datetime(secret.next_rotation)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div class="flex space-x-2">
@@ -378,8 +384,8 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
           </table>
         </div>
       </div>
-
-      <!-- Loading State -->
+      
+    <!-- Loading State -->
       <%= if @loading do %>
         <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
           <div class="bg-white rounded-lg p-6 shadow-xl">
@@ -401,6 +407,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
         Logger.info("Created secret: #{secret.id}")
 
         secrets = fetch_secrets()
+
         socket =
           socket
           |> assign(:secrets, secrets)
@@ -426,6 +433,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
         Logger.info("Updated secret: #{secret.id}")
 
         secrets = fetch_secrets()
+
         socket =
           socket
           |> assign(:secrets, secrets)
@@ -457,7 +465,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
         type: :dynamic,
         status: "active",
         last_rotation: DateTime.utc_now() |> DateTime.add(-86400, :second),
-        next_rotation: DateTime.utc_now() |> DateTime.add(604800, :second),
+        next_rotation: DateTime.utc_now() |> DateTime.add(604_800, :second),
         policies: ["webapp-access", "backend-access"]
       },
       %{
@@ -469,7 +477,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
         type: :dynamic,
         status: "active",
         last_rotation: DateTime.utc_now() |> DateTime.add(-43200, :second),
-        next_rotation: DateTime.utc_now() |> DateTime.add(259200, :second),
+        next_rotation: DateTime.utc_now() |> DateTime.add(259_200, :second),
         policies: ["cache-access"]
       },
       %{
@@ -480,7 +488,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
         engine_type: "aws",
         type: :static,
         status: "rotating",
-        last_rotation: DateTime.utc_now() |> DateTime.add(-1209600, :second),
+        last_rotation: DateTime.utc_now() |> DateTime.add(-1_209_600, :second),
         next_rotation: DateTime.utc_now() |> DateTime.add(86400, :second),
         policies: ["s3-access", "ec2-access"]
       }
@@ -510,15 +518,20 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   end
 
   defp filtered_secrets(secrets, "all", ""), do: secrets
-  defp filtered_secrets(secrets, engine, ""), do: Enum.filter(secrets, &(&1.engine_type == engine))
+
+  defp filtered_secrets(secrets, engine, ""),
+    do: Enum.filter(secrets, &(&1.engine_type == engine))
+
   defp filtered_secrets(secrets, "all", query) do
     query = String.downcase(query)
+
     Enum.filter(secrets, fn secret ->
       String.contains?(String.downcase(secret.name), query) or
-      String.contains?(String.downcase(secret.path), query) or
-      String.contains?(String.downcase(secret.description || ""), query)
+        String.contains?(String.downcase(secret.path), query) or
+        String.contains?(String.downcase(secret.description || ""), query)
     end)
   end
+
   defp filtered_secrets(secrets, engine, query) do
     secrets
     |> Enum.filter(&(&1.engine_type == engine))
@@ -547,6 +560,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   defp status_color(_), do: "bg-gray-500"
 
   defp format_datetime(nil), do: "Never"
+
   defp format_datetime(datetime) do
     DateTime.to_string(datetime)
   end

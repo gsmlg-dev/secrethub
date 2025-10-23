@@ -146,6 +146,7 @@ defmodule SecretHub.WebWeb.AdminDashboardController do
   end
 
   defp maybe_filter_by_event_type(logs, "all"), do: logs
+
   defp maybe_filter_by_event_type(logs, event_type) do
     Enum.filter(logs, fn log -> log.event_type == event_type end)
   end

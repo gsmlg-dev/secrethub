@@ -362,10 +362,9 @@ defmodule SecretHub.Shared.Crypto.ShamirTest do
     end
 
     test "handles secret with all one bytes" do
-      secret = <<255, 255, 255, 255, 255, 255, 255, 255,
-                 255, 255, 255, 255, 255, 255, 255, 255,
-                 255, 255, 255, 255, 255, 255, 255, 255,
-                 255, 255, 255, 255, 255, 255, 255, 255>>
+      secret =
+        <<255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+          255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255>>
 
       {:ok, shares} = Shamir.split(secret, 5, 3)
       {:ok, reconstructed} = Shamir.combine(Enum.take(shares, 3))

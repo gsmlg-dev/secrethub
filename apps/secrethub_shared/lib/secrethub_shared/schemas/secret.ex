@@ -30,11 +30,13 @@ defmodule SecretHub.Shared.Schemas.Secret do
     field(:description, :string)
     field(:rotation_enabled, :boolean, default: false)
     field(:rotation_schedule, :string)
-    field(:rotation_period_hours, :integer, default: 168) # 7 days
+    # 7 days
+    field(:rotation_period_hours, :integer, default: 168)
     field(:ttl_hours, :integer, default: 24)
     field(:last_rotated_at, :utc_datetime)
     field(:next_rotation_at, :utc_datetime)
-    field(:status, :string, default: "active") # active, rotating, error
+    # active, rotating, error
+    field(:status, :string, default: "active")
 
     # Relationships
     many_to_many(:policies, SecretHub.Shared.Schemas.Policy, join_through: "secrets_policies")
@@ -96,8 +98,10 @@ defmodule SecretHub.Shared.Schemas.Secret do
           ttl_hours: Map.get(changeset.changes, :ttl_hours, 24),
           status: "active",
           last_rotated_at: DateTime.utc_now(),
-          next_rotation_at: calculate_next_rotation(Map.get(changeset.changes, :rotation_period_hours, 168))
+          next_rotation_at:
+            calculate_next_rotation(Map.get(changeset.changes, :rotation_period_hours, 168))
         }
+
         {:ok, secret}
 
       false ->
@@ -122,6 +126,7 @@ defmodule SecretHub.Shared.Schemas.Secret do
       status: "active",
       updated_at: DateTime.utc_now()
     }
+
     {:ok, secret}
   end
 

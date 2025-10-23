@@ -58,7 +58,10 @@ defmodule SecretHub.Core.Agents do
                       |> Repo.update()
 
                     {:error, cert_error} ->
-                      Logger.error("Failed to issue certificate for agent #{agent_id}: #{inspect(cert_error)}")
+                      Logger.error(
+                        "Failed to issue certificate for agent #{agent_id}: #{inspect(cert_error)}"
+                      )
+
                       {:error, "Failed to issue certificate"}
                   end
 
@@ -75,7 +78,10 @@ defmodule SecretHub.Core.Agents do
                     |> Repo.update()
 
                   {:error, cert_error} ->
-                    Logger.error("Failed to re-issue certificate for agent #{agent_id}: #{inspect(cert_error)}")
+                    Logger.error(
+                      "Failed to re-issue certificate for agent #{agent_id}: #{inspect(cert_error)}"
+                    )
+
                     {:error, "Failed to re-issue certificate"}
                 end
               else
@@ -170,6 +176,7 @@ defmodule SecretHub.Core.Agents do
           # Revoke certificate if exists
           if agent.certificate_id do
             certificate = Repo.get(Certificate, agent.certificate_id)
+
             if certificate do
               Certificate.revoke_changeset(certificate, "Agent suspended")
               |> Repo.update()
@@ -206,6 +213,7 @@ defmodule SecretHub.Core.Agents do
           # Revoke certificate if exists
           if agent.certificate_id do
             certificate = Repo.get(Certificate, agent.certificate_id)
+
             if certificate do
               Certificate.revoke_changeset(certificate, "Agent revoked")
               |> Repo.update()
@@ -310,6 +318,7 @@ defmodule SecretHub.Core.Agents do
               audit_agent_action(agent_id, "secret_access_granted", true, %{
                 secret_path: secret.secret_path
               })
+
               :ok
 
             {:error, reason} ->
@@ -317,6 +326,7 @@ defmodule SecretHub.Core.Agents do
                 secret_path: secret.secret_path,
                 reason: reason
               })
+
               {:error, reason}
           end
         else
@@ -332,16 +342,18 @@ defmodule SecretHub.Core.Agents do
   Get agent statistics for monitoring.
   """
   def get_agent_stats do
-    query = from(a in Agent,
-      select: %{
-        total: count(a.id),
-        active: count(fragment("CASE WHEN ? = 'active' THEN 1 END", a.status)),
-        disconnected: count(fragment("CASE WHEN ? = 'disconnected' THEN 1 END", a.status)),
-        pending_bootstrap: count(fragment("CASE WHEN ? = 'pending_bootstrap' THEN 1 END", a.status)),
-        suspended: count(fragment("CASE WHEN ? = 'suspended' THEN 1 END", a.status)),
-        revoked: count(fragment("CASE WHEN ? = 'revoked' THEN 1 END", a.status))
-      }
-    )
+    query =
+      from(a in Agent,
+        select: %{
+          total: count(a.id),
+          active: count(fragment("CASE WHEN ? = 'active' THEN 1 END", a.status)),
+          disconnected: count(fragment("CASE WHEN ? = 'disconnected' THEN 1 END", a.status)),
+          pending_bootstrap:
+            count(fragment("CASE WHEN ? = 'pending_bootstrap' THEN 1 END", a.status)),
+          suspended: count(fragment("CASE WHEN ? = 'suspended' THEN 1 END", a.status)),
+          revoked: count(fragment("CASE WHEN ? = 'revoked' THEN 1 END", a.status))
+        }
+      )
 
     Repo.one(query)
   end
@@ -352,8 +364,10 @@ defmodule SecretHub.Core.Agents do
   def cleanup_stale_agents(timeout_hours \\ 24) do
     cutoff = DateTime.add(DateTime.utc_now(), -timeout_hours * 3600, :second)
 
-    from(a in Agent, where: a.last_heartbeat_at < ^cutoff and a.status in [:active, :disconnected])
-    |> Repo.update_all([set: [status: :disconnected]])
+    from(a in Agent,
+      where: a.last_heartbeat_at < ^cutoff and a.status in [:active, :disconnected]
+    )
+    |> Repo.update_all(set: [status: :disconnected])
   end
 
   # Private helper functions
@@ -391,20 +405,23 @@ defmodule SecretHub.Core.Agents do
       common_name: agent.agent_id,
       organization: "SecretHub Agents",
       valid_from: DateTime.utc_now(),
-      valid_until: DateTime.add(DateTime.utc_now(), 90 * 24 * 3600, :second), # 90 days
+      # 90 days
+      valid_until: DateTime.add(DateTime.utc_now(), 90 * 24 * 3600, :second),
       cert_type: :agent_client,
       entity_id: agent.id,
       entity_type: "agent"
     }
 
     # Generate temporary certificate (mock implementation)
-    certificate_pem = "-----BEGIN CERTIFICATE-----\nMOCK_CERTIFICATE_DATA_#{cert_data.serial_number}\n-----END CERTIFICATE-----"
+    certificate_pem =
+      "-----BEGIN CERTIFICATE-----\nMOCK_CERTIFICATE_DATA_#{cert_data.serial_number}\n-----END CERTIFICATE-----"
 
-    certificate_changeset = %Certificate{}
-    |> Certificate.changeset(%{
-      cert_data |
-      certificate_pem: certificate_pem
-    })
+    certificate_changeset =
+      %Certificate{}
+      |> Certificate.changeset(%{
+        cert_data
+        | certificate_pem: certificate_pem
+      })
 
     Repo.insert(certificate_changeset)
   end
@@ -420,15 +437,19 @@ defmodule SecretHub.Core.Agents do
 
   defp should_reissue_cert?(certificate) do
     # Reissue if certificate expires within 7 days or is revoked
-    expires_soon? = DateTime.compare(certificate.valid_until,
-                    DateTime.add(DateTime.utc_now(), 7 * 24 * 3600, :second)) != :gt
+    expires_soon? =
+      DateTime.compare(
+        certificate.valid_until,
+        DateTime.add(DateTime.utc_now(), 7 * 24 * 3600, :second)
+      ) != :gt
+
     revoked? = certificate.revoked
     expires_soon? or revoked?
   end
 
   defp cancel_agent_leases(agent_id) do
     from(l in Lease, where: l.agent_id == ^agent_id and l.expires_at > ^DateTime.utc_now())
-    |> Repo.update_all([set: [expires_at: DateTime.utc_now()]])
+    |> Repo.update_all(set: [expires_at: DateTime.utc_now()])
   end
 
   defp evaluate_agent_policies(agent, secret) do
@@ -436,10 +457,10 @@ defmodule SecretHub.Core.Agents do
     agent_policies = agent.policies || []
 
     case Enum.find(agent_policies, fn policy ->
-      # TODO: Implement actual policy evaluation logic
-      # For now, check if secret path matches policy patterns
-      secret_matches_policy?(secret, policy)
-    end) do
+           # TODO: Implement actual policy evaluation logic
+           # For now, check if secret path matches policy patterns
+           secret_matches_policy?(secret, policy)
+         end) do
       nil -> {:error, "No policy allows access to this secret"}
       _policy -> :ok
     end
@@ -449,6 +470,7 @@ defmodule SecretHub.Core.Agents do
     # TODO: Implement sophisticated policy matching
     # For now, simple path prefix matching
     policy_paths = Map.get(policy.metadata, "allowed_paths", [])
+
     Enum.any?(policy_paths, fn path ->
       String.starts_with?(secret.secret_path, path)
     end)

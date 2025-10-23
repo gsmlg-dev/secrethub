@@ -20,8 +20,10 @@ defmodule SecretHub.Shared.Schemas.Agent do
 
   schema "agents" do
     # Agent identification
-    field(:agent_id, :string) # Unique agent identifier
-    field(:name, :string) # Human-readable name
+    # Unique agent identifier
+    field(:agent_id, :string)
+    # Human-readable name
+    field(:name, :string)
     field(:description, :string)
 
     # Bootstrap credentials (RoleID/SecretID)
@@ -103,10 +105,14 @@ defmodule SecretHub.Shared.Schemas.Agent do
     agent
     |> cast(attrs, [:role_id, :secret_id, :ip_address, :hostname, :user_agent])
     |> validate_required([:role_id, :secret_id])
-    |> validate_format(:role_id, ~r/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
+    |> validate_format(
+      :role_id,
+      ~r/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
       message: "must be a valid UUID"
     )
-    |> validate_format(:secret_id, ~r/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
+    |> validate_format(
+      :secret_id,
+      ~r/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
       message: "must be a valid UUID"
     )
     |> put_change(:status, :pending_bootstrap)
@@ -160,8 +166,10 @@ defmodule SecretHub.Shared.Schemas.Agent do
   """
   def active?(agent) do
     agent.status == :active and
-    DateTime.compare(agent.last_heartbeat_at || DateTime.add(DateTime.utc_now(), -3600, :second),
-                    DateTime.add(DateTime.utc_now(), -300, :second)) != :lt
+      DateTime.compare(
+        agent.last_heartbeat_at || DateTime.add(DateTime.utc_now(), -3600, :second),
+        DateTime.add(DateTime.utc_now(), -300, :second)
+      ) != :lt
   end
 
   @doc """

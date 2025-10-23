@@ -30,6 +30,7 @@ defmodule SecretHub.WebWeb.AdminAuthController do
 
           {:error, reason} ->
             Logger.warning("Admin auth failed: #{reason}")
+
             conn
             |> put_status(:forbidden)
             |> text("Access denied: #{reason}")
@@ -144,6 +145,7 @@ defmodule SecretHub.WebWeb.AdminAuthController do
     # In development, accept any certificate with "admin" CN
     if Application.compile_env(:secrethub_web) == :dev do
       subject = cert.subject
+
       if String.contains?(subject, "admin") do
         {:ok, String.split(subject, "@") |> List.first()}
       else
@@ -161,6 +163,7 @@ defmodule SecretHub.WebWeb.AdminAuthController do
 
         fingerprints when is_list(fingerprints) ->
           cert_fingerprint = cert_fingerprint(cert)
+
           if cert_fingerprint in fingerprints do
             {:ok, String.split(cert.subject, "@") |> List.first()}
           else

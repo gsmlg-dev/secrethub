@@ -21,16 +21,17 @@ defmodule SecretHub.Shared.Crypto.Shamir do
   # Use largest prime < 256 for byte-wise Shamir sharing
   # This ensures all values stay within byte range (0-255)
   @prime 251
-  @max_shares 251  # Limited by prime
+  # Limited by prime
+  @max_shares 251
 
   @type share :: %{
-    id: non_neg_integer(),
-    value: binary(),
-    threshold: non_neg_integer(),
-    total_shares: non_neg_integer(),
-    secret_length: non_neg_integer(),
-    adjustment_mask: binary()
-  }
+          id: non_neg_integer(),
+          value: binary(),
+          threshold: non_neg_integer(),
+          total_shares: non_neg_integer(),
+          secret_length: non_neg_integer(),
+          adjustment_mask: binary()
+        }
 
   @doc """
   Splits a secret into N shares with threshold K.
@@ -50,9 +51,8 @@ defmodule SecretHub.Shared.Crypto.Shamir do
   @spec split(binary(), pos_integer(), pos_integer()) :: {:ok, [share()]} | {:error, String.t()}
   def split(secret, total_shares, threshold)
       when is_binary(secret) and
-           total_shares > 0 and total_shares <= @max_shares and
-           threshold > 0 and threshold <= total_shares do
-
+             total_shares > 0 and total_shares <= @max_shares and
+             threshold > 0 and threshold <= total_shares do
     # Store original secret length
     secret_length = byte_size(secret)
 
@@ -97,7 +97,8 @@ defmodule SecretHub.Shared.Crypto.Shamir do
           threshold: threshold,
           total_shares: total_shares,
           secret_length: secret_length,
-          adjustment_mask: adjustment_bin  # Store which bytes need +251 adjustment
+          # Store which bytes need +251 adjustment
+          adjustment_mask: adjustment_bin
         }
       end
 
@@ -133,7 +134,7 @@ defmodule SecretHub.Shared.Crypto.Shamir do
   def combine(shares) when is_list(shares) and length(shares) > 0 do
     # Verify all shares have the same threshold and secret_length
     thresholds = shares |> Enum.map(& &1.threshold) |> Enum.uniq()
-    secret_lengths = shares |> Enum.map(& Map.get(&1, :secret_length, 32)) |> Enum.uniq()
+    secret_lengths = shares |> Enum.map(&Map.get(&1, :secret_length, 32)) |> Enum.uniq()
 
     cond do
       length(thresholds) != 1 ->
@@ -196,21 +197,27 @@ defmodule SecretHub.Shared.Crypto.Shamir do
   """
   @spec valid_share?(any()) :: boolean()
   # Modern shares with adjustment_mask
-  def valid_share?(%{id: id, value: value, threshold: threshold, total_shares: total, adjustment_mask: mask})
+  def valid_share?(%{
+        id: id,
+        value: value,
+        threshold: threshold,
+        total_shares: total,
+        adjustment_mask: mask
+      })
       when is_integer(id) and id > 0 and
-           is_binary(value) and
-           is_binary(mask) and
-           is_integer(threshold) and threshold > 0 and
-           is_integer(total) and total > 0 and threshold <= total do
+             is_binary(value) and
+             is_binary(mask) and
+             is_integer(threshold) and threshold > 0 and
+             is_integer(total) and total > 0 and threshold <= total do
     true
   end
 
   # Legacy shares without adjustment_mask (backwards compatibility)
   def valid_share?(%{id: id, value: value, threshold: threshold, total_shares: total})
       when is_integer(id) and id > 0 and
-           is_binary(value) and
-           is_integer(threshold) and threshold > 0 and
-           is_integer(total) and total > 0 and threshold <= total do
+             is_binary(value) and
+             is_integer(threshold) and threshold > 0 and
+             is_integer(total) and total > 0 and threshold <= total do
     true
   end
 
@@ -227,10 +234,21 @@ defmodule SecretHub.Shared.Crypto.Shamir do
       true
   """
   @spec encode_share(share()) :: String.t()
-  def encode_share(%{id: id, value: value, threshold: threshold, total_shares: total, secret_length: secret_length, adjustment_mask: adjustment_mask}) do
+  def encode_share(%{
+        id: id,
+        value: value,
+        threshold: threshold,
+        total_shares: total,
+        secret_length: secret_length,
+        adjustment_mask: adjustment_mask
+      }) do
     # Format: [version(3)][id(1)][threshold(1)][total(1)][secret_length(1)][mask_length(1)][adjustment_mask(N)][value(M)]
     mask_length = byte_size(adjustment_mask)
-    blob = <<3::8, id::8, threshold::8, total::8, secret_length::8, mask_length::8, adjustment_mask::binary, value::binary>>
+
+    blob =
+      <<3::8, id::8, threshold::8, total::8, secret_length::8, mask_length::8,
+        adjustment_mask::binary, value::binary>>
+
     encoded = Base.url_encode64(blob, padding: false)
     "secrethub-share-#{encoded}"
   end
@@ -253,36 +271,42 @@ defmodule SecretHub.Shared.Crypto.Shamir do
         # Version 3: includes adjustment_mask
         <<3::8, id::8, threshold::8, total::8, secret_length::8, mask_length::8, rest::binary>> ->
           <<adjustment_mask::binary-size(mask_length), value::binary>> = rest
-          {:ok, %{
-            id: id,
-            value: value,
-            threshold: threshold,
-            total_shares: total,
-            secret_length: secret_length,
-            adjustment_mask: adjustment_mask
-          }}
+
+          {:ok,
+           %{
+             id: id,
+             value: value,
+             threshold: threshold,
+             total_shares: total,
+             secret_length: secret_length,
+             adjustment_mask: adjustment_mask
+           }}
 
         # Version 2: includes secret_length (backwards compat - no adjustment)
         <<2::8, id::8, threshold::8, total::8, secret_length::8, value::binary>> ->
-          {:ok, %{
-            id: id,
-            value: value,
-            threshold: threshold,
-            total_shares: total,
-            secret_length: secret_length,
-            adjustment_mask: <<0::size(secret_length)-unit(8)>>  # No adjustments
-          }}
+          {:ok,
+           %{
+             id: id,
+             value: value,
+             threshold: threshold,
+             total_shares: total,
+             secret_length: secret_length,
+             # No adjustments
+             adjustment_mask: <<0::size(secret_length)-unit(8)>>
+           }}
 
         # Version 1: backwards compatibility (assume 32 bytes)
         <<1::8, id::8, threshold::8, total::8, value::binary>> ->
-          {:ok, %{
-            id: id,
-            value: value,
-            threshold: threshold,
-            total_shares: total,
-            secret_length: 32,
-            adjustment_mask: <<0::size(32)-unit(8)>>  # No adjustments
-          }}
+          {:ok,
+           %{
+             id: id,
+             value: value,
+             threshold: threshold,
+             total_shares: total,
+             secret_length: 32,
+             # No adjustments
+             adjustment_mask: <<0::size(32)-unit(8)>>
+           }}
 
         _ ->
           {:error, "Invalid share format"}
@@ -346,6 +370,7 @@ defmodule SecretHub.Shared.Crypto.Shamir do
   defp modular_mult(a, b), do: rem(a * b, @prime)
 
   defp modular_pow(_base, 0), do: 1
+
   defp modular_pow(base, exp) when exp > 0 do
     half = modular_pow(base, div(exp, 2))
     half_squared = modular_mult(half, half)
@@ -363,6 +388,7 @@ defmodule SecretHub.Shared.Crypto.Shamir do
   end
 
   defp extended_gcd(_a, 0), do: {1, 0}
+
   defp extended_gcd(a, b) do
     {x1, y1} = extended_gcd(b, rem(a, b))
     {y1, x1 - div(a, b) * y1}

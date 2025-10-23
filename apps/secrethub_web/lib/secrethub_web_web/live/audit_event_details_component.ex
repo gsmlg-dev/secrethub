@@ -24,7 +24,12 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
             class="text-gray-400 hover:text-gray-600"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
@@ -35,44 +40,44 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label class="block text-sm font-medium text-gray-500">Event ID</label>
-                <p class="text-sm font-mono text-gray-900"><%= @event.id %></p>
+                <p class="text-sm font-mono text-gray-900">{@event.id}</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-500">Timestamp</label>
-                <p class="text-sm text-gray-900"><%= format_datetime(@event.timestamp) %></p>
+                <p class="text-sm text-gray-900">{format_datetime(@event.timestamp)}</p>
               </div>
               <div>
                 <label class="block text-sm font-medium text-gray-500">Event Type</label>
                 <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{event_type_badge_color(@event.event_type)}"}>
-                  <%= format_event_type(@event.event_type) %>
+                  {format_event_type(@event.event_type)}
                 </span>
               </div>
             </div>
           </div>
-
-          <!-- Request Details -->
+          
+    <!-- Request Details -->
           <div>
             <h4 class="text-lg font-medium text-gray-900 mb-4">Request Details</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div class="space-y-4">
                 <div>
                   <label class="block text-sm font-medium text-gray-500">Agent ID</label>
-                  <p class="text-sm text-gray-900"><%= @event.agent_id %></p>
+                  <p class="text-sm text-gray-900">{@event.agent_id}</p>
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-500">Source IP Address</label>
-                  <p class="text-sm text-gray-900"><%= @event.source_ip %></p>
+                  <p class="text-sm text-gray-900">{@event.source_ip}</p>
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-500">User Agent</label>
-                  <p class="text-sm text-gray-900 font-mono"><%= @event.user_agent %></p>
+                  <p class="text-sm text-gray-900 font-mono">{@event.user_agent}</p>
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-500">Correlation ID</label>
-                  <p class="text-sm font-mono text-gray-900"><%= @event.correlation_id %></p>
+                  <p class="text-sm font-mono text-gray-900">{@event.correlation_id}</p>
                 </div>
               </div>
 
@@ -81,7 +86,7 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
                   <label class="block text-sm font-medium text-gray-500">Secret Path</label>
                   <p class="text-sm text-gray-900">
                     <%= if @event.secret_path do %>
-                      <code class="bg-gray-100 px-1 py-0.5 rounded"><%= @event.secret_path %></code>
+                      <code class="bg-gray-100 px-1 py-0.5 rounded">{@event.secret_path}</code>
                     <% else %>
                       -
                     <% end %>
@@ -91,27 +96,28 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
                 <div>
                   <label class="block text-sm font-medium text-gray-500">Access Status</label>
                   <div class="flex items-center">
-                    <div class={"w-2 h-2 rounded-full mr-2 #{access_status_color(@event.access_granted)}"}></div>
+                    <div class={"w-2 h-2 rounded-full mr-2 #{access_status_color(@event.access_granted)}"}>
+                    </div>
                     <span class="text-sm">
-                      <%= if @event.access_granted, do: "Granted", else: "Denied" %>
+                      {if @event.access_granted, do: "Granted", else: "Denied"}
                     </span>
                   </div>
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-500">Response Time</label>
-                  <p class="text-sm text-gray-900"><%= @event.response_time_ms %>ms</p>
+                  <p class="text-sm text-gray-900">{@event.response_time_ms}ms</p>
                 </div>
 
                 <div>
                   <label class="block text-sm font-medium text-gray-500">Policy Matched</label>
-                  <p class="text-sm text-gray-900"><%= @event.policy_matched || "N/A" %></p>
+                  <p class="text-sm text-gray-900">{@event.policy_matched || "N/A"}</p>
                 </div>
               </div>
             </div>
           </div>
-
-          <!-- Request/Response Details -->
+          
+    <!-- Request/Response Details -->
           <div>
             <h4 class="text-lg font-medium text-gray-900 mb-4">Request & Response</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -120,7 +126,7 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
                 <div class="space-y-2">
                   <div class="flex justify-between">
                     <span class="text-sm text-gray-500">Size:</span>
-                    <span class="text-sm text-gray-900"><%= @event.request_size %> bytes</span>
+                    <span class="text-sm text-gray-900">{@event.request_size} bytes</span>
                   </div>
                   <%= if @event.request_headers do %>
                     <div>
@@ -136,12 +142,12 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
                 <div class="space-y-2">
                   <div class="flex justify-between">
                     <span class="text-sm text-gray-500">Size:</span>
-                    <span class="text-sm text-gray-900"><%= @event.response_size %> bytes</span>
+                    <span class="text-sm text-gray-900">{@event.response_size} bytes</span>
                   </div>
                   <%= if @event.response_status do %>
                     <div class="flex justify-between">
                       <span class="text-sm text-gray-500">Status:</span>
-                      <span class="text-sm text-gray-900"><%= @event.response_status %></span>
+                      <span class="text-sm text-gray-900">{@event.response_status}</span>
                     </div>
                   <% end %>
                   <%= if @event.response_headers do %>
@@ -154,16 +160,16 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
               </div>
             </div>
           </div>
-
-          <!-- Denial Reason (if applicable) -->
+          
+    <!-- Denial Reason (if applicable) -->
           <%= if @event.access_granted == false and @event.denial_reason do %>
             <div class="bg-red-50 border border-red-200 rounded-lg p-4">
               <h4 class="text-sm font-medium text-red-800 mb-2">Denial Reason</h4>
-              <p class="text-sm text-red-700"><%= @event.denial_reason %></p>
+              <p class="text-sm text-red-700">{@event.denial_reason}</p>
             </div>
           <% end %>
-
-          <!-- Additional Context -->
+          
+    <!-- Additional Context -->
           <%= if @event.context do %>
             <div>
               <h4 class="text-lg font-medium text-gray-900 mb-4">Additional Context</h4>
@@ -172,19 +178,21 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
               </div>
             </div>
           <% end %>
-
-          <!-- Hash Chain Information -->
+          
+    <!-- Hash Chain Information -->
           <div>
             <h4 class="text-lg font-medium text-gray-900 mb-4">Integrity Verification</h4>
             <div class="bg-gray-50 rounded-lg p-4">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label class="block text-sm font-medium text-gray-500">Event Hash</label>
-                  <p class="text-sm font-mono text-gray-900"><%= @event.hash || "SHA256:abc123..." %></p>
+                  <p class="text-sm font-mono text-gray-900">{@event.hash || "SHA256:abc123..."}</p>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-gray-500">Previous Hash</label>
-                  <p class="text-sm font-mono text-gray-900"><%= @event.previous_hash || "SHA256:def456..." %></p>
+                  <p class="text-sm font-mono text-gray-900">
+                    {@event.previous_hash || "SHA256:def456..."}
+                  </p>
                 </div>
               </div>
               <div class="mt-4">
@@ -195,8 +203,8 @@ defmodule SecretHub.WebWeb.AuditEventDetailsComponent do
             </div>
           </div>
         </div>
-
-        <!-- Actions -->
+        
+    <!-- Actions -->
         <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-4">
           <button
             class="btn-secondary"

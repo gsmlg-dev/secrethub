@@ -18,10 +18,10 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
       <div class="flex justify-between items-start mb-6">
         <div>
           <h3 class="text-xl font-semibold text-gray-900">
-            <%= @agent.name %>
+            {@agent.name}
           </h3>
           <p class="text-sm text-gray-500">
-            Agent ID: <code class="bg-gray-100 px-1 py-0.5 rounded"><%= @agent.id %></code>
+            Agent ID: <code class="bg-gray-100 px-1 py-0.5 rounded">{@agent.id}</code>
           </p>
         </div>
         <div class="flex space-x-2">
@@ -43,30 +43,30 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">Status</span>
               <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{status_badge_color(@agent.status)}"}>
-                <%= Atom.to_string(@agent.status) %>
+                {Atom.to_string(@agent.status)}
               </span>
             </div>
 
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">IP Address</span>
-              <span class="text-sm text-gray-900"><%= @agent.ip_address %></span>
+              <span class="text-sm text-gray-900">{@agent.ip_address}</span>
             </div>
 
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">Operating System</span>
-              <span class="text-sm text-gray-900"><%= @agent.os %></span>
+              <span class="text-sm text-gray-900">{@agent.os}</span>
             </div>
 
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">Agent Version</span>
-              <span class="text-sm text-gray-900"><%= @agent.version %></span>
+              <span class="text-sm text-gray-900">{@agent.version}</span>
             </div>
 
             <%= if @agent.connection_time do %>
               <div class="flex justify-between">
                 <span class="text-sm font-medium text-gray-500">Connected Since</span>
                 <span class="text-sm text-gray-900">
-                  <%= format_datetime(@agent.connection_time) %>
+                  {format_datetime(@agent.connection_time)}
                 </span>
               </div>
             <% end %>
@@ -74,20 +74,20 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">Last Seen</span>
               <span class="text-sm text-gray-900">
-                <%= format_datetime(@agent.last_seen) %>
+                {format_datetime(@agent.last_seen)}
               </span>
             </div>
 
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">Uptime</span>
               <span class="text-sm text-gray-900">
-                <%= format_uptime(@agent.uptime_hours) %>
+                {format_uptime(@agent.uptime_hours)}
               </span>
             </div>
           </div>
         </div>
-
-        <!-- Security Info -->
+        
+    <!-- Security Info -->
         <div class="space-y-4">
           <h4 class="text-lg font-medium text-gray-900">Security Information</h4>
 
@@ -95,26 +95,26 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">Certificate Fingerprint</span>
               <span class="text-xs text-gray-600 font-mono">
-                <%= @agent.certificate_fingerprint %>
+                {@agent.certificate_fingerprint}
               </span>
             </div>
 
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">Last Policy Check</span>
               <span class="text-sm text-gray-900">
-                <%= format_datetime(@agent.last_policy_check) %>
+                {format_datetime(@agent.last_policy_check)}
               </span>
             </div>
 
             <div class="flex justify-between">
               <span class="text-sm font-medium text-gray-500">Secrets Accessed</span>
-              <span class="text-sm text-gray-900"><%= @agent.secrets_accessed %></span>
+              <span class="text-sm text-gray-900">{@agent.secrets_accessed}</span>
             </div>
           </div>
         </div>
       </div>
-
-      <!-- Recent Activity -->
+      
+    <!-- Recent Activity -->
       <div class="mt-6">
         <h4 class="text-lg font-medium text-gray-900 mb-4">Recent Activity</h4>
         <div class="bg-gray-50 rounded-lg p-4">
@@ -123,9 +123,9 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
               <div class="flex items-start space-x-3">
                 <div class={"w-2 h-2 rounded-full mt-2 #{activity_icon_color(activity.type)}"}></div>
                 <div class="flex-1">
-                  <div class="text-sm text-gray-900"><%= activity.description %></div>
+                  <div class="text-sm text-gray-900">{activity.description}</div>
                   <div class="text-xs text-gray-500">
-                    <%= format_datetime(activity.timestamp) %>
+                    {format_datetime(activity.timestamp)}
                   </div>
                 </div>
               </div>
@@ -133,8 +133,8 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
           </div>
         </div>
       </div>
-
-      <!-- Agent Actions -->
+      
+    <!-- Agent Actions -->
       <div class="mt-6 border-t pt-6">
         <h4 class="text-lg font-medium text-gray-900 mb-4">Agent Actions</h4>
         <div class="flex space-x-4">
@@ -205,6 +205,7 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
   defp status_badge_color(:error), do: "bg-red-100 text-red-800"
 
   defp format_datetime(nil), do: "Never"
+
   defp format_datetime(datetime) do
     DateTime.to_string(datetime)
   end

@@ -110,6 +110,21 @@ defmodule SecretHub.WebWeb.Router do
     get "/role/:role_name/role-id", AuthController, :get_role_id
   end
 
+  # PKI API routes (Certificate Authority operations)
+  scope "/v1/pki", SecretHub.WebWeb do
+    pipe_through :api
+
+    # CA generation
+    post "/ca/root/generate", PKIController, :generate_root_ca
+    post "/ca/intermediate/generate", PKIController, :generate_intermediate_ca
+
+    # Certificate operations
+    post "/sign-request", PKIController, :sign_csr
+    get "/certificates", PKIController, :list_certificates
+    get "/certificates/:id", PKIController, :get_certificate
+    post "/certificates/:id/revoke", PKIController, :revoke_certificate
+  end
+
   # Other API scopes may use custom stacks.
   # scope "/api", SecretHub.WebWeb do
   #   pipe_through :api

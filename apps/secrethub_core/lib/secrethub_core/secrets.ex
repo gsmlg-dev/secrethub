@@ -68,12 +68,18 @@ defmodule SecretHub.Core.Secrets do
 
     query =
       Enum.reduce(filters, query, fn
-        {:secret_type, type}, q -> where(q, [s], s.secret_type == ^type)
-        {:engine_type, engine}, q -> where(q, [s], s.engine_type == ^engine)
+        {:secret_type, type}, q ->
+          where(q, [s], s.secret_type == ^type)
+
+        {:engine_type, engine}, q ->
+          where(q, [s], s.engine_type == ^engine)
+
         {:search, term}, q ->
           search_term = "%#{term}%"
           where(q, [s], ilike(s.name, ^search_term) or ilike(s.secret_path, ^search_term))
-        _, q -> q
+
+        _, q ->
+          q
       end)
 
     Repo.all(query)

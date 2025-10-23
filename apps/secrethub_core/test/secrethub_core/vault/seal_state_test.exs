@@ -13,7 +13,8 @@ defmodule SecretHub.Core.Vault.SealStateTest do
   - Edge cases
   """
 
-  use SecretHub.Core.DataCase, async: false  # GenServer tests can't be async
+  # GenServer tests can't be async
+  use SecretHub.Core.DataCase, async: false
 
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Shamir
@@ -241,7 +242,8 @@ defmodule SecretHub.Core.Vault.SealStateTest do
     test "returns master key when unsealed" do
       assert {:ok, key} = SealState.get_master_key()
       assert is_binary(key)
-      assert byte_size(key) == 32  # 256-bit key
+      # 256-bit key
+      assert byte_size(key) == 32
     end
 
     test "returns same master key on repeated calls" do

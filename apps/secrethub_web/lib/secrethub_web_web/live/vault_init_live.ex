@@ -74,7 +74,7 @@ defmodule SecretHub.WebWeb.VaultInitLive do
                   <p class="font-medium">⚠️ Important: Save These Shares Securely</p>
                   <p class="text-sm mt-1">
                     These shares will only be shown once. Store them in separate secure locations.
-                    You need <%= @threshold %> shares to unseal the vault.
+                    You need {@threshold} shares to unseal the vault.
                   </p>
                 </div>
 
@@ -82,7 +82,7 @@ defmodule SecretHub.WebWeb.VaultInitLive do
                   <%= for {share, index} <- Enum.with_index(@initialized_shares, 1) do %>
                     <div class="border border-gray-300 rounded-lg p-4">
                       <div class="flex items-center justify-between mb-2">
-                        <span class="font-semibold text-gray-700">Share <%= index %></span>
+                        <span class="font-semibold text-gray-700">Share {index}</span>
                         <button
                           phx-click="copy_share"
                           phx-value-share={share}
@@ -92,7 +92,7 @@ defmodule SecretHub.WebWeb.VaultInitLive do
                         </button>
                       </div>
                       <code class="block bg-gray-900 text-gray-100 p-3 rounded text-xs break-all">
-                        <%= share %>
+                        {share}
                       </code>
                     </div>
                   <% end %>
@@ -163,15 +163,15 @@ defmodule SecretHub.WebWeb.VaultInitLive do
                   <%= if @error_message do %>
                     <div class="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
                       <p class="font-medium">Error</p>
-                      <p class="text-sm"><%= @error_message %></p>
+                      <p class="text-sm">{@error_message}</p>
                     </div>
                   <% end %>
 
                   <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg">
                     <p class="font-medium">What is Shamir Secret Sharing?</p>
                     <p class="text-sm mt-1">
-                      The vault's master encryption key will be split into <%= @total_shares %> shares.
-                      Any <%= @threshold %> shares can reconstruct the key to unseal the vault.
+                      The vault's master encryption key will be split into {@total_shares} shares.
+                      Any {@threshold} shares can reconstruct the key to unseal the vault.
                       This prevents a single person from having complete access.
                     </p>
                   </div>

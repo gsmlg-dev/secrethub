@@ -13,6 +13,7 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
     end
 
     agents = fetch_agents()
+
     socket =
       socket
       |> assign(:agents, agents)
@@ -48,6 +49,7 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
     # TODO: Call SecretHub.Core.Connections.disconnect_agent(agent_id)
 
     agents = fetch_agents()
+
     socket =
       socket
       |> assign(:agents, agents)
@@ -129,12 +131,12 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
           </div>
         </div>
       </div>
-
-      <!-- Agent List -->
+      
+    <!-- Agent List -->
       <div class="bg-white rounded-lg shadow">
         <div class="px-4 py-3 border-b border-gray-200">
           <h3 class="text-lg font-semibold text-gray-900">
-            Connected Agents (<%= length(@agents) %>)
+            Connected Agents ({length(@agents)})
           </h3>
         </div>
 
@@ -176,27 +178,27 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
                     <div class="flex items-center">
                       <div class={"w-3 h-3 rounded-full mr-3 #{status_color(agent.status)}"}></div>
                       <div>
-                        <div class="text-sm font-medium text-gray-900"><%= agent.name %></div>
-                        <div class="text-sm text-gray-500"><%= agent.os %></div>
+                        <div class="text-sm font-medium text-gray-900">{agent.name}</div>
+                        <div class="text-sm text-gray-500">{agent.os}</div>
                       </div>
                     </div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{status_badge_color(agent.status)}"}>
-                      <%= Atom.to_string(agent.status) %>
+                      {Atom.to_string(agent.status)}
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <%= format_timestamp(agent.last_seen) %>
+                    {format_timestamp(agent.last_seen)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <%= agent.ip_address %>
+                    {agent.ip_address}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <%= agent.secrets_accessed %>
+                    {agent.secrets_accessed}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <%= format_uptime(agent.uptime_hours) %>
+                    {format_uptime(agent.uptime_hours)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div class="flex space-x-2">
@@ -226,8 +228,8 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
           </table>
         </div>
       </div>
-
-      <!-- Agent Details Panel -->
+      
+    <!-- Agent Details Panel -->
       <%= if @selected_agent do %>
         <.live_component
           module={SecretHub.WebWeb.AgentDetailsComponent}
@@ -289,14 +291,19 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
   end
 
   defp filtered_agents(agents, "all", ""), do: agents
-  defp filtered_agents(agents, status, ""), do: Enum.filter(agents, &(&1.status == String.to_atom(status)))
+
+  defp filtered_agents(agents, status, ""),
+    do: Enum.filter(agents, &(&1.status == String.to_atom(status)))
+
   defp filtered_agents(agents, "all", query) do
     query = String.downcase(query)
+
     Enum.filter(agents, fn agent ->
       String.contains?(String.downcase(agent.name), query) or
-      String.contains?(agent.ip_address, query)
+        String.contains?(agent.ip_address, query)
     end)
   end
+
   defp filtered_agents(agents, status, query) do
     agents
     |> Enum.filter(&(&1.status == String.to_atom(status)))
@@ -312,6 +319,7 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
   defp status_badge_color(:error), do: "bg-red-100 text-red-800"
 
   defp format_timestamp(nil), do: "Never"
+
   defp format_timestamp(datetime) do
     DateTime.diff(DateTime.utc_now(), datetime, :second)
     |> format_relative_time()

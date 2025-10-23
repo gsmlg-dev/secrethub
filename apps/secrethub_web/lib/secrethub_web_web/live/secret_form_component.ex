@@ -44,7 +44,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   placeholder="e.g., Production Database"
                 />
                 <%= if error = Phoenix.HTML.Form.input_error(@changeset, :name) do %>
-                  <p class="mt-1 text-sm text-red-600"><%= error %></p>
+                  <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
 
@@ -59,7 +59,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   placeholder="Brief description of what this secret provides access to"
                 ><%= Phoenix.HTML.Form.input_value(@changeset, :description) %></textarea>
                 <%= if error = Phoenix.HTML.Form.input_error(@changeset, :description) do %>
-                  <p class="mt-1 text-sm text-red-600"><%= error %></p>
+                  <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
 
@@ -78,12 +78,12 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   Hierarchical path for secret organization (e.g., environment/service/credential)
                 </p>
                 <%= if error = Phoenix.HTML.Form.input_error(@changeset, :path) do %>
-                  <p class="mt-1 text-sm text-red-600"><%= error %></p>
+                  <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
             </div>
-
-            <!-- Engine Configuration -->
+            
+    <!-- Engine Configuration -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -97,14 +97,16 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   <%= for engine <- @engines do %>
                     <option
                       value={engine.type}
-                      selected={Phoenix.HTML.Form.input_value(@changeset, :engine_type) == engine.type}
+                      selected={
+                        Phoenix.HTML.Form.input_value(@changeset, :engine_type) == engine.type
+                      }
                     >
-                      <%= engine.name %>
+                      {engine.name}
                     </option>
                   <% end %>
                 </select>
                 <%= if error = Phoenix.HTML.Form.input_error(@changeset, :engine_type) do %>
-                  <p class="mt-1 text-sm text-red-600"><%= error %></p>
+                  <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
 
@@ -116,20 +118,26 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   name="secret[type]"
                   class="form-select w-full"
                 >
-                  <option value="static" selected={Phoenix.HTML.Form.input_value(@changeset, :type) == :static}>
+                  <option
+                    value="static"
+                    selected={Phoenix.HTML.Form.input_value(@changeset, :type) == :static}
+                  >
                     Static (long-lived)
                   </option>
-                  <option value="dynamic" selected={Phoenix.HTML.Form.input_value(@changeset, :type) == :dynamic}>
+                  <option
+                    value="dynamic"
+                    selected={Phoenix.HTML.Form.input_value(@changeset, :type) == :dynamic}
+                  >
                     Dynamic (temporary)
                   </option>
                 </select>
                 <%= if error = Phoenix.HTML.Form.input_error(@changeset, :type) do %>
-                  <p class="mt-1 text-sm text-red-600"><%= error %></p>
+                  <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
             </div>
-
-            <!-- Rotation Settings -->
+            
+    <!-- Rotation Settings -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">
@@ -147,7 +155,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   Time to live for dynamic secrets (hours)
                 </p>
                 <%= if error = Phoenix.HTML.Form.input_error(@changeset, :ttl_hours) do %>
-                  <p class="mt-1 text-sm text-red-600"><%= error %></p>
+                  <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
 
@@ -167,12 +175,12 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   How often to rotate static secrets (hours)
                 </p>
                 <%= if error = Phoenix.HTML.Form.input_error(@changeset, :rotation_period_hours) do %>
-                  <p class="mt-1 text-sm text-red-600"><%= error %></p>
+                  <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
             </div>
-
-            <!-- Policies -->
+            
+    <!-- Policies -->
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">
                 Access Policies
@@ -186,7 +194,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                       value={policy.id}
                       class="form-checkbox h-4 w-4 text-blue-600 rounded"
                     />
-                    <span class="ml-2 text-sm text-gray-700"><%= policy.name %></span>
+                    <span class="ml-2 text-sm text-gray-700">{policy.name}</span>
                   </label>
                 <% end %>
               </div>
@@ -194,14 +202,14 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                 Select which policies can access this secret
               </p>
             </div>
-
-            <!-- Engine-specific Configuration -->
+            
+    <!-- Engine-specific Configuration -->
             <div id="engine-config" class="space-y-4">
-              <%= render_engine_config(assigns) %>
+              {render_engine_config(assigns)}
             </div>
           </div>
-
-          <!-- Form Actions -->
+          
+    <!-- Form Actions -->
           <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-4">
             <button
               type="button"
@@ -282,19 +290,39 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Database Host</label>
-              <input type="text" name="secret[engine_config][host]" class="form-input w-full" placeholder="localhost" />
+              <input
+                type="text"
+                name="secret[engine_config][host]"
+                class="form-input w-full"
+                placeholder="localhost"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Database Port</label>
-              <input type="number" name="secret[engine_config][port]" class="form-input w-full" placeholder="5432" />
+              <input
+                type="number"
+                name="secret[engine_config][port]"
+                class="form-input w-full"
+                placeholder="5432"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Database Name</label>
-              <input type="text" name="secret[engine_config][database]" class="form-input w-full" placeholder="myapp" />
+              <input
+                type="text"
+                name="secret[engine_config][database]"
+                class="form-input w-full"
+                placeholder="myapp"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              <input type="text" name="secret[engine_config][username]" class="form-input w-full" placeholder="myuser" />
+              <input
+                type="text"
+                name="secret[engine_config][username]"
+                class="form-input w-full"
+                placeholder="myuser"
+              />
             </div>
           </div>
         </div>
@@ -307,19 +335,39 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Redis Host</label>
-              <input type="text" name="secret[engine_config][host]" class="form-input w-full" placeholder="localhost" />
+              <input
+                type="text"
+                name="secret[engine_config][host]"
+                class="form-input w-full"
+                placeholder="localhost"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Redis Port</label>
-              <input type="number" name="secret[engine_config][port]" class="form-input w-full" placeholder="6379" />
+              <input
+                type="number"
+                name="secret[engine_config][port]"
+                class="form-input w-full"
+                placeholder="6379"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Database</label>
-              <input type="number" name="secret[engine_config][database]" class="form-input w-full" placeholder="0" />
+              <input
+                type="number"
+                name="secret[engine_config][database]"
+                class="form-input w-full"
+                placeholder="0"
+              />
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input type="password" name="secret[engine_config][password]" class="form-input w-full" placeholder="optional" />
+              <input
+                type="password"
+                name="secret[engine_config][password]"
+                class="form-input w-full"
+                placeholder="optional"
+              />
             </div>
           </div>
         </div>

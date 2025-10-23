@@ -25,37 +25,36 @@ defmodule SecretHub.Core.Vault.SealState do
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.AuditLog
 
-  @unseal_timeout_ms 30_000  # Auto-seal after 30 seconds of no activity
+  # Auto-seal after 30 seconds of no activity
+  @unseal_timeout_ms 30_000
   @max_unseal_attempts 5
 
   defmodule State do
     @moduledoc false
-    defstruct [
-      status: :not_initialized,
-      master_key: nil,
-      encrypted_master_key: nil,
-      unseal_shares: [],
-      threshold: nil,
-      total_shares: nil,
-      unseal_progress: 0,
-      initialized_at: nil,
-      unsealed_at: nil,
-      auto_seal_timer: nil
-    ]
+    defstruct status: :not_initialized,
+              master_key: nil,
+              encrypted_master_key: nil,
+              unseal_shares: [],
+              threshold: nil,
+              total_shares: nil,
+              unseal_progress: 0,
+              initialized_at: nil,
+              unsealed_at: nil,
+              auto_seal_timer: nil
 
     @type status :: :not_initialized | :sealed | :unsealed
     @type t :: %__MODULE__{
-      status: status(),
-      master_key: binary() | nil,
-      encrypted_master_key: binary() | nil,
-      unseal_shares: [Shamir.share()],
-      threshold: non_neg_integer() | nil,
-      total_shares: non_neg_integer() | nil,
-      unseal_progress: non_neg_integer(),
-      initialized_at: DateTime.t() | nil,
-      unsealed_at: DateTime.t() | nil,
-      auto_seal_timer: reference() | nil
-    }
+            status: status(),
+            master_key: binary() | nil,
+            encrypted_master_key: binary() | nil,
+            unseal_shares: [Shamir.share()],
+            threshold: non_neg_integer() | nil,
+            total_shares: non_neg_integer() | nil,
+            unseal_progress: non_neg_integer(),
+            initialized_at: DateTime.t() | nil,
+            unsealed_at: DateTime.t() | nil,
+            auto_seal_timer: reference() | nil
+          }
   end
 
   # Client API
@@ -76,7 +75,7 @@ defmodule SecretHub.Core.Vault.SealState do
   Returns the unseal shares that must be distributed to administrators.
   """
   @spec initialize(pos_integer(), pos_integer()) ::
-    {:ok, [Shamir.share()]} | {:error, String.t()}
+          {:ok, [Shamir.share()]} | {:error, String.t()}
   def initialize(total_shares, threshold) do
     GenServer.call(__MODULE__, {:initialize, total_shares, threshold})
   end
@@ -87,8 +86,8 @@ defmodule SecretHub.Core.Vault.SealState do
   Returns the current unseal progress and whether unsealing is complete.
   """
   @spec unseal(Shamir.share()) ::
-    {:ok, %{sealed: boolean(), progress: non_neg_integer(), threshold: non_neg_integer()}} |
-    {:error, String.t()}
+          {:ok, %{sealed: boolean(), progress: non_neg_integer(), threshold: non_neg_integer()}}
+          | {:error, String.t()}
   def unseal(share) do
     GenServer.call(__MODULE__, {:unseal, share})
   end
@@ -105,12 +104,12 @@ defmodule SecretHub.Core.Vault.SealState do
   Returns the current seal status.
   """
   @spec status() :: %{
-    initialized: boolean(),
-    sealed: boolean(),
-    progress: non_neg_integer(),
-    threshold: non_neg_integer() | nil,
-    total_shares: non_neg_integer() | nil
-  }
+          initialized: boolean(),
+          sealed: boolean(),
+          progress: non_neg_integer(),
+          threshold: non_neg_integer() | nil,
+          total_shares: non_neg_integer() | nil
+        }
   def status do
     GenServer.call(__MODULE__, :status)
   end
@@ -138,8 +137,10 @@ defmodule SecretHub.Core.Vault.SealState do
     try do
       audit_event("vault_started", state.status)
     rescue
-      RuntimeError -> :ok  # Sandbox not ready yet in test mode
-      ArgumentError -> :ok  # DB connection not ready
+      # Sandbox not ready yet in test mode
+      RuntimeError -> :ok
+      # DB connection not ready
+      ArgumentError -> :ok
     end
 
     {:ok, state}
@@ -165,15 +166,17 @@ defmodule SecretHub.Core.Vault.SealState do
         # TODO: Properly store this in a vault_config table
         persist_vault_config(encrypted_master_key, threshold, total_shares)
 
-        new_state = %{state |
-          status: :sealed,
-          encrypted_master_key: encrypted_master_key,
-          threshold: threshold,
-          total_shares: total_shares,
-          initialized_at: DateTime.utc_now()
+        new_state = %{
+          state
+          | status: :sealed,
+            encrypted_master_key: encrypted_master_key,
+            threshold: threshold,
+            total_shares: total_shares,
+            initialized_at: DateTime.utc_now()
         }
 
         Logger.info("Vault initialized with #{total_shares} shares (threshold: #{threshold})")
+
         audit_event("vault_initialized", :sealed, %{
           threshold: threshold,
           total_shares: total_shares
@@ -190,7 +193,8 @@ defmodule SecretHub.Core.Vault.SealState do
   def handle_call({:unseal, share}, _from, state) do
     case state.status do
       :unsealed ->
-        {:reply, {:ok, %{sealed: false, progress: state.threshold, threshold: state.threshold}}, state}
+        {:reply, {:ok, %{sealed: false, progress: state.threshold, threshold: state.threshold}},
+         state}
 
       :sealed ->
         # Validate share
@@ -211,19 +215,22 @@ defmodule SecretHub.Core.Vault.SealState do
                 # Set auto-seal timer
                 timer = Process.send_after(self(), :auto_seal, @unseal_timeout_ms)
 
-                new_state = %{state |
-                  status: :unsealed,
-                  master_key: reconstructed_key,
-                  unseal_shares: [],
-                  unseal_progress: 0,
-                  unsealed_at: DateTime.utc_now(),
-                  auto_seal_timer: timer
+                new_state = %{
+                  state
+                  | status: :unsealed,
+                    master_key: reconstructed_key,
+                    unseal_shares: [],
+                    unseal_progress: 0,
+                    unsealed_at: DateTime.utc_now(),
+                    auto_seal_timer: timer
                 }
 
                 Logger.info("Vault unsealed successfully")
                 audit_event("vault_unsealed", :unsealed)
 
-                {:reply, {:ok, %{sealed: false, progress: state.threshold, threshold: state.threshold}}, new_state}
+                {:reply,
+                 {:ok, %{sealed: false, progress: state.threshold, threshold: state.threshold}},
+                 new_state}
 
               {:error, reason} ->
                 Logger.error("Failed to reconstruct master key: #{reason}")
@@ -231,12 +238,10 @@ defmodule SecretHub.Core.Vault.SealState do
             end
           else
             # Not enough shares yet
-            new_state = %{state |
-              unseal_shares: new_shares,
-              unseal_progress: new_progress
-            }
+            new_state = %{state | unseal_shares: new_shares, unseal_progress: new_progress}
 
-            {:reply, {:ok, %{sealed: true, progress: new_progress, threshold: state.threshold}}, new_state}
+            {:reply, {:ok, %{sealed: true, progress: new_progress, threshold: state.threshold}},
+             new_state}
           end
         end
 
@@ -253,13 +258,14 @@ defmodule SecretHub.Core.Vault.SealState do
         if state.auto_seal_timer, do: Process.cancel_timer(state.auto_seal_timer)
 
         # Clear master key from memory
-        new_state = %{state |
-          status: :sealed,
-          master_key: nil,
-          unseal_shares: [],
-          unseal_progress: 0,
-          unsealed_at: nil,
-          auto_seal_timer: nil
+        new_state = %{
+          state
+          | status: :sealed,
+            master_key: nil,
+            unseal_shares: [],
+            unseal_progress: 0,
+            unsealed_at: nil,
+            auto_seal_timer: nil
         }
 
         Logger.info("Vault sealed")
@@ -309,13 +315,14 @@ defmodule SecretHub.Core.Vault.SealState do
     Logger.warning("Vault auto-sealing due to inactivity")
 
     # Seal the vault
-    new_state = %{state |
-      status: :sealed,
-      master_key: nil,
-      unseal_shares: [],
-      unseal_progress: 0,
-      unsealed_at: nil,
-      auto_seal_timer: nil
+    new_state = %{
+      state
+      | status: :sealed,
+        master_key: nil,
+        unseal_shares: [],
+        unseal_progress: 0,
+        unsealed_at: nil,
+        auto_seal_timer: nil
     }
 
     audit_event("vault_auto_sealed", :sealed)

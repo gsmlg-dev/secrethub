@@ -32,8 +32,10 @@ defmodule SecretHub.WebWeb.AgentChannel do
   alias SecretHub.Core.Agents
   alias SecretHub.Core.Secrets
 
-  @heartbeat_interval 30_000  # 30 seconds
-  @heartbeat_timeout 90_000   # 90 seconds (3 missed heartbeats)
+  # 30 seconds
+  @heartbeat_interval 30_000
+  # 90 seconds (3 missed heartbeats)
+  @heartbeat_timeout 90_000
 
   @doc """
   Joins the agent channel.
@@ -71,10 +73,10 @@ defmodule SecretHub.WebWeb.AgentChannel do
       {:ok, auth_result} ->
         # Create or update agent record
         case Agents.bootstrap_agent(role_id, secret_id, %{
-          "name" => auth_result.role_name,
-          "ip_address" => source_ip,
-          "user_agent" => "SecretHub Agent v1.0"
-        }) do
+               "name" => auth_result.role_name,
+               "ip_address" => source_ip,
+               "user_agent" => "SecretHub Agent v1.0"
+             }) do
           {:ok, agent} ->
             socket =
               socket
@@ -87,13 +89,15 @@ defmodule SecretHub.WebWeb.AgentChannel do
 
             Logger.info("Agent authenticated: #{agent.agent_id} (#{auth_result.role_name})")
 
-            {:reply, {:ok, %{
-              status: "authenticated",
-              agent_id: agent.agent_id,
-              role_name: auth_result.role_name,
-              policies: auth_result.policies,
-              token: auth_result.token
-            }}, socket}
+            {:reply,
+             {:ok,
+              %{
+                status: "authenticated",
+                agent_id: agent.agent_id,
+                role_name: auth_result.role_name,
+                policies: auth_result.policies,
+                token: auth_result.token
+              }}, socket}
 
           {:error, reason} ->
             Logger.warning("Agent bootstrap failed: #{inspect(reason)}")
@@ -135,17 +139,19 @@ defmodule SecretHub.WebWeb.AgentChannel do
               # For now, return mock data
               Logger.info("Secret access granted: #{agent_id} -> #{secret_path}")
 
-              {:reply, {:ok, %{
-                path: secret.secret_path,
-                data: %{
-                  # TODO: Return actual decrypted secret data
-                  value: "mock_secret_value",
-                  metadata: secret.metadata
-                },
-                lease_id: Ecto.UUID.generate(),
-                lease_duration: secret.ttl_hours * 3600,
-                renewable: true
-              }}, socket}
+              {:reply,
+               {:ok,
+                %{
+                  path: secret.secret_path,
+                  data: %{
+                    # TODO: Return actual decrypted secret data
+                    value: "mock_secret_value",
+                    metadata: secret.metadata
+                  },
+                  lease_id: Ecto.UUID.generate(),
+                  lease_duration: secret.ttl_hours * 3600,
+                  renewable: true
+                }}, socket}
 
             {:error, reason} ->
               Logger.warning("Secret access denied: #{agent_id} -> #{secret_path} (#{reason})")
@@ -183,11 +189,13 @@ defmodule SecretHub.WebWeb.AgentChannel do
       # TODO: Implement lease renewal logic
       Logger.info("Lease renewal requested: #{lease_id}")
 
-      {:reply, {:ok, %{
-        lease_id: lease_id,
-        renewed: true,
-        lease_duration: 3600
-      }}, socket}
+      {:reply,
+       {:ok,
+        %{
+          lease_id: lease_id,
+          renewed: true,
+          lease_duration: 3600
+        }}, socket}
     end
   end
 

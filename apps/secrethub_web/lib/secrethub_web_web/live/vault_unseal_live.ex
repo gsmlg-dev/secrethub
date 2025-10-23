@@ -48,8 +48,8 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
             Secure Secrets Management Platform
           </p>
         </div>
-
-        <!-- Vault Status Card -->
+        
+    <!-- Vault Status Card -->
         <div class="bg-white shadow-lg rounded-lg overflow-hidden mb-6">
           <div class="px-6 py-4 border-b border-gray-200">
             <h2 class="text-xl font-semibold text-gray-800">Vault Status</h2>
@@ -64,24 +64,24 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
                 <div>
                   <p class="text-sm text-gray-500">Initialized</p>
                   <p class="font-semibold text-gray-900">
-                    <%= if @vault_status.initialized, do: "Yes", else: "No" %>
+                    {if @vault_status.initialized, do: "Yes", else: "No"}
                   </p>
                 </div>
               </div>
-
-              <!-- Sealed Status -->
+              
+    <!-- Sealed Status -->
               <div class="flex items-center space-x-3">
                 <div class={"w-3 h-3 rounded-full #{if @vault_status.sealed, do: "bg-red-500", else: "bg-green-500"}"}>
                 </div>
                 <div>
                   <p class="text-sm text-gray-500">Sealed</p>
                   <p class="font-semibold text-gray-900">
-                    <%= if @vault_status.sealed, do: "Yes", else: "No" %>
+                    {if @vault_status.sealed, do: "Yes", else: "No"}
                   </p>
                 </div>
               </div>
-
-              <!-- Progress -->
+              
+    <!-- Progress -->
               <%= if @vault_status.initialized and @vault_status.threshold do %>
                 <div class="col-span-2">
                   <p class="text-sm text-gray-500 mb-2">Unseal Progress</p>
@@ -94,7 +94,7 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
                       </div>
                     </div>
                     <span class="text-sm font-semibold text-gray-700">
-                      <%= @vault_status.progress %> / <%= @vault_status.threshold %>
+                      {@vault_status.progress} / {@vault_status.threshold}
                     </span>
                   </div>
                 </div>
@@ -102,8 +102,8 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
             </div>
           </div>
         </div>
-
-        <!-- Unseal Form (only show if vault is sealed) -->
+        
+    <!-- Unseal Form (only show if vault is sealed) -->
         <%= if @vault_status.initialized and @vault_status.sealed do %>
           <div class="bg-white shadow-lg rounded-lg overflow-hidden mb-6">
             <div class="px-6 py-4 border-b border-gray-200">
@@ -126,23 +126,23 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
                     autocomplete="off"
                   />
                   <p class="mt-2 text-sm text-gray-500">
-                    Paste one of your Shamir shares above. You need <%= @vault_status.threshold %> shares to unseal the vault.
+                    Paste one of your Shamir shares above. You need {@vault_status.threshold} shares to unseal the vault.
                   </p>
                 </div>
-
-                <!-- Error Message -->
+                
+    <!-- Error Message -->
                 <%= if @error_message do %>
                   <div class="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
                     <p class="font-medium">Error</p>
-                    <p class="text-sm"><%= @error_message %></p>
+                    <p class="text-sm">{@error_message}</p>
                   </div>
                 <% end %>
-
-                <!-- Success Message -->
+                
+    <!-- Success Message -->
                 <%= if @success_message do %>
                   <div class="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
                     <p class="font-medium">Success</p>
-                    <p class="text-sm"><%= @success_message %></p>
+                    <p class="text-sm">{@success_message}</p>
                   </div>
                 <% end %>
 
@@ -153,12 +153,12 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
                   Submit Share
                 </button>
               </form>
-
-              <!-- Submitted Shares -->
+              
+    <!-- Submitted Shares -->
               <%= if length(@shares_submitted) > 0 do %>
                 <div class="mt-6">
                   <p class="text-sm font-medium text-gray-700 mb-2">
-                    Shares Submitted: <%= length(@shares_submitted) %>
+                    Shares Submitted: {length(@shares_submitted)}
                   </p>
                   <div class="flex flex-wrap gap-2">
                     <%= for i <- 1..length(@shares_submitted) do %>
@@ -173,8 +173,8 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
             </div>
           </div>
         <% end %>
-
-        <!-- Unsealed Actions (only show if vault is unsealed) -->
+        
+    <!-- Unsealed Actions (only show if vault is unsealed) -->
         <%= if @vault_status.initialized and not @vault_status.sealed do %>
           <div class="bg-white shadow-lg rounded-lg overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200">
@@ -206,8 +206,8 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
             </div>
           </div>
         <% end %>
-
-        <!-- Not Initialized Message -->
+        
+    <!-- Not Initialized Message -->
         <%= if not @vault_status.initialized do %>
           <div class="bg-white shadow-lg rounded-lg overflow-hidden">
             <div class="px-6 py-6">
@@ -215,7 +215,9 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
                 <p class="font-medium">Vault not initialized</p>
                 <p class="text-sm mt-1">
                   The vault needs to be initialized before it can be unsealed.
-                  Use the API endpoint <code class="bg-yellow-100 px-2 py-1 rounded">POST /v1/sys/init</code> to initialize.
+                  Use the API endpoint
+                  <code class="bg-yellow-100 px-2 py-1 rounded">POST /v1/sys/init</code>
+                  to initialize.
                 </p>
               </div>
 
@@ -248,7 +250,10 @@ defmodule SecretHub.WebWeb.VaultUnsealLive do
             |> assign(:vault_status, status)
             |> assign(:share_input, "")
             |> assign(:error_message, nil)
-            |> assign(:success_message, "Share accepted! #{status.progress}/#{status.threshold} shares submitted.")
+            |> assign(
+              :success_message,
+              "Share accepted! #{status.progress}/#{status.threshold} shares submitted."
+            )
             |> assign(:shares_submitted, Enum.to_list(1..status.progress))
 
           {:noreply, socket}

@@ -80,7 +80,8 @@ defmodule SecretHub.Shared.Crypto.EncryptionTest do
     end
 
     test "rejects invalid key size" do
-      bad_key = :crypto.strong_rand_bytes(16)  # 128 bits instead of 256
+      # 128 bits instead of 256
+      bad_key = :crypto.strong_rand_bytes(16)
       plaintext = "test"
 
       assert {:error, msg} = Encryption.encrypt(plaintext, bad_key)
@@ -281,7 +282,8 @@ defmodule SecretHub.Shared.Crypto.EncryptionTest do
     test "rotation preserves plaintext exactly" do
       old_key = Encryption.generate_key()
       new_key = Encryption.generate_key()
-      plaintext = :crypto.strong_rand_bytes(1024)  # Binary data
+      # Binary data
+      plaintext = :crypto.strong_rand_bytes(1024)
 
       {:ok, blob} = Encryption.encrypt_to_blob(plaintext, old_key)
       {:ok, rotated_blob} = Encryption.rotate_encryption(blob, old_key, new_key)

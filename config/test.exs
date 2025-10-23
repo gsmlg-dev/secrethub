@@ -3,6 +3,9 @@ import Config
 # Set test environment flag
 config :secrethub_core, env: :test
 
+# Disable SealState in test mode (it tries to write to DB during init, before Sandbox is set up)
+config :secrethub_core, start_seal_state: false
+
 # Configure the database
 config :secrethub_core, SecretHub.Core.Repo,
   username: "secrethub",

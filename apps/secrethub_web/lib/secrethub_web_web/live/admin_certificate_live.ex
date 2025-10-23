@@ -15,6 +15,9 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Certificate
 
+  # Ensure Certificate schema is aliased for use in pattern matching
+  # This fixes compilation issues with struct expansion
+
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
@@ -117,25 +120,30 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
       </div>
 
       <%= if @flash["info"] do %>
-        <div class="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded" role="alert">
-          <%= @flash["info"] %>
+        <div
+          class="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded"
+          role="alert"
+        >
+          {@flash["info"]}
         </div>
       <% end %>
 
       <%= if @flash["error"] do %>
         <div class="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded" role="alert">
-          <%= @flash["error"] %>
+          {@flash["error"]}
         </div>
       <% end %>
-
-      <!-- Upload Section -->
+      
+    <!-- Upload Section -->
       <div class="mt-8 bg-white shadow sm:rounded-lg">
         <div class="px-4 py-5 sm:p-6">
           <h3 class="text-lg font-medium leading-6 text-gray-900">
             Register New Admin Certificate
           </h3>
           <div class="mt-2 max-w-xl text-sm text-gray-500">
-            <p>Upload a client certificate (.pem, .crt, or .cer file) to grant administrative access.</p>
+            <p>
+              Upload a client certificate (.pem, .crt, or .cer file) to grant administrative access.
+            </p>
           </div>
           <form phx-submit="upload_certificate" phx-change="validate_upload" class="mt-5">
             <div class="space-y-4">
@@ -188,7 +196,7 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
 
                 <%= for entry <- @uploads.certificate.entries do %>
                   <div class="mt-2 text-sm text-gray-600">
-                    Selected: <%= entry.client_name %>
+                    Selected: {entry.client_name}
                   </div>
                 <% end %>
               </div>
@@ -206,8 +214,8 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
           </form>
         </div>
       </div>
-
-      <!-- Certificates List -->
+      
+    <!-- Certificates List -->
       <div class="mt-8 flex flex-col">
         <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
           <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
@@ -215,7 +223,10 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
               <table class="min-w-full divide-y divide-gray-300">
                 <thead class="bg-gray-50">
                   <tr>
-                    <th scope="col" class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+                    <th
+                      scope="col"
+                      class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
+                    >
                       Common Name
                     </th>
                     <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -236,13 +247,13 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
                   <%= for cert <- @certificates do %>
                     <tr>
                       <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                        <%= cert.common_name %>
+                        {cert.common_name}
                       </td>
                       <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <%= cert.subject %>
+                        {cert.subject}
                       </td>
                       <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <%= format_datetime(cert.valid_until) %>
+                        {format_datetime(cert.valid_until)}
                       </td>
                       <td class="whitespace-nowrap px-3 py-4 text-sm">
                         <%= if cert.revoked do %>
@@ -288,8 +299,8 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
           </div>
         </div>
       </div>
-
-      <!-- Certificate Details Modal -->
+      
+    <!-- Certificate Details Modal -->
       <%= if @selected_cert do %>
         <div class="fixed z-10 inset-0 overflow-y-auto" role="dialog">
           <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
@@ -305,27 +316,35 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
                     <dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
                       <div class="sm:col-span-2">
                         <dt class="text-sm font-medium text-gray-500">Common Name</dt>
-                        <dd class="mt-1 text-sm text-gray-900"><%= @selected_cert.common_name %></dd>
+                        <dd class="mt-1 text-sm text-gray-900">{@selected_cert.common_name}</dd>
                       </div>
                       <div class="sm:col-span-2">
                         <dt class="text-sm font-medium text-gray-500">Subject</dt>
-                        <dd class="mt-1 text-sm text-gray-900 break-all"><%= @selected_cert.subject %></dd>
+                        <dd class="mt-1 text-sm text-gray-900 break-all">{@selected_cert.subject}</dd>
                       </div>
                       <div class="sm:col-span-2">
                         <dt class="text-sm font-medium text-gray-500">Fingerprint</dt>
-                        <dd class="mt-1 text-sm text-gray-900 font-mono break-all"><%= @selected_cert.fingerprint %></dd>
+                        <dd class="mt-1 text-sm text-gray-900 font-mono break-all">
+                          {@selected_cert.fingerprint}
+                        </dd>
                       </div>
                       <div>
                         <dt class="text-sm font-medium text-gray-500">Valid From</dt>
-                        <dd class="mt-1 text-sm text-gray-900"><%= format_datetime(@selected_cert.valid_from) %></dd>
+                        <dd class="mt-1 text-sm text-gray-900">
+                          {format_datetime(@selected_cert.valid_from)}
+                        </dd>
                       </div>
                       <div>
                         <dt class="text-sm font-medium text-gray-500">Valid Until</dt>
-                        <dd class="mt-1 text-sm text-gray-900"><%= format_datetime(@selected_cert.valid_until) %></dd>
+                        <dd class="mt-1 text-sm text-gray-900">
+                          {format_datetime(@selected_cert.valid_until)}
+                        </dd>
                       </div>
                       <div class="sm:col-span-2">
                         <dt class="text-sm font-medium text-gray-500">Serial Number</dt>
-                        <dd class="mt-1 text-sm text-gray-900 font-mono"><%= @selected_cert.serial_number %></dd>
+                        <dd class="mt-1 text-sm text-gray-900 font-mono">
+                          {@selected_cert.serial_number}
+                        </dd>
                       </div>
                     </dl>
                   </div>
@@ -405,16 +424,17 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
       # Extract certificate information
       {:Certificate, _tbs_cert, _sig_alg, _signature} = cert
 
-      {:ok, %{
-        serial_number: extract_serial_number(cert),
-        fingerprint: calculate_fingerprint(pem_data),
-        subject: extract_subject(cert),
-        issuer: extract_issuer(cert),
-        common_name: extract_common_name(cert),
-        organization: extract_organization(cert),
-        valid_from: extract_valid_from(cert),
-        valid_until: extract_valid_until(cert)
-      }}
+      {:ok,
+       %{
+         serial_number: extract_serial_number(cert),
+         fingerprint: calculate_fingerprint(pem_data),
+         subject: extract_subject(cert),
+         issuer: extract_issuer(cert),
+         common_name: extract_common_name(cert),
+         organization: extract_organization(cert),
+         valid_from: extract_valid_from(cert),
+         valid_until: extract_valid_until(cert)
+       }}
     rescue
       e ->
         Logger.error("Failed to parse certificate: #{inspect(e)}")
@@ -456,6 +476,7 @@ defmodule SecretHub.WebWeb.AdminCertificateLive do
   end
 
   defp format_datetime(nil), do: "N/A"
+
   defp format_datetime(datetime) do
     Calendar.strftime(datetime, "%Y-%m-%d %H:%M:%S UTC")
   end

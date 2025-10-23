@@ -153,14 +153,19 @@ defmodule SecretHub.WebWeb.AuditLogLive do
             phx-click="export_logs"
           >
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
             </svg>
             Export Logs
           </button>
         </div>
       </div>
-
-      <!-- Filters -->
+      
+    <!-- Filters -->
       <div class="bg-white p-6 rounded-lg shadow">
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-lg font-medium text-gray-900">Filters</h3>
@@ -183,7 +188,7 @@ defmodule SecretHub.WebWeb.AuditLogLive do
                     value={type}
                     selected={@filters.event_type == type}
                   >
-                    <%= format_event_type(type) %>
+                    {format_event_type(type)}
                   </option>
                 <% end %>
               </select>
@@ -254,14 +259,13 @@ defmodule SecretHub.WebWeb.AuditLogLive do
           </div>
         </form>
       </div>
-
-      <!-- Results Summary -->
+      
+    <!-- Results Summary -->
       <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <div class="flex items-center justify-between">
           <div>
             <span class="text-sm font-medium text-blue-800">
-              Showing <%= length(current_page_logs(@audit_logs, @pagination.page, @pagination.per_page)) %> of
-              <%= @pagination.total_count %> audit events
+              Showing {length(current_page_logs(@audit_logs, @pagination.page, @pagination.per_page))} of {@pagination.total_count} audit events
             </span>
           </div>
           <%= if @pagination.total_pages > 1 do %>
@@ -274,7 +278,7 @@ defmodule SecretHub.WebWeb.AuditLogLive do
                     phx-click="page_change"
                     phx-value-page={page}
                   >
-                    <%= page %>
+                    {page}
                   </button>
                 <% end %>
               </div>
@@ -282,8 +286,8 @@ defmodule SecretHub.WebWeb.AuditLogLive do
           <% end %>
         </div>
       </div>
-
-      <!-- Audit Log Table -->
+      
+    <!-- Audit Log Table -->
       <div class="bg-white rounded-lg shadow">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
@@ -317,38 +321,41 @@ defmodule SecretHub.WebWeb.AuditLogLive do
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <%= for event <- current_page_logs(@audit_logs, @pagination.page, @pagination.per_page) do %>
-                <tr class="hover:bg-gray-50 transition-colors cursor-pointer"
-                    phx-click="select_event"
-                    phx-value-id={event.id}>
+                <tr
+                  class="hover:bg-gray-50 transition-colors cursor-pointer"
+                  phx-click="select_event"
+                  phx-value-id={event.id}
+                >
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <%= format_timestamp(event.timestamp) %>
+                    {format_timestamp(event.timestamp)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{event_type_badge_color(event.event_type)}"}>
-                      <%= format_event_type(event.event_type) %>
+                      {format_event_type(event.event_type)}
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <%= event.agent_id %>
+                    {event.agent_id}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <code class="text-sm bg-gray-100 px-1 py-0.5 rounded">
-                      <%= event.secret_path || "-" %>
+                      {event.secret_path || "-"}
                     </code>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
-                      <div class={"w-2 h-2 rounded-full mr-2 #{access_status_color(event.access_granted)}"}></div>
+                      <div class={"w-2 h-2 rounded-full mr-2 #{access_status_color(event.access_granted)}"}>
+                      </div>
                       <span class="text-sm">
-                        <%= if event.access_granted, do: "Granted", else: "Denied" %>
+                        {if event.access_granted, do: "Granted", else: "Denied"}
                       </span>
                     </div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <%= event.source_ip %>
+                    {event.source_ip}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <%= event.response_time_ms %>ms
+                    {event.response_time_ms}ms
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button class="text-indigo-600 hover:text-indigo-900">
@@ -361,8 +368,8 @@ defmodule SecretHub.WebWeb.AuditLogLive do
           </table>
         </div>
       </div>
-
-      <!-- Event Details Modal -->
+      
+    <!-- Event Details Modal -->
       <%= if @selected_event do %>
         <.live_component
           module={SecretHub.WebWeb.AuditEventDetailsComponent}
@@ -429,7 +436,17 @@ defmodule SecretHub.WebWeb.AuditLogLive do
 
   defp fetch_event_types do
     # TODO: Replace with actual event types from audit system
-    ["secret_access", "secret_access_denied", "agent_connect", "agent_disconnect", "secret_created", "secret_updated", "secret_deleted", "policy_created", "policy_updated"]
+    [
+      "secret_access",
+      "secret_access_denied",
+      "agent_connect",
+      "agent_disconnect",
+      "secret_created",
+      "secret_updated",
+      "secret_deleted",
+      "policy_created",
+      "policy_updated"
+    ]
   end
 
   defp fetch_filtered_audit_logs(_filters) do

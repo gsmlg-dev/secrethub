@@ -94,13 +94,18 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
           <div class="flex items-center">
             <div class="flex-shrink-0 p-3 bg-blue-100 rounded-lg">
               <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                />
               </svg>
             </div>
             <div class="ml-5 w-0 flex-1">
               <dl>
                 <dt class="text-sm font-medium text-gray-500 truncate">Total Secrets</dt>
-                <dd class="text-lg font-medium text-gray-900"><%= @system_stats.total_secrets %></dd>
+                <dd class="text-lg font-medium text-gray-900">{@system_stats.total_secrets}</dd>
               </dl>
             </div>
           </div>
@@ -109,14 +114,24 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
         <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
           <div class="flex items-center">
             <div class="flex-shrink-0 p-3 bg-green-100 rounded-lg">
-              <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+              <svg
+                class="w-6 h-6 text-green-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                />
               </svg>
             </div>
             <div class="ml-5 w-0 flex-1">
               <dl>
                 <dt class="text-sm font-medium text-gray-500 truncate">Active Agents</dt>
-                <dd class="text-lg font-medium text-gray-900"><%= @system_stats.active_agents %></dd>
+                <dd class="text-lg font-medium text-gray-900">{@system_stats.active_agents}</dd>
               </dl>
             </div>
           </div>
@@ -125,14 +140,26 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
         <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
           <div class="flex items-center">
             <div class="flex-shrink-0 p-3 bg-purple-100 rounded-lg">
-              <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              <svg
+                class="w-6 h-6 text-purple-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
               </svg>
             </div>
             <div class="ml-5 w-0 flex-1">
               <dl>
                 <dt class="text-sm font-medium text-gray-500 truncate">System Uptime</dt>
-                <dd class="text-lg font-medium text-gray-900"><%= format_uptime(@system_stats.uptime_hours) %></dd>
+                <dd class="text-lg font-medium text-gray-900">
+                  {format_uptime(@system_stats.uptime_hours)}
+                </dd>
               </dl>
             </div>
           </div>
@@ -141,25 +168,40 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
         <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
           <div class="flex items-center">
             <div class="flex-shrink-0 p-3 bg-yellow-100 rounded-lg">
-              <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+              <svg
+                class="w-6 h-6 text-yellow-600"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                />
               </svg>
             </div>
             <div class="ml-5 w-0 flex-1">
               <dl>
                 <dt class="text-sm font-medium text-gray-500 truncate">Storage Used</dt>
-                <dd class="text-lg font-medium text-gray-900"><%= Float.round(@system_stats.storage_used_gb, 2) %> GB</dd>
+                <dd class="text-lg font-medium text-gray-900">
+                  {Float.round(@system_stats.storage_used_gb, 2)} GB
+                </dd>
               </dl>
             </div>
           </div>
         </div>
       </div>
-
-      <!-- Connected Agents Section -->
+      
+    <!-- Connected Agents Section -->
       <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-lg font-semibold text-gray-900">Connected Agents</h3>
-          <.link navigate={"/admin/agents"} class="text-blue-600 hover:text-blue-800 text-sm font-medium">
+          <.link
+            navigate="/admin/agents"
+            class="text-blue-600 hover:text-blue-800 text-sm font-medium"
+          >
             View All →
           </.link>
         </div>
@@ -167,11 +209,21 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Agent</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Seen</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Agent
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Last Seen
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  IP Address
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
@@ -180,19 +232,19 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
                       <div class={"w-2 h-2 rounded-full mr-2 #{status_color(agent.status)}"}></div>
-                      <div class="text-sm font-medium text-gray-900"><%= agent.name %></div>
+                      <div class="text-sm font-medium text-gray-900">{agent.name}</div>
                     </div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <span class={"inline-flex px-2 py-1 text-xs font-semibold rounded-full #{status_badge_color(agent.status)}"}>
-                      <%= String.upcase(Atom.to_string(agent.status)) %>
+                      {String.upcase(Atom.to_string(agent.status))}
                     </span>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <%= format_timestamp(agent.last_seen) %>
+                    {format_timestamp(agent.last_seen)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    <%= agent.ip_address %>
+                    {agent.ip_address}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button
@@ -210,15 +262,25 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
           </table>
         </div>
       </div>
-
-      <!-- Quick Actions -->
+      
+    <!-- Quick Actions -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold text-gray-900">Maintenance</h3>
             <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
             </svg>
           </div>
           <div class="space-y-3">
@@ -243,14 +305,19 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold text-gray-900">Data Management</h3>
             <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+              />
             </svg>
           </div>
           <div class="space-y-3">
-            <.link navigate={"/admin/secrets"} class="block w-full text-center btn-secondary">
+            <.link navigate="/admin/secrets" class="block w-full text-center btn-secondary">
               Manage Secrets
             </.link>
-            <.link navigate={"/admin/audit"} class="block w-full text-center btn-secondary">
+            <.link navigate="/admin/audit" class="block w-full text-center btn-secondary">
               View Audit Logs
             </.link>
           </div>
@@ -260,21 +327,26 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-lg font-semibold text-gray-900">Quick Links</h3>
             <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+              />
             </svg>
           </div>
           <div class="space-y-2 text-sm">
             <div class="flex justify-between">
               <span class="text-gray-500">Static Secrets:</span>
-              <span class="font-medium"><%= @system_stats.static_secrets %></span>
+              <span class="font-medium">{@system_stats.static_secrets}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-500">Dynamic Secrets:</span>
-              <span class="font-medium"><%= @system_stats.dynamic_secrets %></span>
+              <span class="font-medium">{@system_stats.dynamic_secrets}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-500">Last Rotation:</span>
-              <span class="font-medium"><%= @system_stats.last_rotation %></span>
+              <span class="font-medium">{@system_stats.last_rotation}</span>
             </div>
           </div>
         </div>
@@ -355,6 +427,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   defp status_badge_color(:error), do: "bg-red-100 text-red-800"
 
   defp format_timestamp(nil), do: "Never"
+
   defp format_timestamp(datetime) do
     DateTime.diff(DateTime.utc_now(), datetime, :second)
     |> format_relative_time()

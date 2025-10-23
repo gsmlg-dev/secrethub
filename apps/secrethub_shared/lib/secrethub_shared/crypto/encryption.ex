@@ -15,16 +15,19 @@ defmodule SecretHub.Shared.Crypto.Encryption do
   """
 
   @aad "SecretHub-v1"
-  @nonce_size 12  # 96 bits for GCM
-  @tag_size 16    # 128 bits
-  @key_size 32    # 256 bits
+  # 96 bits for GCM
+  @nonce_size 12
+  # 128 bits
+  @tag_size 16
+  # 256 bits
+  @key_size 32
 
   @type encrypted_data :: %{
-    ciphertext: binary(),
-    nonce: binary(),
-    tag: binary(),
-    version: integer()
-  }
+          ciphertext: binary(),
+          nonce: binary(),
+          tag: binary(),
+          version: integer()
+        }
 
   @doc """
   Encrypts data using AES-256-GCM with the provided encryption key.
@@ -45,21 +48,24 @@ defmodule SecretHub.Shared.Crypto.Encryption do
       nonce = :crypto.strong_rand_bytes(@nonce_size)
 
       # Perform AES-256-GCM encryption
-      {ciphertext, tag} = :crypto.crypto_one_time_aead(
-        :aes_256_gcm,
-        encryption_key,
-        nonce,
-        plaintext,
-        @aad,
-        true  # encrypt
-      )
+      {ciphertext, tag} =
+        :crypto.crypto_one_time_aead(
+          :aes_256_gcm,
+          encryption_key,
+          nonce,
+          plaintext,
+          @aad,
+          # encrypt
+          true
+        )
 
-      {:ok, %{
-        ciphertext: ciphertext,
-        nonce: nonce,
-        tag: tag,
-        version: 1
-      }}
+      {:ok,
+       %{
+         ciphertext: ciphertext,
+         nonce: nonce,
+         tag: tag,
+         version: 1
+       }}
     rescue
       error ->
         {:error, "Encryption failed: #{inspect(error)}"}
@@ -89,14 +95,15 @@ defmodule SecretHub.Shared.Crypto.Encryption do
     try do
       # Perform AES-256-GCM decryption with tag verification
       case :crypto.crypto_one_time_aead(
-        :aes_256_gcm,
-        encryption_key,
-        nonce,
-        ciphertext,
-        @aad,
-        tag,
-        false  # decrypt
-      ) do
+             :aes_256_gcm,
+             encryption_key,
+             nonce,
+             ciphertext,
+             @aad,
+             tag,
+             # decrypt
+             false
+           ) do
         :error ->
           {:error, "Decryption failed: authentication tag verification failed"}
 
@@ -159,7 +166,8 @@ defmodule SecretHub.Shared.Crypto.Encryption do
   """
   @spec encode_encrypted_blob(encrypted_data()) :: binary()
   def encode_encrypted_blob(%{version: version, nonce: nonce, tag: tag, ciphertext: ciphertext}) do
-    <<version::8, nonce::binary-size(@nonce_size), tag::binary-size(@tag_size), ciphertext::binary>>
+    <<version::8, nonce::binary-size(@nonce_size), tag::binary-size(@tag_size),
+      ciphertext::binary>>
   end
 
   @doc """
@@ -175,13 +183,17 @@ defmodule SecretHub.Shared.Crypto.Encryption do
       1
   """
   @spec decode_encrypted_blob(binary()) :: {:ok, encrypted_data()} | {:error, String.t()}
-  def decode_encrypted_blob(<<version::8, nonce::binary-size(@nonce_size), tag::binary-size(@tag_size), ciphertext::binary>>) do
-    {:ok, %{
-      version: version,
-      nonce: nonce,
-      tag: tag,
-      ciphertext: ciphertext
-    }}
+  def decode_encrypted_blob(
+        <<version::8, nonce::binary-size(@nonce_size), tag::binary-size(@tag_size),
+          ciphertext::binary>>
+      ) do
+    {:ok,
+     %{
+       version: version,
+       nonce: nonce,
+       tag: tag,
+       ciphertext: ciphertext
+     }}
   end
 
   def decode_encrypted_blob(_invalid_blob) do

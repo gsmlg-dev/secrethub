@@ -27,8 +27,10 @@ defmodule SecretHub.Core.Auth.AppRole do
   alias SecretHub.Shared.Schemas.{Role, AuditLog}
   alias SecretHub.Shared.Crypto.Encryption
 
-  @secret_id_ttl_default 600  # 10 minutes in seconds
-  @max_secret_id_uses 1  # Single-use by default
+  # 10 minutes in seconds
+  @secret_id_ttl_default 600
+  # Single-use by default
+  @max_secret_id_uses 1
 
   @doc """
   Creates a new AppRole with generated RoleID and SecretID.
@@ -49,8 +51,8 @@ defmodule SecretHub.Core.Auth.AppRole do
       {:ok, %{role_id: "uuid", secret_id: "uuid", role_name: "production-app"}}
   """
   @spec create_role(String.t(), keyword()) ::
-    {:ok, %{role_id: String.t(), secret_id: String.t(), role_name: String.t()}} |
-    {:error, String.t()}
+          {:ok, %{role_id: String.t(), secret_id: String.t(), role_name: String.t()}}
+          | {:error, String.t()}
   def create_role(role_name, opts \\ []) do
     policies = Keyword.get(opts, :policies, [])
     secret_id_ttl = Keyword.get(opts, :secret_id_ttl, @secret_id_ttl_default)
@@ -86,11 +88,12 @@ defmodule SecretHub.Core.Auth.AppRole do
         Logger.info("Created AppRole: #{role_name} (RoleID: #{role_id})")
         audit_event("approle_created", role_id, %{role_name: role_name})
 
-        {:ok, %{
-          role_id: role_id,
-          secret_id: secret_id,
-          role_name: role_name
-        }}
+        {:ok,
+         %{
+           role_id: role_id,
+           secret_id: secret_id,
+           role_name: role_name
+         }}
 
       {:error, changeset} ->
         {:error, "Failed to create role: #{inspect(changeset.errors)}"}
@@ -108,12 +111,16 @@ defmodule SecretHub.Core.Auth.AppRole do
       {:ok, %{token: "token", policies: ["secret-read"]}}
   """
   @spec login(String.t(), String.t(), String.t()) ::
-    {:ok, %{token: String.t(), policies: list(), role_name: String.t()}} |
-    {:error, String.t()}
+          {:ok, %{token: String.t(), policies: list(), role_name: String.t()}}
+          | {:error, String.t()}
   def login(role_id, secret_id, source_ip \\ "unknown") do
     case Repo.get_by(Role, role_id: role_id, auth_type: "approle") do
       nil ->
-        audit_event("approle_login_failed", role_id, %{reason: "role_not_found", source_ip: source_ip})
+        audit_event("approle_login_failed", role_id, %{
+          reason: "role_not_found",
+          source_ip: source_ip
+        })
+
         {:error, "Invalid credentials"}
 
       role ->
@@ -134,22 +141,25 @@ defmodule SecretHub.Core.Auth.AppRole do
             policies = Map.get(role.metadata, "policies", [])
 
             Logger.info("AppRole login successful: #{role.role_name}")
+
             audit_event("approle_login_success", role_id, %{
               role_name: role.role_name,
               source_ip: source_ip
             })
 
-            {:ok, %{
-              token: token,
-              policies: policies,
-              role_name: role.role_name
-            }}
+            {:ok,
+             %{
+               token: token,
+               policies: policies,
+               role_name: role.role_name
+             }}
 
           {:error, reason} ->
             audit_event("approle_login_failed", role_id, %{
               reason: reason,
               source_ip: source_ip
             })
+
             {:error, "Invalid credentials"}
         end
     end
@@ -256,16 +266,17 @@ defmodule SecretHub.Core.Auth.AppRole do
         {:error, "Role not found"}
 
       role ->
-        {:ok, %{
-          role_id: role.role_id,
-          role_name: role.role_name,
-          policies: Map.get(role.metadata, "policies", []),
-          secret_id_ttl: Map.get(role.metadata, "secret_id_ttl"),
-          secret_id_num_uses: Map.get(role.metadata, "secret_id_num_uses"),
-          secret_id_uses: Map.get(role.metadata, "secret_id_uses", 0),
-          bound_cidr_list: Map.get(role.metadata, "bound_cidr_list", []),
-          created_at: role.inserted_at
-        }}
+        {:ok,
+         %{
+           role_id: role.role_id,
+           role_name: role.role_name,
+           policies: Map.get(role.metadata, "policies", []),
+           secret_id_ttl: Map.get(role.metadata, "secret_id_ttl"),
+           secret_id_num_uses: Map.get(role.metadata, "secret_id_num_uses"),
+           secret_id_uses: Map.get(role.metadata, "secret_id_uses", 0),
+           bound_cidr_list: Map.get(role.metadata, "bound_cidr_list", []),
+           created_at: role.inserted_at
+         }}
     end
   end
 
