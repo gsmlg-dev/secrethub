@@ -40,7 +40,7 @@ defmodule SecretHub.Core.Policies do
   require Logger
   import Ecto.Query
 
-  alias SecretHub.Core.Repo
+  alias SecretHub.Core.{Repo, Audit}
   alias SecretHub.Shared.Schemas.{Policy, Secret, Agent}
 
   @doc """
@@ -72,6 +72,20 @@ defmodule SecretHub.Core.Policies do
     |> case do
       {:ok, policy} = result ->
         Logger.info("Policy created", policy_id: policy.id, policy_name: policy.name)
+
+        # Audit log the policy creation
+        Audit.log_event(%{
+          event_type: "policy.created",
+          actor_type: "admin",
+          actor_id: Map.get(attrs, :created_by, "system"),
+          event_data: %{
+            policy_id: policy.id,
+            policy_name: policy.name,
+            deny_policy: policy.deny_policy || false,
+            entity_bindings_count: length(policy.entity_bindings || [])
+          }
+        })
+
         result
 
       {:error, changeset} = error ->
@@ -118,6 +132,18 @@ defmodule SecretHub.Core.Policies do
         |> case do
           {:ok, policy} = result ->
             Logger.info("Policy deleted", policy_id: policy.id)
+
+            # Audit log the policy deletion
+            Audit.log_event(%{
+              event_type: "policy.deleted",
+              actor_type: "admin",
+              actor_id: "system",
+              event_data: %{
+                policy_id: policy.id,
+                policy_name: policy.name
+              }
+            })
+
             result
 
           error ->

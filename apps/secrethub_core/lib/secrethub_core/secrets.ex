@@ -20,7 +20,7 @@ defmodule SecretHub.Core.Secrets do
   import Ecto.Query
 
   alias Ecto.{Changeset, Multi}
-  alias SecretHub.Core.{Repo, Policies}
+  alias SecretHub.Core.{Repo, Policies, Audit}
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Schemas.{Secret, Policy, AuditLog}
   alias SecretHub.Shared.Crypto.Encryption
@@ -178,23 +178,68 @@ defmodule SecretHub.Core.Secrets do
   @spec get_secret_for_entity(String.t(), String.t(), map()) ::
           {:ok, map()} | {:error, term()}
   def get_secret_for_entity(entity_id, secret_path, context \\ %{}) do
-    with {:ok, _policy} <- Policies.evaluate_access(entity_id, secret_path, "read", context),
+    start_time = System.monotonic_time(:millisecond)
+
+    with {:ok, policy} <- Policies.evaluate_access(entity_id, secret_path, "read", context),
          {:ok, secret} <- get_secret_by_path(secret_path),
          {:ok, master_key} <- SealState.get_master_key(),
          {:ok, decrypted_data} <- decrypt_secret_data(secret.encrypted_data, master_key) do
+      response_time = System.monotonic_time(:millisecond) - start_time
+
       Logger.info("Secret accessed",
         entity_id: entity_id,
         secret_path: secret_path
       )
 
+      # Log successful access to audit log
+      Audit.log_event(%{
+        event_type: "secret.accessed",
+        actor_type: determine_actor_type(entity_id),
+        actor_id: entity_id,
+        secret_id: secret.id,
+        secret_version: 1,
+        secret_type: to_string(secret.secret_type),
+        access_granted: true,
+        policy_matched: policy.name,
+        source_ip: Map.get(context, :ip_address),
+        hostname: Map.get(context, :hostname),
+        kubernetes_namespace: Map.get(context, :k8s_namespace),
+        kubernetes_pod: Map.get(context, :k8s_pod),
+        response_time_ms: response_time,
+        correlation_id: Map.get(context, :correlation_id),
+        event_data: %{
+          secret_path: secret_path,
+          ttl_hours: secret.ttl_hours
+        }
+      })
+
       {:ok, decrypted_data}
     else
       {:error, reason} = error ->
+        response_time = System.monotonic_time(:millisecond) - start_time
+
         Logger.warning("Secret access denied",
           entity_id: entity_id,
           secret_path: secret_path,
           reason: inspect(reason)
         )
+
+        # Log access denial to audit log
+        Audit.log_event(%{
+          event_type: "secret.access_denied",
+          actor_type: determine_actor_type(entity_id),
+          actor_id: entity_id,
+          access_granted: false,
+          denial_reason: inspect(reason),
+          source_ip: Map.get(context, :ip_address),
+          hostname: Map.get(context, :hostname),
+          response_time_ms: response_time,
+          correlation_id: Map.get(context, :correlation_id),
+          event_data: %{
+            secret_path: secret_path,
+            reason: inspect(reason)
+          }
+        })
 
         error
     end
@@ -241,5 +286,14 @@ defmodule SecretHub.Core.Secrets do
 
   defp decrypt_secret_data(nil, _master_key) do
     {:ok, %{}}
+  end
+
+  defp determine_actor_type(entity_id) do
+    cond do
+      String.starts_with?(entity_id, "agent-") -> "agent"
+      String.starts_with?(entity_id, "app-") -> "app"
+      String.starts_with?(entity_id, "admin-") -> "admin"
+      true -> "unknown"
+    end
   end
 end

@@ -6,6 +6,8 @@ defmodule SecretHub.WebWeb.AuditLogLive do
   use SecretHub.WebWeb, :live_view
   require Logger
 
+  alias SecretHub.Core.Audit
+
   @impl true
   def mount(_params, _session, socket) do
     audit_logs = fetch_audit_logs()
@@ -74,9 +76,18 @@ defmodule SecretHub.WebWeb.AuditLogLive do
   def handle_event("export_logs", _params, socket) do
     Logger.info("Exporting audit logs with filters: #{inspect(socket.assigns.filters)}")
 
-    # TODO: Call SecretHub.Core.Audit.export_logs(socket.assigns.filters)
+    filters = build_audit_filters(socket.assigns.filters)
+    csv_content = Audit.export_to_csv(filters)
 
-    socket = put_flash(socket, :info, "Export started - you will receive the file via email")
+    # Return CSV as download
+    socket =
+      socket
+      |> put_flash(:info, "Audit logs exported successfully")
+      |> push_event("download", %{
+        filename: "audit_logs_#{DateTime.utc_now() |> DateTime.to_unix()}.csv",
+        content: csv_content
+      })
+
     {:noreply, socket}
   end
 
