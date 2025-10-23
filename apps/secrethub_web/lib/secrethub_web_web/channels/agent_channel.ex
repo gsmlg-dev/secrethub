@@ -132,22 +132,16 @@ defmodule SecretHub.WebWeb.AgentChannel do
           {:reply, {:error, %{reason: "secret_not_found", path: secret_path}}, socket}
 
         secret ->
-          # Check agent access via policies
-          case Agents.check_secret_access(agent_id, secret) do
-            :ok ->
-              # TODO: Decrypt secret value using unsealed master key
-              # For now, return mock data
+          # Check agent access via policies and get decrypted secret
+          case Secrets.get_secret_for_entity(agent_id, secret_path, %{}) do
+            {:ok, secret_data} ->
               Logger.info("Secret access granted: #{agent_id} -> #{secret_path}")
 
               {:reply,
                {:ok,
                 %{
                   path: secret.secret_path,
-                  data: %{
-                    # TODO: Return actual decrypted secret data
-                    value: "mock_secret_value",
-                    metadata: secret.metadata
-                  },
+                  data: secret_data,
                   lease_id: Ecto.UUID.generate(),
                   lease_duration: secret.ttl_hours * 3600,
                   renewable: true
