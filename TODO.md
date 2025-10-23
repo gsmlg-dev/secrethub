@@ -14,7 +14,7 @@
 ### Phase 1: Foundation & MVP (Weeks 1-12)
 - **Week 1**: 🟢 Completed (100% complete)
 - **Week 2-3**: 🟢 Completed (93% complete - 14/15 tasks done, 1 optional remaining)
-- **Week 4-5**: 🟢 Mostly Complete (83% complete - PKI backend & mTLS done, UI remaining)
+- **Week 4-5**: 🟢 Completed (100% complete - PKI backend, mTLS & UI all done)
 - **Week 6-7**: 🟢 Completed (100% complete)
 - **Week 8-9**: 🟢 Completed (100% complete)
 - **Week 10-11**: 🟢 Completed (100% complete)
@@ -161,7 +161,7 @@
 
 ## 📅 Week 4-5: PKI Engine - Certificate Authority
 
-**Status:** 🟢 Completed (83% complete - 5/6 core tasks done, UI remaining)
+**Status:** 🟢 Completed (100% complete - All tasks done)
 
 ### Engineer 1 (Core Lead) - PKI Backend Tasks
 - [x] Implement Root CA generation
@@ -202,12 +202,12 @@
   - [x] CA chain retrieval for client verification
 
 ### Engineer 3 (Full-stack) - PKI UI Tasks
-- [ ] Build PKI management UI
-  - [ ] CA generation interface
-  - [ ] Certificate viewer component
-  - [ ] CA hierarchy visualization
-  - [ ] Certificate search/filter
-  - [ ] Certificate revocation interface
+- [x] Build PKI management UI
+  - [x] CA generation interface
+  - [x] Certificate viewer component
+  - [x] CA hierarchy visualization
+  - [x] Certificate search/filter
+  - [x] Certificate revocation interface
 
 **Details:** See PLAN.md lines 98-131
 
@@ -526,6 +526,25 @@
   - Agent connection logic was already complete
   - Added missing AppRole management UI
   - Added comprehensive deployment documentation
+
+### 2025-10-23 (Late Evening Session)
+- ✅ **Week 4-5 PKI Management UI Complete!** (Final Engineer 3 task)
+- ✅ PKI Management LiveView (`apps/secrethub_web/lib/secrethub_web_web/live/pki_management_live.ex`, 700+ lines)
+  - Comprehensive certificate lifecycle management interface
+  - CA generation forms (Root and Intermediate CA with validation)
+  - Certificate viewer with PEM display in monospace
+  - Search by common name or serial number
+  - Filter by certificate type (all, root_ca, intermediate_ca, agent_client, app_client, admin_client)
+  - Certificate revocation for non-CA certificates
+  - Statistics dashboard (total, active, revoked, CAs count)
+  - Real-time updates with Phoenix LiveView
+- ✅ Router configuration: Added `/admin/pki` route
+- ✅ Fixed compilation errors in existing files:
+  - Added `import Ecto.Query` to VerifyClientCertificate plug
+  - Added `import Ecto.Query` to AppRoleManagementLive
+  - Fixed unused variable warnings in agent_channel.ex
+- 📝 **Week 4-5 Status:** 100% Complete (all backend, mTLS, and UI tasks done)
+- 📝 **Next Steps:** Week 12 - MVP Integration & Testing
 
 ### 2025-10-23 (Evening Session)
 - ✅ **Week 10-11 Implementation Complete!** (All tasks)
