@@ -824,4 +824,35 @@ defmodule SecretHub.Core.PKI.CA do
   defp get_key_usage(:root_ca), do: ["keyCertSign", "cRLSign"]
   defp get_key_usage(:intermediate_ca), do: ["keyCertSign", "cRLSign"]
   defp get_key_usage(_), do: ["digitalSignature", "keyEncipherment"]
+
+  @doc """
+  Get the CA certificate chain (root + intermediates) for client verification.
+
+  Returns the certificate chain in PEM format, suitable for client mTLS connections.
+
+  ## Returns
+
+  - `{:ok, ca_chain_pem}` - CA chain as PEM string
+  - `{:error, reason}` - Failed to retrieve CA chain
+  """
+  @spec get_ca_chain() :: {:ok, String.t()} | {:error, term()}
+  def get_ca_chain do
+    # Query all CA certificates (root and intermediate) ordered by hierarchy
+    query =
+      from(c in Certificate,
+        where: c.cert_type in [:root_ca, :intermediate_ca] and c.revoked == false,
+        order_by: [desc: c.cert_type, asc: c.inserted_at],
+        select: c.certificate_pem
+      )
+
+    case Repo.all(query) do
+      [] ->
+        {:error, "No CA certificates found"}
+
+      certs when is_list(certs) ->
+        # Concatenate all CA certificates into a chain
+        ca_chain = Enum.join(certs, "\n")
+        {:ok, ca_chain}
+    end
+  end
 end

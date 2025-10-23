@@ -200,6 +200,43 @@ defmodule SecretHub.WebWeb.AgentChannel do
   end
 
   @doc """
+  Handles CSR submission from agents during bootstrap.
+
+  Agents submit CSR after authenticating with AppRole to receive a client certificate.
+  """
+  def handle_in("certificate:request", %{"csr" => csr_pem}, socket) do
+    unless socket.assigns.authenticated do
+      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
+    else
+      agent_id = socket.assigns.agent_id
+
+      Logger.info("Agent #{agent_id} requesting certificate signing")
+
+      # Sign CSR using PKI backend
+      case sign_agent_csr(csr_pem, agent_id) do
+        {:ok, signed_cert, ca_chain} ->
+          Logger.info("Certificate issued for agent: #{agent_id}")
+
+          {:reply,
+           {:ok,
+            %{
+              certificate: signed_cert,
+              ca_chain: ca_chain,
+              valid_until: extract_validity(signed_cert)
+            }}, socket}
+
+        {:error, reason} ->
+          Logger.error("Failed to sign CSR for agent #{agent_id}: #{inspect(reason)}")
+          {:reply, {:error, %{reason: "certificate_signing_failed"}}, socket}
+      end
+    end
+  end
+
+  def handle_in("certificate:request", _payload, socket) do
+    {:reply, {:error, %{reason: "invalid_csr_payload"}}, socket}
+  end
+
+  @doc """
   Handles unknown messages.
   """
   def handle_in(event, payload, socket) do
@@ -266,5 +303,50 @@ defmodule SecretHub.WebWeb.AgentChannel do
     # Query secrets by path
     secrets = Secrets.list_secrets()
     Enum.find(secrets, fn secret -> secret.secret_path == secret_path end)
+  end
+
+  defp sign_agent_csr(csr_pem, agent_id) do
+    # Call PKI backend to sign CSR
+    alias SecretHub.Core.PKI.CA
+
+    # Find or load agent entity to link certificate
+    case Agents.get_agent_by_id(agent_id) do
+      nil ->
+        {:error, "Agent not found"}
+
+      agent ->
+        # Sign CSR for agent_client certificate
+        case CA.sign_csr(csr_pem,
+               cert_type: :agent_client,
+               entity_id: agent.id,
+               entity_type: "agent",
+               common_name: agent_id,
+               organization: "SecretHub Agents",
+               ttl_days: 90
+             ) do
+          {:ok, certificate} ->
+            # Get CA chain for client verification
+            case CA.get_ca_chain() do
+              {:ok, ca_chain} ->
+                {:ok, certificate.certificate_pem, ca_chain}
+
+              {:error, reason} ->
+                Logger.error("Failed to retrieve CA chain: #{inspect(reason)}")
+                {:error, reason}
+            end
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+    end
+  end
+
+  defp extract_validity(cert_pem) do
+    # Parse certificate and extract expiration date
+    # TODO: Implement actual certificate parsing
+    # For now, return 90 days from now
+    DateTime.utc_now()
+    |> DateTime.add(90 * 24 * 3600, :second)
+    |> DateTime.to_iso8601()
   end
 end

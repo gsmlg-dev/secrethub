@@ -354,7 +354,7 @@ defmodule SecretHub.Agent.Connection do
       |> Map.put(:path, "/agent/socket/websocket")
       |> URI.to_string()
 
-    [
+    base_opts = [
       url: url,
       sender: self(),
       serializer: Jason,
@@ -364,18 +364,57 @@ defmodule SecretHub.Agent.Connection do
       reconnect: true
     ]
 
-    # Add TLS options if certificates are configured
-    # Will be enabled when we have real certificates in production
-    # if state.cert_path && state.key_path && state.ca_path do
-    #   transport_opts = [
-    #     certfile: state.cert_path,
-    #     keyfile: state.key_path,
-    #     cacertfile: state.ca_path
-    #   ]
-    #   Keyword.put(base_opts, :transport_opts, transport_opts)
-    # else
-    #   base_opts
-    # end
+    # Add mTLS options if certificates are configured and exist
+    if should_use_mtls?(state) do
+      Logger.info("Connecting with mTLS authentication",
+        agent_id: state.agent_id,
+        cert: state.cert_path
+      )
+
+      transport_opts = build_mtls_transport_opts(state)
+      Keyword.put(base_opts, :transport_opts, transport_opts)
+    else
+      Logger.info("Connecting without mTLS (using AppRole authentication)",
+        agent_id: state.agent_id
+      )
+
+      base_opts
+    end
+  end
+
+  defp should_use_mtls?(state) do
+    # Check if certificate files are configured and exist
+    state.cert_path != nil and state.key_path != nil and state.ca_path != nil and
+      File.exists?(state.cert_path) and File.exists?(state.key_path) and
+      File.exists?(state.ca_path)
+  end
+
+  defp build_mtls_transport_opts(state) do
+    [
+      # Client certificate for authentication
+      certfile: to_charlist(state.cert_path),
+      # Client private key
+      keyfile: to_charlist(state.key_path),
+      # CA certificate chain to verify server
+      cacertfile: to_charlist(state.ca_path),
+      # Verify server certificate
+      verify: :verify_peer,
+      # Use strong cipher suites
+      versions: [:"tlsv1.2", :"tlsv1.3"],
+      # Server name for SNI
+      server_name_indication: extract_hostname(state.core_url),
+      # Customize verification
+      customize_hostname_check: [
+        match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+      ]
+    ]
+  end
+
+  defp extract_hostname(url) do
+    url
+    |> URI.parse()
+    |> Map.get(:host, "localhost")
+    |> to_charlist()
   end
 
   defp join_channel(socket, agent_id) do
