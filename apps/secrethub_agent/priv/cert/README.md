@@ -1,1 +1,0 @@
-# Mock certificates directory

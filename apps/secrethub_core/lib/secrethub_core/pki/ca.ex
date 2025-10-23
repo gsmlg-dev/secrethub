@@ -23,6 +23,7 @@ defmodule SecretHub.Core.PKI.CA do
   """
 
   require Logger
+  import Ecto.Query
 
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Certificate

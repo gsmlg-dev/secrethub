@@ -42,7 +42,7 @@ defmodule SecretHub.Core.Audit do
       # Verify audit log integrity
       case Audit.verify_chain() do
         {:ok, :valid} -> IO.puts("Audit log integrity verified")
-        {:error, reason} -> IO.puts("Integrity check failed: #{reason}")
+        {:error, reason} -> IO.puts("Integrity check failed: \#{reason}")
       end
 
       # Search audit logs

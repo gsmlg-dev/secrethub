@@ -506,4 +506,53 @@ defmodule SecretHub.WebWeb.AuditLogLive do
 
   defp access_status_color(true), do: "bg-green-500"
   defp access_status_color(false), do: "bg-red-500"
+
+  defp build_audit_filters(ui_filters) do
+    # Convert UI filter format to Audit module format
+    filters = %{}
+
+    filters =
+      if ui_filters.event_type != "all" do
+        Map.put(filters, :event_type, ui_filters.event_type)
+      else
+        filters
+      end
+
+    filters =
+      if ui_filters.agent_id != "" do
+        Map.put(filters, :actor_id, ui_filters.agent_id)
+      else
+        filters
+      end
+
+    filters =
+      if ui_filters.access_granted != "all" do
+        access_val = ui_filters.access_granted == "granted"
+        Map.put(filters, :access_granted, access_val)
+      else
+        filters
+      end
+
+    filters =
+      if ui_filters.date_from != "" do
+        case DateTime.from_iso8601(ui_filters.date_from <> "T00:00:00Z") do
+          {:ok, dt, _} -> Map.put(filters, :from_date, dt)
+          _ -> filters
+        end
+      else
+        filters
+      end
+
+    filters =
+      if ui_filters.date_to != "" do
+        case DateTime.from_iso8601(ui_filters.date_to <> "T23:59:59Z") do
+          {:ok, dt, _} -> Map.put(filters, :to_date, dt)
+          _ -> filters
+        end
+      else
+        filters
+      end
+
+    filters
+  end
 end
