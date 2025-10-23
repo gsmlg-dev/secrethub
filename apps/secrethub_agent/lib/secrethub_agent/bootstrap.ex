@@ -64,8 +64,6 @@ defmodule SecretHub.Agent.Bootstrap do
 
   require Logger
 
-  alias SecretHub.Agent.Connection
-
   @cert_dir "priv/cert"
   @cert_file "#{@cert_dir}/agent-cert.pem"
   @key_file "#{@cert_dir}/agent-key.pem"
@@ -332,8 +330,8 @@ defmodule SecretHub.Agent.Bootstrap do
 
       Logger.info("Certificate successfully obtained from Core", agent_id: agent_id)
 
-      # Disconnect temporary connection
-      PhoenixClient.Socket.disconnect(socket)
+      # Socket will be garbage collected
+      _ = socket
 
       {:ok, signed_cert, ca_chain}
     else
@@ -355,8 +353,8 @@ defmodule SecretHub.Agent.Bootstrap do
 
       Logger.info("Certificate successfully renewed", agent_id: agent_id)
 
-      # Disconnect temporary connection
-      PhoenixClient.Socket.disconnect(socket)
+      # Socket will be garbage collected
+      _ = socket
 
       {:ok, signed_cert, ca_chain}
     else
@@ -568,7 +566,7 @@ defmodule SecretHub.Agent.Bootstrap do
     end
   end
 
-  defp days_until_expiry(cert_text) do
+  defp days_until_expiry(_cert_text) do
     # TODO: Parse dates and calculate actual days
     # For now return a placeholder
     30

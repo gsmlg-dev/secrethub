@@ -16,7 +16,7 @@
 - **Week 2-3**: 🟢 Completed (93% complete - 14/15 tasks done, 1 optional remaining)
 - **Week 4-5**: 🟢 Mostly Complete (83% complete - PKI backend & mTLS done, UI remaining)
 - **Week 6-7**: 🟢 Completed (100% complete)
-- **Week 8-9**: ⚪ Not Started
+- **Week 8-9**: 🟢 Completed (100% complete)
 - **Week 10-11**: ⚪ Not Started
 - **Week 12**: ⚪ Not Started
 
@@ -252,14 +252,61 @@
 
 ## 📅 Week 8-9: Static Secrets & Basic Policy Engine
 
-**Status:** ⚪ Not Started
+**Status:** 🟢 Completed (100% complete)
 
 ### High-Level Goals
-- [ ] Static secret engine implementation
-- [ ] Basic policy evaluation logic
-- [ ] Agent secret request handler
-- [ ] Secret management UI (CRUD)
-- [ ] Policy editor component
+- [x] Static secret engine implementation
+- [x] Basic policy evaluation logic
+- [x] Agent secret request handler
+- [x] Secret management UI (CRUD)
+- [x] Policy editor component
+
+### Engineer 1 (Core Lead) - Secret & Policy Tasks
+- [x] Implement Policy management module
+  - [x] Policy CRUD operations
+  - [x] Wildcard pattern matching for secret paths (glob-style)
+  - [x] Access control evaluation with entity binding
+  - [x] Conditional policy evaluation (IP ranges, time windows, max TTL)
+  - [x] Support for both allow and deny policies
+- [x] Enhance Secrets module with encryption & policy integration
+  - [x] AES-256-GCM encryption using vault master key
+  - [x] `get_secret_for_entity/3` with integrated policy evaluation
+  - [x] Automatic encryption on secret creation
+  - [x] Decryption with policy-based access control
+  - [x] Policy binding to secrets
+
+### Engineer 2 (Agent/Infra Lead) - Agent Caching
+- [x] Implement Agent secret caching mechanism
+  - [x] GenServer-based in-memory cache with TTL
+  - [x] Automatic cache expiration and cleanup (60s interval)
+  - [x] Cache hit/miss metrics tracking with ETS
+  - [x] Fallback mode for stale cache when Core unavailable
+  - [x] LRU eviction when max cache size reached
+
+### Engineer 3 (Full-stack) - UI Tasks
+- [x] Enhance Secret Management UI
+  - [x] Integrate real Secrets.list_secrets() instead of mock data
+  - [x] Integrate real Policies.list_policies()
+  - [x] Implement delete_secret with error handling
+  - [x] Display secret metadata (type, status, rotation info)
+  - [x] Policy bindings display
+- [x] Create Policy Management UI
+  - [x] Comprehensive policy editor with JSON validation
+  - [x] Secret pattern management (add/remove patterns)
+  - [x] Operation toggles (read, write, delete, renew)
+  - [x] Entity binding management
+  - [x] Policy testing interface
+  - [x] Visual policy document editor
+  - [x] Support for allow/deny policies
+
+### Deliverables
+- ✅ Backend: Policy evaluation engine with wildcard matching
+- ✅ Backend: Secret encryption with vault master key
+- ✅ Agent: Local secret caching with TTL and fallback mode
+- ✅ AgentChannel: Policy-aware secret retrieval
+- ✅ UI: Enhanced secret management with real data integration
+- ✅ UI: Comprehensive policy editor with validation
+- ✅ Router: `/admin/policies` route added
 
 **Details:** See PLAN.md lines 169-201
 
@@ -447,9 +494,62 @@
   - Agent connection logic was already complete
   - Added missing AppRole management UI
   - Added comprehensive deployment documentation
+
+### 2025-10-23 (Afternoon Session 3)
+- ✅ **Week 8-9 Implementation Complete!** (All tasks)
+- ✅ Policy Management Module (`apps/secrethub_core/lib/secrethub_core/policies.ex`, 400+ lines)
+  - Policy CRUD operations (create, update, delete, get)
+  - `evaluate_access/4` for policy-based authorization
+  - Wildcard pattern matching for secret paths (glob-style: `*.password`, `prod.db.*`)
+  - Conditional evaluation (IP ranges, time windows, max TTL)
+  - Support for both allow and deny policies
+  - Entity binding management
+  - Policy statistics
+- ✅ Enhanced Secrets Module (`apps/secrethub_core/lib/secrethub_core/secrets.ex`)
+  - AES-256-GCM encryption using vault master key from SealState
+  - `get_secret_for_entity/3` with integrated policy evaluation
+  - Automatic encryption on secret creation
+  - Decryption with policy-based access control
+  - `bind_policy_to_secret/2` for secret-policy associations
+  - Secret statistics (total, static, dynamic counts)
+- ✅ Agent Secret Caching (`apps/secrethub_agent/lib/secrethub_agent/cache.ex`, 300+ lines)
+  - GenServer-based in-memory cache with TTL
+  - Automatic cache expiration and cleanup (60s interval)
+  - Cache hit/miss metrics tracking with ETS tables
+  - Fallback mode for stale cache when Core unavailable
+  - LRU eviction when max cache size reached
+  - Configurable TTL, max size, and fallback settings
+- ✅ Enhanced Secret Management UI (`apps/secrethub_web/lib/secrethub_web_web/live/secret_management_live.ex`)
+  - Integrated real `Secrets.list_secrets()` instead of mock data
+  - Integrated real `Policies.list_policies()`
+  - Implemented `delete_secret` with proper error handling
+  - Display secret metadata (type, status, rotation info)
+  - Show policy bindings per secret
+  - Dynamic secret status calculation
+  - Next rotation calculation based on last rotation + period
+- ✅ Policy Management UI (`apps/secrethub_web/lib/secrethub_web_web/live/policy_management_live.ex`, 900+ lines)
+  - Comprehensive policy editor with JSON validation
+  - Visual editor for secret patterns (add/remove)
+  - Operation toggles (read, write, delete, renew)
+  - Entity binding management with agent selection
+  - Policy testing interface (test access for entity/secret/operation)
+  - Live JSON policy document editing
+  - Support for allow/deny policies with visual indicators
+  - Validation errors display
+  - Modal form for create/edit
+- ✅ Router configuration
+  - Added `/admin/policies` route for policy management
+- ✅ Updated AgentChannel
+  - Integrated `Secrets.get_secret_for_entity` for policy-aware secret retrieval
+  - Enhanced logging for access grants/denials
+  - Improved error handling for secret requests
+- 📝 **Week 8-9 Status:** 100% Complete
+  - Backend foundation for policy-based secret management complete
+  - Agent caching layer ready for production
+  - UI provides full secret and policy management capabilities
 - 📝 **Next Steps:**
   - Build PKI management UI (Engineer 3 - Week 4-5 final task)
-  - Move to Week 8-9: Static Secrets & Basic Policy Engine
+  - Move to Week 10-11: Basic Audit Logging
 
 ### Architecture Decisions
 - Using Elixir umbrella project structure

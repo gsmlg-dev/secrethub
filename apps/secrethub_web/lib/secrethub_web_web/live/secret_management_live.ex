@@ -6,6 +6,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   use SecretHub.WebWeb, :live_view
   require Logger
   alias SecretHub.Shared.Schemas.Secret
+  alias SecretHub.Core.{Secrets, Policies}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -76,17 +77,25 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   def handle_event("delete_secret", %{"id" => secret_id}, socket) do
     Logger.info("Deleting secret: #{secret_id}")
 
-    # TODO: Call SecretHub.Core.Secrets.delete_secret(secret_id)
+    case Secrets.delete_secret(secret_id) do
+      {:ok, _deleted_secret} ->
+        secrets = fetch_secrets()
 
-    secrets = fetch_secrets()
+        socket =
+          socket
+          |> assign(:secrets, secrets)
+          |> put_flash(:info, "Secret deleted successfully")
+          |> push_patch(to: "/admin/secrets")
 
-    socket =
-      socket
-      |> assign(:secrets, secrets)
-      |> put_flash(:info, "Secret deleted successfully")
-      |> push_patch(to: "/admin/secrets")
+        {:noreply, socket}
 
-    {:noreply, socket}
+      {:error, reason} ->
+        socket =
+          socket
+          |> put_flash(:error, "Failed to delete secret: #{inspect(reason)}")
+
+        {:noreply, socket}
+    end
   end
 
   @impl true
@@ -454,45 +463,39 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   end
 
   defp fetch_secrets do
-    # TODO: Replace with actual SecretHub.Core.Secrets.list_secrets()
-    [
-      %{
-        id: "1",
-        name: "Production Database",
-        description: "Main PostgreSQL database credentials",
-        path: "prod/db/postgres",
-        engine_type: "postgresql",
-        type: :dynamic,
-        status: "active",
-        last_rotation: DateTime.utc_now() |> DateTime.add(-86400, :second),
-        next_rotation: DateTime.utc_now() |> DateTime.add(604_800, :second),
-        policies: ["webapp-access", "backend-access"]
-      },
-      %{
-        id: "2",
-        name: "Redis Cache",
-        description: "Redis connection credentials",
-        path: "prod/cache/redis",
-        engine_type: "redis",
-        type: :dynamic,
-        status: "active",
-        last_rotation: DateTime.utc_now() |> DateTime.add(-43200, :second),
-        next_rotation: DateTime.utc_now() |> DateTime.add(259_200, :second),
-        policies: ["cache-access"]
-      },
-      %{
-        id: "3",
-        name: "AWS Access Key",
-        description: "Static AWS IAM credentials",
-        path: "prod/aws/credentials",
-        engine_type: "aws",
-        type: :static,
-        status: "rotating",
-        last_rotation: DateTime.utc_now() |> DateTime.add(-1_209_600, :second),
-        next_rotation: DateTime.utc_now() |> DateTime.add(86400, :second),
-        policies: ["s3-access", "ec2-access"]
-      }
-    ]
+    Secrets.list_secrets()
+    |> Enum.map(&format_secret_for_display/1)
+  end
+
+  defp format_secret_for_display(secret) do
+    %{
+      id: secret.id,
+      name: secret.name,
+      description: secret.description,
+      path: secret.secret_path,
+      engine_type: secret.engine_type || "static",
+      type: secret.secret_type,
+      status: determine_secret_status(secret),
+      last_rotation: secret.last_rotated_at,
+      next_rotation: calculate_next_rotation(secret),
+      policies: Enum.map(secret.policies || [], & &1.name)
+    }
+  end
+
+  defp determine_secret_status(secret) do
+    cond do
+      secret.rotation_in_progress -> "rotating"
+      secret.rotation_enabled -> "active"
+      true -> "inactive"
+    end
+  end
+
+  defp calculate_next_rotation(secret) do
+    if secret.rotation_enabled && secret.last_rotated_at do
+      DateTime.add(secret.last_rotated_at, secret.rotation_period_hours * 3600, :second)
+    else
+      nil
+    end
   end
 
   defp fetch_secret_engines do
@@ -507,14 +510,8 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   end
 
   defp fetch_policies do
-    # TODO: Replace with actual SecretHub.Core.Policies.list_policies()
-    [
-      %{id: "webapp-access", name: "Web Application Access"},
-      %{id: "backend-access", name: "Backend Service Access"},
-      %{id: "cache-access", name: "Cache Access"},
-      %{id: "s3-access", name: "S3 Bucket Access"},
-      %{id: "ec2-access", name: "EC2 Instance Access"}
-    ]
+    Policies.list_policies()
+    |> Enum.map(&%{id: &1.id, name: &1.name})
   end
 
   defp filtered_secrets(secrets, "all", ""), do: secrets
