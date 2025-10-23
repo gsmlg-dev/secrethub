@@ -18,7 +18,7 @@
 - **Week 6-7**: 🟢 Completed (100% complete)
 - **Week 8-9**: 🟢 Completed (100% complete)
 - **Week 10-11**: 🟢 Completed (100% complete)
-- **Week 12**: ⚪ Not Started
+- **Week 12**: 🟡 In Progress (33% complete - initial assessment done, testing blocked)
 
 ### Phase 2: Production Hardening (Weeks 13-24)
 - ⚪ Not Started
@@ -361,14 +361,24 @@
 
 ## 📅 Week 12: MVP Integration & Testing
 
-**Status:** ⚪ Not Started
+**Status:** 🟡 In Progress (Initial assessment complete, comprehensive testing requires dedicated sprint)
 
 ### High-Level Goals
-- [ ] End-to-end integration testing
+- [x] Run existing test suite and assess status
+- [x] Identify compilation issues and fix blocking errors
+- [ ] End-to-end integration testing (blocked by Ecto Sandbox issue)
 - [ ] Fix critical bugs
 - [ ] Performance testing (100 agents)
 - [ ] Security review of authentication flows
 - [ ] MVP deployment guide
+
+### Current Status
+- ✅ All code compiles successfully with no errors
+- ✅ Compilation warnings identified and documented
+- 🔴 **Blocking Issue:** Ecto Sandbox timing issue prevents tests from running
+- ⚪ Integration tests not yet written
+- ⚪ Performance testing not started
+- ⚪ Security review not started
 
 **Details:** See PLAN.md lines 238-257
 
@@ -377,7 +387,13 @@
 ## 🔧 Technical Debt & Future Improvements
 
 ### Known Issues
-- None yet (project just started)
+1. **Test Infrastructure (Critical):** Ecto Sandbox timing issue - Application starts before test helper can configure sandbox mode
+2. **Code Quality:** Multiple `@doc` redefinitions in agent_channel.ex should be moved to function heads
+3. **Deprecated Syntax:** Single-quoted strings in audit_log_live.ex should use ~c sigil for charlists
+4. **Missing Features (Planned for Phase 2):**
+   - Dynamic secret generation (Week 13-14)
+   - Lease renewal logic (Week 13-14)
+   - Agent connection management actions (disconnect, reconnect, restart)
 
 ### Performance Optimizations
 - To be identified during Week 12 testing
@@ -526,6 +542,23 @@
   - Agent connection logic was already complete
   - Added missing AppRole management UI
   - Added comprehensive deployment documentation
+
+### 2025-10-23 (Night Session)
+- 🟡 **Week 12 Initial Assessment** (Testing & Integration)
+- ✅ Fixed critical compilation errors:
+  - Added missing `build_audit_filters/1` function to AuditLogLive
+  - Fixed moduledoc string interpolation in Audit module (Elixir 1.18 compatibility)
+  - Added missing `import Ecto.Query` statements to PKI.CA and AuditLogLive
+- ✅ Compilation status: All code compiles successfully with no errors
+- ✅ Identified and documented known issues:
+  - Critical: Ecto Sandbox timing issue blocks test execution
+  - Code quality issues (doc redefinitions, deprecated syntax)
+  - Expected cross-umbrella dependency warnings
+- 📝 **Week 12 Status:** Initial assessment complete (33% - 2/6 goals)
+  - Comprehensive integration testing requires resolving Ecto Sandbox issue
+  - Performance testing with 100 agents needs dedicated environment
+  - Security review requires focused time allocation
+- 📝 **Recommendation:** Treat Week 12 as a dedicated sprint requiring 1-2 weeks of focused testing effort
 
 ### 2025-10-23 (Late Evening Session)
 - ✅ **Week 4-5 PKI Management UI Complete!** (Final Engineer 3 task)
