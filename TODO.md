@@ -18,7 +18,7 @@
 - **Week 6-7**: 🟢 Completed (100% complete)
 - **Week 8-9**: 🟢 Completed (100% complete)
 - **Week 10-11**: 🟢 Completed (100% complete)
-- **Week 12**: 🟡 In Progress (33% complete - initial assessment done, testing blocked)
+- **Week 12**: 🟡 In Progress (50% complete - assessment & deployment guide done, testing blocked)
 
 ### Phase 2: Production Hardening (Weeks 13-24)
 - ⚪ Not Started
@@ -366,15 +366,16 @@
 ### High-Level Goals
 - [x] Run existing test suite and assess status
 - [x] Identify compilation issues and fix blocking errors
+- [x] MVP deployment guide
 - [ ] End-to-end integration testing (blocked by Ecto Sandbox issue)
 - [ ] Fix critical bugs
 - [ ] Performance testing (100 agents)
 - [ ] Security review of authentication flows
-- [ ] MVP deployment guide
 
 ### Current Status
 - ✅ All code compiles successfully with no errors
 - ✅ Compilation warnings identified and documented
+- ✅ MVP deployment guide created with comprehensive instructions
 - 🔴 **Blocking Issue:** Ecto Sandbox timing issue prevents tests from running
 - ⚪ Integration tests not yet written
 - ⚪ Performance testing not started
@@ -543,7 +544,19 @@
   - Added missing AppRole management UI
   - Added comprehensive deployment documentation
 
-### 2025-10-23 (Night Session)
+### 2025-10-23 (Night Session - Part 2)
+- ✅ **MVP Deployment Guide Created** (`docs/deployment/mvp-deployment-guide.md`, 800+ lines)
+  - Comprehensive deployment instructions for Docker Compose and Kubernetes
+  - Step-by-step initial configuration (vault, PKI, AppRoles, policies, secrets)
+  - Agent deployment instructions for multiple methods
+  - Verification procedures and health checks
+  - Troubleshooting guide with common issues and solutions
+  - Security considerations and MVP limitations
+  - Full Docker Compose configuration example
+- 📝 **Week 12 Status:** 50% complete (3/6 goals)
+  - Remaining: Fix Ecto Sandbox, integration tests, performance testing, security review
+
+### 2025-10-23 (Night Session - Part 1)
 - 🟡 **Week 12 Initial Assessment** (Testing & Integration)
 - ✅ Fixed critical compilation errors:
   - Added missing `build_audit_filters/1` function to AuditLogLive
