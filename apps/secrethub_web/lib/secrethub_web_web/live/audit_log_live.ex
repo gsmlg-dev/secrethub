@@ -285,7 +285,7 @@ defmodule SecretHub.WebWeb.AuditLogLive do
               <div class="flex space-x-1">
                 <%= for page <- 1..@pagination.total_pages do %>
                   <button
-                    class={"px-3 py-1 text-sm rounded #{if page == @pagination.page, do: 'bg-blue-600 text-white', else: 'bg-white text-blue-600 border border-blue-300 hover:bg-blue-50'}"}
+                    class={"px-3 py-1 text-sm rounded #{if page == @pagination.page, do: "bg-blue-600 text-white", else: "bg-white text-blue-600 border border-blue-300 hover:bg-blue-50"}"}
                     phx-click="page_change"
                     phx-value-page={page}
                   >

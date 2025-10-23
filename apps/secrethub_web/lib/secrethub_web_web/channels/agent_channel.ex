@@ -66,6 +66,8 @@ defmodule SecretHub.WebWeb.AgentChannel do
 
   Supports both AppRole (RoleID/SecretID) and certificate-based authentication.
   """
+  def handle_in(event, payload, socket)
+
   def handle_in("authenticate", %{"role_id" => role_id, "secret_id" => secret_id}, socket) do
     source_ip = get_source_ip(socket)
 
@@ -114,9 +116,7 @@ defmodule SecretHub.WebWeb.AgentChannel do
     {:reply, {:error, %{reason: "invalid_authentication_payload"}}, socket}
   end
 
-  @doc """
-  Handles secret request messages from authenticated agents.
-  """
+  # Handles secret request messages from authenticated agents.
   def handle_in("secret:request", %{"path" => secret_path}, socket) do
     unless socket.assigns.authenticated do
       {:reply, {:error, %{reason: "not_authenticated"}}, socket}
@@ -155,9 +155,7 @@ defmodule SecretHub.WebWeb.AgentChannel do
     end
   end
 
-  @doc """
-  Handles heartbeat messages to keep connection alive.
-  """
+  # Handles heartbeat messages to keep connection alive.
   def handle_in("heartbeat", _payload, socket) do
     unless socket.assigns.authenticated do
       {:reply, {:error, %{reason: "not_authenticated"}}, socket}
@@ -173,9 +171,7 @@ defmodule SecretHub.WebWeb.AgentChannel do
     end
   end
 
-  @doc """
-  Handles lease renewal requests.
-  """
+  # Handles lease renewal requests.
   def handle_in("secret:renew", %{"lease_id" => lease_id}, socket) do
     unless socket.assigns.authenticated do
       {:reply, {:error, %{reason: "not_authenticated"}}, socket}
@@ -193,11 +189,8 @@ defmodule SecretHub.WebWeb.AgentChannel do
     end
   end
 
-  @doc """
-  Handles CSR submission from agents during bootstrap.
-
-  Agents submit CSR after authenticating with AppRole to receive a client certificate.
-  """
+  # Handles CSR submission from agents during bootstrap.
+  # Agents submit CSR after authenticating with AppRole to receive a client certificate.
   def handle_in("certificate:request", %{"csr" => csr_pem}, socket) do
     unless socket.assigns.authenticated do
       {:reply, {:error, %{reason: "not_authenticated"}}, socket}

@@ -5,14 +5,20 @@ defmodule SecretHub.Core.Application do
 
   @impl true
   def start(_type, _args) do
-    children =
-      [
-        # Start the Ecto repository
-        SecretHub.Core.Repo
-      ] ++ seal_state_children()
+    children = repo_children() ++ seal_state_children()
 
     opts = [strategy: :one_for_one, name: SecretHub.Core.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # Conditionally start Repo based on environment
+  # In test mode, Repo is started manually after Sandbox configuration
+  defp repo_children do
+    if Application.get_env(:secrethub_core, :env) == :test do
+      []
+    else
+      [SecretHub.Core.Repo]
+    end
   end
 
   # Only start SealState in non-test environments (it tries to write to DB on init)
