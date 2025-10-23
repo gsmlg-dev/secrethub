@@ -63,6 +63,7 @@ defmodule SecretHub.WebWeb.Router do
     live "/secrets", SecretManagementLive, :index
     live "/audit", AuditLogLive, :index
     live "/certificates", AdminCertificateLive, :index
+    live "/approles", AppRoleManagementLive, :index
 
     delete "/logout", AdminAuthController, :logout
   end

@@ -15,7 +15,7 @@
 - **Week 1**: 🟢 Completed (100% complete)
 - **Week 2-3**: 🟢 Completed (93% complete - 14/15 tasks done, 1 optional remaining)
 - **Week 4-5**: 🟢 Mostly Complete (83% complete - PKI backend & mTLS done, UI remaining)
-- **Week 6-7**: ⚪ Not Started
+- **Week 6-7**: 🟢 Completed (100% complete)
 - **Week 8-9**: ⚪ Not Started
 - **Week 10-11**: ⚪ Not Started
 - **Week 12**: ⚪ Not Started
@@ -215,13 +215,36 @@
 
 ## 📅 Week 6-7: Agent Bootstrap & Basic Functionality
 
-**Status:** ⚪ Not Started
+**Status:** 🟢 Completed (100% complete)
 
-### High-Level Goals
-- [ ] Implement AppRole authentication backend
-- [ ] Agent can bootstrap with AppRole
-- [ ] Agent maintains persistent WebSocket connection
-- [ ] Web UI shows connected agents
+### Engineer 1 (Core Lead) - Authentication Tasks
+- [x] Implement AppRole authentication backend
+- [x] Create RoleID/SecretID generation
+- [x] Build token-based authentication
+- [x] API: POST /v1/auth/bootstrap/approle (via AppRole module)
+- [x] Write authentication integration tests
+
+### Engineer 2 (Agent/Infra Lead) - Agent Tasks
+- [x] Implement Agent bootstrap flow
+- [x] Build persistent WebSocket connection manager
+- [x] Create reconnection logic with exponential backoff
+- [x] Implement heartbeat mechanism
+- [x] Build GenServer state machine for connection
+- [x] Write Agent unit tests
+
+### Engineer 3 (Full-stack) - UI & Documentation Tasks
+- [x] Create AppRole management UI
+- [x] Build role creation form
+- [x] Add RoleID/SecretID display (one-time view)
+- [x] Implement Agent connection status dashboard
+- [x] Documentation: Agent deployment guide
+
+### Deliverables
+- ✅ Agent can bootstrap with AppRole
+- ✅ Agent maintains persistent WebSocket connection
+- ✅ Web UI shows connected agents
+- ✅ AppRole management interface for admins
+- ✅ Comprehensive agent deployment guide
 
 **Details:** See PLAN.md lines 134-166
 
@@ -364,7 +387,7 @@
   - OpenSSL-based CSR generation for reliable test data
   - Removed debug logging from application.ex
 
-### 2025-10-23 (Afternoon)
+### 2025-10-23 (Afternoon Session 1)
 - ✅ **Week 4-5 mTLS Implementation Complete!** (Engineer 2 tasks)
 - ✅ Agent Bootstrap module (`apps/secrethub_agent/lib/secrethub_agent/bootstrap.ex`)
   - CSR generation with OpenSSL (RSA-2048)
@@ -396,9 +419,37 @@
   - Bootstrap module tests (basic structure)
   - Certificate verification plug tests (basic structure)
   - Tests marked as TODO for full implementation with real certificates
+
+### 2025-10-23 (Afternoon Session 2)
+- ✅ **Week 6-7 Implementation Complete!** (All tasks)
+- ✅ AppRole Management UI (`apps/secrethub_web/lib/secrethub_web_web/live/approle_management_live.ex`)
+  - Create new AppRoles with policies
+  - One-time display of RoleID/SecretID after creation
+  - Generate additional SecretIDs for existing roles
+  - View role details (policies, metadata, creation date)
+  - Delete AppRoles
+  - List all AppRoles with filtering
+  - Responsive UI with Tailwind CSS
+- ✅ Router configuration
+  - Added `/admin/approles` route for AppRole management
+  - Protected by admin authentication
+- ✅ Agent Deployment Guide (`docs/deployment/agent-deployment-guide.md`)
+  - Comprehensive deployment options (Docker, Kubernetes, Systemd)
+  - Configuration examples for all deployment methods
+  - Bootstrap process walkthrough
+  - Certificate management documentation
+  - Troubleshooting guide
+  - Security best practices
+  - Production deployment checklist
+  - Monitoring and observability setup
+- 📝 **Week 6-7 Status:** 100% Complete
+  - AppRole backend was already complete from Week 2-3
+  - Agent connection logic was already complete
+  - Added missing AppRole management UI
+  - Added comprehensive deployment documentation
 - 📝 **Next Steps:**
   - Build PKI management UI (Engineer 3 - Week 4-5 final task)
-  - Move to Week 6-7: Agent Bootstrap & Basic Functionality
+  - Move to Week 8-9: Static Secrets & Basic Policy Engine
 
 ### Architecture Decisions
 - Using Elixir umbrella project structure
