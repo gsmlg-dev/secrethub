@@ -67,6 +67,7 @@ mix format              # Format code
 mix credo --strict      # Run linter
 mix dialyzer            # Static analysis
 quality                 # Run all quality checks (format, credo, dialyzer)
+./scripts/quality-check.sh  # Run all CI checks locally (format, compile, credo, dialyzer, tests)
 ```
 
 **Database Migrations:**
@@ -226,6 +227,60 @@ devenv automatically manages these services:
 - **PostgreSQL 16**: `localhost:5432` (databases: `secrethub_dev`, `secrethub_test`)
 - **Redis**: `localhost:6379` (caching and sessions)
 - **Prometheus**: `localhost:9090` (metrics collection)
+
+## CI/CD and GitHub Actions
+
+The project uses GitHub Actions for continuous integration and testing. See `.github/workflows/` for workflow definitions.
+
+### Workflows
+
+**CI Workflow** (`ci.yml`) - Runs on every push:
+- Compiles code with `--warnings-as-errors`
+- Runs Credo strict mode linting
+- Runs Dialyzer static analysis
+- Uses caching for dependencies and PLT
+
+**Test Workflow** (`test.yml`) - Runs on push to main/develop and PRs:
+- Sets up PostgreSQL 16 and Redis 7 services
+- Runs full test suite with `mix test`
+- Generates coverage reports
+- Uploads coverage artifacts
+
+**Format Check** (`format-check.yml`) - Runs on every push and PR:
+- Checks code formatting with `mix format --check-formatted`
+
+### Local CI Checks
+
+Before pushing code, run all CI checks locally:
+
+```bash
+# Run all quality checks (same as CI)
+./scripts/quality-check.sh
+
+# Skip tests for faster feedback
+SKIP_TESTS=1 ./scripts/quality-check.sh
+
+# Individual checks
+mix format --check-formatted  # Format check
+mix compile --warnings-as-errors  # Compilation
+mix credo --strict  # Linting
+mix dialyzer  # Static analysis
+mix test  # Tests
+```
+
+### CI Environment
+
+GitHub Actions runs with:
+- **Elixir**: 1.18
+- **OTP**: 28
+- **PostgreSQL**: 16 (service container)
+- **Redis**: 7 (service container)
+
+All workflows use caching to speed up builds:
+- Dependencies cache (keyed by `mix.lock`)
+- Dialyzer PLT cache (keyed by `mix.lock`)
+
+See `.github/workflows/README.md` for detailed CI/CD documentation.
 
 ## Deployment
 
