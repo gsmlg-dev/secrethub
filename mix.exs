@@ -51,8 +51,10 @@ defmodule SecretHub.MixProject do
       "test.watch": ["test.watch --stale"],
 
       # Code quality
-      quality: ["format", "credo --strict", "dialyzer"],
-      lint: ["credo --strict", "dialyzer"],
+      quality: ["format", "cmd mix lint"],
+      lint: ["cmd mix lint"],
+      credo: ["cmd mix credo --strict"],
+      dialyzer: ["cmd mix dialyzer"],
 
       # Database
       "ecto.setup": ["ecto.create", "ecto.migrate", "run apps/secrethub_core/priv/repo/seeds.exs"],
