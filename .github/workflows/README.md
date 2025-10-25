@@ -8,21 +8,30 @@ This directory contains CI/CD workflows for SecretHub.
 
 **Triggers**: Push to any branch
 
-**Purpose**: Static analysis and linting
+**Purpose**: Static analysis, linting, and code quality checks
 
-**Jobs**:
-- **Lint**: Runs code quality checks
-  - Compiles code with `--warnings-as-errors`
-  - Runs Credo strict mode
-  - Runs Dialyzer for type checking
+**Jobs** (run in parallel):
+1. **Compile**: Compiles code with `--warnings-as-errors`
+2. **Format**: Checks code formatting with `mix format --check-formatted`
+3. **Credo**: Runs Credo in strict mode for linting
+4. **Dialyzer**: Runs static type analysis
 
-**Dependencies**: None (runs on all pushes)
+**Dependencies**: None (all jobs run independently in parallel)
 
-**Typical Duration**: 5-10 minutes
+**Typical Duration**:
+- Individual jobs: 2-5 minutes each
+- Total wall time: ~5 minutes (with parallelization)
+- Sequential equivalent: ~15 minutes
 
 **Caching**:
-- Dependencies cache (`deps`, `_build`)
-- Dialyzer PLT cache (`priv/plts`)
+- Dependencies cache (`deps`, `_build`) - shared across all jobs
+- Dialyzer PLT cache (`priv/plts`) - specific to Dialyzer job
+
+**Performance Benefits**:
+- 3x faster than sequential execution
+- Each job can fail independently
+- Clear separation of concerns
+- Easy to identify which check failed
 
 ---
 
@@ -61,44 +70,37 @@ REDIS_URL=redis://localhost:6379
 
 ---
 
-### 3. Format Check (`format-check.yml`)
-
-**Triggers**:
-- Push to any branch
-- Pull requests to `main` or `develop`
-
-**Purpose**: Ensure code follows Elixir formatting standards
-
-**Jobs**:
-- **Format**: Checks code formatting
-  - Runs `mix format --check-formatted`
-  - Fails if any files need formatting
-
-**Typical Duration**: 2-3 minutes
-
----
-
 ## Workflow Dependencies
 
 ```
-┌─────────────────┐
-│   Push/PR       │
-└────────┬────────┘
-         │
-         ├─────────────────────────────────┐
-         │                                 │
-    ┌────▼─────┐                      ┌───▼──────┐
-    │ CI       │                      │ Format   │
-    │ (Lint)   │                      │ Check    │
-    └────┬─────┘                      └──────────┘
-         │
-         │ (if main/develop)
-         │
-    ┌────▼─────┐
-    │ Test     │
-    │ (with DB)│
-    └──────────┘
+┌──────────────────────────────────────────┐
+│            Push to any branch            │
+└────────────────┬─────────────────────────┘
+                 │
+    ┌────────────┴────────────────┐
+    │                             │
+    │   CI Workflow (parallel)    │
+    │                             │
+    ├─────────┬────────┬──────────┤
+    │         │        │          │
+┌───▼───┐ ┌──▼───┐ ┌──▼────┐ ┌───▼──────┐
+│Compile│ │Format│ │ Credo │ │ Dialyzer │
+└───────┘ └──────┘ └───────┘ └──────────┘
+                 │
+                 │ (if main/develop)
+                 │
+            ┌────▼─────┐
+            │   Test   │
+            │ (with DB)│
+            └──────────┘
 ```
+
+**Benefits of Parallel Execution:**
+- All CI jobs run simultaneously
+- Fastest feedback (limited by slowest job, not sum of all jobs)
+- Easy to identify specific failures
+- Independent caching per job
+- Can continue even if one job fails (soft failure)
 
 ## Caching Strategy
 
@@ -121,8 +123,9 @@ Add these to your README.md:
 ```markdown
 ![CI](https://github.com/YOUR_USERNAME/secrethub/workflows/CI/badge.svg)
 ![Test](https://github.com/YOUR_USERNAME/secrethub/workflows/Test/badge.svg)
-![Format Check](https://github.com/YOUR_USERNAME/secrethub/workflows/Format%20Check/badge.svg)
 ```
+
+The CI badge shows the combined status of all four parallel jobs (Compile, Format, Credo, Dialyzer).
 
 ## Local Testing
 

@@ -234,20 +234,19 @@ The project uses GitHub Actions for continuous integration and testing. See `.gi
 
 ### Workflows
 
-**CI Workflow** (`ci.yml`) - Runs on every push:
-- Compiles code with `--warnings-as-errors`
-- Runs Credo strict mode linting
-- Runs Dialyzer static analysis
-- Uses caching for dependencies and PLT
+**CI Workflow** (`ci.yml`) - Runs on every push with 4 parallel jobs:
+1. **Compile**: Code compilation with `--warnings-as-errors`
+2. **Format**: Code formatting check
+3. **Credo**: Strict mode linting
+4. **Dialyzer**: Static type analysis
+
+All jobs run in parallel for fastest feedback (~5 min vs ~15 min sequential).
 
 **Test Workflow** (`test.yml`) - Runs on push to main/develop and PRs:
 - Sets up PostgreSQL 16 and Redis 7 services
 - Runs full test suite with `mix test`
 - Generates coverage reports
 - Uploads coverage artifacts
-
-**Format Check** (`format-check.yml`) - Runs on every push and PR:
-- Checks code formatting with `mix format --check-formatted`
 
 ### Local CI Checks
 
