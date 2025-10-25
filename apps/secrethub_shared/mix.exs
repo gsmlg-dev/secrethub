@@ -11,7 +11,8 @@ defmodule SecretHub.Shared.MixProject do
       lockfile: "../../mix.lock",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      aliases: aliases()
     ]
   end
 
@@ -26,7 +27,15 @@ defmodule SecretHub.Shared.MixProject do
   defp deps do
     [
       {:ecto, "~> 3.12"},
-      {:ecto_network, "~> 1.5"}
+      {:ecto_network, "~> 1.5"},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
+    ]
+  end
+
+  defp aliases do
+    [
+      lint: ["credo --strict", "dialyzer"]
     ]
   end
 end

@@ -52,6 +52,7 @@ defmodule SecretHub.MixProject do
 
       # Code quality
       quality: ["format", "credo --strict", "dialyzer"],
+      lint: ["credo --strict", "dialyzer"],
 
       # Database
       "ecto.setup": ["ecto.create", "ecto.migrate", "run apps/secrethub_core/priv/repo/seeds.exs"],
