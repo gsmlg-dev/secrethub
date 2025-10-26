@@ -113,6 +113,25 @@ defmodule SecretHub.WebWeb.Router do
     get "/role/:role_name/role-id", AuthController, :get_role_id
   end
 
+  # Dynamic Secrets API routes
+  scope "/v1/secrets/dynamic", SecretHub.WebWeb do
+    pipe_through :api
+
+    # Generate dynamic credentials
+    post "/:role", DynamicSecretsController, :generate
+  end
+
+  # Lease management API routes
+  scope "/v1/sys/leases", SecretHub.WebWeb do
+    pipe_through :api
+
+    # Lease operations
+    post "/renew", DynamicSecretsController, :renew
+    post "/revoke", DynamicSecretsController, :revoke
+    get "/", DynamicSecretsController, :list
+    get "/stats", DynamicSecretsController, :stats
+  end
+
   # PKI API routes (Certificate Authority operations)
   scope "/v1/pki", SecretHub.WebWeb do
     pipe_through :api
