@@ -5,7 +5,7 @@ defmodule SecretHub.Core.Application do
 
   @impl true
   def start(_type, _args) do
-    children = repo_children() ++ seal_state_children()
+    children = repo_children() ++ seal_state_children() ++ lease_manager_children()
 
     opts = [strategy: :one_for_one, name: SecretHub.Core.Supervisor]
     Supervisor.start_link(children, opts)
@@ -30,6 +30,16 @@ defmodule SecretHub.Core.Application do
       [SecretHub.Core.Vault.SealState]
     else
       []
+    end
+  end
+
+  # Start LeaseManager for dynamic secret lease tracking
+  defp lease_manager_children do
+    # Only start LeaseManager when Repo is available (not in test mode)
+    if Application.get_env(:secrethub_core, :env) == :test do
+      []
+    else
+      [SecretHub.Core.LeaseManager]
     end
   end
 end

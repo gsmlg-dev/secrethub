@@ -1,8 +1,8 @@
 # SecretHub - Development TODO List
 
-**Last Updated:** 2025-10-20
-**Current Sprint:** Week 1 (Phase 1: Foundation & MVP)
-**Current Focus:** Database Schema Design & Basic Infrastructure
+**Last Updated:** 2025-10-27
+**Current Sprint:** Week 13-14 (Phase 2: Production Hardening)
+**Current Focus:** Dynamic Secret Engine - PostgreSQL
 
 > This TODO list tracks implementation progress against the [PLAN.md](./PLAN.md) timeline.
 > For detailed technical specifications, see [DESIGN.md](./DESIGN.md).
@@ -21,7 +21,12 @@
 - **Week 12**: 🟢 Completed (83% complete - E2E tests, perf infrastructure, security review done)
 
 ### Phase 2: Production Hardening (Weeks 13-24)
-- ⚪ Not Started
+- **Week 13-14**: 🟡 In Progress (0% complete - Dynamic Secret Engine - PostgreSQL)
+- **Week 15-16**: ⚪ Not Started
+- **Week 17-18**: ⚪ Not Started
+- **Week 19-20**: ⚪ Not Started
+- **Week 21-22**: ⚪ Not Started
+- **Week 23-24**: ⚪ Not Started
 
 ### Phase 3: Advanced Features (Weeks 25-28)
 - ⚪ Not Started
@@ -31,94 +36,104 @@
 
 ---
 
-## 🎯 Current Sprint: Week 1 - Project Setup & Infrastructure Bootstrap
+## 🎯 Current Sprint: Week 13-14 - Dynamic Secret Engine - PostgreSQL
 
-**Sprint Goal:** Set up development environment, CI/CD, and basic project structure
+**Sprint Goal:** Implement PostgreSQL dynamic secret engine with automatic credential generation, lease tracking, and renewal
 
 **Team Assignments:**
-- **Engineer 1 (Core Lead)**: Database schema design, Core service setup
-- **Engineer 2 (Agent/Infra Lead)**: Infrastructure, Agent protocol design
-- **Engineer 3 (Full-stack)**: UI structure, CI/CD, documentation
+- **Engineer 1 (Core Lead)**: Dynamic engine interface, PostgreSQL engine, lease tracking & renewal
+- **Engineer 2 (Agent/Infra Lead)**: Agent lease renewal scheduler, dynamic credential caching
+- **Engineer 3 (Full-stack)**: Dynamic engine configuration UI, lease viewer, active leases dashboard
 
 ### Engineer 1 (Core Lead) - Tasks
 
-- [x] Initialize Elixir/Phoenix project for Core service
-- [x] Set up PostgreSQL schema design
-  - [x] Design secrets table schema
-  - [x] Design policies table schema
-  - [x] Design audit_logs table schema
-  - [x] Design certificates table schema
-  - [x] Design leases table schema
-  - [x] Design roles table schema (AppRole)
-- [x] Create Ecto schemas for core entities
-  - [x] `SecretHub.Shared.Schemas.Secret`
-  - [x] `SecretHub.Shared.Schemas.Policy`
-  - [x] `SecretHub.Shared.Schemas.AuditLog`
-  - [x] `SecretHub.Shared.Schemas.Certificate`
-  - [x] `SecretHub.Shared.Schemas.Lease`
-  - [x] `SecretHub.Shared.Schemas.Role`
-- [x] Write database migrations
-  - [x] Create initial secrets migration
-  - [x] Create policies migration
-  - [x] Create audit_logs migration with hash chain fields (PARTITIONED)
-  - [x] Create certificates migration
-  - [x] Create leases migration
-  - [x] Create roles migration
-- [x] Set up Repo configuration in secrethub_core
-  - [x] Configure `SecretHub.Core.Repo`
-  - [x] Add repo to supervision tree
-  - [x] Test database connection and run migrations
+- [ ] Design dynamic secret engine interface
+  - [ ] Create `SecretHub.Core.Engines.Dynamic` behaviour module
+  - [ ] Define `generate_credentials/2` callback
+  - [ ] Define `revoke_credentials/2` callback
+  - [ ] Define `renew_lease/2` callback
+- [ ] Implement PostgreSQL dynamic engine
+  - [ ] Create `SecretHub.Core.Engines.Dynamic.PostgreSQL` module
+  - [ ] Implement connection management
+  - [ ] Implement SQL statement execution for user creation
+  - [ ] Implement credential generation with configurable TTL
+  - [ ] Add support for role-based permissions
+- [ ] Build lease tracking system
+  - [ ] Create `SecretHub.Core.LeaseManager` GenServer
+  - [ ] Implement lease creation and storage
+  - [ ] Add lease expiry tracking
+  - [ ] Build lease renewal logic
+  - [ ] Create background task for expired lease cleanup
+- [ ] Implement automatic revocation on expiry
+  - [ ] Add revocation scheduler
+  - [ ] Implement credential deletion on revoke
+  - [ ] Add audit logging for all lease operations
+- [ ] Create API endpoints
+  - [ ] POST /v1/secrets/dynamic/:role - Generate credentials
+  - [ ] POST /v1/sys/leases/renew - Renew lease
+  - [ ] POST /v1/sys/leases/revoke - Revoke lease
+  - [ ] GET /v1/sys/leases - List active leases
 
 ### Engineer 2 (Agent/Infra Lead) - Tasks
 
-- [x] Initialize Elixir/OTP project for Agent
-- [x] Set up Terraform for AWS infrastructure (VPC, RDS, S3)
-  - [x] Define VPC module
-  - [x] Define RDS PostgreSQL module
-  - [x] Define S3 bucket for audit logs
-  - [x] Create development environment config
-- [x] Create Kubernetes manifests (development cluster)
-  - [x] Core service deployment
-  - [x] PostgreSQL StatefulSet (dev)
-  - [x] Redis deployment (dev)
-  - [x] Service definitions
-  - [x] ConfigMaps and Secrets
-- [x] Set up Docker build pipeline
-  - [x] Dockerfile for secrethub_core
-  - [x] Dockerfile for secrethub_agent
-  - [x] Docker Compose for local development
-  - [x] Multi-stage builds for optimization
-- [ ] Design Agent <-> Core communication protocol spec
-  - [ ] Define WebSocket message formats
-  - [ ] Design authentication handshake flow
-  - [ ] Define secret request/response protocol
-  - [ ] Design lease renewal protocol
-  - [ ] Document protocol in `/docs/architecture/agent-protocol.md`
+- [ ] Implement Agent lease renewal scheduler
+  - [ ] Create `SecretHub.Agent.LeaseRenewer` GenServer
+  - [ ] Add automatic renewal before expiry
+  - [ ] Implement exponential backoff on failures
+  - [ ] Add renewal success/failure callbacks
+- [ ] Build dynamic credential caching
+  - [ ] Extend `SecretHub.Agent.Cache` for dynamic secrets
+  - [ ] Add lease metadata to cached credentials
+  - [ ] Implement cache invalidation on lease expiry
+  - [ ] Add fallback behavior for expired leases
+- [ ] Add lease expiry monitoring
+  - [ ] Create health check for expiring leases
+  - [ ] Add metrics for lease renewal success rate
+  - [ ] Implement alerting on renewal failures
+- [ ] Create credential refresh flow
+  - [ ] Build automatic re-request on revocation
+  - [ ] Add graceful handling of connection loss during renewal
+- [ ] Write integration tests
+  - [ ] Test with real PostgreSQL container
+  - [ ] Verify credentials work for database access
+  - [ ] Test automatic renewal
+  - [ ] Test revocation on expiry
 
 ### Engineer 3 (Full-stack) - Tasks
 
-- [x] Set up Phoenix LiveView project structure
-- [x] Create basic UI layout and navigation
-- [x] Set up CI/CD pipeline (GitHub Actions / GitLab CI)
-- [x] Initialize documentation repository
-- [x] Create project README and contribution guidelines
-- [ ] Enhance UI with authentication placeholder
-  - [ ] Add login page scaffold
-  - [ ] Add navigation sidebar
-  - [ ] Create dashboard layout
-- [ ] Create additional documentation
-  - [ ] Add API documentation structure
-  - [ ] Add deployment guide template
-  - [ ] Add troubleshooting guide template
+- [ ] Build dynamic engine configuration UI
+  - [ ] Create LiveView for PostgreSQL engine config
+  - [ ] Add form for connection parameters
+  - [ ] Add role creation/editing interface
+  - [ ] Implement SQL statement templates
+- [ ] Create lease viewer component
+  - [ ] Build table for active leases
+  - [ ] Add filtering by role/agent/status
+  - [ ] Show lease TTL countdown
+  - [ ] Add manual revoke button
+- [ ] Add lease renewal dashboard
+  - [ ] Show renewal success/failure metrics
+  - [ ] Display upcoming renewals timeline
+  - [ ] Add lease history visualization
+- [ ] Implement active leases monitoring
+  - [ ] Create real-time lease status updates
+  - [ ] Add WebSocket for live lease events
+  - [ ] Show lease lifecycle events
+- [ ] Documentation
+  - [ ] Write dynamic secrets user guide
+  - [ ] Document PostgreSQL engine configuration
+  - [ ] Add lease management best practices
+  - [ ] Create troubleshooting guide for lease issues
 
-### Week 1 Deliverables
+### Week 13-14 Deliverables
 
-- [x] Git repositories initialized
-- [x] Development environment running locally (devenv)
-- [x] CI/CD pipeline building and testing (pre-commit hooks)
-- [x] Database schemas created and migrated
-- [x] Docker development environment validated
-- [x] Agent-Core protocol specification documented
+- [ ] PostgreSQL dynamic engine fully functional
+- [ ] Leases automatically renewed before expiry
+- [ ] Leases automatically revoked on expiry
+- [ ] UI shows active leases with TTL countdown
+- [ ] Agent successfully caches and renews dynamic credentials
+- [ ] Integration tests pass with real PostgreSQL
+- [ ] Documentation complete for dynamic secrets
 
 ---
 
