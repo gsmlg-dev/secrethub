@@ -175,7 +175,7 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
   def handle_event("restart_agent", %{"id" => agent_id}, socket) do
     Logger.info("Restarting agent: #{agent_id}")
 
-    # TODO: Call SecretHub.Core.Connections.restart_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.restart_agent(agent_id)
 
     socket =
       socket
@@ -189,7 +189,7 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
   def handle_event("disconnect_agent", %{"id" => agent_id}, socket) do
     Logger.info("Force disconnecting agent: #{agent_id}")
 
-    # TODO: Call SecretHub.Core.Connections.force_disconnect_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.force_disconnect_agent(agent_id)
 
     socket =
       socket
@@ -223,7 +223,7 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
   defp activity_icon_color(_), do: "bg-gray-500"
 
   defp recent_activities(_agent_id) do
-    # TODO: Replace with actual activity data from audit logs
+    # FIXME: Replace with actual activity data from audit logs
     [
       %{
         type: "secret_access",

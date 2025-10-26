@@ -113,52 +113,51 @@ defmodule SecretHub.WebWeb.PKIController do
   Response: Same as generate_root_ca
   """
   def generate_intermediate_ca(conn, params) do
-    common_name = Map.get(params, "common_name")
-    organization = Map.get(params, "organization")
-    root_ca_id = Map.get(params, "root_ca_id")
-
-    cond do
-      is_nil(common_name) or common_name == "" ->
+    with {:ok, common_name} <- validate_required_param(params, "common_name"),
+         {:ok, organization} <- validate_required_param(params, "organization"),
+         {:ok, root_ca_id} <- validate_required_param(params, "root_ca_id") do
+      do_generate_intermediate_ca(conn, common_name, organization, root_ca_id, params)
+    else
+      {:error, error_msg} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "common_name is required"})
+        |> json(%{error: error_msg})
+    end
+  end
 
-      is_nil(organization) or organization == "" ->
+  defp validate_required_param(params, key) do
+    case Map.get(params, key) do
+      nil -> {:error, "#{key} is required"}
+      "" -> {:error, "#{key} is required"}
+      value -> {:ok, value}
+    end
+  end
+
+  defp do_generate_intermediate_ca(conn, common_name, organization, root_ca_id, params) do
+    opts = build_ca_opts(params)
+
+    case CA.generate_intermediate_ca(common_name, organization, root_ca_id, opts) do
+      {:ok, %{certificate: cert_pem, private_key: key_pem, cert_record: cert_record}} ->
+        Logger.info("Intermediate CA generated: #{common_name}")
+
         conn
-        |> put_status(:bad_request)
-        |> json(%{error: "organization is required"})
+        |> put_status(:created)
+        |> json(%{
+          certificate: cert_pem,
+          private_key: key_pem,
+          serial_number: cert_record.serial_number,
+          fingerprint: cert_record.fingerprint,
+          cert_id: cert_record.id,
+          valid_from: DateTime.to_iso8601(cert_record.valid_from),
+          valid_until: DateTime.to_iso8601(cert_record.valid_until)
+        })
 
-      is_nil(root_ca_id) or root_ca_id == "" ->
+      {:error, reason} ->
+        Logger.error("Intermediate CA generation failed: #{inspect(reason)}")
+
         conn
-        |> put_status(:bad_request)
-        |> json(%{error: "root_ca_id is required"})
-
-      true ->
-        opts = build_ca_opts(params)
-
-        case CA.generate_intermediate_ca(common_name, organization, root_ca_id, opts) do
-          {:ok, %{certificate: cert_pem, private_key: key_pem, cert_record: cert_record}} ->
-            Logger.info("Intermediate CA generated: #{common_name}")
-
-            conn
-            |> put_status(:created)
-            |> json(%{
-              certificate: cert_pem,
-              private_key: key_pem,
-              serial_number: cert_record.serial_number,
-              fingerprint: cert_record.fingerprint,
-              cert_id: cert_record.id,
-              valid_from: DateTime.to_iso8601(cert_record.valid_from),
-              valid_until: DateTime.to_iso8601(cert_record.valid_until)
-            })
-
-          {:error, reason} ->
-            Logger.error("Intermediate CA generation failed: #{inspect(reason)}")
-
-            conn
-            |> put_status(:internal_server_error)
-            |> json(%{error: "Failed to generate Intermediate CA: #{inspect(reason)}"})
-        end
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Failed to generate Intermediate CA: #{inspect(reason)}"})
     end
   end
 
@@ -376,45 +375,59 @@ defmodule SecretHub.WebWeb.PKIController do
   def revoke_certificate(conn, %{"id" => id} = params) do
     reason = Map.get(params, "reason", "unspecified")
 
-    case Repo.get(Certificate, id) do
-      nil ->
+    with {:ok, cert} <- fetch_certificate(id),
+         :ok <- check_not_revoked(cert),
+         {:ok, updated_cert} <- do_revoke_certificate(cert, reason) do
+      Logger.info("Certificate revoked: #{cert.common_name}")
+
+      conn
+      |> json(%{
+        revoked: true,
+        revoked_at: DateTime.to_iso8601(updated_cert.revoked_at),
+        reason: reason
+      })
+    else
+      {:error, :not_found} ->
         conn
         |> put_status(:not_found)
         |> json(%{error: "Certificate not found"})
 
-      cert ->
-        if cert.revoked do
-          conn
-          |> put_status(:bad_request)
-          |> json(%{error: "Certificate is already revoked"})
-        else
-          changeset =
-            Certificate.changeset(cert, %{
-              revoked: true,
-              revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
-              revocation_reason: reason
-            })
+      {:error, :already_revoked} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "Certificate is already revoked"})
 
-          case Repo.update(changeset) do
-            {:ok, updated_cert} ->
-              Logger.info("Certificate revoked: #{cert.common_name}")
+      {:error, changeset} ->
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{
+          error: "Failed to revoke certificate",
+          details: inspect(changeset.errors)
+        })
+    end
+  end
 
-              conn
-              |> json(%{
-                revoked: true,
-                revoked_at: DateTime.to_iso8601(updated_cert.revoked_at),
-                reason: reason
-              })
+  defp fetch_certificate(id) do
+    case Repo.get(Certificate, id) do
+      nil -> {:error, :not_found}
+      cert -> {:ok, cert}
+    end
+  end
 
-            {:error, changeset} ->
-              conn
-              |> put_status(:internal_server_error)
-              |> json(%{
-                error: "Failed to revoke certificate",
-                details: inspect(changeset.errors)
-              })
-          end
-        end
+  defp check_not_revoked(%{revoked: true}), do: {:error, :already_revoked}
+  defp check_not_revoked(_cert), do: :ok
+
+  defp do_revoke_certificate(cert, reason) do
+    changeset =
+      Certificate.changeset(cert, %{
+        revoked: true,
+        revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        revocation_reason: reason
+      })
+
+    case Repo.update(changeset) do
+      {:ok, updated_cert} -> {:ok, updated_cert}
+      {:error, _} = error -> error
     end
   end
 

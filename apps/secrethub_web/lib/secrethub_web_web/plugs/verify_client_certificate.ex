@@ -303,7 +303,7 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificate do
   end
 
   defp verify_against_ca_chain(_cert_der) do
-    # TODO: Implement proper certificate chain validation
+    # FIXME: Implement proper certificate chain validation
     # For now, we'll do basic validation
 
     # In production, this should:
@@ -313,7 +313,7 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificate do
 
     case CA.get_ca_chain() do
       {:ok, _ca_chain_pem} ->
-        # TODO: Actually verify the certificate against the CA chain
+        # FIXME: Actually verify the certificate against the CA chain
         # For now, just check if we have a CA chain
         :valid
 
@@ -338,8 +338,9 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificate do
 
   defp format_rdnsequence({:rdnSequence, rdn_list}) do
     rdn_list
-    |> Enum.map(fn rdn_set ->
-      Enum.map(rdn_set, fn
+    |> Enum.map_join(", ", fn rdn_set ->
+      rdn_set
+      |> Enum.map(fn
         {:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, cn}} ->
           "CN=#{to_string(cn)}"
 
@@ -355,7 +356,6 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificate do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(", ")
     end)
-    |> Enum.join(", ")
   end
 
   defp send_unauthorized(conn, message) do

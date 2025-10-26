@@ -13,9 +13,9 @@ defmodule SecretHub.WebWeb.SecretManagementE2ETest do
 
   use SecretHub.WebWeb.ConnCase, async: false
 
-  alias SecretHub.Core.{Secrets, Agents, Policies}
-  alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Core.{Agents, Policies, Secrets}
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.Vault.SealState
 
   setup do
     # Use shared mode for database access
@@ -41,7 +41,7 @@ defmodule SecretHub.WebWeb.SecretManagementE2ETest do
     # Create a test policy with full secret access
     {:ok, policy} =
       Policies.create_policy(%{
-        name: "secret-test-policy-#{:rand.uniform(10000)}",
+        name: "secret-test-policy-#{:rand.uniform(10_000)}",
         path_rules: [
           %{path: "secret/data/*", capabilities: ["create", "read", "update", "delete"]},
           %{path: "secret/metadata/*", capabilities: ["read", "list"]}
@@ -51,7 +51,7 @@ defmodule SecretHub.WebWeb.SecretManagementE2ETest do
     # Create a test agent with the policy
     {:ok, agent} =
       Agents.register_agent(%{
-        agent_id: "secret-test-agent-#{:rand.uniform(10000)}",
+        agent_id: "secret-test-agent-#{:rand.uniform(10_000)}",
         name: "Secret Test Agent",
         policy_ids: [policy.id],
         auth_method: "approle"
@@ -202,7 +202,7 @@ defmodule SecretHub.WebWeb.SecretManagementE2ETest do
   describe "E2E: Secret metadata operations" do
     test "list secrets in a path", %{conn: conn, token: token} do
       # Create multiple secrets in the same path
-      base_path = "test-app-#{:rand.uniform(10000)}"
+      base_path = "test-app-#{:rand.uniform(10_000)}"
 
       Enum.each(1..5, fn i ->
         conn = build_conn()
@@ -355,7 +355,7 @@ defmodule SecretHub.WebWeb.SecretManagementE2ETest do
           end)
         end)
 
-      results = Task.await_many(tasks, 10000)
+      results = Task.await_many(tasks, 10_000)
 
       # All reads should succeed
       assert Enum.all?(results, fn conn ->
@@ -398,7 +398,7 @@ defmodule SecretHub.WebWeb.SecretManagementE2ETest do
           end)
         end)
 
-      results = Task.await_many(tasks, 10000)
+      results = Task.await_many(tasks, 10_000)
 
       # All updates should succeed (or some might conflict)
       success_count = Enum.count(results, fn conn -> conn.status == 200 end)

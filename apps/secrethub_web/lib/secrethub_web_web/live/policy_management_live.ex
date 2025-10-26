@@ -13,7 +13,7 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
   use SecretHub.WebWeb, :live_view
   require Logger
 
-  alias SecretHub.Core.{Policies, Agents}
+  alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Shared.Schemas.Policy
 
   @impl true
@@ -729,73 +729,73 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
       |> Map.put("entity_bindings", socket.assigns.form_data["entity_bindings"] || [])
 
     case socket.assigns.form_mode do
-      :create ->
-        case Policies.create_policy(attrs) do
-          {:ok, policy} ->
-            # Bind entities to the new policy
-            Enum.each(attrs["entity_bindings"] || [], fn entity_id ->
-              Policies.bind_policy_to_entity(policy.id, entity_id)
-            end)
-
-            policies = list_policies()
-
-            socket =
-              socket
-              |> assign(:policies, policies)
-              |> assign(:show_form, false)
-              |> put_flash(:info, "Policy created successfully")
-
-            {:noreply, socket}
-
-          {:error, changeset} ->
-            errors = extract_changeset_errors(changeset)
-
-            socket =
-              socket
-              |> assign(:validation_errors, errors)
-              |> put_flash(:error, "Failed to create policy")
-
-            {:noreply, socket}
-        end
-
-      :edit ->
-        case Policies.update_policy(socket.assigns.selected_policy.id, attrs) do
-          {:ok, policy} ->
-            # Update entity bindings
-            current_bindings = socket.assigns.selected_policy.entity_bindings || []
-            new_bindings = attrs["entity_bindings"] || []
-
-            # Remove old bindings
-            Enum.each(current_bindings -- new_bindings, fn entity_id ->
-              Policies.unbind_policy_from_entity(policy.id, entity_id)
-            end)
-
-            # Add new bindings
-            Enum.each(new_bindings -- current_bindings, fn entity_id ->
-              Policies.bind_policy_to_entity(policy.id, entity_id)
-            end)
-
-            policies = list_policies()
-
-            socket =
-              socket
-              |> assign(:policies, policies)
-              |> assign(:show_form, false)
-              |> put_flash(:info, "Policy updated successfully")
-
-            {:noreply, socket}
-
-          {:error, changeset} ->
-            errors = extract_changeset_errors(changeset)
-
-            socket =
-              socket
-              |> assign(:validation_errors, errors)
-              |> put_flash(:error, "Failed to update policy")
-
-            {:noreply, socket}
-        end
+      :create -> create_new_policy(socket, attrs)
+      :edit -> update_existing_policy(socket, attrs)
     end
+  end
+
+  defp create_new_policy(socket, attrs) do
+    case Policies.create_policy(attrs) do
+      {:ok, policy} ->
+        bind_entities_to_policy(policy, attrs["entity_bindings"] || [])
+        handle_policy_save_success(socket, "Policy created successfully")
+
+      {:error, changeset} ->
+        handle_policy_save_error(socket, changeset, "Failed to create policy")
+    end
+  end
+
+  defp update_existing_policy(socket, attrs) do
+    case Policies.update_policy(socket.assigns.selected_policy.id, attrs) do
+      {:ok, policy} ->
+        update_policy_bindings(socket, policy, attrs)
+        handle_policy_save_success(socket, "Policy updated successfully")
+
+      {:error, changeset} ->
+        handle_policy_save_error(socket, changeset, "Failed to update policy")
+    end
+  end
+
+  defp bind_entities_to_policy(policy, entity_ids) do
+    Enum.each(entity_ids, fn entity_id ->
+      Policies.bind_policy_to_entity(policy.id, entity_id)
+    end)
+  end
+
+  defp update_policy_bindings(socket, policy, attrs) do
+    current_bindings = socket.assigns.selected_policy.entity_bindings || []
+    new_bindings = attrs["entity_bindings"] || []
+
+    Enum.each(current_bindings -- new_bindings, fn entity_id ->
+      Policies.unbind_policy_from_entity(policy.id, entity_id)
+    end)
+
+    Enum.each(new_bindings -- current_bindings, fn entity_id ->
+      Policies.bind_policy_to_entity(policy.id, entity_id)
+    end)
+  end
+
+  defp handle_policy_save_success(socket, message) do
+    policies = list_policies()
+
+    socket =
+      socket
+      |> assign(:policies, policies)
+      |> assign(:show_form, false)
+      |> put_flash(:info, message)
+
+    {:noreply, socket}
+  end
+
+  defp handle_policy_save_error(socket, changeset, message) do
+    errors = extract_changeset_errors(changeset)
+
+    socket =
+      socket
+      |> assign(:validation_errors, errors)
+      |> put_flash(:error, message)
+
+    {:noreply, socket}
   end
 
   defp list_policies do

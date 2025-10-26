@@ -240,8 +240,7 @@ defmodule SecretHub.WebWeb.VaultInitLive do
     shares_text =
       socket.assigns.initialized_shares
       |> Enum.with_index(1)
-      |> Enum.map(fn {share, index} -> "Share #{index}:\n#{share}\n" end)
-      |> Enum.join("\n")
+      |> Enum.map_join("\n", fn {share, index} -> "Share #{index}:\n#{share}\n" end)
 
     content = """
     SecretHub Vault Unseal Shares

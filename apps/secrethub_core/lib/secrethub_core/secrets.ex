@@ -20,10 +20,10 @@ defmodule SecretHub.Core.Secrets do
   import Ecto.Query
 
   alias Ecto.{Changeset, Multi}
-  alias SecretHub.Core.{Repo, Policies, Audit}
+  alias SecretHub.Core.{Audit, Policies, Repo}
   alias SecretHub.Core.Vault.SealState
-  alias SecretHub.Shared.Schemas.{Secret, Policy, AuditLog}
   alias SecretHub.Shared.Crypto.Encryption
+  alias SecretHub.Shared.Schemas.{AuditLog, Policy, Secret}
 
   @doc """
   Create a new static secret with encryption.

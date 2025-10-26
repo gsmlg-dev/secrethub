@@ -262,9 +262,7 @@
        • PostgreSQL:  localhost:5432
        • Redis:       localhost:6379
        • Prometheus:  localhost:9090
-    
-    💡 First time? Run: db-setup && assets-install
-    
+
     EOF
     
     # Check if database exists

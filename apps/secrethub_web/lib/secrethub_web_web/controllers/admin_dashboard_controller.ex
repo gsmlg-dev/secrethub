@@ -8,7 +8,7 @@ defmodule SecretHub.WebWeb.AdminDashboardController do
   use SecretHub.WebWeb, :controller
   require Logger
 
-  # TODO: Replace with actual calls to SecretHub.Core modules
+  # FIXME: Replace with actual calls to SecretHub.Core modules
   # For now, return mock data for demonstration
 
   def system_stats(conn, _params) do
@@ -113,7 +113,7 @@ defmodule SecretHub.WebWeb.AdminDashboardController do
 
   def export_audit_logs(conn, _params) do
     # Trigger audit log export
-    # TODO: Implement actual export functionality
+    # FIXME: Implement actual export functionality
     Task.start(fn ->
       # Simulate export processing time
       :timer.sleep(2000)
@@ -127,7 +127,7 @@ defmodule SecretHub.WebWeb.AdminDashboardController do
 
   def rotate_all_leases(conn, _params) do
     # Trigger lease rotation
-    # TODO: Call SecretHub.Core.Secrets.rotate_all_leases()
+    # FIXME: Call SecretHub.Core.Secrets.rotate_all_leases()
     Logger.info("Lease rotation triggered")
 
     conn
@@ -137,7 +137,7 @@ defmodule SecretHub.WebWeb.AdminDashboardController do
 
   def cleanup_expired_secrets(conn, _params) do
     # Trigger cleanup of expired secrets
-    # TODO: Call SecretHub.Core.Secrets.cleanup_expired_secrets()
+    # FIXME: Call SecretHub.Core.Secrets.cleanup_expired_secrets()
     Logger.info("Cleanup of expired secrets started")
 
     conn

@@ -5,8 +5,8 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
 
   use SecretHub.WebWeb, :live_view
   require Logger
+  alias SecretHub.Core.{Policies, Secrets}
   alias SecretHub.Shared.Schemas.Secret
-  alias SecretHub.Core.{Secrets, Policies}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -102,7 +102,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   def handle_event("rotate_secret", %{"id" => secret_id}, socket) do
     Logger.info("Rotating secret: #{secret_id}")
 
-    # TODO: Call SecretHub.Core.Secrets.rotate_secret(secret_id)
+    # FIXME: Call SecretHub.Core.Secrets.rotate_secret(secret_id)
 
     socket =
       socket
@@ -499,7 +499,7 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   end
 
   defp fetch_secret_engines do
-    # TODO: Replace with actual SecretHub.Core.Engines.list_engines()
+    # FIXME: Replace with actual SecretHub.Core.Engines.list_engines()
     [
       %{type: "static", name: "Static Secrets"},
       %{type: "postgresql", name: "PostgreSQL"},

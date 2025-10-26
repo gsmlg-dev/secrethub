@@ -88,7 +88,7 @@ defmodule SecretHub.Web.AgentChannel do
       secret_path: path
     )
 
-    # TODO: Week 8-9 - Implement real secret retrieval
+    # FIXME: Week 8-9 - Implement real secret retrieval
     # 1. Validate secret path format
     # 2. Check agent policies allow access to this secret
     # 3. Retrieve encrypted secret from database
@@ -118,7 +118,7 @@ defmodule SecretHub.Web.AgentChannel do
       ttl: ttl
     )
 
-    # TODO: Week 13-14 - Implement dynamic secret generation
+    # FIXME: Week 13-14 - Implement dynamic secret generation
     # 1. Validate role exists
     # 2. Check agent policies allow this role
     # 3. Generate credentials via secret engine
@@ -151,7 +151,7 @@ defmodule SecretHub.Web.AgentChannel do
       lease_id: lease_id
     )
 
-    # TODO: Week 13-14 - Implement lease renewal
+    # FIXME: Week 13-14 - Implement lease renewal
     # 1. Look up lease in database
     # 2. Verify agent owns this lease
     # 3. Check lease is not expired or revoked

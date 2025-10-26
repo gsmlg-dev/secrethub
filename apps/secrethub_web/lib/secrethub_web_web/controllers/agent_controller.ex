@@ -9,7 +9,7 @@ defmodule SecretHub.WebWeb.AgentController do
   def disconnect(conn, %{"id" => agent_id}) do
     Logger.info("Disconnecting agent: #{agent_id}")
 
-    # TODO: Call SecretHub.Core.Connections.disconnect_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.disconnect_agent(agent_id)
 
     conn
     |> put_resp_content_type("application/json")
@@ -19,7 +19,7 @@ defmodule SecretHub.WebWeb.AgentController do
   def reconnect(conn, %{"id" => agent_id}) do
     Logger.info("Reconnecting agent: #{agent_id}")
 
-    # TODO: Call SecretHub.Core.Connections.reconnect_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.reconnect_agent(agent_id)
 
     conn
     |> put_resp_content_type("application/json")
@@ -29,7 +29,7 @@ defmodule SecretHub.WebWeb.AgentController do
   def restart(conn, %{"id" => agent_id}) do
     Logger.info("Restarting agent: #{agent_id}")
 
-    # TODO: Call SecretHub.Core.Connections.restart_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.restart_agent(agent_id)
 
     conn
     |> put_resp_content_type("application/json")

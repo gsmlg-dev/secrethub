@@ -303,7 +303,7 @@ defmodule SecretHub.Core.Audit do
       |> Enum.into(%{})
 
     # Get recent activity (last 24 hours)
-    yesterday = DateTime.add(DateTime.utc_now(), -86400, :second)
+    yesterday = DateTime.add(DateTime.utc_now(), -86_400, :second)
 
     recent_count =
       Repo.aggregate(
@@ -366,8 +366,7 @@ defmodule SecretHub.Core.Audit do
       end)
 
     ([headers] ++ rows)
-    |> Enum.map(&Enum.join(&1, ","))
-    |> Enum.join("\n")
+    |> Enum.map_join("\n", &Enum.join(&1, ","))
   end
 
   ## Private Functions

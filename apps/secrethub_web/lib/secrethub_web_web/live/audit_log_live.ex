@@ -394,7 +394,7 @@ defmodule SecretHub.WebWeb.AuditLogLive do
 
   # Helper functions
   defp fetch_audit_logs do
-    # TODO: Replace with actual SecretHub.Core.Audit.list_logs()
+    # FIXME: Replace with actual SecretHub.Core.Audit.list_logs()
     [
       %{
         id: "1",
@@ -446,7 +446,7 @@ defmodule SecretHub.WebWeb.AuditLogLive do
   end
 
   defp fetch_event_types do
-    # TODO: Replace with actual event types from audit system
+    # FIXME: Replace with actual event types from audit system
     [
       "secret_access",
       "secret_access_denied",
@@ -462,7 +462,7 @@ defmodule SecretHub.WebWeb.AuditLogLive do
 
   defp fetch_filtered_audit_logs(_filters) do
     fetch_audit_logs()
-    # TODO: Apply actual filtering logic
+    # FIXME: Apply actual filtering logic
   end
 
   defp current_page_logs(logs, page, per_page) do
@@ -508,51 +508,41 @@ defmodule SecretHub.WebWeb.AuditLogLive do
   defp access_status_color(false), do: "bg-red-500"
 
   defp build_audit_filters(ui_filters) do
-    # Convert UI filter format to Audit module format
-    filters = %{}
+    %{}
+    |> add_event_type_filter(ui_filters.event_type)
+    |> add_agent_id_filter(ui_filters.agent_id)
+    |> add_access_granted_filter(ui_filters.access_granted)
+    |> add_date_from_filter(ui_filters.date_from)
+    |> add_date_to_filter(ui_filters.date_to)
+  end
 
-    filters =
-      if ui_filters.event_type != "all" do
-        Map.put(filters, :event_type, ui_filters.event_type)
-      else
-        filters
-      end
+  defp add_event_type_filter(filters, "all"), do: filters
+  defp add_event_type_filter(filters, event_type), do: Map.put(filters, :event_type, event_type)
 
-    filters =
-      if ui_filters.agent_id != "" do
-        Map.put(filters, :actor_id, ui_filters.agent_id)
-      else
-        filters
-      end
+  defp add_agent_id_filter(filters, ""), do: filters
+  defp add_agent_id_filter(filters, agent_id), do: Map.put(filters, :actor_id, agent_id)
 
-    filters =
-      if ui_filters.access_granted != "all" do
-        access_val = ui_filters.access_granted == "granted"
-        Map.put(filters, :access_granted, access_val)
-      else
-        filters
-      end
+  defp add_access_granted_filter(filters, "all"), do: filters
 
-    filters =
-      if ui_filters.date_from != "" do
-        case DateTime.from_iso8601(ui_filters.date_from <> "T00:00:00Z") do
-          {:ok, dt, _} -> Map.put(filters, :from_date, dt)
-          _ -> filters
-        end
-      else
-        filters
-      end
+  defp add_access_granted_filter(filters, access_granted) do
+    Map.put(filters, :access_granted, access_granted == "granted")
+  end
 
-    filters =
-      if ui_filters.date_to != "" do
-        case DateTime.from_iso8601(ui_filters.date_to <> "T23:59:59Z") do
-          {:ok, dt, _} -> Map.put(filters, :to_date, dt)
-          _ -> filters
-        end
-      else
-        filters
-      end
+  defp add_date_from_filter(filters, ""), do: filters
 
-    filters
+  defp add_date_from_filter(filters, date_from) do
+    case DateTime.from_iso8601(date_from <> "T00:00:00Z") do
+      {:ok, dt, _} -> Map.put(filters, :from_date, dt)
+      _ -> filters
+    end
+  end
+
+  defp add_date_to_filter(filters, ""), do: filters
+
+  defp add_date_to_filter(filters, date_to) do
+    case DateTime.from_iso8601(date_to <> "T23:59:59Z") do
+      {:ok, dt, _} -> Map.put(filters, :to_date, dt)
+      _ -> filters
+    end
   end
 end

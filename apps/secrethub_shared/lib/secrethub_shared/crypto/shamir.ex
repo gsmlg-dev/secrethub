@@ -53,54 +53,11 @@ defmodule SecretHub.Shared.Crypto.Shamir do
       when is_binary(secret) and
              total_shares > 0 and total_shares <= @max_shares and
              threshold > 0 and threshold <= total_shares do
-    # Store original secret length
-    secret_length = byte_size(secret)
+    {normalized_bytes, adjustment_mask} = normalize_secret_bytes(secret)
+    data_polynomials = generate_polynomials(normalized_bytes, threshold)
 
-    # Split secret byte-by-byte
-    secret_bytes = :binary.bin_to_list(secret)
-
-    # For bytes >= @prime, we need to map them to valid field elements
-    # Map 251->0, 252->1, 253->2, 254->3, 255->4 (offset by -251)
-    normalized_bytes =
-      Enum.map(secret_bytes, fn byte ->
-        if byte >= @prime, do: byte - @prime, else: byte
-      end)
-
-    # Track which bytes were adjusted (for reconstruction)
-    adjustment_mask =
-      Enum.map(secret_bytes, fn byte ->
-        if byte >= @prime, do: 1, else: 0
-      end)
-
-    # Generate one polynomial per byte of the secret
-    # Each polynomial: P(x) = secret_byte + a1*x + a2*x^2 + ... + a(k-1)*x^(k-1)
-    data_polynomials =
-      for byte <- normalized_bytes do
-        [byte | generate_coefficients(threshold - 1)]
-      end
-
-    # Generate shares by evaluating each polynomial at points 1..N
     shares =
-      for id <- 1..total_shares do
-        # For each share, evaluate all polynomials at this ID
-        share_bytes =
-          for coefficients <- data_polynomials do
-            evaluate_polynomial(coefficients, id)
-          end
-
-        # Encode adjustment mask in the share (simple approach: store as binary)
-        adjustment_bin = :binary.list_to_bin(adjustment_mask)
-
-        %{
-          id: id,
-          value: :binary.list_to_bin(share_bytes),
-          threshold: threshold,
-          total_shares: total_shares,
-          secret_length: secret_length,
-          # Store which bytes need +251 adjustment
-          adjustment_mask: adjustment_bin
-        }
-      end
+      build_shares(data_polynomials, total_shares, threshold, byte_size(secret), adjustment_mask)
 
     {:ok, shares}
   end
@@ -242,7 +199,8 @@ defmodule SecretHub.Shared.Crypto.Shamir do
         secret_length: secret_length,
         adjustment_mask: adjustment_mask
       }) do
-    # Format: [version(3)][id(1)][threshold(1)][total(1)][secret_length(1)][mask_length(1)][adjustment_mask(N)][value(M)]
+    # Format: [version(3)][id(1)][threshold(1)][total(1)][secret_length(1)]
+    # [mask_length(1)][adjustment_mask(N)][value(M)]
     mask_length = byte_size(adjustment_mask)
 
     blob =
@@ -266,53 +224,55 @@ defmodule SecretHub.Shared.Crypto.Shamir do
   """
   @spec decode_share(String.t()) :: {:ok, share()} | {:error, String.t()}
   def decode_share("secrethub-share-" <> encoded_blob) do
-    with {:ok, blob} <- Base.url_decode64(encoded_blob, padding: false) do
-      case blob do
-        # Version 3: includes adjustment_mask
-        <<3::8, id::8, threshold::8, total::8, secret_length::8, mask_length::8, rest::binary>> ->
-          <<adjustment_mask::binary-size(mask_length), value::binary>> = rest
+    case Base.url_decode64(encoded_blob, padding: false) do
+      {:ok, blob} ->
+        case blob do
+          # Version 3: includes adjustment_mask
+          <<3::8, id::8, threshold::8, total::8, secret_length::8, mask_length::8, rest::binary>> ->
+            <<adjustment_mask::binary-size(mask_length), value::binary>> = rest
 
-          {:ok,
-           %{
-             id: id,
-             value: value,
-             threshold: threshold,
-             total_shares: total,
-             secret_length: secret_length,
-             adjustment_mask: adjustment_mask
-           }}
+            {:ok,
+             %{
+               id: id,
+               value: value,
+               threshold: threshold,
+               total_shares: total,
+               secret_length: secret_length,
+               adjustment_mask: adjustment_mask
+             }}
 
-        # Version 2: includes secret_length (backwards compat - no adjustment)
-        <<2::8, id::8, threshold::8, total::8, secret_length::8, value::binary>> ->
-          {:ok,
-           %{
-             id: id,
-             value: value,
-             threshold: threshold,
-             total_shares: total,
-             secret_length: secret_length,
-             # No adjustments
-             adjustment_mask: <<0::size(secret_length)-unit(8)>>
-           }}
+          # Version 2: includes secret_length (backwards compat - no adjustment)
+          <<2::8, id::8, threshold::8, total::8, secret_length::8, value::binary>> ->
+            {:ok,
+             %{
+               id: id,
+               value: value,
+               threshold: threshold,
+               total_shares: total,
+               secret_length: secret_length,
+               # No adjustments
+               adjustment_mask: <<0::size(secret_length)-unit(8)>>
+             }}
 
-        # Version 1: backwards compatibility (assume 32 bytes)
-        <<1::8, id::8, threshold::8, total::8, value::binary>> ->
-          {:ok,
-           %{
-             id: id,
-             value: value,
-             threshold: threshold,
-             total_shares: total,
-             secret_length: 32,
-             # No adjustments
-             adjustment_mask: <<0::size(32)-unit(8)>>
-           }}
+          # Version 1: backwards compatibility (assume 32 bytes)
+          <<1::8, id::8, threshold::8, total::8, value::binary>> ->
+            {:ok,
+             %{
+               id: id,
+               value: value,
+               threshold: threshold,
+               total_shares: total,
+               secret_length: 32,
+               # No adjustments
+               adjustment_mask: <<0::size(32)-unit(8)>>
+             }}
 
-        _ ->
-          {:error, "Invalid share format"}
-      end
-    else
-      _ -> {:error, "Invalid share format"}
+          _ ->
+            {:error, "Invalid share format"}
+        end
+
+      _ ->
+        {:error, "Invalid share format"}
     end
   end
 
@@ -321,6 +281,57 @@ defmodule SecretHub.Shared.Crypto.Shamir do
   end
 
   # Private helper functions
+
+  defp normalize_secret_bytes(secret) do
+    secret_bytes = :binary.bin_to_list(secret)
+
+    # For bytes >= @prime, we need to map them to valid field elements
+    # Map 251->0, 252->1, 253->2, 254->3, 255->4 (offset by -251)
+    normalized_bytes =
+      Enum.map(secret_bytes, fn byte ->
+        if byte >= @prime, do: byte - @prime, else: byte
+      end)
+
+    # Track which bytes were adjusted (for reconstruction)
+    adjustment_mask =
+      Enum.map(secret_bytes, fn byte ->
+        if byte >= @prime, do: 1, else: 0
+      end)
+
+    {normalized_bytes, adjustment_mask}
+  end
+
+  defp generate_polynomials(normalized_bytes, threshold) do
+    # Generate one polynomial per byte of the secret
+    # Each polynomial: P(x) = secret_byte + a1*x + a2*x^2 + ... + a(k-1)*x^(k-1)
+    for byte <- normalized_bytes do
+      [byte | generate_coefficients(threshold - 1)]
+    end
+  end
+
+  defp build_shares(data_polynomials, total_shares, threshold, secret_length, adjustment_mask) do
+    # Encode adjustment mask in the share (simple approach: store as binary)
+    adjustment_bin = :binary.list_to_bin(adjustment_mask)
+
+    # Generate shares by evaluating each polynomial at points 1..N
+    for id <- 1..total_shares do
+      # For each share, evaluate all polynomials at this ID
+      share_bytes =
+        for coefficients <- data_polynomials do
+          evaluate_polynomial(coefficients, id)
+        end
+
+      %{
+        id: id,
+        value: :binary.list_to_bin(share_bytes),
+        threshold: threshold,
+        total_shares: total_shares,
+        secret_length: secret_length,
+        # Store which bytes need +251 adjustment
+        adjustment_mask: adjustment_bin
+      }
+    end
+  end
 
   defp generate_coefficients(count) when count <= 0, do: []
 

@@ -46,7 +46,7 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
   def handle_event("disconnect_agent", %{"agent_id" => agent_id}, socket) do
     Logger.info("Disconnecting agent: #{agent_id}")
 
-    # TODO: Call SecretHub.Core.Connections.disconnect_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.disconnect_agent(agent_id)
 
     agents = fetch_agents()
 
@@ -74,7 +74,7 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
   def handle_event("reconnect_agent", %{"agent_id" => agent_id}, socket) do
     Logger.info("Reconnecting agent: #{agent_id}")
 
-    # TODO: Call SecretHub.Core.Connections.reconnect_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.reconnect_agent(agent_id)
 
     socket = put_flash(socket, :info, "Reconnect signal sent to agent")
     {:noreply, socket}
@@ -84,7 +84,7 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
   def handle_event("restart_agent", %{"agent_id" => agent_id}, socket) do
     Logger.info("Restarting agent: #{agent_id}")
 
-    # TODO: Call SecretHub.Core.Connections.restart_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.restart_agent(agent_id)
 
     socket = put_flash(socket, :info, "Restart signal sent to agent")
     {:noreply, socket}
@@ -243,7 +243,7 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
 
   # Helper functions
   defp fetch_agents do
-    # TODO: Replace with actual SecretHub.Core.Connections.list_agents()
+    # FIXME: Replace with actual SecretHub.Core.Connections.list_agents()
     [
       %{
         id: "agent-prod-01",
@@ -327,8 +327,8 @@ defmodule SecretHub.WebWeb.AgentMonitoringLive do
 
   defp format_relative_time(seconds) when seconds < 60, do: "#{seconds}s ago"
   defp format_relative_time(seconds) when seconds < 3600, do: "#{div(seconds, 60)}m ago"
-  defp format_relative_time(seconds) when seconds < 86400, do: "#{div(seconds, 3600)}h ago"
-  defp format_relative_time(seconds), do: "#{div(seconds, 86400)}d ago"
+  defp format_relative_time(seconds) when seconds < 86_400, do: "#{div(seconds, 3600)}h ago"
+  defp format_relative_time(seconds), do: "#{div(seconds, 86_400)}d ago"
 
   defp format_uptime(nil), do: "Offline"
   defp format_uptime(hours) when hours < 1, do: "< 1h"

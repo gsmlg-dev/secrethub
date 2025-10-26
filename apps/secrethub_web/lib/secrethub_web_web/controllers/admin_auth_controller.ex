@@ -101,40 +101,45 @@ defmodule SecretHub.WebWeb.AdminAuthController do
   # Private functions
 
   defp get_client_certificate(conn) do
+    with nil <- get_cert_from_header(conn),
+         nil <- get_cert_from_chain(conn) do
+      get_cert_from_auth_token(conn)
+    end
+  end
+
+  defp get_cert_from_header(conn) do
     case get_req_header(conn, "x-ssl-client-cert") do
-      [pem] ->
-        Certificate.from_pem(pem)
+      [pem] -> Certificate.from_pem(pem)
+      _ -> nil
+    end
+  end
 
-      nil ->
-        case get_req_header(conn, "x-ssl-client-cert-chain") do
-          nil ->
-            # For development/testing with curl
-            case get_req_header(conn, "authorization") do
-              ["Bearer " <> _dev_token] ->
-                Logger.info("Using dev token for admin authentication")
-                dev_admin_id()
+  defp get_cert_from_chain(conn) do
+    case get_req_header(conn, "x-ssl-client-cert-chain") do
+      [chain] -> extract_cert_from_chain(chain)
+      _ -> nil
+    end
+  end
 
-              _ ->
-                nil
-            end
+  defp get_cert_from_auth_token(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> _dev_token] ->
+        Logger.info("Using dev token for admin authentication")
+        dev_admin_id()
 
-          [chain] ->
-            # Try to extract certificate from chain header
-            case String.split(chain, "\n") do
-              [first_line | _] ->
-                first_line
-                |> String.trim_leading("-----BEGIN CERTIFICATE-----")
-                |> String.trim_trailing("-----END CERTIFICATE-----")
-                |> String.replace("\r\n", "\n")
-                |> Certificate.from_pem()
+      _ ->
+        nil
+    end
+  end
 
-              _ ->
-                nil
-            end
-
-          _ ->
-            nil
-        end
+  defp extract_cert_from_chain(chain) do
+    case String.split(chain, "\n") do
+      [first_line | _] ->
+        first_line
+        |> String.trim_leading("-----BEGIN CERTIFICATE-----")
+        |> String.trim_trailing("-----END CERTIFICATE-----")
+        |> String.replace("\r\n", "\n")
+        |> Certificate.from_pem()
 
       _ ->
         nil
@@ -142,37 +147,45 @@ defmodule SecretHub.WebWeb.AdminAuthController do
   end
 
   defp verify_admin_certificate(cert) do
-    # In development, accept any certificate with "admin" CN
     if Application.compile_env(:secrethub_web) == :dev do
-      subject = cert.subject
-
-      if String.contains?(subject, "admin") do
-        {:ok, String.split(subject, "@") |> List.first()}
-      else
-        {:error, "Invalid certificate for development"}
-      end
+      verify_dev_certificate(cert)
     else
-      # In production, verify against known admin fingerprints
-      # This would integrate with your Certificate schema
-      # For now, implement a basic check
-      expected_fingerprints = Application.get_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS, "")
+      verify_prod_certificate(cert)
+    end
+  end
 
-      case expected_fingerprints do
-        nil ->
-          {:error, "No admin certificates configured"}
+  defp verify_dev_certificate(cert) do
+    subject = cert.subject
 
-        fingerprints when is_list(fingerprints) ->
-          cert_fingerprint = cert_fingerprint(cert)
+    if String.contains?(subject, "admin") do
+      {:ok, String.split(subject, "@") |> List.first()}
+    else
+      {:error, "Invalid certificate for development"}
+    end
+  end
 
-          if cert_fingerprint in fingerprints do
-            {:ok, String.split(cert.subject, "@") |> List.first()}
-          else
-            {:error, "Certificate not authorized"}
-          end
+  defp verify_prod_certificate(cert) do
+    expected_fingerprints = Application.get_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS, "")
 
-        _ ->
-          {:error, "Invalid certificate configuration"}
-      end
+    case expected_fingerprints do
+      nil ->
+        {:error, "No admin certificates configured"}
+
+      fingerprints when is_list(fingerprints) ->
+        check_fingerprint_match(cert, fingerprints)
+
+      _ ->
+        {:error, "Invalid certificate configuration"}
+    end
+  end
+
+  defp check_fingerprint_match(cert, fingerprints) do
+    cert_fingerprint = cert_fingerprint(cert)
+
+    if cert_fingerprint in fingerprints do
+      {:ok, String.split(cert.subject, "@") |> List.first()}
+    else
+      {:error, "Certificate not authorized"}
     end
   end
 

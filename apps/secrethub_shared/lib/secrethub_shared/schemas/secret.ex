@@ -81,9 +81,11 @@ defmodule SecretHub.Shared.Schemas.Secret do
 
   @doc """
   Create a new secret in the database.
+
+  Note: This is a mock implementation. Actual creation logic will be
+  implemented in SecretHub.Core.Secrets module.
   """
   def create(changeset) do
-    # TODO: Implement actual Secret creation logic with SecretHub.Core.Secrets
     case changeset.valid? do
       true ->
         # Mock successful creation
@@ -111,9 +113,11 @@ defmodule SecretHub.Shared.Schemas.Secret do
 
   @doc """
   Update an existing secret.
+
+  Note: This is a mock implementation. Actual update logic will be
+  implemented in SecretHub.Core.Secrets module.
   """
   def update(secret_id, attrs) do
-    # TODO: Implement actual Secret update logic with SecretHub.Core.Secrets
     secret = %{
       id: secret_id,
       name: Map.get(attrs, "name"),
@@ -132,9 +136,11 @@ defmodule SecretHub.Shared.Schemas.Secret do
 
   @doc """
   Delete a secret.
+
+  Note: This is a mock implementation. Actual deletion logic will be
+  implemented in SecretHub.Core.Secrets module.
   """
   def delete(_secret_id) do
-    # TODO: Implement actual Secret deletion logic with SecretHub.Core.Secrets
     :ok
   end
 

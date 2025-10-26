@@ -37,41 +37,53 @@ defmodule SecretHub.WebWeb.SysController do
     total_shares = Map.get(params, "secret_shares", 5)
     threshold = Map.get(params, "secret_threshold", 3)
 
-    # Validate parameters
-    cond do
-      not is_integer(total_shares) or total_shares < 1 or total_shares > 255 ->
+    with :ok <- validate_shares_param(total_shares),
+         :ok <- validate_threshold_param(threshold, total_shares) do
+      do_init(conn, total_shares, threshold)
+    else
+      {:error, error_msg} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "secret_shares must be between 1 and 255"})
+        |> json(%{error: error_msg})
+    end
+  end
 
-      not is_integer(threshold) or threshold < 1 or threshold > total_shares ->
+  defp validate_shares_param(total_shares) do
+    if is_integer(total_shares) and total_shares >= 1 and total_shares <= 255 do
+      :ok
+    else
+      {:error, "secret_shares must be between 1 and 255"}
+    end
+  end
+
+  defp validate_threshold_param(threshold, total_shares) do
+    if is_integer(threshold) and threshold >= 1 and threshold <= total_shares do
+      :ok
+    else
+      {:error, "secret_threshold must be between 1 and secret_shares"}
+    end
+  end
+
+  defp do_init(conn, total_shares, threshold) do
+    case SealState.initialize(total_shares, threshold) do
+      {:ok, shares} ->
+        encoded_shares = Enum.map(shares, &Shamir.encode_share/1)
+        Logger.info("Vault initialized with #{total_shares} shares (threshold: #{threshold})")
+
+        conn
+        |> put_status(:ok)
+        |> json(%{
+          shares: encoded_shares,
+          threshold: threshold,
+          total_shares: total_shares
+        })
+
+      {:error, reason} ->
+        Logger.error("Vault initialization failed: #{reason}")
+
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "secret_threshold must be between 1 and secret_shares"})
-
-      true ->
-        case SealState.initialize(total_shares, threshold) do
-          {:ok, shares} ->
-            # Encode shares for safe transmission
-            encoded_shares = Enum.map(shares, &Shamir.encode_share/1)
-
-            Logger.info("Vault initialized with #{total_shares} shares (threshold: #{threshold})")
-
-            conn
-            |> put_status(:ok)
-            |> json(%{
-              shares: encoded_shares,
-              threshold: threshold,
-              total_shares: total_shares
-            })
-
-          {:error, reason} ->
-            Logger.error("Vault initialization failed: #{reason}")
-
-            conn
-            |> put_status(:bad_request)
-            |> json(%{error: reason})
-        end
+        |> json(%{error: reason})
     end
   end
 
@@ -97,33 +109,31 @@ defmodule SecretHub.WebWeb.SysController do
   ```
   """
   def unseal(conn, %{"share" => encoded_share}) do
-    case Shamir.decode_share(encoded_share) do
-      {:ok, share} ->
-        case SealState.unseal(share) do
-          {:ok, status} ->
-            if not status.sealed do
-              Logger.info("Vault successfully unsealed")
-            else
-              Logger.info("Unseal progress: #{status.progress}/#{status.threshold}")
-            end
+    with {:ok, share} <- Shamir.decode_share(encoded_share),
+         {:ok, status} <- SealState.unseal(share) do
+      log_unseal_status(status)
 
-            conn
-            |> put_status(:ok)
-            |> json(status)
-
-          {:error, reason} ->
-            Logger.warning("Unseal attempt failed: #{reason}")
-
-            conn
-            |> put_status(:bad_request)
-            |> json(%{error: reason})
-        end
-
-      {:error, reason} ->
-        conn
-        |> put_status(:bad_request)
-        |> json(%{error: "Invalid share format: #{reason}"})
+      conn
+      |> put_status(:ok)
+      |> json(status)
+    else
+      {:error, reason} when is_binary(reason) ->
+        handle_unseal_error(conn, reason)
     end
+  end
+
+  defp log_unseal_status(%{sealed: false}), do: Logger.info("Vault successfully unsealed")
+
+  defp log_unseal_status(%{progress: progress, threshold: threshold}) do
+    Logger.info("Unseal progress: #{progress}/#{threshold}")
+  end
+
+  defp handle_unseal_error(conn, reason) do
+    Logger.warning("Unseal attempt failed: #{reason}")
+
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: reason})
   end
 
   def unseal(conn, _params) do

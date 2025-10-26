@@ -185,18 +185,7 @@ defmodule SecretHub.Agent.Cache do
         {:reply, {:error, :not_found}, state}
 
       entry ->
-        if expired?(entry) and not state.fallback_enabled do
-          {:reply, {:error, :expired}, state}
-        else
-          if expired?(entry) do
-            Logger.warning("Using stale cached secret (fallback mode)",
-              secret_path: secret_path,
-              expired_at: entry.expires_at
-            )
-          end
-
-          {:reply, {:ok, entry.data}, state}
-        end
+        handle_fallback_entry(entry, secret_path, state)
     end
   end
 
@@ -213,6 +202,24 @@ defmodule SecretHub.Agent.Cache do
     }
 
     {:reply, stats, state}
+  end
+
+  defp handle_fallback_entry(entry, secret_path, state) do
+    cond do
+      expired?(entry) and not state.fallback_enabled ->
+        {:reply, {:error, :expired}, state}
+
+      expired?(entry) ->
+        Logger.warning("Using stale cached secret (fallback mode)",
+          secret_path: secret_path,
+          expired_at: entry.expires_at
+        )
+
+        {:reply, {:ok, entry.data}, state}
+
+      true ->
+        {:reply, {:ok, entry.data}, state}
+    end
   end
 
   @impl true

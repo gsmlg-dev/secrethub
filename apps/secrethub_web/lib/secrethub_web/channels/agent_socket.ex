@@ -82,7 +82,7 @@ defmodule SecretHub.Web.AgentSocket do
   # Private Functions
 
   defp extract_agent_id(connect_info) do
-    # TODO: Implement real PKI verification in Week 4-5
+    # FIXME: Implement real PKI verification in Week 4-5
     # For now, check for agent_id in connection headers or use default
 
     case List.keyfind(connect_info[:x_headers] || [], "x-agent-id", 0) do

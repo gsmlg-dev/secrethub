@@ -1,9 +1,9 @@
 defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificateTest do
   use SecretHub.WebWeb.ConnCase, async: false
 
-  alias SecretHub.WebWeb.Plugs.VerifyClientCertificate
   alias SecretHub.Core.PKI.CA
-  alias SecretHub.Shared.Schemas.{Certificate, Agent}
+  alias SecretHub.Shared.Schemas.{Agent, Certificate}
+  alias SecretHub.WebWeb.Plugs.VerifyClientCertificate
 
   describe "VerifyClientCertificate plug" do
     setup do

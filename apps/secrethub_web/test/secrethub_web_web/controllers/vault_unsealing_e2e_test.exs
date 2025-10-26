@@ -12,8 +12,8 @@ defmodule SecretHub.WebWeb.VaultUnsealingE2ETest do
 
   use SecretHub.WebWeb.ConnCase, async: false
 
-  alias SecretHub.Core.Vault.SealState
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.Vault.SealState
 
   setup do
     # Use shared mode for the Sandbox so all processes can access the database

@@ -16,7 +16,7 @@ defmodule SecretHub.Core.Agents do
 
   alias Ecto.{Changeset, Multi}
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{Agent, Certificate, Policy, Lease, AuditLog}
+  alias SecretHub.Shared.Schemas.{Agent, AuditLog, Certificate, Lease, Policy}
 
   @type result :: {:ok, term()} | {:error, term()}
 
@@ -375,15 +375,15 @@ defmodule SecretHub.Core.Agents do
   defp validate_bootstrap_credentials(role_id, secret_id) do
     # TODO: Implement actual RoleID/SecretID validation
     # For now, accept any valid UUID format
-    with true <- is_valid_uuid?(role_id),
-         true <- is_valid_uuid?(secret_id) do
+    with true <- valid_uuid?(role_id),
+         true <- valid_uuid?(secret_id) do
       :ok
     else
       _ -> {:error, "Invalid RoleID or SecretID format"}
     end
   end
 
-  defp is_valid_uuid?(string) do
+  defp valid_uuid?(string) do
     case Regex.run(~r/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i, string) do
       [_match] -> true
       _ -> false

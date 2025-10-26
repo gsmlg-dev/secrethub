@@ -40,8 +40,8 @@ defmodule SecretHub.Core.Policies do
   require Logger
   import Ecto.Query
 
-  alias SecretHub.Core.{Repo, Audit}
-  alias SecretHub.Shared.Schemas.{Policy, Secret, Agent}
+  alias SecretHub.Core.{Audit, Repo}
+  alias SecretHub.Shared.Schemas.{Agent, Policy, Secret}
 
   @doc """
   Create a new policy.
@@ -455,15 +455,13 @@ defmodule SecretHub.Core.Policies do
 
   defp ip_in_range?(ip_str, range_str) do
     # Basic CIDR matching - can be enhanced with a proper IP library
-    cond do
-      String.contains?(range_str, "/") ->
-        # CIDR notation
-        [network, _prefix] = String.split(range_str, "/")
-        String.starts_with?(ip_str, String.slice(network, 0..-3))
-
-      true ->
-        # Exact IP match
-        ip_str == range_str
+    if String.contains?(range_str, "/") do
+      # CIDR notation
+      [network, _prefix] = String.split(range_str, "/")
+      String.starts_with?(ip_str, String.slice(network, 0..-3))
+    else
+      # Exact IP match
+      ip_str == range_str
     end
   rescue
     _ -> false

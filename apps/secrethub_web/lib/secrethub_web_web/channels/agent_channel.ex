@@ -28,8 +28,8 @@ defmodule SecretHub.WebWeb.AgentChannel do
   use SecretHub.WebWeb, :channel
   require Logger
 
-  alias SecretHub.Core.Auth.AppRole
   alias SecretHub.Core.Agents
+  alias SecretHub.Core.Auth.AppRole
   alias SecretHub.Core.Secrets
 
   # 30 seconds
@@ -118,65 +118,64 @@ defmodule SecretHub.WebWeb.AgentChannel do
 
   # Handles secret request messages from authenticated agents.
   def handle_in("secret:request", %{"path" => secret_path}, socket) do
-    unless socket.assigns.authenticated do
-      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
+    if socket.assigns.authenticated do
+      handle_secret_request(socket, secret_path)
     else
-      agent_id = socket.assigns.agent_id
+      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
+    end
+  end
 
-      Logger.debug("Agent #{agent_id} requesting secret: #{secret_path}")
+  defp handle_secret_request(socket, secret_path) do
+    agent_id = socket.assigns.agent_id
+    Logger.debug("Agent #{agent_id} requesting secret: #{secret_path}")
 
-      # Find secret by path
-      case find_secret_by_path(secret_path) do
-        nil ->
-          Logger.warning("Secret not found: #{secret_path}")
-          {:reply, {:error, %{reason: "secret_not_found", path: secret_path}}, socket}
+    case find_secret_by_path(secret_path) do
+      nil ->
+        Logger.warning("Secret not found: #{secret_path}")
+        {:reply, {:error, %{reason: "secret_not_found", path: secret_path}}, socket}
 
-        secret ->
-          # Check agent access via policies and get decrypted secret
-          case Secrets.get_secret_for_entity(agent_id, secret_path, %{}) do
-            {:ok, secret_data} ->
-              Logger.info("Secret access granted: #{agent_id} -> #{secret_path}")
+      secret ->
+        process_secret_access(socket, agent_id, secret_path, secret)
+    end
+  end
 
-              {:reply,
-               {:ok,
-                %{
-                  path: secret.secret_path,
-                  data: secret_data,
-                  lease_id: Ecto.UUID.generate(),
-                  lease_duration: secret.ttl_hours * 3600,
-                  renewable: true
-                }}, socket}
+  defp process_secret_access(socket, agent_id, secret_path, secret) do
+    case Secrets.get_secret_for_entity(agent_id, secret_path, %{}) do
+      {:ok, secret_data} ->
+        Logger.info("Secret access granted: #{agent_id} -> #{secret_path}")
 
-            {:error, reason} ->
-              Logger.warning("Secret access denied: #{agent_id} -> #{secret_path} (#{reason})")
-              {:reply, {:error, %{reason: "access_denied", path: secret_path}}, socket}
-          end
-      end
+        {:reply,
+         {:ok,
+          %{
+            path: secret.secret_path,
+            data: secret_data,
+            lease_id: Ecto.UUID.generate(),
+            lease_duration: secret.ttl_hours * 3600,
+            renewable: true
+          }}, socket}
+
+      {:error, reason} ->
+        Logger.warning("Secret access denied: #{agent_id} -> #{secret_path} (#{reason})")
+        {:reply, {:error, %{reason: "access_denied", path: secret_path}}, socket}
     end
   end
 
   # Handles heartbeat messages to keep connection alive.
   def handle_in("heartbeat", _payload, socket) do
-    unless socket.assigns.authenticated do
-      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
-    else
+    if socket.assigns.authenticated do
       agent_id = socket.assigns.agent_id
-
-      # Update agent heartbeat
       Agents.update_heartbeat(agent_id)
-
       socket = assign(socket, :last_heartbeat, DateTime.utc_now())
-
       {:reply, {:ok, %{status: "alive", timestamp: DateTime.utc_now()}}, socket}
+    else
+      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
     end
   end
 
   # Handles lease renewal requests.
   def handle_in("secret:renew", %{"lease_id" => lease_id}, socket) do
-    unless socket.assigns.authenticated do
-      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
-    else
-      # TODO: Implement lease renewal logic
+    if socket.assigns.authenticated do
+      # FIXME: Implement lease renewal logic
       Logger.info("Lease renewal requested: #{lease_id}")
 
       {:reply,
@@ -186,20 +185,18 @@ defmodule SecretHub.WebWeb.AgentChannel do
           renewed: true,
           lease_duration: 3600
         }}, socket}
+    else
+      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
     end
   end
 
   # Handles CSR submission from agents during bootstrap.
   # Agents submit CSR after authenticating with AppRole to receive a client certificate.
   def handle_in("certificate:request", %{"csr" => csr_pem}, socket) do
-    unless socket.assigns.authenticated do
-      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
-    else
+    if socket.assigns.authenticated do
       agent_id = socket.assigns.agent_id
-
       Logger.info("Agent #{agent_id} requesting certificate signing")
 
-      # Sign CSR using PKI backend
       case sign_agent_csr(csr_pem, agent_id) do
         {:ok, signed_cert, ca_chain} ->
           Logger.info("Certificate issued for agent: #{agent_id}")
@@ -216,6 +213,8 @@ defmodule SecretHub.WebWeb.AgentChannel do
           Logger.error("Failed to sign CSR for agent #{agent_id}: #{inspect(reason)}")
           {:reply, {:error, %{reason: "certificate_signing_failed"}}, socket}
       end
+    else
+      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
     end
   end
 
@@ -278,7 +277,7 @@ defmodule SecretHub.WebWeb.AgentChannel do
     # Extract source IP from socket transport
     case Phoenix.Socket.get_transport_pid(socket) do
       pid when is_pid(pid) ->
-        # TODO: Extract actual IP from transport
+        # FIXME: Extract actual IP from transport
         "unknown"
 
       _ ->
@@ -293,44 +292,51 @@ defmodule SecretHub.WebWeb.AgentChannel do
   end
 
   defp sign_agent_csr(csr_pem, agent_id) do
-    # Call PKI backend to sign CSR
     alias SecretHub.Core.PKI.CA
 
-    # Find or load agent entity to link certificate
+    with {:ok, agent} <- fetch_agent(agent_id),
+         {:ok, certificate} <- sign_csr_for_agent(csr_pem, agent, agent_id),
+         {:ok, ca_chain} <- fetch_ca_chain() do
+      {:ok, certificate.certificate_pem, ca_chain}
+    end
+  end
+
+  defp fetch_agent(agent_id) do
     case Agents.get_agent_by_id(agent_id) do
-      nil ->
-        {:error, "Agent not found"}
+      nil -> {:error, "Agent not found"}
+      agent -> {:ok, agent}
+    end
+  end
 
-      agent ->
-        # Sign CSR for agent_client certificate
-        case CA.sign_csr(csr_pem,
-               cert_type: :agent_client,
-               entity_id: agent.id,
-               entity_type: "agent",
-               common_name: agent_id,
-               organization: "SecretHub Agents",
-               ttl_days: 90
-             ) do
-          {:ok, certificate} ->
-            # Get CA chain for client verification
-            case CA.get_ca_chain() do
-              {:ok, ca_chain} ->
-                {:ok, certificate.certificate_pem, ca_chain}
+  defp sign_csr_for_agent(csr_pem, agent, agent_id) do
+    alias SecretHub.Core.PKI.CA
 
-              {:error, reason} ->
-                Logger.error("Failed to retrieve CA chain: #{inspect(reason)}")
-                {:error, reason}
-            end
+    CA.sign_csr(csr_pem,
+      cert_type: :agent_client,
+      entity_id: agent.id,
+      entity_type: "agent",
+      common_name: agent_id,
+      organization: "SecretHub Agents",
+      ttl_days: 90
+    )
+  end
 
-          {:error, reason} ->
-            {:error, reason}
-        end
+  defp fetch_ca_chain do
+    alias SecretHub.Core.PKI.CA
+
+    case CA.get_ca_chain() do
+      {:ok, ca_chain} ->
+        {:ok, ca_chain}
+
+      {:error, reason} = error ->
+        Logger.error("Failed to retrieve CA chain: #{inspect(reason)}")
+        error
     end
   end
 
   defp extract_validity(_cert_pem) do
     # Parse certificate and extract expiration date
-    # TODO: Implement actual certificate parsing
+    # FIXME: Implement actual certificate parsing
     # For now, return 90 days from now
     DateTime.utc_now()
     |> DateTime.add(90 * 24 * 3600, :second)

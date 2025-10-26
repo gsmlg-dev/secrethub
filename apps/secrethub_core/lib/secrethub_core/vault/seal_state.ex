@@ -200,9 +200,7 @@ defmodule SecretHub.Core.Vault.SealState do
 
       :sealed ->
         # Validate share
-        unless Shamir.valid_share?(share) do
-          {:reply, {:error, "Invalid share format"}, state}
-        else
+        if Shamir.valid_share?(share) do
           # Add share to collection
           new_shares = [share | state.unseal_shares] |> Enum.uniq_by(& &1.id)
           new_progress = length(new_shares)
@@ -245,6 +243,8 @@ defmodule SecretHub.Core.Vault.SealState do
             {:reply, {:ok, %{sealed: true, progress: new_progress, threshold: state.threshold}},
              new_state}
           end
+        else
+          {:reply, {:error, "Invalid share format"}, state}
         end
 
       :not_initialized ->

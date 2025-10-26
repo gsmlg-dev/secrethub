@@ -9,7 +9,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
-      :timer.send_interval(30000, :refresh_dashboard)
+      :timer.send_interval(30_000, :refresh_dashboard)
     end
 
     socket =
@@ -38,7 +38,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   @impl true
   def handle_event("rotate_all_leases", _params, socket) do
     Logger.info("Rotating all leases")
-    # TODO: Call SecretHub.Core.Secrets.rotate_all_leases()
+    # FIXME: Call SecretHub.Core.Secrets.rotate_all_leases()
 
     socket = put_flash(socket, :info, "Lease rotation started")
     {:noreply, socket}
@@ -47,7 +47,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   @impl true
   def handle_event("cleanup_expired_secrets", _params, socket) do
     Logger.info("Cleaning up expired secrets")
-    # TODO: Call SecretHub.Core.Secrets.cleanup_expired_secrets()
+    # FIXME: Call SecretHub.Core.Secrets.cleanup_expired_secrets()
 
     socket = put_flash(socket, :info, "Cleanup started")
     {:noreply, socket}
@@ -56,7 +56,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   @impl true
   def handle_event("export_audit_logs", _params, socket) do
     Logger.info("Exporting audit logs")
-    # TODO: Generate and trigger download of audit logs
+    # FIXME: Generate and trigger download of audit logs
 
     socket = put_flash(socket, :info, "Export started")
     {:noreply, socket}
@@ -65,7 +65,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   @impl true
   def handle_event("disconnect_agent", %{"agent_id" => agent_id}, socket) do
     Logger.info("Disconnecting agent: #{agent_id}")
-    # TODO: Call SecretHub.Core.Connections.disconnect_agent(agent_id)
+    # FIXME: Call SecretHub.Core.Connections.disconnect_agent(agent_id)
 
     updated_agents =
       Enum.map(socket.assigns.agents, fn agent ->
@@ -357,7 +357,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
 
   # Private functions
   defp load_system_stats do
-    # TODO: Call SecretHub.Core.Stats.system_stats()
+    # FIXME: Call SecretHub.Core.Stats.system_stats()
     %{
       total_secrets: 156,
       static_secrets: 89,
@@ -370,7 +370,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   end
 
   defp load_agents do
-    # TODO: Call SecretHub.Core.Agents.list_connected_agents()
+    # FIXME: Call SecretHub.Core.Agents.list_connected_agents()
     [
       %{
         id: "agent-prod-01",
@@ -397,7 +397,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   end
 
   defp load_secret_stats do
-    # TODO: Call SecretHub.Core.Stats.secret_stats()
+    # FIXME: Call SecretHub.Core.Stats.secret_stats()
     %{
       total_secrets: 156,
       static_secrets: 89,
@@ -409,7 +409,7 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   end
 
   defp load_audit_stats do
-    # TODO: Call SecretHub.Core.Stats.audit_stats()
+    # FIXME: Call SecretHub.Core.Stats.audit_stats()
     %{
       total_events_24h: 1247,
       access_denied_24h: 23,
@@ -435,8 +435,8 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
 
   defp format_relative_time(seconds) when seconds < 60, do: "#{seconds}s ago"
   defp format_relative_time(seconds) when seconds < 3600, do: "#{div(seconds, 60)}m ago"
-  defp format_relative_time(seconds) when seconds < 86400, do: "#{div(seconds, 3600)}h ago"
-  defp format_relative_time(seconds), do: "#{div(seconds, 86400)}d ago"
+  defp format_relative_time(seconds) when seconds < 86_400, do: "#{div(seconds, 3600)}h ago"
+  defp format_relative_time(seconds), do: "#{div(seconds, 86_400)}d ago"
 
   defp format_uptime(nil), do: "Unknown"
   defp format_uptime(hours) when hours < 1, do: "< 1h"

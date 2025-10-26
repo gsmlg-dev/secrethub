@@ -26,8 +26,8 @@ defmodule SecretHub.Core.PKI.CA do
   import Ecto.Query
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.Certificate
   alias SecretHub.Shared.Crypto.Encryption
+  alias SecretHub.Shared.Schemas.Certificate
 
   # Certificate validity periods
   # 10 years
@@ -219,25 +219,21 @@ defmodule SecretHub.Core.PKI.CA do
   # Private helper functions
 
   defp generate_private_key(:rsa, key_size) do
-    try do
-      # Generate RSA private key
-      private_key = :public_key.generate_key({:rsa, key_size, 65537})
-      {:ok, private_key}
-    rescue
-      e ->
-        {:error, "Failed to generate RSA key: #{inspect(e)}"}
-    end
+    # Generate RSA private key
+    private_key = :public_key.generate_key({:rsa, key_size, 65_537})
+    {:ok, private_key}
+  rescue
+    e ->
+      {:error, "Failed to generate RSA key: #{inspect(e)}"}
   end
 
   defp generate_private_key(:ecdsa, _key_size) do
-    try do
-      # Generate ECDSA private key using P-384 curve
-      private_key = :public_key.generate_key({:namedCurve, :secp384r1})
-      {:ok, private_key}
-    rescue
-      e ->
-        {:error, "Failed to generate ECDSA key: #{inspect(e)}"}
-    end
+    # Generate ECDSA private key using P-384 curve
+    private_key = :public_key.generate_key({:namedCurve, :secp384r1})
+    {:ok, private_key}
+  rescue
+    e ->
+      {:error, "Failed to generate ECDSA key: #{inspect(e)}"}
   end
 
   defp extract_public_key({:RSAPrivateKey, _, modulus, exponent, _, _, _, _, _, _, _}, :rsa) do
@@ -264,38 +260,36 @@ defmodule SecretHub.Core.PKI.CA do
          validity_days,
          opts
        ) do
-    try do
-      # Create certificate subject/issuer (same for self-signed)
-      subject = build_subject(common_name, organization, opts)
+    # Create certificate subject/issuer (same for self-signed)
+    subject = build_subject(common_name, organization, opts)
 
-      # Calculate validity period
-      not_before = :calendar.universal_time()
-      not_after = add_days(not_before, validity_days)
+    # Calculate validity period
+    not_before = :calendar.universal_time()
+    not_after = add_days(not_before, validity_days)
 
-      # Generate serial number
-      serial_number = generate_serial_number()
+    # Generate serial number
+    serial_number = generate_serial_number()
 
-      # Create TBS (To Be Signed) certificate
-      tbs_cert =
-        create_tbs_certificate(
-          serial_number,
-          subject,
-          # issuer same as subject for self-signed
-          subject,
-          public_key,
-          not_before,
-          not_after,
-          # is_ca = true for CA certificates
-          true
-        )
+    # Create TBS (To Be Signed) certificate
+    tbs_cert =
+      create_tbs_certificate(
+        serial_number,
+        subject,
+        # issuer same as subject for self-signed
+        subject,
+        public_key,
+        not_before,
+        not_after,
+        # is_ca = true for CA certificates
+        true
+      )
 
-      # Sign the certificate
-      cert_der = :public_key.pkix_sign(tbs_cert, private_key)
-      {:ok, cert_der}
-    rescue
-      e ->
-        {:error, "Failed to create self-signed certificate: #{inspect(e)}"}
-    end
+    # Sign the certificate
+    cert_der = :public_key.pkix_sign(tbs_cert, private_key)
+    {:ok, cert_der}
+  rescue
+    e ->
+      {:error, "Failed to create self-signed certificate: #{inspect(e)}"}
   end
 
   defp create_ca_signed_certificate(
@@ -309,45 +303,43 @@ defmodule SecretHub.Core.PKI.CA do
          cert_type,
          opts
        ) do
-    try do
-      # Parse CA certificate to get issuer
-      {:ok, ca_cert_der} = pem_to_der(ca_cert_pem, :certificate)
-      ca_cert = :public_key.pkix_decode_cert(ca_cert_der, :otp)
+    # Parse CA certificate to get issuer
+    {:ok, ca_cert_der} = pem_to_der(ca_cert_pem, :certificate)
+    ca_cert = :public_key.pkix_decode_cert(ca_cert_der, :otp)
 
-      # Extract issuer from CA cert
-      issuer = extract_issuer(ca_cert)
+    # Extract issuer from CA cert
+    issuer = extract_issuer(ca_cert)
 
-      # Create subject for new certificate
-      subject = build_subject(common_name, organization, opts)
+    # Create subject for new certificate
+    subject = build_subject(common_name, organization, opts)
 
-      # Calculate validity period
-      not_before = :calendar.universal_time()
-      not_after = add_days(not_before, validity_days)
+    # Calculate validity period
+    not_before = :calendar.universal_time()
+    not_after = add_days(not_before, validity_days)
 
-      # Generate serial number
-      serial_number = generate_serial_number()
+    # Generate serial number
+    serial_number = generate_serial_number()
 
-      # Create TBS certificate
-      is_ca = cert_type in [:root_ca, :intermediate_ca]
+    # Create TBS certificate
+    is_ca = cert_type in [:root_ca, :intermediate_ca]
 
-      tbs_cert =
-        create_tbs_certificate(
-          serial_number,
-          issuer,
-          subject,
-          public_key,
-          not_before,
-          not_after,
-          is_ca
-        )
+    tbs_cert =
+      create_tbs_certificate(
+        serial_number,
+        issuer,
+        subject,
+        public_key,
+        not_before,
+        not_after,
+        is_ca
+      )
 
-      # Sign with CA's private key
-      cert_der = :public_key.pkix_sign(tbs_cert, ca_private_key)
-      {:ok, cert_der}
-    rescue
-      e ->
-        {:error, "Failed to create CA-signed certificate: #{inspect(e)}"}
-    end
+    # Sign with CA's private key
+    cert_der = :public_key.pkix_sign(tbs_cert, ca_private_key)
+    {:ok, cert_der}
+  rescue
+    e ->
+      {:error, "Failed to create CA-signed certificate: #{inspect(e)}"}
   end
 
   defp build_subject(common_name, organization, opts) do
@@ -425,7 +417,7 @@ defmodule SecretHub.Core.PKI.CA do
     {
       :OTPSubjectPublicKeyInfo,
       # ecPublicKey
-      {:PublicKeyAlgorithm, {1, 2, 840, 10045, 2, 1}, params},
+      {:PublicKeyAlgorithm, {1, 2, 840, 10_045, 2, 1}, params},
       pub_key_bin
     }
   end
@@ -542,13 +534,11 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp pem_to_der(pem, :certificate) do
-    try do
-      [entry] = :public_key.pem_decode(pem)
-      {:Certificate, der, :not_encrypted} = entry
-      {:ok, der}
-    rescue
-      e -> {:error, "Failed to decode PEM: #{inspect(e)}"}
-    end
+    [entry] = :public_key.pem_decode(pem)
+    {:Certificate, der, :not_encrypted} = entry
+    {:ok, der}
+  rescue
+    e -> {:error, "Failed to decode PEM: #{inspect(e)}"}
   end
 
   defp store_certificate(cert_pem, key_pem, cert_type, common_name, organization, _validity_days) do
@@ -677,56 +667,52 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp parse_csr(csr_pem) do
-    try do
-      [entry] = :public_key.pem_decode(csr_pem)
-      csr = :public_key.pem_entry_decode(entry)
-      {:ok, csr}
-    rescue
-      e -> {:error, "Failed to parse CSR: #{inspect(e)}"}
-    end
+    [entry] = :public_key.pem_decode(csr_pem)
+    csr = :public_key.pem_entry_decode(entry)
+    {:ok, csr}
+  rescue
+    e -> {:error, "Failed to parse CSR: #{inspect(e)}"}
   end
 
   defp sign_certificate_request(csr, ca_cert, ca_key, validity_days, cert_type, _opts) do
     # Extract public key and subject from CSR
     # This is simplified - full implementation would validate CSR signature
-    try do
-      # Extract subject and public key from CSR
-      subject = extract_subject_from_csr(csr)
-      public_key = extract_public_key_from_csr(csr)
+    # Extract subject and public key from CSR
+    subject = extract_subject_from_csr(csr)
+    public_key = extract_public_key_from_csr(csr)
 
-      # Parse CA cert to get issuer
-      {:ok, ca_cert_der} = pem_to_der(ca_cert.certificate_pem, :certificate)
-      ca_cert_decoded = :public_key.pkix_decode_cert(ca_cert_der, :otp)
-      issuer = extract_issuer(ca_cert_decoded)
+    # Parse CA cert to get issuer
+    {:ok, ca_cert_der} = pem_to_der(ca_cert.certificate_pem, :certificate)
+    ca_cert_decoded = :public_key.pkix_decode_cert(ca_cert_der, :otp)
+    issuer = extract_issuer(ca_cert_decoded)
 
-      # Calculate validity
-      not_before = :calendar.universal_time()
-      not_after = add_days(not_before, validity_days)
+    # Calculate validity
+    not_before = :calendar.universal_time()
+    not_after = add_days(not_before, validity_days)
 
-      # Generate serial
-      serial_number = generate_serial_number()
+    # Generate serial
+    serial_number = generate_serial_number()
 
-      # Create TBS certificate
-      is_ca = cert_type in [:root_ca, :intermediate_ca]
+    # Create TBS certificate
+    is_ca = cert_type in [:root_ca, :intermediate_ca]
 
-      tbs_cert =
-        create_tbs_certificate(
-          serial_number,
-          issuer,
-          subject,
-          public_key,
-          not_before,
-          not_after,
-          is_ca
-        )
+    tbs_cert =
+      create_tbs_certificate(
+        serial_number,
+        issuer,
+        subject,
+        public_key,
+        not_before,
+        not_after,
+        is_ca
+      )
 
-      # Sign with CA key
-      cert_der = :public_key.pkix_sign(tbs_cert, ca_key)
-      {:ok, cert_der}
-    rescue
-      e ->
-        {:error, "Failed to sign CSR: #{inspect(e)}"}
-    end
+    # Sign with CA key
+    cert_der = :public_key.pkix_sign(tbs_cert, ca_key)
+    {:ok, cert_der}
+  rescue
+    e ->
+      {:error, "Failed to sign CSR: #{inspect(e)}"}
   end
 
   defp extract_serial_number(

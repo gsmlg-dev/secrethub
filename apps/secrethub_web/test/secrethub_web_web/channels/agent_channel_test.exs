@@ -13,10 +13,10 @@ defmodule SecretHub.WebWeb.AgentChannelTest do
 
   use SecretHub.WebWeb.ChannelCase, async: false
 
+  alias SecretHub.Core.Agents
+  alias SecretHub.Core.Auth.AppRole
   alias SecretHub.WebWeb.AgentChannel
   alias SecretHub.WebWeb.UserSocket
-  alias SecretHub.Core.Auth.AppRole
-  alias SecretHub.Core.Agents
 
   setup do
     # Create a test AppRole

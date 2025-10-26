@@ -24,8 +24,8 @@ defmodule SecretHub.Core.Auth.AppRole do
   import Ecto.Query
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{Role, AuditLog}
   alias SecretHub.Shared.Crypto.Encryption
+  alias SecretHub.Shared.Schemas.{AuditLog, Role}
 
   # 10 minutes in seconds
   @secret_id_ttl_default 600

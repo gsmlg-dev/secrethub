@@ -43,33 +43,31 @@ defmodule SecretHub.Shared.Crypto.Encryption do
   """
   @spec encrypt(binary(), binary()) :: {:ok, encrypted_data()} | {:error, String.t()}
   def encrypt(plaintext, encryption_key) when byte_size(encryption_key) == @key_size do
-    try do
-      # Generate random nonce (must be unique for each encryption)
-      nonce = :crypto.strong_rand_bytes(@nonce_size)
+    # Generate random nonce (must be unique for each encryption)
+    nonce = :crypto.strong_rand_bytes(@nonce_size)
 
-      # Perform AES-256-GCM encryption
-      {ciphertext, tag} =
-        :crypto.crypto_one_time_aead(
-          :aes_256_gcm,
-          encryption_key,
-          nonce,
-          plaintext,
-          @aad,
-          # encrypt
-          true
-        )
+    # Perform AES-256-GCM encryption
+    {ciphertext, tag} =
+      :crypto.crypto_one_time_aead(
+        :aes_256_gcm,
+        encryption_key,
+        nonce,
+        plaintext,
+        @aad,
+        # encrypt
+        true
+      )
 
-      {:ok,
-       %{
-         ciphertext: ciphertext,
-         nonce: nonce,
-         tag: tag,
-         version: 1
-       }}
-    rescue
-      error ->
-        {:error, "Encryption failed: #{inspect(error)}"}
-    end
+    {:ok,
+     %{
+       ciphertext: ciphertext,
+       nonce: nonce,
+       tag: tag,
+       version: 1
+     }}
+  rescue
+    error ->
+      {:error, "Encryption failed: #{inspect(error)}"}
   end
 
   def encrypt(_plaintext, _encryption_key) do
@@ -92,28 +90,26 @@ defmodule SecretHub.Shared.Crypto.Encryption do
   @spec decrypt(encrypted_data(), binary()) :: {:ok, binary()} | {:error, String.t()}
   def decrypt(%{ciphertext: ciphertext, nonce: nonce, tag: tag}, encryption_key)
       when byte_size(encryption_key) == @key_size do
-    try do
-      # Perform AES-256-GCM decryption with tag verification
-      case :crypto.crypto_one_time_aead(
-             :aes_256_gcm,
-             encryption_key,
-             nonce,
-             ciphertext,
-             @aad,
-             tag,
-             # decrypt
-             false
-           ) do
-        :error ->
-          {:error, "Decryption failed: authentication tag verification failed"}
+    # Perform AES-256-GCM decryption with tag verification
+    case :crypto.crypto_one_time_aead(
+           :aes_256_gcm,
+           encryption_key,
+           nonce,
+           ciphertext,
+           @aad,
+           tag,
+           # decrypt
+           false
+         ) do
+      :error ->
+        {:error, "Decryption failed: authentication tag verification failed"}
 
-        plaintext when is_binary(plaintext) ->
-          {:ok, plaintext}
-      end
-    rescue
-      error ->
-        {:error, "Decryption failed: #{inspect(error)}"}
+      plaintext when is_binary(plaintext) ->
+        {:ok, plaintext}
     end
+  rescue
+    error ->
+      {:error, "Decryption failed: #{inspect(error)}"}
   end
 
   def decrypt(_encrypted_data, _encryption_key) do

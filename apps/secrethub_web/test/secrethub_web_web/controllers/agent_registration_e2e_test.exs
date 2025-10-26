@@ -12,8 +12,8 @@ defmodule SecretHub.WebWeb.AgentRegistrationE2ETest do
   use SecretHub.WebWeb.ConnCase, async: false
 
   alias SecretHub.Core.{Agents, Policies}
-  alias SecretHub.Core.Vault.SealState
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.Vault.SealState
 
   setup do
     # Use shared mode for database access across processes
@@ -63,7 +63,7 @@ defmodule SecretHub.WebWeb.AgentRegistrationE2ETest do
         })
 
       # Step 2: Register agent with AppRole credentials
-      agent_id = "test-agent-#{:rand.uniform(10000)}"
+      agent_id = "test-agent-#{:rand.uniform(10_000)}"
 
       {:ok, agent} =
         Agents.register_agent(%{
@@ -147,7 +147,7 @@ defmodule SecretHub.WebWeb.AgentRegistrationE2ETest do
           ]
         })
 
-      agent_id = "renewal-agent-#{:rand.uniform(10000)}"
+      agent_id = "renewal-agent-#{:rand.uniform(10_000)}"
 
       {:ok, agent} =
         Agents.register_agent(%{
@@ -201,7 +201,7 @@ defmodule SecretHub.WebWeb.AgentRegistrationE2ETest do
           path_rules: [%{path: "secret/*", capabilities: ["read"]}]
         })
 
-      agent_id = "revoke-agent-#{:rand.uniform(10000)}"
+      agent_id = "revoke-agent-#{:rand.uniform(10_000)}"
 
       {:ok, agent} =
         Agents.register_agent(%{
@@ -247,7 +247,7 @@ defmodule SecretHub.WebWeb.AgentRegistrationE2ETest do
       # Register two agents with different policies
       {:ok, agent1} =
         Agents.register_agent(%{
-          agent_id: "policy-agent-1-#{:rand.uniform(10000)}",
+          agent_id: "policy-agent-1-#{:rand.uniform(10_000)}",
           name: "Agent 1",
           policy_ids: [policy1.id],
           auth_method: "approle"
@@ -255,7 +255,7 @@ defmodule SecretHub.WebWeb.AgentRegistrationE2ETest do
 
       {:ok, agent2} =
         Agents.register_agent(%{
-          agent_id: "policy-agent-2-#{:rand.uniform(10000)}",
+          agent_id: "policy-agent-2-#{:rand.uniform(10_000)}",
           name: "Agent 2",
           policy_ids: [policy2.id],
           auth_method: "approle"
@@ -326,7 +326,7 @@ defmodule SecretHub.WebWeb.AgentRegistrationE2ETest do
         Enum.map(1..10, fn i ->
           Task.async(fn ->
             Agents.register_agent(%{
-              agent_id: "concurrent-agent-#{i}-#{:rand.uniform(10000)}",
+              agent_id: "concurrent-agent-#{i}-#{:rand.uniform(10_000)}",
               name: "Concurrent Agent #{i}",
               policy_ids: [policy.id],
               auth_method: "approle"
@@ -334,7 +334,7 @@ defmodule SecretHub.WebWeb.AgentRegistrationE2ETest do
           end)
         end)
 
-      results = Task.await_many(tasks, 10000)
+      results = Task.await_many(tasks, 10_000)
 
       # All registrations should succeed
       assert Enum.all?(results, fn result ->

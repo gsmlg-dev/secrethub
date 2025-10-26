@@ -188,7 +188,7 @@ defmodule SecretHub.Shared.Crypto.ShamirTest do
 
     test "rejects share with non-binary value" do
       # Test with integer (not a binary)
-      invalid = %{id: 1, value: 12345, threshold: 3, total_shares: 5}
+      invalid = %{id: 1, value: 12_345, threshold: 3, total_shares: 5}
       assert Shamir.valid_share?(invalid) == false
 
       # Test with list (not a binary)
