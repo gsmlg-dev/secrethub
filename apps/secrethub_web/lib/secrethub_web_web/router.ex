@@ -66,6 +66,9 @@ defmodule SecretHub.WebWeb.Router do
     live "/pki", PKIManagementLive, :index
     live "/certificates", AdminCertificateLive, :index
     live "/approles", AppRoleManagementLive, :index
+    live "/dynamic/postgresql", DynamicPostgreSQLConfigLive, :index
+    live "/leases", LeaseViewerLive, :index
+    live "/leases/dashboard", LeaseDashboardLive, :index
 
     delete "/logout", AdminAuthController, :logout
   end

@@ -21,7 +21,7 @@
 - **Week 12**: 🟢 Completed (83% complete - E2E tests, perf infrastructure, security review done)
 
 ### Phase 2: Production Hardening (Weeks 13-24)
-- **Week 13-14**: 🟢 Completed (100% complete - Dynamic Secret Engine - PostgreSQL, Backend & Agent)
+- **Week 13-14**: 🟢 Completed (100% complete - Dynamic Secret Engine - PostgreSQL: Backend, Agent, UI & Docs)
 - **Week 15-16**: ⚪ Not Started
 - **Week 17-18**: ⚪ Not Started
 - **Week 19-20**: ⚪ Not Started
@@ -102,39 +102,39 @@
 
 ### Engineer 3 (Full-stack) - Tasks
 
-- [ ] Build dynamic engine configuration UI
-  - [ ] Create LiveView for PostgreSQL engine config
-  - [ ] Add form for connection parameters
-  - [ ] Add role creation/editing interface
-  - [ ] Implement SQL statement templates
-- [ ] Create lease viewer component
-  - [ ] Build table for active leases
-  - [ ] Add filtering by role/agent/status
-  - [ ] Show lease TTL countdown
-  - [ ] Add manual revoke button
-- [ ] Add lease renewal dashboard
-  - [ ] Show renewal success/failure metrics
-  - [ ] Display upcoming renewals timeline
-  - [ ] Add lease history visualization
-- [ ] Implement active leases monitoring
-  - [ ] Create real-time lease status updates
-  - [ ] Add WebSocket for live lease events
-  - [ ] Show lease lifecycle events
-- [ ] Documentation
-  - [ ] Write dynamic secrets user guide
-  - [ ] Document PostgreSQL engine configuration
-  - [ ] Add lease management best practices
-  - [ ] Create troubleshooting guide for lease issues
+- [x] Build dynamic engine configuration UI
+  - [x] Create LiveView for PostgreSQL engine config (DynamicPostgreSQLConfigLive)
+  - [x] Add form for connection parameters
+  - [x] Add role creation/editing interface
+  - [x] Implement SQL statement templates
+- [x] Create lease viewer component
+  - [x] Build table for active leases (LeaseViewerLive)
+  - [x] Add filtering by role/agent/status
+  - [x] Show lease TTL countdown (real-time updates every 1s)
+  - [x] Add manual revoke button
+- [x] Add lease renewal dashboard
+  - [x] Show renewal success/failure metrics (LeaseDashboardLive)
+  - [x] Display upcoming renewals timeline
+  - [x] Add lease history visualization
+- [x] Implement active leases monitoring
+  - [x] Create real-time lease status updates (TTL countdown)
+  - [x] Add WebSocket for live lease events (via LiveView)
+  - [x] Show lease lifecycle events (in dashboard)
+- [x] Documentation
+  - [x] Write dynamic secrets user guide (docs/user-guides/dynamic-secrets.md)
+  - [x] Document PostgreSQL engine configuration
+  - [x] Add lease management best practices
+  - [x] Create troubleshooting guide for lease issues
 
 ### Week 13-14 Deliverables
 
 - [x] PostgreSQL dynamic engine fully functional
 - [x] Leases automatically renewed before expiry
 - [x] Leases automatically revoked on expiry
-- [ ] UI shows active leases with TTL countdown (deferred to Week 15-16)
+- [x] UI shows active leases with TTL countdown (LeaseViewerLive + LeaseDashboardLive + DynamicPostgreSQLConfigLive)
 - [x] Agent successfully caches and renews dynamic credentials
 - [x] Integration tests pass with real PostgreSQL (test framework complete, run with PG_TEST=true)
-- [ ] Documentation complete for dynamic secrets (deferred to Week 15-16)
+- [x] Documentation complete for dynamic secrets (docs/user-guides/dynamic-secrets.md - 1000+ lines)
 
 ---
 
