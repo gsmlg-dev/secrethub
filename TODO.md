@@ -1,8 +1,8 @@
 # SecretHub - Development TODO List
 
 **Last Updated:** 2025-10-27
-**Current Sprint:** Week 13-14 (Phase 2: Production Hardening)
-**Current Focus:** Dynamic Secret Engine - PostgreSQL
+**Current Sprint:** Week 15-16 (Phase 2: Production Hardening)
+**Current Focus:** Agent Local Authentication & Template Rendering
 
 > This TODO list tracks implementation progress against the [PLAN.md](./PLAN.md) timeline.
 > For detailed technical specifications, see [DESIGN.md](./DESIGN.md).
@@ -22,7 +22,7 @@
 
 ### Phase 2: Production Hardening (Weeks 13-24)
 - **Week 13-14**: 🟢 Completed (100% complete - Dynamic Secret Engine - PostgreSQL: Backend, Agent, UI & Docs)
-- **Week 15-16**: ⚪ Not Started
+- **Week 15-16**: 🟡 In Progress (0% complete - Agent Local Authentication & Template Rendering)
 - **Week 17-18**: ⚪ Not Started
 - **Week 19-20**: ⚪ Not Started
 - **Week 21-22**: ⚪ Not Started
@@ -138,7 +138,105 @@
 
 ---
 
-## 📅 Upcoming: Week 2-3 - Core Service: Authentication & Basic Storage
+## 🎯 Current Sprint: Week 15-16 - Agent Local Authentication & Template Rendering
+
+**Sprint Goal:** Enable applications to authenticate to Agent via Unix Domain Sockets and render secrets using templates
+
+**Team Assignments:**
+- **Engineer 1 (Core Lead)**: Application certificate issuance flow, app certificate signing, app-level policies
+- **Engineer 2 (Agent/Infra Lead)**: Unix Domain Socket server, mTLS for apps, template engine, Sinker
+- **Engineer 3 (Full-stack)**: Template editor UI, validation, preview, sink config UI, documentation
+
+### Engineer 1 (Core Lead) - Tasks
+
+- [ ] Design application certificate issuance flow
+  - [ ] Define app certificate request format
+  - [ ] Design app identity verification
+  - [ ] Plan certificate lifecycle (issue, renew, revoke)
+  - [ ] Document app cert vs agent cert differences
+- [ ] Implement app certificate signing
+  - [ ] Add app_client certificate type support
+  - [ ] Create app certificate signing endpoint (POST /v1/pki/app/issue)
+  - [ ] Implement app CSR validation
+  - [ ] Add app certificate storage and tracking
+- [ ] Create policy structure for app-level access
+  - [ ] Design app-to-secret policy binding
+  - [ ] Implement app identity in policy evaluation
+  - [ ] Add app-specific policy constraints
+  - [ ] Create default app policies
+
+### Engineer 2 (Agent/Infra Lead) - Tasks
+
+- [ ] Build Unix Domain Socket server
+  - [ ] Create UDS listener in Agent
+  - [ ] Implement connection handling
+  - [ ] Add request/response protocol
+  - [ ] Implement connection limits and timeouts
+- [ ] Implement mTLS authentication for apps
+  - [ ] Add client certificate verification
+  - [ ] Validate app certificates against Core CA
+  - [ ] Extract app identity from certificates
+  - [ ] Implement cert-based authorization
+- [ ] Create template parsing engine
+  - [ ] Implement template syntax (Mustache/Go template style)
+  - [ ] Build variable substitution logic
+  - [ ] Add conditional rendering support
+  - [ ] Implement loop/iteration support
+- [ ] Build variable substitution logic
+  - [ ] Fetch secrets from cache/Core
+  - [ ] Parse and inject secret values
+  - [ ] Handle missing secrets gracefully
+  - [ ] Add error context for template errors
+- [ ] Implement atomic file writing (Sinker)
+  - [ ] Create Sinker module for file writes
+  - [ ] Implement write-then-rename atomicity
+  - [ ] Add file permission management
+  - [ ] Support multiple sink targets
+- [ ] Add application reload triggers
+  - [ ] Define reload trigger mechanisms (signal, HTTP, script)
+  - [ ] Implement post-write hooks
+  - [ ] Add reload status tracking
+  - [ ] Create reload failure handling
+
+### Engineer 3 (Full-stack) - Tasks
+
+- [ ] Create template editor UI
+  - [ ] Build template creation form
+  - [ ] Add syntax highlighting for templates
+  - [ ] Implement template CRUD operations
+  - [ ] Show template-to-sink associations
+- [ ] Build template validation
+  - [ ] Add client-side template syntax validation
+  - [ ] Implement variable reference checking
+  - [ ] Validate sink path configurations
+  - [ ] Show validation errors inline
+- [ ] Add template preview functionality
+  - [ ] Build preview pane with mock data
+  - [ ] Show rendered output in real-time
+  - [ ] Highlight template variables
+  - [ ] Support different secret data types
+- [ ] Implement sink configuration UI
+  - [ ] Create sink definition form
+  - [ ] Add file path and permission config
+  - [ ] Implement reload trigger UI
+  - [ ] Show sink status and history
+- [ ] Documentation: Template guide
+  - [ ] Write template syntax guide
+  - [ ] Document variable resolution
+  - [ ] Add use case examples (config files, env vars)
+  - [ ] Create troubleshooting guide
+
+### Week 15-16 Deliverables
+
+- [ ] Applications can authenticate to Agent via UDS with mTLS
+- [ ] Templates render secrets to files with variable substitution
+- [ ] Applications reload automatically on secret updates
+- [ ] UI for template and sink management
+- [ ] Complete template usage documentation
+
+---
+
+## 📅 Completed: Week 2-3 - Core Service: Authentication & Basic Storage
 
 **Goals:** Implement basic authentication and secret storage
 
