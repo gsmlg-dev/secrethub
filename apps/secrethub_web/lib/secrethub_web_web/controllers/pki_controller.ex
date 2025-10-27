@@ -15,8 +15,7 @@ defmodule SecretHub.WebWeb.PKIController do
   use SecretHub.WebWeb, :controller
   require Logger
 
-  alias SecretHub.Core.PKI.CA
-  alias SecretHub.Core.Repo
+  alias SecretHub.Core.{Apps, PKI.CA, Repo}
   alias SecretHub.Shared.Schemas.Certificate
 
   @doc """
@@ -483,5 +482,247 @@ defmodule SecretHub.WebWeb.PKIController do
 
   defp valid_cert_type?(cert_type) do
     cert_type in ["agent_client", "app_client", "admin_client"]
+  end
+
+  @doc """
+  POST /v1/pki/app/issue
+
+  Issue a certificate for an application using a bootstrap token.
+
+  Request body:
+  ```json
+  {
+    "app_id": "uuid",
+    "app_token": "hvs.CAESIJ...",
+    "csr": "-----BEGIN CERTIFICATE REQUEST-----...",
+    "ttl": 2592000,
+    "metadata": {
+      "hostname": "prod-payment-01",
+      "environment": "production",
+      "version": "v1.2.3"
+    }
+  }
+  ```
+
+  Response:
+  ```json
+  {
+    "certificate": "-----BEGIN CERTIFICATE-----...",
+    "ca_chain": ["-----BEGIN CERTIFICATE-----..."],
+    "serial_number": "1A:2B:3C:4D",
+    "expires_at": "2025-11-27T10:00:00Z",
+    "issued_at": "2025-10-27T10:00:00Z",
+    "ttl": 2592000
+  }
+  ```
+  """
+  def issue_app_certificate(
+        conn,
+        %{
+          "app_id" => app_id,
+          "app_token" => app_token,
+          "csr" => csr_pem
+        } = params
+      ) do
+    Logger.info("App certificate issuance requested", app_id: app_id)
+
+    with {:ok, validated_app_id} <- Apps.validate_bootstrap_token(app_token),
+         :ok <- verify_app_id_match(app_id, validated_app_id),
+         {:ok, app} <- Apps.get_app(app_id),
+         {:ok, intermediate_ca} <- get_intermediate_ca(),
+         ttl <- Map.get(params, "ttl", 2_592_000),
+         validity_days <- div(ttl, 86400),
+         {:ok, %{certificate: cert_pem, cert_record: cert_record}} <-
+           CA.sign_csr(csr_pem, intermediate_ca.id, :app_client, validity_days: validity_days),
+         {:ok, _app_cert} <-
+           Apps.associate_certificate(app.id, cert_record.id, cert_record.valid_until),
+         {:ok, ca_chain} <- CA.get_ca_chain() do
+      Logger.info("App certificate issued successfully",
+        app_id: app.id,
+        certificate_id: cert_record.id
+      )
+
+      conn
+      |> put_status(:ok)
+      |> json(%{
+        certificate: cert_pem,
+        ca_chain: String.split(ca_chain, "\n\n", trim: true),
+        serial_number: cert_record.serial_number,
+        expires_at: cert_record.valid_until,
+        issued_at: cert_record.valid_from,
+        ttl: ttl
+      })
+    else
+      {:error, :invalid_token} ->
+        conn
+        |> put_status(:unauthorized)
+        |> json(%{error: "Invalid or expired bootstrap token"})
+
+      {:error, :app_id_mismatch} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "App ID does not match token"})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Application not found"})
+
+      {:error, reason} ->
+        Logger.error("Failed to issue app certificate", reason: inspect(reason))
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Certificate issuance failed"})
+    end
+  end
+
+  @doc """
+  POST /v1/pki/app/renew
+
+  Renew an application certificate.
+
+  Request body:
+  ```json
+  {
+    "app_id": "uuid",
+    "current_cert": "-----BEGIN CERTIFICATE-----...",
+    "csr": "-----BEGIN CERTIFICATE REQUEST-----...",
+    "ttl": 2592000
+  }
+  ```
+  """
+  def renew_app_certificate(
+        conn,
+        %{
+          "app_id" => app_id,
+          "current_cert" => current_cert_pem,
+          "csr" => csr_pem
+        } = params
+      ) do
+    Logger.info("App certificate renewal requested", app_id: app_id)
+
+    with {:ok, app} <- Apps.get_app(app_id),
+         :ok <- verify_current_certificate(current_cert_pem, app_id),
+         {:ok, intermediate_ca} <- get_intermediate_ca(),
+         ttl <- Map.get(params, "ttl", 2_592_000),
+         validity_days <- div(ttl, 86400),
+         {:ok, %{certificate: cert_pem, cert_record: cert_record}} <-
+           CA.sign_csr(csr_pem, intermediate_ca.id, :app_client, validity_days: validity_days),
+         {:ok, _app_cert} <-
+           Apps.associate_certificate(app.id, cert_record.id, cert_record.valid_until),
+         {:ok, ca_chain} <- CA.get_ca_chain() do
+      Logger.info("App certificate renewed successfully",
+        app_id: app.id,
+        certificate_id: cert_record.id
+      )
+
+      conn
+      |> put_status(:ok)
+      |> json(%{
+        certificate: cert_pem,
+        ca_chain: String.split(ca_chain, "\n\n", trim: true),
+        serial_number: cert_record.serial_number,
+        expires_at: cert_record.valid_until,
+        issued_at: cert_record.valid_from,
+        ttl: ttl
+      })
+    else
+      {:error, :not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Application not found"})
+
+      {:error, :invalid_certificate} ->
+        conn
+        |> put_status(:unauthorized)
+        |> json(%{error: "Invalid current certificate"})
+
+      {:error, reason} ->
+        Logger.error("Failed to renew app certificate", reason: inspect(reason))
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Certificate renewal failed"})
+    end
+  end
+
+  @doc """
+  POST /v1/pki/app/revoke
+
+  Revoke an application certificate.
+
+  Request body:
+  ```json
+  {
+    "app_id": "uuid",
+    "reason": "key_compromise"
+  }
+  ```
+  """
+  def revoke_app_certificate(conn, %{"app_id" => app_id} = params) do
+    reason = Map.get(params, "reason", "unspecified")
+
+    Logger.info("App certificate revocation requested", app_id: app_id, reason: reason)
+
+    with {:ok, _app} <- Apps.get_app(app_id),
+         {:ok, count} <- Apps.revoke_all_app_certificates(app_id, reason) do
+      Logger.info("App certificates revoked", app_id: app_id, count: count)
+
+      conn
+      |> put_status(:ok)
+      |> json(%{
+        message: "Application certificates revoked",
+        revoked_count: count
+      })
+    else
+      {:error, :not_found} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Application not found"})
+
+      {:error, reason} ->
+        Logger.error("Failed to revoke app certificate", reason: inspect(reason))
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Certificate revocation failed"})
+    end
+  end
+
+  # Private helper functions for app certificate endpoints
+
+  defp verify_app_id_match(provided_app_id, validated_app_id) do
+    if provided_app_id == validated_app_id do
+      :ok
+    else
+      {:error, :app_id_mismatch}
+    end
+  end
+
+  defp verify_current_certificate(_current_cert_pem, _app_id) do
+    # TODO: Implement certificate verification
+    # 1. Parse certificate
+    # 2. Verify it's not revoked
+    # 3. Verify it's issued to this app_id
+    # 4. Verify it's still valid
+    :ok
+  end
+
+  defp get_intermediate_ca do
+    # Get the intermediate CA for signing client certificates
+    import Ecto.Query
+
+    query =
+      from(c in Certificate,
+        where: c.cert_type == "intermediate_ca" and c.revoked == false,
+        order_by: [desc: c.inserted_at],
+        limit: 1
+      )
+
+    case Repo.one(query) do
+      nil -> {:error, :no_intermediate_ca}
+      cert -> {:ok, cert}
+    end
   end
 end

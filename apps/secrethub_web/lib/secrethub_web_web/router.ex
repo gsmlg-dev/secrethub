@@ -148,6 +148,30 @@ defmodule SecretHub.WebWeb.Router do
     get "/certificates", PKIController, :list_certificates
     get "/certificates/:id", PKIController, :get_certificate
     post "/certificates/:id/revoke", PKIController, :revoke_certificate
+
+    # Application certificate operations
+    post "/app/issue", PKIController, :issue_app_certificate
+    post "/app/renew", PKIController, :renew_app_certificate
+    post "/app/revoke", PKIController, :revoke_app_certificate
+  end
+
+  # Application management API routes
+  scope "/v1/apps", SecretHub.WebWeb do
+    pipe_through :api
+
+    # Application registration and management
+    post "/", AppsController, :register_app
+    get "/", AppsController, :list_apps
+    get "/:id", AppsController, :get_app
+    put "/:id", AppsController, :update_app
+    delete "/:id", AppsController, :delete_app
+
+    # Application lifecycle
+    post "/:id/suspend", AppsController, :suspend_app
+    post "/:id/activate", AppsController, :activate_app
+
+    # Application certificates
+    get "/:id/certificates", AppsController, :list_certificates
   end
 
   # Other API scopes may use custom stacks.
