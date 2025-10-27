@@ -22,7 +22,7 @@
 
 ### Phase 2: Production Hardening (Weeks 13-24)
 - **Week 13-14**: 🟢 Completed (100% complete - Dynamic Secret Engine - PostgreSQL: Backend, Agent, UI & Docs)
-- **Week 15-16**: 🟡 In Progress (0% complete - Agent Local Authentication & Template Rendering)
+- **Week 15-16**: 🟡 In Progress (17% complete - Agent Local Authentication & Template Rendering)
 - **Week 17-18**: ⚪ Not Started
 - **Week 19-20**: ⚪ Not Started
 - **Week 21-22**: ⚪ Not Started
@@ -149,16 +149,16 @@
 
 ### Engineer 1 (Core Lead) - Tasks
 
-- [ ] Design application certificate issuance flow
-  - [ ] Define app certificate request format
-  - [ ] Design app identity verification
-  - [ ] Plan certificate lifecycle (issue, renew, revoke)
-  - [ ] Document app cert vs agent cert differences
-- [ ] Implement app certificate signing
-  - [ ] Add app_client certificate type support
-  - [ ] Create app certificate signing endpoint (POST /v1/pki/app/issue)
-  - [ ] Implement app CSR validation
-  - [ ] Add app certificate storage and tracking
+- [x] Design application certificate issuance flow
+  - [x] Define app certificate request format
+  - [x] Design app identity verification
+  - [x] Plan certificate lifecycle (issue, renew, revoke)
+  - [x] Document app cert vs agent cert differences (docs/architecture/app-certificate-issuance.md)
+- [x] Implement app certificate signing
+  - [x] Add app_client certificate type support (added to PKI module)
+  - [x] Create app certificate signing endpoint (POST /v1/pki/app/issue)
+  - [x] Implement app CSR validation
+  - [x] Add app certificate storage and tracking (app_certificates table + AppsController)
 - [ ] Create policy structure for app-level access
   - [ ] Design app-to-secret policy binding
   - [ ] Implement app identity in policy evaluation
