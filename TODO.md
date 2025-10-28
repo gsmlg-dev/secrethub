@@ -236,6 +236,116 @@
 
 ---
 
+## 🎯 Current Sprint: Week 17-18 - High Availability & Auto-Unsealing
+
+**Sprint Goal:** Enable multi-node deployments with automatic unsealing and failover
+
+**Team Assignments:**
+- **Engineer 1 (Core Lead)**: Cloud KMS integration, auto-unseal logic, distributed locking, health checks
+- **Engineer 2 (Agent/Infra Lead)**: Kubernetes StatefulSet, load balancer config, Agent failover, Helm charts
+- **Engineer 3 (Full-stack)**: Cluster status dashboard, node health monitoring UI, auto-unseal config UI
+
+### Engineer 1 (Core Lead) - Tasks
+
+- [x] Create health check endpoints
+  - [x] Liveness endpoint for Kubernetes (GET /v1/sys/health/live)
+  - [x] Readiness endpoint for load balancers (GET /v1/sys/health/ready)
+  - [x] Detailed health status with metrics (enhanced GET /v1/sys/health)
+  - [x] Database connectivity checks with latency
+  - [x] Vault status monitoring (seal state, initialization)
+- [ ] Implement graceful shutdown
+  - [ ] Drain active connections before shutdown
+  - [ ] Complete pending requests
+  - [ ] Close database connections gracefully
+  - [ ] Signal Kubernetes when shutdown is ready
+- [ ] Add distributed locking for initialization
+  - [ ] Use PostgreSQL advisory locks
+  - [ ] Prevent race conditions during init
+  - [ ] Coordinate unseal across nodes
+  - [ ] Add cluster state management
+- [ ] Build auto-unseal logic
+  - [ ] Define auto-unseal configuration schema
+  - [ ] Implement unseal on startup
+  - [ ] Add key wrapping/unwrapping
+  - [ ] Handle unseal failures gracefully
+- [ ] Implement cloud KMS integration (AWS KMS)
+  - [ ] AWS KMS client setup
+  - [ ] Encrypt/decrypt master key with KMS
+  - [ ] Handle AWS credentials (IAM roles)
+  - [ ] Add KMS error handling and retries
+
+### Engineer 2 (Agent/Infra Lead) - Tasks
+
+- [ ] Set up Kubernetes StatefulSet for Core
+  - [ ] Define StatefulSet manifest
+  - [ ] Configure persistent volume claims
+  - [ ] Add pod anti-affinity rules
+  - [ ] Set resource limits and requests
+- [ ] Configure load balancer with health checks
+  - [ ] Kubernetes Service with LoadBalancer type
+  - [ ] Configure health check probes
+  - [ ] Set up session affinity if needed
+  - [ ] Add TLS termination
+- [ ] Implement Agent multi-endpoint failover
+  - [ ] Support multiple Core endpoints in Agent config
+  - [ ] Add connection health monitoring
+  - [ ] Implement automatic failover logic
+  - [ ] Add exponential backoff on failures
+- [ ] Build connection load balancing
+  - [ ] Round-robin endpoint selection
+  - [ ] Sticky sessions for WebSocket connections
+  - [ ] Connection pooling improvements
+- [ ] Create Helm chart for deployment
+  - [ ] Chart structure and values.yaml
+  - [ ] Core StatefulSet template
+  - [ ] PostgreSQL HA configuration (or external)
+  - [ ] Redis configuration
+  - [ ] ConfigMaps and Secrets
+  - [ ] Ingress configuration
+- [ ] Set up PostgreSQL HA (RDS Multi-AZ or similar)
+  - [ ] Document RDS Multi-AZ setup
+  - [ ] Connection string format for HA
+  - [ ] Failover testing procedures
+
+### Engineer 3 (Full-stack) - Tasks
+
+- [ ] Add cluster status dashboard
+  - [ ] Show all Core nodes and their status
+  - [ ] Display health check status for each node
+  - [ ] Show active/standby status
+  - [ ] Real-time status updates
+- [ ] Implement node health monitoring UI
+  - [ ] Node list with health indicators
+  - [ ] Detailed health metrics per node
+  - [ ] Historical health data
+  - [ ] Alert configuration
+- [ ] Create auto-unseal configuration UI
+  - [ ] KMS configuration form
+  - [ ] Test KMS connectivity
+  - [ ] Show unseal status across nodes
+  - [ ] Enable/disable auto-unseal
+- [ ] Build deployment status page
+  - [ ] Kubernetes deployment status
+  - [ ] Pod status and logs viewer
+  - [ ] Resource usage metrics
+  - [ ] Scaling controls
+- [ ] Documentation: HA deployment guide
+  - [ ] Architecture overview
+  - [ ] Kubernetes deployment guide
+  - [ ] AWS KMS setup instructions
+  - [ ] Troubleshooting guide
+  - [ ] Failover testing procedures
+
+### Week 17-18 Deliverables
+
+- [ ] 3-node Core cluster running in Kubernetes
+- [ ] Auto-unseal with AWS KMS working
+- [ ] Agents automatically failover between Core nodes
+- [ ] Helm chart for easy deployment
+- [ ] Cluster dashboard showing node status
+
+---
+
 ## 📅 Completed: Week 2-3 - Core Service: Authentication & Basic Storage
 
 **Goals:** Implement basic authentication and secret storage
