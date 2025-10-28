@@ -432,6 +432,154 @@ defmodule SecretHub.Core.Apps do
      }}
   end
 
+  ## Policy Management
+
+  @doc """
+  Bind a policy to an application.
+
+  This allows the application to access secrets according to the policy rules.
+
+  ## Parameters
+    - app_id: Application UUID
+    - policy_id: Policy UUID
+
+  ## Examples
+
+      iex> bind_policy("app-uuid", "policy-uuid")
+      {:ok, %Policy{}}
+  """
+  def bind_policy(app_id, policy_id) do
+    alias SecretHub.Core.Policies
+
+    # Verify app exists
+    with {:ok, _app} <- get_app(app_id),
+         {:ok, policy} <- Policies.bind_policy_to_entity(policy_id, app_id) do
+      Logger.info("Policy bound to application", app_id: app_id, policy_id: policy_id)
+      {:ok, policy}
+    else
+      {:error, reason} ->
+        Logger.error("Failed to bind policy to app", app_id: app_id, reason: inspect(reason))
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Unbind a policy from an application.
+
+  Removes the application's access to secrets according to this policy.
+
+  ## Parameters
+    - app_id: Application UUID
+    - policy_id: Policy UUID
+  """
+  def unbind_policy(app_id, policy_id) do
+    alias SecretHub.Core.Policies
+
+    with {:ok, _app} <- get_app(app_id),
+         {:ok, policy} <- Policies.unbind_policy_from_entity(policy_id, app_id) do
+      Logger.info("Policy unbound from application", app_id: app_id, policy_id: policy_id)
+      {:ok, policy}
+    else
+      {:error, reason} ->
+        Logger.error("Failed to unbind policy from app", app_id: app_id, reason: inspect(reason))
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  List all policies bound to an application.
+
+  Returns all policies that grant this application access to secrets.
+
+  ## Parameters
+    - app_id: Application UUID
+
+  ## Examples
+
+      iex> list_app_policies("app-uuid")
+      {:ok, [%Policy{}, %Policy{}]}
+  """
+  def list_app_policies(app_id) do
+    alias SecretHub.Core.Policies
+
+    case get_app(app_id) do
+      {:ok, _app} ->
+        policies = Policies.get_entity_policies(app_id)
+        {:ok, policies}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Evaluate if an application has access to a secret.
+
+  Checks all policies bound to the application and evaluates access
+  according to policy rules (allowed_secrets, operations, conditions).
+
+  ## Parameters
+    - app_id: Application UUID
+    - secret_path: Path of the secret being accessed
+    - operation: Operation being performed ("read", "write", "delete", "renew")
+    - context: Additional context (IP address, timestamp, etc.)
+
+  ## Returns
+    - `{:ok, policy}` if access is granted
+    - `{:error, reason}` if access is denied
+
+  ## Examples
+
+      iex> evaluate_app_access("app-uuid", "prod.db.password", "read", %{})
+      {:ok, %Policy{name: "database-access"}}
+  """
+  def evaluate_app_access(app_id, secret_path, operation, context \\ %{}) do
+    alias SecretHub.Core.Policies
+
+    case get_app(app_id) do
+      {:ok, _app} ->
+        Policies.evaluate_access(app_id, secret_path, operation, context)
+
+      {:error, :not_found} ->
+        {:error, "Application not found"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Update application policies.
+
+  Replaces all policy bindings for an application with a new set.
+  This is useful for bulk policy updates.
+
+  ## Parameters
+    - app_id: Application UUID
+    - policy_names: List of policy names to bind
+
+  ## Examples
+
+      iex> update_app_policies("app-uuid", ["db-read", "api-access"])
+      {:ok, %Application{policies: ["db-read", "api-access"]}}
+  """
+  def update_app_policies(app_id, policy_names) when is_list(policy_names) do
+    with {:ok, app} <- get_app(app_id),
+         changeset <- Application.changeset(app, %{policies: policy_names}),
+         {:ok, updated_app} <- Repo.update(changeset) do
+      Logger.info("Application policies updated",
+        app_id: app_id,
+        policies: policy_names
+      )
+
+      {:ok, updated_app}
+    else
+      {:error, reason} ->
+        Logger.error("Failed to update app policies", app_id: app_id, reason: inspect(reason))
+        {:error, reason}
+    end
+  end
+
   ## Private Helpers
 
   defp hash_token(token) do
