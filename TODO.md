@@ -22,7 +22,7 @@
 
 ### Phase 2: Production Hardening (Weeks 13-24)
 - **Week 13-14**: 🟢 Completed (100% complete - Dynamic Secret Engine - PostgreSQL: Backend, Agent, UI & Docs)
-- **Week 15-16**: 🟡 In Progress (42% complete - Agent Local Authentication & Template Rendering)
+- **Week 15-16**: 🟡 In Progress (67% complete - Agent Local Authentication & Template Rendering)
 - **Week 17-18**: ⚪ Not Started
 - **Week 19-20**: ⚪ Not Started
 - **Week 21-22**: ⚪ Not Started
@@ -177,26 +177,26 @@
   - [x] Validate app certificates against Core CA (certificate chain validation)
   - [x] Extract app identity from certificates (UUID from CN field)
   - [x] Implement cert-based authorization (authentication gate before requests)
-- [ ] Create template parsing engine
-  - [ ] Implement template syntax (Mustache/Go template style)
-  - [ ] Build variable substitution logic
-  - [ ] Add conditional rendering support
-  - [ ] Implement loop/iteration support
-- [ ] Build variable substitution logic
-  - [ ] Fetch secrets from cache/Core
-  - [ ] Parse and inject secret values
-  - [ ] Handle missing secrets gracefully
-  - [ ] Add error context for template errors
-- [ ] Implement atomic file writing (Sinker)
-  - [ ] Create Sinker module for file writes
-  - [ ] Implement write-then-rename atomicity
-  - [ ] Add file permission management
-  - [ ] Support multiple sink targets
-- [ ] Add application reload triggers
-  - [ ] Define reload trigger mechanisms (signal, HTTP, script)
-  - [ ] Implement post-write hooks
-  - [ ] Add reload status tracking
-  - [ ] Create reload failure handling
+- [x] Create template parsing engine
+  - [x] Implement template syntax (EEx-based, similar to Go templates)
+  - [x] Add conditional rendering support (if/unless)
+  - [x] Implement loop/iteration support (for)
+  - [x] Add helper functions (upcase, downcase, base64_encode, json_encode)
+- [x] Build variable substitution logic
+  - [x] Fetch secrets from cache/Core (TemplateRenderer module)
+  - [x] Parse and inject secret values (variable bindings)
+  - [x] Handle missing secrets gracefully (allow_missing option)
+  - [x] Add error context for template errors (detailed error maps)
+- [x] Implement atomic file writing (Sinker)
+  - [x] Create Sinker module for file writes
+  - [x] Implement write-then-rename atomicity
+  - [x] Add file permission management (mode, owner, group)
+  - [x] Support multiple sink targets
+- [x] Add application reload triggers
+  - [x] Define reload trigger mechanisms (signal, HTTP, script)
+  - [x] Implement post-write hooks (trigger_signal, trigger_http, trigger_script)
+  - [x] Add reload status tracking (error reporting in triggers)
+  - [x] Create reload failure handling (graceful error handling with logging)
 
 ### Engineer 3 (Full-stack) - Tasks
 
