@@ -18,6 +18,13 @@ defmodule SecretHub.Agent.Application do
            on_expiring_soon: &handle_expiring_soon/1,
            on_expired: &handle_expired/1
          }
+       ]},
+      # Unix Domain Socket server for application connections
+      {SecretHub.Agent.UDSServer,
+       [
+         socket_path:
+           Application.get_env(:secrethub_agent, :socket_path, "/var/run/secrethub/agent.sock"),
+         max_connections: Application.get_env(:secrethub_agent, :max_connections, 100)
        ]}
     ]
 
