@@ -22,7 +22,7 @@
 
 ### Phase 2: Production Hardening (Weeks 13-24)
 - **Week 13-14**: 🟢 Completed (100% complete - Dynamic Secret Engine - PostgreSQL: Backend, Agent, UI & Docs)
-- **Week 15-16**: 🟡 In Progress (25% complete - Agent Local Authentication & Template Rendering)
+- **Week 15-16**: 🟡 In Progress (33% complete - Agent Local Authentication & Template Rendering)
 - **Week 17-18**: ⚪ Not Started
 - **Week 19-20**: ⚪ Not Started
 - **Week 21-22**: ⚪ Not Started
@@ -167,11 +167,11 @@
 
 ### Engineer 2 (Agent/Infra Lead) - Tasks
 
-- [ ] Build Unix Domain Socket server
-  - [ ] Create UDS listener in Agent
-  - [ ] Implement connection handling
-  - [ ] Add request/response protocol
-  - [ ] Implement connection limits and timeouts
+- [x] Build Unix Domain Socket server
+  - [x] Create UDS listener in Agent (GenServer with :gen_tcp)
+  - [x] Implement connection handling (TCP active mode, connection tracking)
+  - [x] Add request/response protocol (JSON newline-delimited)
+  - [x] Implement connection limits and timeouts (max 100 connections, 30s timeout)
 - [ ] Implement mTLS authentication for apps
   - [ ] Add client certificate verification
   - [ ] Validate app certificates against Core CA
