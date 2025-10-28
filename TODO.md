@@ -22,7 +22,7 @@
 
 ### Phase 2: Production Hardening (Weeks 13-24)
 - **Week 13-14**: 🟢 Completed (100% complete - Dynamic Secret Engine - PostgreSQL: Backend, Agent, UI & Docs)
-- **Week 15-16**: 🟡 In Progress (33% complete - Agent Local Authentication & Template Rendering)
+- **Week 15-16**: 🟡 In Progress (42% complete - Agent Local Authentication & Template Rendering)
 - **Week 17-18**: ⚪ Not Started
 - **Week 19-20**: ⚪ Not Started
 - **Week 21-22**: ⚪ Not Started
@@ -172,11 +172,11 @@
   - [x] Implement connection handling (TCP active mode, connection tracking)
   - [x] Add request/response protocol (JSON newline-delimited)
   - [x] Implement connection limits and timeouts (max 100 connections, 30s timeout)
-- [ ] Implement mTLS authentication for apps
-  - [ ] Add client certificate verification
-  - [ ] Validate app certificates against Core CA
-  - [ ] Extract app identity from certificates
-  - [ ] Implement cert-based authorization
+- [x] Implement mTLS authentication for apps
+  - [x] Add client certificate verification (CertVerifier module with X.509 parsing)
+  - [x] Validate app certificates against Core CA (certificate chain validation)
+  - [x] Extract app identity from certificates (UUID from CN field)
+  - [x] Implement cert-based authorization (authentication gate before requests)
 - [ ] Create template parsing engine
   - [ ] Implement template syntax (Mustache/Go template style)
   - [ ] Build variable substitution logic
