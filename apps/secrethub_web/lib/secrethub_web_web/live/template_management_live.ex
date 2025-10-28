@@ -240,7 +240,11 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
   end
 
   @impl true
-  def handle_event("preview_template", %{"template_content" => content, "mock_data" => mock_data_json}, socket) do
+  def handle_event(
+        "preview_template",
+        %{"template_content" => content, "mock_data" => mock_data_json},
+        socket
+      ) do
     try do
       mock_data = Jason.decode!(mock_data_json)
 
@@ -279,7 +283,7 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
       <%= if @show_template_form do %>
         <div class="bg-white shadow-md rounded-lg p-6 mb-6">
           <h2 class="text-xl font-semibold mb-4">
-            <%= if @form_mode == :create, do: "Create Template", else: "Edit Template" %>
+            {if @form_mode == :create, do: "Create Template", else: "Edit Template"}
           </h2>
 
           <.form for={@template_form} phx-submit="save_template">
@@ -310,7 +314,7 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
                   name="template[template_content]"
                   class="w-full border rounded px-3 py-2 font-mono text-sm"
                   rows="10"
-                  placeholder="<%= db.password %>"
+                  placeholder="Example: DB_PASS={{db.password}}"
                   required
                 ><%= @template_form.data["template_content"] %></textarea>
                 <p class="text-xs text-gray-500 mt-1">
@@ -334,9 +338,15 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
               <div>
                 <label class="block text-sm font-medium mb-1">Status</label>
                 <select name="template[status]" class="w-full border rounded px-3 py-2">
-                  <option value="active" selected={@template_form.data["status"] == "active"}>Active</option>
-                  <option value="inactive" selected={@template_form.data["status"] == "inactive"}>Inactive</option>
-                  <option value="archived" selected={@template_form.data["status"] == "archived"}>Archived</option>
+                  <option value="active" selected={@template_form.data["status"] == "active"}>
+                    Active
+                  </option>
+                  <option value="inactive" selected={@template_form.data["status"] == "inactive"}>
+                    Inactive
+                  </option>
+                  <option value="archived" selected={@template_form.data["status"] == "archived"}>
+                    Archived
+                  </option>
                 </select>
               </div>
             </div>
@@ -363,7 +373,7 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
       <%= if @show_sink_form do %>
         <div class="bg-white shadow-md rounded-lg p-6 mb-6">
           <h2 class="text-xl font-semibold mb-4">
-            <%= if @form_mode == :create, do: "Create Sink", else: "Edit Sink" %>
+            {if @form_mode == :create, do: "Create Sink", else: "Edit Sink"}
           </h2>
 
           <.form for={@sink_form} phx-submit="save_sink">
@@ -434,8 +444,12 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
               <div>
                 <label class="block text-sm font-medium mb-1">Status</label>
                 <select name="sink[status]" class="w-full border rounded px-3 py-2">
-                  <option value="active" selected={@sink_form.data["status"] == "active"}>Active</option>
-                  <option value="inactive" selected={@sink_form.data["status"] == "inactive"}>Inactive</option>
+                  <option value="active" selected={@sink_form.data["status"] == "active"}>
+                    Active
+                  </option>
+                  <option value="inactive" selected={@sink_form.data["status"] == "inactive"}>
+                    Inactive
+                  </option>
                 </select>
               </div>
             </div>
@@ -472,16 +486,16 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
                 <div class="border rounded p-4 hover:bg-gray-50">
                   <div class="flex justify-between items-start">
                     <div class="flex-1">
-                      <h3 class="font-semibold"><%= template.name %></h3>
+                      <h3 class="font-semibold">{template.name}</h3>
                       <%= if template.description do %>
-                        <p class="text-sm text-gray-600"><%= template.description %></p>
+                        <p class="text-sm text-gray-600">{template.description}</p>
                       <% end %>
                       <div class="mt-2 flex gap-2 text-xs">
                         <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                          <%= template.status %>
+                          {template.status}
                         </span>
                         <span class="bg-gray-100 text-gray-800 px-2 py-1 rounded">
-                          <%= length(template.sinks) %> sinks
+                          {length(template.sinks)} sinks
                         </span>
                       </div>
                     </div>
@@ -525,16 +539,18 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
                             <div class="bg-gray-50 rounded p-2 text-sm">
                               <div class="flex justify-between items-start">
                                 <div>
-                                  <div class="font-medium"><%= sink.name %></div>
-                                  <div class="text-gray-600"><%= sink.file_path %></div>
+                                  <div class="font-medium">{sink.name}</div>
+                                  <div class="text-gray-600">{sink.file_path}</div>
                                   <%= if sink.last_write_status do %>
                                     <div class="mt-1">
                                       <span class={[
                                         "text-xs px-2 py-0.5 rounded",
-                                        sink.last_write_status == "success" && "bg-green-100 text-green-800",
-                                        sink.last_write_status == "failure" && "bg-red-100 text-red-800"
+                                        sink.last_write_status == "success" &&
+                                          "bg-green-100 text-green-800",
+                                        sink.last_write_status == "failure" &&
+                                          "bg-red-100 text-red-800"
                                       ]}>
-                                        <%= sink.last_write_status %>
+                                        {sink.last_write_status}
                                       </span>
                                     </div>
                                   <% end %>
@@ -575,8 +591,8 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
             </div>
           <% end %>
         </div>
-
-        <!-- Template Details / Preview -->
+        
+    <!-- Template Details / Preview -->
         <div class="bg-white shadow-md rounded-lg p-6">
           <h2 class="text-xl font-semibold mb-4">Template Details</h2>
 
@@ -597,11 +613,11 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
                 <div class="mt-2 grid grid-cols-2 gap-2">
                   <div class="bg-blue-50 rounded p-2">
                     <div class="text-xs text-blue-600">Sinks</div>
-                    <div class="text-lg font-semibold"><%= length(@selected_template.sinks) %></div>
+                    <div class="text-lg font-semibold">{length(@selected_template.sinks)}</div>
                   </div>
                   <div class="bg-green-50 rounded p-2">
                     <div class="text-xs text-green-600">Version</div>
-                    <div class="text-lg font-semibold"><%= @selected_template.version %></div>
+                    <div class="text-lg font-semibold">{@selected_template.version}</div>
                   </div>
                 </div>
               </div>

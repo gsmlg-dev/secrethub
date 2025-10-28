@@ -13,16 +13,16 @@ defmodule SecretHub.Shared.Schemas.Template do
   @foreign_key_type :binary_id
 
   schema "templates" do
-    field :name, :string
-    field :description, :string
-    field :template_content, :string
-    field :variable_bindings, :map, default: %{}
-    field :status, :string, default: "active"
-    field :created_by, :string
-    field :version, :integer, default: 1
+    field(:name, :string)
+    field(:description, :string)
+    field(:template_content, :string)
+    field(:variable_bindings, :map, default: %{})
+    field(:status, :string, default: "active")
+    field(:created_by, :string)
+    field(:version, :integer, default: 1)
 
-    belongs_to :agent, SecretHub.Shared.Schemas.Agent
-    has_many :sinks, SecretHub.Shared.Schemas.Sink
+    belongs_to(:agent, SecretHub.Shared.Schemas.Agent)
+    has_many(:sinks, SecretHub.Shared.Schemas.Sink)
 
     timestamps(type: :utc_datetime)
   end

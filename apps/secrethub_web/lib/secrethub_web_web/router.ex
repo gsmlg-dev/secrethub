@@ -101,6 +101,8 @@ defmodule SecretHub.WebWeb.Router do
     post "/seal", SysController, :seal
     get "/seal-status", SysController, :status
     get "/health", SysController, :health
+    get "/health/ready", SysController, :readiness
+    get "/health/live", SysController, :liveness
   end
 
   # Authentication API routes (AppRole management)

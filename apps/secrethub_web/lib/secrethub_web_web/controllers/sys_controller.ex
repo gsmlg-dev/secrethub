@@ -8,7 +8,7 @@ defmodule SecretHub.WebWeb.SysController do
   use SecretHub.WebWeb, :controller
   require Logger
 
-  alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Core.{Health, Vault.SealState}
   alias SecretHub.Shared.Crypto.Shamir
 
   @doc """
@@ -191,28 +191,76 @@ defmodule SecretHub.WebWeb.SysController do
   @doc """
   GET /v1/sys/health
 
-  Health check endpoint.
+  Comprehensive health check endpoint.
 
-  Returns 200 if vault is initialized (regardless of seal status).
-  Returns 501 if vault is not yet initialized.
+  Returns detailed health information including:
+  - Overall status (healthy/degraded/unhealthy)
+  - Database connectivity
+  - Vault status
+  - Seal status
+  - Background job health
+
+  Query parameters:
+  - `details`: Include detailed checks (default: true)
+
+  Returns 200 if healthy or degraded, 503 if unhealthy.
   """
-  def health(conn, _params) do
-    status = SealState.status()
+  def health(conn, params) do
+    include_details = Map.get(params, "details", "true") != "false"
 
-    if status.initialized do
-      conn
-      |> put_status(:ok)
-      |> json(%{
-        initialized: true,
-        sealed: status.sealed
-      })
-    else
-      conn
-      |> put_status(:not_implemented)
-      |> json(%{
-        initialized: false,
-        sealed: true
-      })
+    case Health.health(details: include_details) do
+      {:ok, health_data} ->
+        status_code =
+          case health_data.status do
+            :healthy -> :ok
+            :degraded -> :ok
+            :unhealthy -> :service_unavailable
+          end
+
+        conn
+        |> put_status(status_code)
+        |> json(health_data)
     end
+  end
+
+  @doc """
+  GET /v1/sys/health/ready
+
+  Readiness check for Kubernetes and load balancers.
+
+  Returns 200 if the service is ready to accept traffic:
+  - Database is accessible
+  - Vault is initialized
+
+  Returns 503 if not ready.
+  """
+  def readiness(conn, _params) do
+    case Health.readiness() do
+      {:ok, ready_data} ->
+        conn
+        |> put_status(:ok)
+        |> json(ready_data)
+
+      {:error, not_ready_data} ->
+        conn
+        |> put_status(:service_unavailable)
+        |> json(not_ready_data)
+    end
+  end
+
+  @doc """
+  GET /v1/sys/health/live
+
+  Liveness check for Kubernetes.
+
+  Always returns 200 if the application is running.
+  Used by Kubernetes to determine if the pod should be restarted.
+  """
+  def liveness(conn, _params) do
+    {:ok, liveness_data} = Health.liveness()
+
+    conn
+    |> put_status(:ok)
+    |> json(liveness_data)
   end
 end

@@ -12,14 +12,14 @@ defmodule SecretHub.Shared.Schemas.SinkWriteHistory do
   @foreign_key_type :binary_id
 
   schema "sink_write_history" do
-    field :write_status, :string
-    field :content_hash, :string
-    field :bytes_written, :integer
-    field :error_message, :string
-    field :reload_triggered, :boolean, default: false
-    field :reload_status, :string
+    field(:write_status, :string)
+    field(:content_hash, :string)
+    field(:bytes_written, :integer)
+    field(:error_message, :string)
+    field(:reload_triggered, :boolean, default: false)
+    field(:reload_status, :string)
 
-    belongs_to :sink, SecretHub.Shared.Schemas.Sink
+    belongs_to(:sink, SecretHub.Shared.Schemas.Sink)
 
     timestamps(type: :utc_datetime, updated_at: false)
   end

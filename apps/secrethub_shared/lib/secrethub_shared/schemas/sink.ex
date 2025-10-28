@@ -12,18 +12,18 @@ defmodule SecretHub.Shared.Schemas.Sink do
   @foreign_key_type :binary_id
 
   schema "sinks" do
-    field :name, :string
-    field :file_path, :string
-    field :permissions, :map, default: %{}
-    field :backup_enabled, :boolean, default: false
-    field :reload_trigger, :map
-    field :status, :string, default: "active"
-    field :last_write_at, :utc_datetime
-    field :last_write_status, :string
-    field :last_write_error, :string
+    field(:name, :string)
+    field(:file_path, :string)
+    field(:permissions, :map, default: %{})
+    field(:backup_enabled, :boolean, default: false)
+    field(:reload_trigger, :map)
+    field(:status, :string, default: "active")
+    field(:last_write_at, :utc_datetime)
+    field(:last_write_status, :string)
+    field(:last_write_error, :string)
 
-    belongs_to :template, SecretHub.Shared.Schemas.Template
-    has_many :write_history, SecretHub.Shared.Schemas.SinkWriteHistory
+    belongs_to(:template, SecretHub.Shared.Schemas.Template)
+    has_many(:write_history, SecretHub.Shared.Schemas.SinkWriteHistory)
 
     timestamps(type: :utc_datetime)
   end
