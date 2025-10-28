@@ -69,6 +69,8 @@ defmodule SecretHub.WebWeb.Router do
     live "/dynamic/postgresql", DynamicPostgreSQLConfigLive, :index
     live "/leases", LeaseViewerLive, :index
     live "/leases/dashboard", LeaseDashboardLive, :index
+    live "/templates", TemplateManagementLive, :index
+    live "/templates/:template_id", TemplateManagementLive, :show
 
     delete "/logout", AdminAuthController, :logout
   end
