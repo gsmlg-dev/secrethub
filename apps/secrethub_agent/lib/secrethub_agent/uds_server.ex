@@ -30,7 +30,38 @@ defmodule SecretHub.Agent.UDSServer do
 
   ## Protocol
 
-  All messages are JSON-encoded and newline-delimited:
+  All messages are JSON-encoded and newline-delimited.
+
+  ### Authentication
+
+  Clients MUST authenticate before making any other requests:
+
+  **Auth Request:**
+  ```json
+  {
+    "request_id": "uuid",
+    "action": "authenticate",
+    "params": {
+      "certificate": "base64-encoded-cert-pem"
+    }
+  }
+  ```
+
+  **Auth Response:**
+  ```json
+  {
+    "request_id": "uuid",
+    "status": "ok",
+    "data": {
+      "app_id": "app-uuid",
+      "authenticated": true
+    }
+  }
+  ```
+
+  ### Secret Requests
+
+  After authentication, clients can request secrets:
 
   **Request:**
   ```json
@@ -70,7 +101,7 @@ defmodule SecretHub.Agent.UDSServer do
   use GenServer
   require Logger
 
-  alias SecretHub.Agent.Cache
+  alias SecretHub.Agent.{Cache, CertVerifier}
 
   @default_socket_path "/var/run/secrethub/agent.sock"
   @max_connections 100
@@ -116,6 +147,17 @@ defmodule SecretHub.Agent.UDSServer do
     connection_timeout = Keyword.get(opts, :connection_timeout, @connection_timeout)
     request_timeout = Keyword.get(opts, :request_timeout, @request_timeout)
 
+    # Initialize certificate verifier
+    case CertVerifier.init() do
+      :ok ->
+        Logger.debug("Certificate verifier initialized")
+
+      {:error, reason} ->
+        Logger.warning("Certificate verifier initialization failed (continuing in mock mode)",
+          reason: inspect(reason)
+        )
+    end
+
     state = %{
       socket_path: socket_path,
       max_connections: max_connections,
@@ -127,7 +169,9 @@ defmodule SecretHub.Agent.UDSServer do
         total_connections: 0,
         active_connections: 0,
         total_requests: 0,
-        failed_requests: 0
+        failed_requests: 0,
+        auth_failures: 0,
+        auth_successes: 0
       }
     }
 
@@ -361,22 +405,37 @@ defmodule SecretHub.Agent.UDSServer do
 
     Logger.debug("Processing request", action: action, request_id: request_id)
 
+    # Find connection state
+    connection = find_connection(state, socket)
+
     result =
       case action do
-        "get_secret" ->
-          handle_get_secret(params, state)
-
-        "list_secrets" ->
-          handle_list_secrets(params, state)
+        "authenticate" ->
+          handle_authenticate(socket, params, state, connection)
 
         "ping" ->
+          # Ping doesn't require authentication
           {:ok, %{message: "pong"}}
 
-        nil ->
-          {:error, "missing_action", "Request must include 'action' field"}
+        _ ->
+          # All other actions require authentication
+          if connection && connection.authenticated do
+            case action do
+              "get_secret" ->
+                handle_get_secret(params, connection)
 
-        unknown ->
-          {:error, "unknown_action", "Unknown action: #{unknown}"}
+              "list_secrets" ->
+                handle_list_secrets(params, connection)
+
+              nil ->
+                {:error, "missing_action", "Request must include 'action' field"}
+
+              unknown ->
+                {:error, "unknown_action", "Unknown action: #{unknown}"}
+            end
+          else
+            {:error, "not_authenticated", "Please authenticate first using 'authenticate' action"}
+          end
       end
 
     case result do
@@ -384,16 +443,62 @@ defmodule SecretHub.Agent.UDSServer do
         send_response(socket, request_id, "ok", data)
         {:ok, update_stats(state, :successful_request)}
 
+      {:ok, data, new_state} ->
+        send_response(socket, request_id, "ok", data)
+        {:ok, update_stats(new_state, :successful_request)}
+
       {:error, code, message} ->
         send_error(socket, code, message, request_id)
         {:ok, update_stats(state, :failed_request)}
+
+      {:error, code, message, new_state} ->
+        send_error(socket, code, message, request_id)
+        {:ok, update_stats(new_state, :failed_request)}
     end
   end
 
-  defp handle_get_secret(params, _state) do
+  defp handle_authenticate(socket, params, state, connection) do
+    cert_pem = Map.get(params, "certificate")
+
+    if !cert_pem do
+      {:error, "missing_parameter", "Parameter 'certificate' is required", state}
+    else
+      # Decode base64 if needed
+      cert_data =
+        case Base.decode64(cert_pem) do
+          {:ok, decoded} -> decoded
+          :error -> cert_pem
+        end
+
+      # Verify certificate and extract app_id
+      case CertVerifier.verify_app_cert_pem(cert_data) do
+        {:ok, app_id} ->
+          Logger.info("Application authenticated", app_id: app_id, socket: inspect(socket))
+
+          # Update connection state
+          new_state = update_connection_auth(state, socket, connection, app_id)
+
+          {:ok, %{app_id: app_id, authenticated: true}, new_state}
+
+        {:error, reason} ->
+          Logger.warning("Authentication failed",
+            reason: inspect(reason),
+            socket: inspect(socket)
+          )
+
+          {:error, "auth_failed", "Certificate verification failed: #{inspect(reason)}",
+           update_stats(state, :auth_failure)}
+      end
+    end
+  end
+
+  defp handle_get_secret(params, connection) do
     path = Map.get(params, "path")
 
     if path do
+      # TODO: Check if app has access to this secret path via policies
+      Logger.debug("Get secret", path: path, app_id: connection.app_id)
+
       case Cache.get(path) do
         {:ok, secret} ->
           {:ok, %{value: secret.value, version: secret.version}}
@@ -409,9 +514,32 @@ defmodule SecretHub.Agent.UDSServer do
     end
   end
 
-  defp handle_list_secrets(_params, _state) do
-    # TODO: Implement list secrets
+  defp handle_list_secrets(_params, _connection) do
+    # TODO: Implement list secrets with policy filtering
     {:error, "not_implemented", "List secrets not yet implemented"}
+  end
+
+  defp find_connection(state, socket) do
+    Enum.find_value(state.connections, fn {_ref, conn} ->
+      if conn.socket == socket, do: conn
+    end)
+  end
+
+  defp update_connection_auth(state, socket, connection, app_id) do
+    # Find and update the connection
+    connections =
+      Enum.map(state.connections, fn {ref, conn} ->
+        if conn.socket == socket do
+          {ref, %{connection | authenticated: true, app_id: app_id}}
+        else
+          {ref, conn}
+        end
+      end)
+      |> Map.new()
+
+    state
+    |> Map.put(:connections, connections)
+    |> update_stats(:auth_success)
   end
 
   defp send_response(socket, request_id, status, data) do
@@ -485,6 +613,12 @@ defmodule SecretHub.Agent.UDSServer do
           state.stats
           |> Map.update!(:total_requests, &(&1 + 1))
           |> Map.update!(:failed_requests, &(&1 + 1))
+
+        :auth_success ->
+          Map.update!(state.stats, :auth_successes, &(&1 + 1))
+
+        :auth_failure ->
+          Map.update!(state.stats, :auth_failures, &(&1 + 1))
       end
 
     %{state | stats: stats}
