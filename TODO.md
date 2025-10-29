@@ -253,11 +253,11 @@
   - [x] Detailed health status with metrics (enhanced GET /v1/sys/health)
   - [x] Database connectivity checks with latency
   - [x] Vault status monitoring (seal state, initialization)
-- [ ] Implement graceful shutdown
-  - [ ] Drain active connections before shutdown
-  - [ ] Complete pending requests
-  - [ ] Close database connections gracefully
-  - [ ] Signal Kubernetes when shutdown is ready
+- [x] Implement graceful shutdown
+  - [x] Drain active connections before shutdown
+  - [x] Complete pending requests
+  - [x] Close database connections gracefully
+  - [x] Signal Kubernetes when shutdown is ready
 - [ ] Add distributed locking for initialization
   - [ ] Use PostgreSQL advisory locks
   - [ ] Prevent race conditions during init

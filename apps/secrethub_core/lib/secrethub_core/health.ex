@@ -41,6 +41,7 @@ defmodule SecretHub.Core.Health do
   Readiness check - determines if the application can serve traffic.
 
   Returns 200 only if the application is ready to handle requests:
+  - Not in shutdown state
   - Database is accessible
   - Vault is initialized (but can be sealed)
   - Critical dependencies are available
@@ -49,15 +50,21 @@ defmodule SecretHub.Core.Health do
   """
   @spec readiness() :: {:ok, map()} | {:error, map()}
   def readiness do
+    # Check if graceful shutdown is in progress
+    shutting_down = SecretHub.Core.Shutdown.shutting_down?()
+
     checks = %{
+      shutdown_state: if(shutting_down, do: {:error, "shutting down"}, else: {:ok, "ready"}),
       database: check_database(),
       vault_initialized: check_vault_initialized()
     }
 
-    ready = Enum.all?(checks, fn {_name, result} -> match?({:ok, _}, result) end)
+    ready =
+      !shutting_down && Enum.all?(checks, fn {_name, result} -> match?({:ok, _}, result) end)
 
     result = %{
       ready: ready,
+      shutting_down: shutting_down,
       checks: format_check_results(checks),
       timestamp: DateTime.utc_now()
     }
@@ -108,6 +115,8 @@ defmodule SecretHub.Core.Health do
       status: status,
       initialized: vault_initialized?(),
       sealed: vault_sealed?(),
+      shutting_down: SecretHub.Core.Shutdown.shutting_down?(),
+      active_connections: SecretHub.Core.Shutdown.active_connections(),
       checks: format_check_results(checks),
       timestamp: DateTime.utc_now(),
       version: Application.spec(:secrethub_core, :vsn) |> to_string()
