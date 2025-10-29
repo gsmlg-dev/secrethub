@@ -1,0 +1,19 @@
+apiVersion: v2
+name: secrethub
+description: Enterprise-grade Machine-to-Machine secrets management platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - secrets
+  - vault
+  - security
+  - machine-to-machine
+  - mtls
+home: https://github.com/gsmlg-dev/secrethub
+sources:
+  - https://github.com/gsmlg-dev/secrethub
+maintainers:
+  - name: SecretHub Team
+    email: team@secrethub.example.com
+dependencies: []

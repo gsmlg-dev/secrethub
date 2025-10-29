@@ -9,6 +9,33 @@
 
 ---
 
+## 📝 Latest Update
+
+### 2025-10-29 (Current Session)
+- ✅ **Week 17-18 Engineer 2 Tasks Completed** (5/6 tasks, 83% complete)
+  - Created comprehensive Helm chart for SecretHub deployment
+    - Chart.yaml with metadata and dependencies
+    - values.yaml with extensive configuration options
+    - StatefulSet template with HA configuration
+    - Service, LoadBalancer, and Ingress templates
+    - ConfigMap and Secret templates
+    - Optional bundled PostgreSQL and Redis
+    - ServiceMonitor for Prometheus Operator
+    - NOTES.txt with post-install instructions
+    - Comprehensive README.md with deployment guide
+  - Helm chart features:
+    - Production-ready with external database support
+    - AWS-specific annotations for NLB and IRSA
+    - Configurable resource limits and anti-affinity rules
+    - Health probes and pod disruption budget
+    - Auto-unseal with AWS KMS configuration
+    - Monitoring with Prometheus metrics
+    - Audit log retention configuration
+  - Remaining: PostgreSQL HA documentation (1 task)
+- 📝 **Week 17-18 Status:** 83% complete (Engineer 1: 100%, Engineer 2: 83%, Engineer 3: 0%)
+
+---
+
 ## 📊 Overall Progress
 
 ### Phase 1: Foundation & MVP (Weeks 1-12)
@@ -23,7 +50,7 @@
 ### Phase 2: Production Hardening (Weeks 13-24)
 - **Week 13-14**: 🟢 Completed (100% complete - Dynamic Secret Engine - PostgreSQL: Backend, Agent, UI & Docs)
 - **Week 15-16**: 🟢 Completed (100% complete - Agent Local Authentication & Template Rendering)
-- **Week 17-18**: ⚪ Not Started
+- **Week 17-18**: 🟡 In Progress (83% complete - Engineer 1: 100%, Engineer 2: 83%, Engineer 3: 0%)
 - **Week 19-20**: ⚪ Not Started
 - **Week 21-22**: ⚪ Not Started
 - **Week 23-24**: ⚪ Not Started
@@ -295,13 +322,13 @@
   - [x] Round-robin endpoint selection
   - [x] Sticky sessions for WebSocket connections
   - [x] Connection pooling improvements
-- [ ] Create Helm chart for deployment
-  - [ ] Chart structure and values.yaml
-  - [ ] Core StatefulSet template
-  - [ ] PostgreSQL HA configuration (or external)
-  - [ ] Redis configuration
-  - [ ] ConfigMaps and Secrets
-  - [ ] Ingress configuration
+- [x] Create Helm chart for deployment
+  - [x] Chart structure and values.yaml
+  - [x] Core StatefulSet template
+  - [x] PostgreSQL HA configuration (or external)
+  - [x] Redis configuration
+  - [x] ConfigMaps and Secrets
+  - [x] Ingress configuration
 - [ ] Set up PostgreSQL HA (RDS Multi-AZ or similar)
   - [ ] Document RDS Multi-AZ setup
   - [ ] Connection string format for HA

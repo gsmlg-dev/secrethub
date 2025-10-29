@@ -1,0 +1,325 @@
+# Default values for SecretHub
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Global settings
+global:
+  # Image pull secrets for private registries
+  imagePullSecrets: []
+  # - name: secrethub-registry
+
+  # Storage class for persistent volumes
+  storageClass: ""
+
+# SecretHub Core configuration
+core:
+  # Number of Core replicas for HA (minimum 3 recommended)
+  replicaCount: 3
+
+  image:
+    repository: secrethub/core
+    pullPolicy: IfNotPresent
+    tag: "0.1.0"
+
+  # Service configuration
+  service:
+    type: ClusterIP
+    port: 4000
+    annotations: {}
+
+  # Resource limits and requests
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+  # Pod anti-affinity for HA
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - secrethub-core
+            topologyKey: kubernetes.io/hostname
+        - weight: 50
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - secrethub-core
+            topologyKey: topology.kubernetes.io/zone
+
+  # Node selector
+  nodeSelector: {}
+
+  # Tolerations
+  tolerations: []
+
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    capabilities:
+      drop:
+        - ALL
+
+  # Liveness probe configuration
+  livenessProbe:
+    httpGet:
+      path: /v1/sys/health/live
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  # Readiness probe configuration
+  readinessProbe:
+    httpGet:
+      path: /v1/sys/health/ready
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  # Startup probe configuration
+  startupProbe:
+    httpGet:
+      path: /v1/sys/health/live
+      port: http
+    initialDelaySeconds: 0
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
+
+  # Persistent storage for Core data
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    annotations: {}
+
+  # Pod disruption budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+  # Environment variables
+  env:
+    # Phoenix configuration
+    PHX_HOST: localhost
+    PHX_PORT: "4000"
+    MIX_ENV: prod
+
+    # Erlang/Elixir settings
+    ELIXIR_ERL_OPTIONS: "+sbwt none +sbwtdcpu none +sbwtdio none"
+
+  # Secret environment variables (from secrets)
+  secretEnv:
+    # SECRET_KEY_BASE: <generated>
+    # LIVE_VIEW_SIGNING_SALT: <generated>
+    # DATABASE_URL: <from postgresql config>
+    # REDIS_URL: <from redis config>
+
+# Load Balancer / Ingress configuration
+loadBalancer:
+  # Enable LoadBalancer service
+  enabled: true
+
+  # Service type: LoadBalancer or use ingress
+  type: LoadBalancer
+
+  # Session affinity for WebSocket connections
+  sessionAffinity: ClientIP
+  sessionAffinityTimeout: 10800  # 3 hours
+
+  # External traffic policy
+  externalTrafficPolicy: Local
+
+  # AWS-specific annotations
+  annotations:
+    # Network Load Balancer
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "tcp"
+
+    # Health checks
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: "http"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/v1/sys/health/ready"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "4000"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "10"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "5"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "2"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "2"
+
+    # Connection draining
+    service.beta.kubernetes.io/aws-load-balancer-connection-draining-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-connection-draining-timeout: "30"
+
+# Ingress configuration (alternative to LoadBalancer)
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+  hosts:
+    - host: secrethub.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: secrethub-tls
+      hosts:
+        - secrethub.example.com
+
+# PostgreSQL configuration
+postgresql:
+  # Use external PostgreSQL (recommended for production)
+  external: true
+
+  # External PostgreSQL connection details
+  externalHost: ""  # e.g., secrethub-db.cluster-xxx.us-east-1.rds.amazonaws.com
+  externalPort: 5432
+  externalDatabase: secrethub
+  externalUsername: secrethub
+  # externalPassword: set via secret
+
+  # SSL/TLS configuration
+  sslMode: require
+
+  # Connection pool settings
+  poolSize: 10
+
+  # Or use bundled PostgreSQL (not recommended for production)
+  bundled:
+    enabled: false
+    image:
+      repository: postgres
+      tag: "16-alpine"
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+
+# Redis configuration
+redis:
+  # Use external Redis (recommended for production)
+  external: true
+
+  # External Redis connection details
+  externalHost: ""  # e.g., secrethub-redis.xxx.cache.amazonaws.com
+  externalPort: 6379
+  # externalPassword: set via secret
+
+  # SSL/TLS configuration
+  sslEnabled: false
+
+  # Or use bundled Redis (not recommended for production)
+  bundled:
+    enabled: false
+    image:
+      repository: redis
+      tag: "7-alpine"
+    persistence:
+      enabled: true
+      size: 5Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 250m
+        memory: 256Mi
+
+# AWS KMS configuration for auto-unseal
+kms:
+  enabled: false
+  region: us-east-1
+  keyId: ""  # KMS key ID or ARN
+  endpoint: ""  # Optional: custom endpoint
+
+# Service Account configuration (for IRSA on AWS)
+serviceAccount:
+  create: true
+  annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/secrethub-core
+  name: secrethub-core
+
+# Secrets configuration
+secrets:
+  # Create secrets from values
+  create: true
+
+  # Secret key base for Phoenix (generate with: mix phx.gen.secret)
+  secretKeyBase: ""
+
+  # LiveView signing salt (generate with: mix phx.gen.secret)
+  liveViewSigningSalt: ""
+
+  # PostgreSQL password (if using external PostgreSQL)
+  postgresqlPassword: ""
+
+  # Redis password (if using external Redis with auth)
+  redisPassword: ""
+
+# Monitoring and observability
+monitoring:
+  # Enable Prometheus metrics
+  prometheus:
+    enabled: true
+    port: 9090
+    path: /metrics
+
+  # ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Audit log retention
+audit:
+  # Retention period for hot audit logs (days)
+  hotRetentionDays: 30
+
+  # Retention period for warm audit logs (days)
+  warmRetentionDays: 90
+
+  # Retention period for cold audit logs (days)
+  coldRetentionDays: 365
+
+# Backup configuration
+backup:
+  enabled: false
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention: 30  # Keep 30 days of backups
+  s3:
+    bucket: ""
+    region: us-east-1
+    prefix: "secrethub-backups/"
