@@ -268,11 +268,11 @@
   - [x] Implement unseal on startup
   - [x] Add key wrapping/unwrapping
   - [x] Handle unseal failures gracefully
-- [ ] Implement cloud KMS integration (AWS KMS)
-  - [ ] AWS KMS client setup
-  - [ ] Encrypt/decrypt master key with KMS
-  - [ ] Handle AWS credentials (IAM roles)
-  - [ ] Add KMS error handling and retries
+- [x] Implement cloud KMS integration (AWS KMS)
+  - [x] AWS KMS client setup
+  - [x] Encrypt/decrypt master key with KMS
+  - [x] Handle AWS credentials (IAM roles)
+  - [x] Add KMS error handling and retries
 
 ### Engineer 2 (Agent/Infra Lead) - Tasks
 

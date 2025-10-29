@@ -37,7 +37,13 @@ defmodule SecretHub.MixProject do
 
       # Shared utilities
       {:jason, "~> 1.4"},
-      {:telemetry, "~> 1.2"}
+      {:telemetry, "~> 1.2"},
+
+      # AWS Integration (for auto-unseal with AWS KMS)
+      {:ex_aws, "~> 2.5"},
+      {:ex_aws_kms, "~> 2.3"},
+      {:hackney, "~> 1.20"},
+      {:sweet_xml, "~> 0.7"}
     ]
   end
 
