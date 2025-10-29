@@ -254,13 +254,17 @@ defmodule SecretHub.Core.AutoUnseal do
       case perform_auto_unseal(new_state) do
         :ok ->
           Logger.info("Auto-unseal successful")
-          {:noreply, %{new_state | unseal_in_progress: false, last_unseal_attempt: DateTime.utc_now()}}
+
+          {:noreply,
+           %{new_state | unseal_in_progress: false, last_unseal_attempt: DateTime.utc_now()}}
 
         {:error, reason} ->
           Logger.error("Auto-unseal failed: #{inspect(reason)}")
           # Schedule retry
           Process.send_after(self(), :attempt_auto_unseal, state.config.retry_delay_ms)
-          {:noreply, %{new_state | unseal_in_progress: false, last_unseal_attempt: DateTime.utc_now()}}
+
+          {:noreply,
+           %{new_state | unseal_in_progress: false, last_unseal_attempt: DateTime.utc_now()}}
       end
     else
       {:noreply, state}
@@ -319,7 +323,10 @@ defmodule SecretHub.Core.AutoUnseal do
 
   defp get_provider_module(%{provider: :aws_kms}), do: SecretHub.Core.AutoUnseal.Providers.AWSKMS
   defp get_provider_module(%{provider: :gcp_kms}), do: SecretHub.Core.AutoUnseal.Providers.GCPKMS
-  defp get_provider_module(%{provider: :azure_kv}), do: SecretHub.Core.AutoUnseal.Providers.AzureKV
+
+  defp get_provider_module(%{provider: :azure_kv}),
+    do: SecretHub.Core.AutoUnseal.Providers.AzureKV
+
   defp get_provider_module(_), do: nil
 
   defp encrypt_unseal_keys(nil, _config, _keys), do: {:error, :no_provider}
@@ -349,7 +356,11 @@ defmodule SecretHub.Core.AutoUnseal do
 
       config_record ->
         # Decrypt unseal keys using KMS
-        case decrypt_unseal_keys(state.provider_module, state.config, config_record.encrypted_unseal_keys) do
+        case decrypt_unseal_keys(
+               state.provider_module,
+               state.config,
+               config_record.encrypted_unseal_keys
+             ) do
           {:ok, unseal_keys} ->
             # Submit unseal keys to vault
             submit_unseal_keys(unseal_keys)

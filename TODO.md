@@ -286,15 +286,15 @@
   - [x] Configure health check probes
   - [x] Set up session affinity if needed
   - [x] Add TLS termination
-- [ ] Implement Agent multi-endpoint failover
-  - [ ] Support multiple Core endpoints in Agent config
-  - [ ] Add connection health monitoring
-  - [ ] Implement automatic failover logic
-  - [ ] Add exponential backoff on failures
-- [ ] Build connection load balancing
-  - [ ] Round-robin endpoint selection
-  - [ ] Sticky sessions for WebSocket connections
-  - [ ] Connection pooling improvements
+- [x] Implement Agent multi-endpoint failover
+  - [x] Support multiple Core endpoints in Agent config
+  - [x] Add connection health monitoring
+  - [x] Implement automatic failover logic
+  - [x] Add exponential backoff on failures
+- [x] Build connection load balancing
+  - [x] Round-robin endpoint selection
+  - [x] Sticky sessions for WebSocket connections
+  - [x] Connection pooling improvements
 - [ ] Create Helm chart for deployment
   - [ ] Chart structure and values.yaml
   - [ ] Core StatefulSet template

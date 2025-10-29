@@ -177,7 +177,7 @@ defmodule SecretHub.Core.DistributedLock do
         perform_unseal()
       end)
   """
-  @spec with_lock(lock_key(), [lock_option()], (() -> any())) ::
+  @spec with_lock(lock_key(), [lock_option()], (-> any())) ::
           {:ok, any()} | {:error, :timeout | term()}
   def with_lock(lock_key, opts \\ [], fun) when is_function(fun, 0) do
     case acquire(lock_key, opts) do

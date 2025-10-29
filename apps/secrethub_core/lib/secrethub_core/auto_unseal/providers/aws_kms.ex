@@ -239,7 +239,10 @@ defmodule SecretHub.Core.AutoUnseal.Providers.AWSKMS do
 
   defp retry_operation(operation, params, region, config, retry_count) do
     delay_ms = calculate_retry_delay(retry_count)
-    Logger.warning("AWS KMS #{operation} failed, retrying in #{delay_ms}ms (attempt #{retry_count + 1}/#{@max_retries})")
+
+    Logger.warning(
+      "AWS KMS #{operation} failed, retrying in #{delay_ms}ms (attempt #{retry_count + 1}/#{@max_retries})"
+    )
 
     Process.sleep(delay_ms)
     perform_kms_operation(operation, params, region, config, retry_count + 1)
@@ -247,6 +250,6 @@ defmodule SecretHub.Core.AutoUnseal.Providers.AWSKMS do
 
   defp calculate_retry_delay(retry_count) do
     # Exponential backoff: 1s, 2s, 4s
-    @initial_retry_delay_ms * :math.pow(2, retry_count) |> round()
+    (@initial_retry_delay_ms * :math.pow(2, retry_count)) |> round()
   end
 end

@@ -5,9 +5,42 @@ defmodule SecretHub.Agent.Application do
 
   @impl true
   def start(_type, _args) do
+    # Get core endpoints from configuration
+    core_endpoints =
+      Application.get_env(:secrethub_agent, :core_endpoints) ||
+        [Application.get_env(:secrethub_agent, :core_url, "http://localhost:4000")]
+
+    agent_id =
+      Application.get_env(
+        :secrethub_agent,
+        :agent_id,
+        "agent-#{:crypto.strong_rand_bytes(4) |> Base.encode16()}"
+      )
+
     children = [
       # Cache for secrets
       SecretHub.Agent.Cache,
+
+      # Endpoint manager for multi-endpoint failover
+      {SecretHub.Agent.EndpointManager,
+       [
+         core_endpoints: core_endpoints,
+         health_check_interval:
+           Application.get_env(:secrethub_agent, :endpoint_health_check_interval, 30_000),
+         failover_threshold:
+           Application.get_env(:secrethub_agent, :endpoint_failover_threshold, 3)
+       ]},
+
+      # Connection manager with multi-endpoint support
+      {SecretHub.Agent.ConnectionManager,
+       [
+         agent_id: agent_id,
+         core_endpoints: core_endpoints,
+         cert_path: Application.get_env(:secrethub_agent, :cert_path),
+         key_path: Application.get_env(:secrethub_agent, :key_path),
+         ca_path: Application.get_env(:secrethub_agent, :ca_path)
+       ]},
+
       # Lease renewer for dynamic secrets
       {SecretHub.Agent.LeaseRenewer,
        [
@@ -19,6 +52,7 @@ defmodule SecretHub.Agent.Application do
            on_expired: &handle_expired/1
          }
        ]},
+
       # Unix Domain Socket server for application connections
       {SecretHub.Agent.UDSServer,
        [
