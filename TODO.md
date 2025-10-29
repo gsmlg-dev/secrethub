@@ -258,11 +258,11 @@
   - [x] Complete pending requests
   - [x] Close database connections gracefully
   - [x] Signal Kubernetes when shutdown is ready
-- [ ] Add distributed locking for initialization
-  - [ ] Use PostgreSQL advisory locks
-  - [ ] Prevent race conditions during init
-  - [ ] Coordinate unseal across nodes
-  - [ ] Add cluster state management
+- [x] Add distributed locking for initialization
+  - [x] Use PostgreSQL advisory locks
+  - [x] Prevent race conditions during init
+  - [x] Coordinate unseal across nodes
+  - [x] Add cluster state management
 - [ ] Build auto-unseal logic
   - [ ] Define auto-unseal configuration schema
   - [ ] Implement unseal on startup

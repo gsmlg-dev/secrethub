@@ -54,18 +54,22 @@ defmodule SecretHub.Shared.Schemas.Template do
         changeset
 
       bindings when is_map(bindings) ->
-        if Enum.all?(bindings, fn {k, v} -> is_binary(k) and is_binary(v) end) do
-          changeset
-        else
-          add_error(
-            changeset,
-            :variable_bindings,
-            "must be a map of string keys to string values"
-          )
-        end
+        validate_bindings_map(changeset, bindings)
 
       _ ->
         add_error(changeset, :variable_bindings, "must be a map")
+    end
+  end
+
+  defp validate_bindings_map(changeset, bindings) do
+    if Enum.all?(bindings, fn {k, v} -> is_binary(k) and is_binary(v) end) do
+      changeset
+    else
+      add_error(
+        changeset,
+        :variable_bindings,
+        "must be a map of string keys to string values"
+      )
     end
   end
 end
