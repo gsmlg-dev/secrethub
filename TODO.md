@@ -276,16 +276,16 @@
 
 ### Engineer 2 (Agent/Infra Lead) - Tasks
 
-- [ ] Set up Kubernetes StatefulSet for Core
-  - [ ] Define StatefulSet manifest
-  - [ ] Configure persistent volume claims
-  - [ ] Add pod anti-affinity rules
-  - [ ] Set resource limits and requests
-- [ ] Configure load balancer with health checks
-  - [ ] Kubernetes Service with LoadBalancer type
-  - [ ] Configure health check probes
-  - [ ] Set up session affinity if needed
-  - [ ] Add TLS termination
+- [x] Set up Kubernetes StatefulSet for Core
+  - [x] Define StatefulSet manifest
+  - [x] Configure persistent volume claims
+  - [x] Add pod anti-affinity rules
+  - [x] Set resource limits and requests
+- [x] Configure load balancer with health checks
+  - [x] Kubernetes Service with LoadBalancer type
+  - [x] Configure health check probes
+  - [x] Set up session affinity if needed
+  - [x] Add TLS termination
 - [ ] Implement Agent multi-endpoint failover
   - [ ] Support multiple Core endpoints in Agent config
   - [ ] Add connection health monitoring
