@@ -263,11 +263,11 @@
   - [x] Prevent race conditions during init
   - [x] Coordinate unseal across nodes
   - [x] Add cluster state management
-- [ ] Build auto-unseal logic
-  - [ ] Define auto-unseal configuration schema
-  - [ ] Implement unseal on startup
-  - [ ] Add key wrapping/unwrapping
-  - [ ] Handle unseal failures gracefully
+- [x] Build auto-unseal logic
+  - [x] Define auto-unseal configuration schema
+  - [x] Implement unseal on startup
+  - [x] Add key wrapping/unwrapping
+  - [x] Handle unseal failures gracefully
 - [ ] Implement cloud KMS integration (AWS KMS)
   - [ ] AWS KMS client setup
   - [ ] Encrypt/decrypt master key with KMS
