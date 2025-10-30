@@ -71,6 +71,7 @@ defmodule SecretHub.WebWeb.Router do
     live "/leases/dashboard", LeaseDashboardLive, :index
     live "/templates", TemplateManagementLive, :index
     live "/templates/:template_id", TemplateManagementLive, :show
+    live "/cluster", ClusterStatusLive, :index
 
     delete "/logout", AdminAuthController, :logout
   end
