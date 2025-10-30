@@ -42,8 +42,8 @@ defmodule SecretHub.Core.ClusterState do
   use GenServer
   require Logger
 
-  alias SecretHub.Core.{DistributedLock, Repo, Vault.SealState}
-  alias SecretHub.Shared.Schemas.ClusterNode
+  alias SecretHub.Core.{DistributedLock, NodeHealthCollector, Repo, Vault.SealState}
+  alias SecretHub.Shared.Schemas.{ClusterNode, NodeHealthMetric}
   import Ecto.Query
 
   @type node_status :: :starting | :initializing | :sealed | :unsealed | :shutdown
@@ -142,6 +142,26 @@ defmodule SecretHub.Core.ClusterState do
   @spec update_status(node_status()) :: :ok
   def update_status(status) do
     GenServer.cast(__MODULE__, {:update_status, status})
+  end
+
+  @doc """
+  Retrieves health history for a specific node.
+
+  Returns health metrics for the specified duration.
+  Duration can be specified in hours (e.g., 1 for last hour, 24 for last day).
+  """
+  @spec get_node_health_history(String.t(), pos_integer()) ::
+          {:ok, [NodeHealthMetric.t()]} | {:error, term()}
+  def get_node_health_history(node_id, hours \\ 1) do
+    GenServer.call(__MODULE__, {:get_node_health_history, node_id, hours})
+  end
+
+  @doc """
+  Retrieves the most recent health metrics for a specific node.
+  """
+  @spec get_node_current_health(String.t()) :: {:ok, NodeHealthMetric.t()} | {:error, term()}
+  def get_node_current_health(node_id) do
+    GenServer.call(__MODULE__, {:get_node_current_health, node_id})
   end
 
   # Server Callbacks
@@ -258,6 +278,22 @@ defmodule SecretHub.Core.ClusterState do
   end
 
   @impl true
+  def handle_call({:get_node_health_history, node_id, hours}, _from, state) do
+    case get_health_history(node_id, hours) do
+      {:ok, metrics} -> {:reply, {:ok, metrics}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:get_node_current_health, node_id}, _from, state) do
+    case get_current_health(node_id) do
+      {:ok, metric} -> {:reply, {:ok, metric}, state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
+    end
+  end
+
+  @impl true
   def handle_cast({:update_status, new_status}, state) do
     Logger.debug("Node status updated: #{state.status} -> #{new_status}")
     update_node_status(state.node_id, new_status)
@@ -268,6 +304,9 @@ defmodule SecretHub.Core.ClusterState do
   def handle_info(:heartbeat, state) do
     # Send heartbeat to update last_seen timestamp
     send_heartbeat(state.node_id)
+
+    # Collect and store health metrics
+    collect_and_store_health_metrics(state.node_id)
 
     # Clean up stale nodes
     cleanup_stale_nodes()
@@ -470,5 +509,81 @@ defmodule SecretHub.Core.ClusterState do
 
   defp schedule_leader_check do
     Process.send_after(self(), :check_leader, @leader_lock_renewal_interval)
+  end
+
+  # Health metrics collection and storage
+
+  defp collect_and_store_health_metrics(node_id) do
+    case NodeHealthCollector.collect() do
+      {:ok, metrics} ->
+        store_health_metrics(node_id, metrics)
+
+      {:error, reason} ->
+        Logger.error("Failed to collect health metrics for node #{node_id}: #{inspect(reason)}")
+        :ok
+    end
+  end
+
+  defp store_health_metrics(node_id, metrics) do
+    attrs = Map.put(metrics, :node_id, node_id)
+
+    %NodeHealthMetric{}
+    |> NodeHealthMetric.changeset(attrs)
+    |> Repo.insert()
+
+    # Clean up old metrics (keep only last 7 days)
+    cleanup_old_health_metrics()
+
+    :ok
+  rescue
+    e ->
+      Logger.error("Failed to store health metrics: #{Exception.message(e)}")
+      :ok
+  end
+
+  defp cleanup_old_health_metrics do
+    # Delete metrics older than 7 days
+    cutoff = DateTime.add(DateTime.utc_now(), -7 * 24 * 3600, :second)
+
+    from(m in NodeHealthMetric, where: m.timestamp < ^cutoff)
+    |> Repo.delete_all()
+
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp get_health_history(node_id, hours) do
+    cutoff = DateTime.add(DateTime.utc_now(), -hours * 3600, :second)
+
+    metrics =
+      from(m in NodeHealthMetric,
+        where: m.node_id == ^node_id and m.timestamp >= ^cutoff,
+        order_by: [desc: m.timestamp]
+      )
+      |> Repo.all()
+
+    {:ok, metrics}
+  rescue
+    e ->
+      {:error, Exception.message(e)}
+  end
+
+  defp get_current_health(node_id) do
+    metric =
+      from(m in NodeHealthMetric,
+        where: m.node_id == ^node_id,
+        order_by: [desc: m.timestamp],
+        limit: 1
+      )
+      |> Repo.one()
+
+    case metric do
+      nil -> {:error, :not_found}
+      metric -> {:ok, metric}
+    end
+  rescue
+    e ->
+      {:error, Exception.message(e)}
   end
 end
