@@ -10,7 +10,7 @@ defmodule SecretHub.Core.EngineConfigurations do
   require Logger
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.EngineConfiguration
+  alias SecretHub.Shared.Schemas.{EngineConfiguration, EngineHealthCheck}
 
   @doc """
   Lists all engine configurations.
@@ -116,6 +116,103 @@ defmodule SecretHub.Core.EngineConfigurations do
   end
 
   @doc """
+  Records a health check result in the history table.
+  """
+  def record_health_check(config_id, status, opts \\ []) do
+    attrs = %{
+      engine_configuration_id: config_id,
+      checked_at: DateTime.utc_now(),
+      status: status,
+      response_time_ms: opts[:response_time_ms],
+      error_message: opts[:error_message],
+      metadata: opts[:metadata] || %{}
+    }
+
+    %EngineHealthCheck{}
+    |> EngineHealthCheck.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Gets health check history for a configuration.
+
+  ## Options
+  - `:limit` - Maximum number of records to return (default: 100)
+  - `:since` - Only return checks after this timestamp
+  """
+  def get_health_history(config_id, opts \\ []) do
+    limit = opts[:limit] || 100
+
+    query =
+      from(h in EngineHealthCheck,
+        where: h.engine_configuration_id == ^config_id,
+        order_by: [desc: h.checked_at],
+        limit: ^limit
+      )
+
+    query =
+      if since = opts[:since] do
+        where(query, [h], h.checked_at >= ^since)
+      else
+        query
+      end
+
+    Repo.all(query)
+  end
+
+  @doc """
+  Gets health statistics for a configuration.
+
+  Returns a map with:
+  - `total_checks`: Total number of checks
+  - `healthy_count`: Number of healthy checks
+  - `unhealthy_count`: Number of unhealthy checks
+  - `uptime_percentage`: Percentage of healthy checks
+  - `avg_response_time`: Average response time in ms
+  """
+  def get_health_stats(config_id, opts \\ []) do
+    since = opts[:since] || DateTime.add(DateTime.utc_now(), -7 * 24 * 3600, :second)
+
+    query =
+      from(h in EngineHealthCheck,
+        where: h.engine_configuration_id == ^config_id and h.checked_at >= ^since,
+        select: %{
+          total: count(h.id),
+          healthy: fragment("COUNT(CASE WHEN ? = 'healthy' THEN 1 END)", h.status),
+          unhealthy: fragment("COUNT(CASE WHEN ? = 'unhealthy' THEN 1 END)", h.status),
+          avg_response_time: avg(h.response_time_ms)
+        }
+      )
+
+    case Repo.one(query) do
+      nil ->
+        %{
+          total_checks: 0,
+          healthy_count: 0,
+          unhealthy_count: 0,
+          uptime_percentage: 0.0,
+          avg_response_time: nil
+        }
+
+      result ->
+        uptime =
+          if result.total > 0 do
+            result.healthy / result.total * 100
+          else
+            0.0
+          end
+
+        %{
+          total_checks: result.total,
+          healthy_count: result.healthy,
+          unhealthy_count: result.unhealthy,
+          uptime_percentage: Float.round(uptime, 2),
+          avg_response_time: result.avg_response_time && Float.round(result.avg_response_time, 2)
+        }
+    end
+  end
+
+  @doc """
   Performs a health check on an engine configuration.
 
   Returns `{:ok, status}` where status is :healthy, :degraded, or :unhealthy.
@@ -142,14 +239,25 @@ defmodule SecretHub.Core.EngineConfigurations do
     list_configurations(enabled_only: true)
     |> Enum.filter(& &1.health_check_enabled)
     |> Enum.map(fn config ->
+      start_time = System.monotonic_time(:millisecond)
+
       case perform_health_check(config) do
         {:ok, status} ->
+          response_time = System.monotonic_time(:millisecond) - start_time
           update_health_status(config.id, status)
+          record_health_check(config.id, status, response_time_ms: response_time)
           {config.id, status}
 
         {:error, reason} ->
+          response_time = System.monotonic_time(:millisecond) - start_time
           Logger.error("Health check failed for #{config.name}: #{inspect(reason)}")
           update_health_status(config.id, :unhealthy, inspect(reason))
+
+          record_health_check(config.id, :unhealthy,
+            response_time_ms: response_time,
+            error_message: inspect(reason)
+          )
+
           {config.id, :unhealthy}
       end
     end)

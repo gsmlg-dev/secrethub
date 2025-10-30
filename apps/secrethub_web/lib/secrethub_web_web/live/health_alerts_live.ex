@@ -99,7 +99,7 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
 
       _ ->
         ~H"""
-        <span class="badge badge-ghost"><%= type %></span>
+        <span class="badge badge-ghost">{type}</span>
         """
     end
   end

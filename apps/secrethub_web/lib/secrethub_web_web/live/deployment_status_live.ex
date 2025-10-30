@@ -233,7 +233,7 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
             phx-click="toggle_refresh"
             class={"btn btn-outline #{if @auto_refresh, do: "btn-active", else: ""}"}
           >
-            <%= if @auto_refresh, do: "Auto-refresh ON", else: "Auto-refresh OFF" %>
+            {if @auto_refresh, do: "Auto-refresh ON", else: "Auto-refresh OFF"}
           </button>
 
           <button phx-click="refresh_now" class="btn btn-primary">
@@ -257,7 +257,7 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
               d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <span><%= @error %></span>
+          <span>{@error}</span>
         </div>
       <% end %>
 
@@ -281,8 +281,8 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
           </span>
         </div>
       <% end %>
-
-      <!-- Deployment Overview -->
+      
+    <!-- Deployment Overview -->
       <%= if @deployment do %>
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
@@ -291,34 +291,34 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
             <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4">
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Desired</div>
-                <div class="stat-value text-2xl"><%= @deployment.replicas.desired %></div>
+                <div class="stat-value text-2xl">{@deployment.replicas.desired}</div>
                 <div class="stat-desc">Replicas</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Available</div>
                 <div class="stat-value text-2xl text-green-600">
-                  <%= @deployment.replicas.available %>
+                  {@deployment.replicas.available}
                 </div>
                 <div class="stat-desc">Ready to serve</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Ready</div>
-                <div class="stat-value text-2xl text-blue-600"><%= @deployment.replicas.ready %></div>
+                <div class="stat-value text-2xl text-blue-600">{@deployment.replicas.ready}</div>
                 <div class="stat-desc">Passing health checks</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Updated</div>
-                <div class="stat-value text-2xl"><%= @deployment.replicas.updated %></div>
+                <div class="stat-value text-2xl">{@deployment.replicas.updated}</div>
                 <div class="stat-desc">Latest version</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Strategy</div>
-                <div class="stat-value text-lg"><%= @deployment.strategy %></div>
-                <div class="stat-desc"><%= @deployment.max_surge %> surge</div>
+                <div class="stat-value text-lg">{@deployment.strategy}</div>
+                <div class="stat-desc">{@deployment.max_surge} surge</div>
               </div>
             </div>
 
@@ -330,8 +330,8 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
           </div>
         </div>
       <% end %>
-
-      <!-- Pods Table -->
+      
+    <!-- Pods Table -->
       <div class="card bg-base-100 shadow-xl mb-6">
         <div class="card-body">
           <h2 class="card-title">Pods</h2>
@@ -355,30 +355,30 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
                   <%= for pod <- @pods do %>
                     <% pod_metrics = get_pod_metrics(@metrics, pod.name) %>
                     <tr>
-                      <td class="font-mono text-sm"><%= pod.name %></td>
+                      <td class="font-mono text-sm">{pod.name}</td>
                       <td>
                         <span class={
                           "px-2 py-1 text-xs font-semibold rounded-full #{elem(pod_status_badge(pod.status), 0)}"
                         }>
-                          <%= elem(pod_status_badge(pod.status), 1) %>
+                          {elem(pod_status_badge(pod.status), 1)}
                         </span>
                       </td>
-                      <td><%= pod.ready %></td>
+                      <td>{pod.ready}</td>
                       <td>
                         <%= if pod.restarts > 0 do %>
-                          <span class="badge badge-warning"><%= pod.restarts %></span>
+                          <span class="badge badge-warning">{pod.restarts}</span>
                         <% else %>
-                          <span class="badge badge-ghost"><%= pod.restarts %></span>
+                          <span class="badge badge-ghost">{pod.restarts}</span>
                         <% end %>
                       </td>
-                      <td><%= format_age(pod.age_seconds) %></td>
-                      <td class="text-sm"><%= pod.node %></td>
+                      <td>{format_age(pod.age_seconds)}</td>
+                      <td class="text-sm">{pod.node}</td>
                       <td>
                         <%= if pod_metrics do %>
                           <div class="text-sm">
-                            <div><%= pod_metrics.cpu_usage %></div>
+                            <div>{pod_metrics.cpu_usage}</div>
                             <div class="text-xs text-gray-500">
-                              <%= Float.round(pod_metrics.cpu_percent, 1) %>%
+                              {Float.round(pod_metrics.cpu_percent, 1)}%
                             </div>
                           </div>
                         <% else %>
@@ -388,9 +388,9 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
                       <td>
                         <%= if pod_metrics do %>
                           <div class="text-sm">
-                            <div><%= pod_metrics.memory_usage %></div>
+                            <div>{pod_metrics.memory_usage}</div>
                             <div class="text-xs text-gray-500">
-                              <%= Float.round(pod_metrics.memory_percent, 1) %>%
+                              {Float.round(pod_metrics.memory_percent, 1)}%
                             </div>
                           </div>
                         <% else %>
@@ -422,8 +422,8 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
           <% end %>
         </div>
       </div>
-
-      <!-- Recent Events -->
+      
+    <!-- Recent Events -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Recent Events</h2>
@@ -447,13 +447,13 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
                         <span class={
                           "px-2 py-1 text-xs font-semibold rounded-full #{elem(event_type_badge(event.type), 0)}"
                         }>
-                          <%= elem(event_type_badge(event.type), 1) %>
+                          {elem(event_type_badge(event.type), 1)}
                         </span>
                       </td>
-                      <td class="font-medium"><%= event.reason %></td>
-                      <td class="text-sm"><%= event.message %></td>
-                      <td><%= event.count %></td>
-                      <td><%= format_timestamp(event.timestamp) %></td>
+                      <td class="font-medium">{event.reason}</td>
+                      <td class="text-sm">{event.message}</td>
+                      <td>{event.count}</td>
+                      <td>{format_timestamp(event.timestamp)}</td>
                     </tr>
                   <% end %>
                 </tbody>
@@ -479,8 +479,8 @@ defmodule SecretHub.WebWeb.DeploymentStatusLive do
           <% end %>
         </div>
       </div>
-
-      <!-- Scale Dialog Modal -->
+      
+    <!-- Scale Dialog Modal -->
       <%= if @scale_replicas do %>
         <div class="modal modal-open">
           <div class="modal-box">

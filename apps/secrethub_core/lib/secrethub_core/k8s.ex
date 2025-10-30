@@ -25,7 +25,11 @@ defmodule SecretHub.Core.K8s do
 
   require Logger
 
-  @deployment_name Application.compile_env(:secrethub_core, :k8s_deployment_name, "secrethub-core")
+  @deployment_name Application.compile_env(
+                     :secrethub_core,
+                     :k8s_deployment_name,
+                     "secrethub-core"
+                   )
   @namespace Application.compile_env(:secrethub_core, :k8s_namespace, "secrethub")
 
   @doc """

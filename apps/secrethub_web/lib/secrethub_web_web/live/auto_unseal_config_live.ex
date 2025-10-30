@@ -153,7 +153,7 @@ defmodule SecretHub.WebWeb.AutoUnsealConfigLive do
 
       _ ->
         ~H"""
-        <span class="badge badge-ghost"><%= to_string(provider) %></span>
+        <span class="badge badge-ghost">{to_string(provider)}</span>
         """
     end
   end

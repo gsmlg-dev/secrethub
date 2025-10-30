@@ -17,17 +17,17 @@ defmodule SecretHub.Shared.Schemas.EngineConfiguration do
   @health_statuses [:healthy, :degraded, :unhealthy, :unknown]
 
   schema "engine_configurations" do
-    field :name, :string
-    field :engine_type, Ecto.Enum, values: @engine_types
-    field :description, :string
-    field :enabled, :boolean, default: true
-    field :config, :map
-    field :health_check_enabled, :boolean, default: true
-    field :health_check_interval_seconds, :integer, default: 60
-    field :last_health_check_at, :utc_datetime
-    field :health_status, Ecto.Enum, values: @health_statuses, default: :unknown
-    field :health_message, :string
-    field :metadata, :map
+    field(:name, :string)
+    field(:engine_type, Ecto.Enum, values: @engine_types)
+    field(:description, :string)
+    field(:enabled, :boolean, default: true)
+    field(:config, :map)
+    field(:health_check_enabled, :boolean, default: true)
+    field(:health_check_interval_seconds, :integer, default: 60)
+    field(:last_health_check_at, :utc_datetime)
+    field(:health_status, Ecto.Enum, values: @health_statuses, default: :unknown)
+    field(:health_message, :string)
+    field(:metadata, :map)
 
     timestamps(type: :utc_datetime)
   end

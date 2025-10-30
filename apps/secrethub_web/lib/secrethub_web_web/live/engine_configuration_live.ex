@@ -181,7 +181,7 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
 
       _ ->
         ~H"""
-        <span class="badge badge-ghost"><%= to_string(type) %></span>
+        <span class="badge badge-ghost">{to_string(type)}</span>
         """
     end
   end
@@ -210,7 +210,7 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
 
       _ ->
         ~H"""
-        <span class="badge badge-ghost"><%= to_string(status) %></span>
+        <span class="badge badge-ghost">{to_string(status)}</span>
         """
     end
   end
@@ -261,7 +261,7 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
             phx-click="toggle_refresh"
             class={"btn btn-outline #{if @auto_refresh, do: "btn-active", else: ""}"}
           >
-            <%= if @auto_refresh, do: "Auto-refresh ON", else: "Auto-refresh OFF" %>
+            {if @auto_refresh, do: "Auto-refresh ON", else: "Auto-refresh OFF"}
           </button>
 
           <button phx-click="refresh_now" class="btn btn-primary">
@@ -285,27 +285,27 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
               d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <span><%= @error %></span>
+          <span>{@error}</span>
         </div>
       <% end %>
-
-      <!-- Statistics Cards -->
+      
+    <!-- Statistics Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Total Engines</div>
-          <div class="stat-value text-3xl"><%= @stats.total %></div>
+          <div class="stat-value text-3xl">{@stats.total}</div>
           <div class="stat-desc">Configured backends</div>
         </div>
 
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Enabled</div>
-          <div class="stat-value text-3xl text-green-600"><%= @stats.enabled %></div>
+          <div class="stat-value text-3xl text-green-600">{@stats.enabled}</div>
           <div class="stat-desc">Active engines</div>
         </div>
 
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Healthy</div>
-          <div class="stat-value text-3xl text-blue-600"><%= @stats.healthy %></div>
+          <div class="stat-value text-3xl text-blue-600">{@stats.healthy}</div>
           <div class="stat-desc">Passing health checks</div>
         </div>
 
@@ -314,15 +314,15 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
           <div class="stat-value text-sm">
             <%= for {type, count} <- @stats.by_type do %>
               <div class="text-xs">
-                <%= String.capitalize(to_string(type)) %>: <%= count %>
+                {String.capitalize(to_string(type))}: {count}
               </div>
             <% end %>
           </div>
           <div class="stat-desc">Engine distribution</div>
         </div>
       </div>
-
-      <!-- Quick Actions -->
+      
+    <!-- Quick Actions -->
       <div class="mb-6 bg-base-100 shadow rounded-lg p-6">
         <h3 class="text-lg font-semibold mb-4">Quick Actions</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -433,8 +433,8 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
           </button>
         </div>
       </div>
-
-      <!-- Engines List -->
+      
+    <!-- Engines List -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Configured Engines</h2>
@@ -456,11 +456,11 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
                 <tbody>
                   <%= for config <- @configurations do %>
                     <tr>
-                      <td class="font-medium"><%= config.name %></td>
-                      <td><%= engine_type_badge(config.engine_type) %></td>
-                      <td class="text-sm"><%= config.description || "-" %></td>
-                      <td><%= health_status_badge(config.health_status) %></td>
-                      <td class="text-sm"><%= format_timestamp(config.last_health_check_at) %></td>
+                      <td class="font-medium">{config.name}</td>
+                      <td>{engine_type_badge(config.engine_type)}</td>
+                      <td class="text-sm">{config.description || "-"}</td>
+                      <td>{health_status_badge(config.health_status)}</td>
+                      <td class="text-sm">{format_timestamp(config.last_health_check_at)}</td>
                       <td>
                         <%= if config.enabled do %>
                           <span class="badge badge-success">Enabled</span>
@@ -470,12 +470,18 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
                       </td>
                       <td>
                         <div class="flex gap-2">
+                          <.link
+                            navigate={~p"/admin/engines/#{config.id}/health"}
+                            class="btn btn-sm btn-info btn-outline"
+                          >
+                            Health
+                          </.link>
                           <button
                             phx-click="toggle_engine"
                             phx-value-id={config.id}
                             class="btn btn-sm btn-outline"
                           >
-                            <%= if config.enabled, do: "Disable", else: "Enable" %>
+                            {if config.enabled, do: "Disable", else: "Enable"}
                           </button>
                           <button
                             phx-click="show_delete_modal"
@@ -506,13 +512,15 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
                   d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              <span>No engine configurations yet. Add your first engine using the quick actions above.</span>
+              <span>
+                No engine configurations yet. Add your first engine using the quick actions above.
+              </span>
             </div>
           <% end %>
         </div>
       </div>
-
-      <!-- Delete Confirmation Modal -->
+      
+    <!-- Delete Confirmation Modal -->
       <%= if @delete_modal do %>
         <div class="modal modal-open">
           <div class="modal-box">

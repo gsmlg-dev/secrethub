@@ -229,12 +229,12 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
     <div class="container mx-auto p-6 max-w-4xl">
       <div class="mb-6">
         <h1 class="text-3xl font-bold">
-          Setup <%= String.capitalize(to_string(@engine_type)) %> Engine
+          Setup {String.capitalize(to_string(@engine_type))} Engine
         </h1>
         <p class="text-gray-600 mt-1">Configure a new dynamic secret engine</p>
       </div>
-
-      <!-- Progress Steps -->
+      
+    <!-- Progress Steps -->
       <div class="mb-8">
         <ul class="steps steps-horizontal w-full">
           <li class={"step #{if @step >= 1, do: "step-primary", else: ""}"}>Basic Info</li>
@@ -264,7 +264,7 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
                 />
                 <%= if @errors[:name] do %>
                   <label class="label">
-                    <span class="label-text-alt text-error"><%= @errors[:name] %></span>
+                    <span class="label-text-alt text-error">{@errors[:name]}</span>
                   </label>
                 <% end %>
               </div>
@@ -313,7 +313,7 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
                   />
                   <%= if @errors[:hostname] do %>
                     <label class="label">
-                      <span class="label-text-alt text-error"><%= @errors[:hostname] %></span>
+                      <span class="label-text-alt text-error">{@errors[:hostname]}</span>
                     </label>
                   <% end %>
                 </div>
@@ -332,7 +332,7 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
                   />
                   <%= if @errors[:port] do %>
                     <label class="label">
-                      <span class="label-text-alt text-error"><%= @errors[:port] %></span>
+                      <span class="label-text-alt text-error">{@errors[:port]}</span>
                     </label>
                   <% end %>
                 </div>
@@ -406,7 +406,7 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
                 />
                 <%= if @errors[:region] do %>
                   <label class="label">
-                    <span class="label-text-alt text-error"><%= @errors[:region] %></span>
+                    <span class="label-text-alt text-error">{@errors[:region]}</span>
                   </label>
                 <% end %>
               </div>
@@ -425,7 +425,7 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
                 />
                 <%= if @errors[:role_arn] do %>
                   <label class="label">
-                    <span class="label-text-alt text-error"><%= @errors[:role_arn] %></span>
+                    <span class="label-text-alt text-error">{@errors[:role_arn]}</span>
                   </label>
                 <% end %>
               </div>
@@ -483,7 +483,7 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
                           d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                         />
                       </svg>
-                      <span><%= message %></span>
+                      <span>{message}</span>
                     </div>
                   <% {:error, message} -> %>
                     <div class="alert alert-error">
@@ -500,7 +500,7 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
                           d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
                         />
                       </svg>
-                      <span><%= message %></span>
+                      <span>{message}</span>
                     </div>
                 <% end %>
               <% end %>
@@ -516,7 +516,7 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
                 class="btn btn-secondary"
                 disabled={@testing}
               >
-                <%= if @testing, do: "Testing...", else: "Test Connection" %>
+                {if @testing, do: "Testing...", else: "Test Connection"}
               </button>
               <button type="button" phx-click="save_configuration" class="btn btn-primary">
                 Save Configuration
