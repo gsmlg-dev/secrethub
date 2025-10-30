@@ -70,7 +70,7 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
       |> assign(:error, "Failed to load alerts")
   end
 
-  defp alert_type_badge(type) do
+  defp alert_type_badge(type, assigns \\ %{}) do
     case type do
       "node_down" ->
         ~H"""
@@ -99,7 +99,7 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
 
       _ ->
         ~H"""
-        <span class="badge badge-ghost">{type}</span>
+        <span class="badge badge-ghost"><%= type %></span>
         """
     end
   end

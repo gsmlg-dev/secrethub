@@ -364,10 +364,13 @@ defmodule SecretHub.WebWeb.ClusterStatusLive do
                   </svg>
                 </.link>
 
-                <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg bg-gray-50 opacity-50">
+                <.link
+                  navigate={~p"/admin/cluster/deployment"}
+                  class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                >
                   <div class="flex items-center">
                     <svg
-                      class="h-8 w-8 text-gray-400 mr-3"
+                      class="h-8 w-8 text-purple-600 mr-3"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -381,11 +384,25 @@ defmodule SecretHub.WebWeb.ClusterStatusLive do
                       />
                     </svg>
                     <div>
-                      <div class="text-sm font-medium text-gray-400">Deployment</div>
-                      <div class="text-xs text-gray-400">Coming soon</div>
+                      <div class="text-sm font-medium text-gray-900">Deployment</div>
+                      <div class="text-xs text-gray-500">View Kubernetes status</div>
                     </div>
                   </div>
-                </div>
+                  <svg
+                    class="h-5 w-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </.link>
               </div>
             </div>
             

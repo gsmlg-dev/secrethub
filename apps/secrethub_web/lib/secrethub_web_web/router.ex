@@ -75,6 +75,7 @@ defmodule SecretHub.WebWeb.Router do
     live "/cluster/nodes/:node_id", NodeHealthLive, :show
     live "/cluster/alerts", HealthAlertsLive, :index
     live "/cluster/auto-unseal", AutoUnsealConfigLive, :index
+    live "/cluster/deployment", DeploymentStatusLive, :index
 
     delete "/logout", AdminAuthController, :logout
   end

@@ -129,7 +129,7 @@ defmodule SecretHub.WebWeb.AutoUnsealConfigLive do
     end
   end
 
-  defp provider_badge(provider) do
+  defp provider_badge(provider, assigns \\ %{}) do
     case provider do
       :aws_kms ->
         ~H"""
@@ -153,7 +153,7 @@ defmodule SecretHub.WebWeb.AutoUnsealConfigLive do
 
       _ ->
         ~H"""
-        <span class="badge badge-ghost">{to_string(provider)}</span>
+        <span class="badge badge-ghost"><%= to_string(provider) %></span>
         """
     end
   end

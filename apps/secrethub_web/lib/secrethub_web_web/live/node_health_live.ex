@@ -133,9 +133,9 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
     Calendar.strftime(datetime, "%Y-%m-%d %H:%M:%S UTC")
   end
 
-  defp health_status_badge(nil), do: health_status_badge("unknown")
+  defp health_status_badge(nil, assigns), do: health_status_badge("unknown", assigns)
 
-  defp health_status_badge(status) when is_binary(status) do
+  defp health_status_badge(status, assigns \\ %{}) when is_binary(status) do
     case status do
       "healthy" ->
         ~H"""
