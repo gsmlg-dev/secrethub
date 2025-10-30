@@ -44,6 +44,7 @@ defmodule SecretHub.Core.ClusterState do
 
   alias SecretHub.Core.{DistributedLock, Repo, Vault.SealState}
   alias SecretHub.Shared.Schemas.ClusterNode
+  import Ecto.Query
 
   @type node_status :: :starting | :initializing | :sealed | :unsealed | :shutdown
   @type cluster_info :: %{
@@ -218,10 +219,8 @@ defmodule SecretHub.Core.ClusterState do
 
   @impl true
   def handle_call(:cluster_info, _from, state) do
-    case get_cluster_info() do
-      {:ok, info} -> {:reply, {:ok, info}, state}
-      {:error, reason} -> {:reply, {:error, reason}, state}
-    end
+    {:ok, info} = get_cluster_info()
+    {:reply, {:ok, info}, state}
   end
 
   @impl true
@@ -324,10 +323,41 @@ defmodule SecretHub.Core.ClusterState do
   end
 
   defp register_node(node_id) do
-    # Create or update cluster node record
-    # This would be a new schema - for now we'll skip DB operations
-    # and just log
-    Logger.info("Registering cluster node: #{node_id}")
+    hostname = :inet.gethostname() |> elem(1) |> to_string()
+    version = Application.spec(:secrethub_core, :vsn) |> to_string()
+    now = DateTime.utc_now()
+
+    case Repo.get_by(ClusterNode, node_id: node_id) do
+      nil ->
+        %ClusterNode{}
+        |> ClusterNode.changeset(%{
+          node_id: node_id,
+          hostname: hostname,
+          status: "starting",
+          leader: false,
+          last_seen_at: now,
+          started_at: now,
+          sealed: true,
+          initialized: false,
+          version: version
+        })
+        |> Repo.insert()
+
+        Logger.info("Registered new cluster node: #{node_id}")
+
+      existing_node ->
+        existing_node
+        |> ClusterNode.changeset(%{
+          last_seen_at: now,
+          started_at: now,
+          status: "starting",
+          version: version
+        })
+        |> Repo.update()
+
+        Logger.info("Re-registered existing cluster node: #{node_id}")
+    end
+
     :ok
   end
 
@@ -340,32 +370,97 @@ defmodule SecretHub.Core.ClusterState do
 
   defp update_node_status(node_id, status) do
     Logger.debug("Updating node #{node_id} status to #{status}")
-    # Would update cluster_nodes table
-    :ok
+
+    case Repo.get_by(ClusterNode, node_id: node_id) do
+      nil ->
+        Logger.warning("Cannot update status for unknown node: #{node_id}")
+        :ok
+
+      node ->
+        # Infer sealed/initialized state from status
+        sealed = status in [:sealed, :starting, :initializing]
+        initialized = status != :starting
+
+        node
+        |> ClusterNode.changeset(%{
+          status: to_string(status),
+          sealed: sealed,
+          initialized: initialized,
+          last_seen_at: DateTime.utc_now()
+        })
+        |> Repo.update()
+
+        :ok
+    end
   end
 
   defp send_heartbeat(node_id) do
     Logger.debug("Sending heartbeat for node #{node_id}")
-    # Would update last_seen timestamp in cluster_nodes table
-    :ok
+
+    case Repo.get_by(ClusterNode, node_id: node_id) do
+      nil ->
+        Logger.warning("Cannot send heartbeat for unknown node: #{node_id}")
+        :ok
+
+      node ->
+        node
+        |> ClusterNode.changeset(%{last_seen_at: DateTime.utc_now()})
+        |> Repo.update()
+
+        :ok
+    end
   end
 
   defp cleanup_stale_nodes do
-    # Remove nodes that haven't sent heartbeat in @node_timeout
-    # This would be a DB query to delete stale records
+    # Remove nodes that haven't sent heartbeat in @node_timeout (30 seconds)
+    timeout_cutoff = DateTime.add(DateTime.utc_now(), -@node_timeout, :millisecond)
+
+    {count, _} =
+      from(n in ClusterNode,
+        where: n.last_seen_at < ^timeout_cutoff,
+        where: n.status != "shutdown"
+      )
+      |> Repo.delete_all()
+
+    if count > 0 do
+      Logger.info("Cleaned up #{count} stale cluster nodes")
+    end
+
     :ok
   end
 
   defp get_cluster_info do
-    # Query cluster_nodes table for current state
-    # For now, return mock data
+    # Query all active cluster nodes, ordered by most recently seen
+    nodes = Repo.all(from(n in ClusterNode, order_by: [desc: n.last_seen_at]))
+
+    # Convert to maps for the API response
+    node_maps =
+      Enum.map(nodes, fn node ->
+        %{
+          node_id: node.node_id,
+          hostname: node.hostname,
+          status: node.status,
+          leader: node.leader,
+          sealed: node.sealed,
+          initialized: node.initialized,
+          last_seen_at: node.last_seen_at,
+          started_at: node.started_at,
+          version: node.version,
+          metadata: node.metadata
+        }
+      end)
+
+    # Calculate aggregate metrics
+    sealed_count = Enum.count(nodes, & &1.sealed)
+    unsealed_count = Enum.count(nodes, &(!&1.sealed))
+
     {:ok,
      %{
-       node_count: 1,
+       node_count: length(nodes),
        initialized: SealState.initialized?(),
-       sealed_count: if(SealState.sealed?(), do: 1, else: 0),
-       unsealed_count: if(!SealState.sealed?(), do: 1, else: 0),
-       nodes: []
+       sealed_count: sealed_count,
+       unsealed_count: unsealed_count,
+       nodes: node_maps
      }}
   end
 

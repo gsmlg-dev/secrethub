@@ -113,6 +113,24 @@ defmodule SecretHub.Core.Vault.SealState do
   end
 
   @doc """
+  Returns whether the vault is initialized.
+  """
+  @spec initialized?() :: boolean()
+  def initialized? do
+    status = status()
+    status.initialized
+  end
+
+  @doc """
+  Returns whether the vault is sealed.
+  """
+  @spec sealed?() :: boolean()
+  def sealed? do
+    status = status()
+    status.sealed
+  end
+
+  @doc """
   Gets the master encryption key if vault is unsealed.
 
   Returns `{:ok, key}` if unsealed, `{:error, :sealed}` if sealed.
