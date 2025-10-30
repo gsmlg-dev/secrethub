@@ -134,7 +134,9 @@ defmodule SecretHub.Core.HealthAlerts do
   @doc """
   Evaluates a single alert against a list of metrics.
   """
-  @spec evaluate_alert(HealthAlert.t()) :: [%{alert: HealthAlert.t(), metric: NodeHealthMetric.t()}]
+  @spec evaluate_alert(HealthAlert.t()) :: [
+          %{alert: HealthAlert.t(), metric: NodeHealthMetric.t()}
+        ]
   def evaluate_alert(%HealthAlert{} = alert) do
     # Get recent metrics (last 5 minutes)
     cutoff = DateTime.add(DateTime.utc_now(), -5 * 60, :second)

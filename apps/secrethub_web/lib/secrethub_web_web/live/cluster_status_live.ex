@@ -280,6 +280,115 @@ defmodule SecretHub.WebWeb.ClusterStatusLive do
               </div>
             </div>
             
+    <!-- Quick Actions -->
+            <div class="mb-6 bg-white rounded-lg shadow p-6">
+              <h3 class="text-lg font-semibold text-gray-900 mb-4">Cluster Management</h3>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <.link
+                  navigate={~p"/admin/cluster/alerts"}
+                  class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                >
+                  <div class="flex items-center">
+                    <svg
+                      class="h-8 w-8 text-blue-600 mr-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                      />
+                    </svg>
+                    <div>
+                      <div class="text-sm font-medium text-gray-900">Health Alerts</div>
+                      <div class="text-xs text-gray-500">Configure monitoring alerts</div>
+                    </div>
+                  </div>
+                  <svg
+                    class="h-5 w-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </.link>
+
+                <.link
+                  navigate={~p"/admin/cluster/auto-unseal"}
+                  class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                >
+                  <div class="flex items-center">
+                    <svg
+                      class="h-8 w-8 text-green-600 mr-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"
+                      />
+                    </svg>
+                    <div>
+                      <div class="text-sm font-medium text-gray-900">Auto-Unseal</div>
+                      <div class="text-xs text-gray-500">Manage automatic unsealing</div>
+                    </div>
+                  </div>
+                  <svg
+                    class="h-5 w-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </.link>
+
+                <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg bg-gray-50 opacity-50">
+                  <div class="flex items-center">
+                    <svg
+                      class="h-8 w-8 text-gray-400 mr-3"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                      />
+                    </svg>
+                    <div>
+                      <div class="text-sm font-medium text-gray-400">Deployment</div>
+                      <div class="text-xs text-gray-400">Coming soon</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
     <!-- Overall health status -->
             <%= if @health_status do %>
               <div class="mb-6 bg-white rounded-lg shadow p-6">

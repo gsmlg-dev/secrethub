@@ -165,7 +165,7 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
     <div class="container mx-auto p-6">
       <div class="flex justify-between items-center mb-6">
         <div>
-          <h1 class="text-3xl font-bold">Node Health: <%= @node_id %></h1>
+          <h1 class="text-3xl font-bold">Node Health: {@node_id}</h1>
           <p class="text-gray-600 mt-1">Detailed health monitoring and metrics</p>
         </div>
 
@@ -192,7 +192,7 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
             phx-click="toggle_refresh"
             class={"btn btn-outline #{if @auto_refresh, do: "btn-active", else: ""}"}
           >
-            <%= if @auto_refresh, do: "Auto-refresh ON", else: "Auto-refresh OFF" %>
+            {if @auto_refresh, do: "Auto-refresh ON", else: "Auto-refresh OFF"}
           </button>
 
           <button phx-click="refresh_now" class="btn btn-primary">
@@ -216,11 +216,11 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
               d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <span><%= @error %></span>
+          <span>{@error}</span>
         </div>
       <% end %>
-
-      <!-- Current Health Metrics -->
+      
+    <!-- Current Health Metrics -->
       <div class="card bg-base-100 shadow-xl mb-6">
         <div class="card-body">
           <h2 class="card-title">Current Health Status</h2>
@@ -230,21 +230,23 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Health Status</div>
                 <div class="stat-value text-2xl">
-                  <%= health_status_badge(@current_health.health_status) %>
+                  {health_status_badge(@current_health.health_status)}
                 </div>
-                <div class="stat-desc"><%= format_timestamp(@current_health.timestamp) %></div>
+                <div class="stat-desc">{format_timestamp(@current_health.timestamp)}</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">CPU Usage</div>
-                <div class="stat-value text-2xl"><%= format_percentage(@current_health.cpu_percent) %></div>
+                <div class="stat-value text-2xl">
+                  {format_percentage(@current_health.cpu_percent)}
+                </div>
                 <div class="stat-desc">Processor utilization</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Memory Usage</div>
                 <div class="stat-value text-2xl">
-                  <%= format_percentage(@current_health.memory_percent) %>
+                  {format_percentage(@current_health.memory_percent)}
                 </div>
                 <div class="stat-desc">Memory utilization</div>
               </div>
@@ -252,22 +254,22 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Database Latency</div>
                 <div class="stat-value text-2xl">
-                  <%= format_latency(@current_health.database_latency_ms) %>
+                  {format_latency(@current_health.database_latency_ms)}
                 </div>
                 <div class="stat-desc">Query response time</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Active Connections</div>
-                <div class="stat-value text-2xl"><%= @current_health.active_connections || 0 %></div>
+                <div class="stat-value text-2xl">{@current_health.active_connections || 0}</div>
                 <div class="stat-desc">Current connections</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Vault Status</div>
                 <div class="stat-value text-sm">
-                  <%= if @current_health.vault_sealed, do: "🔒 Sealed", else: "🔓 Unsealed" %>
-                  <%= if @current_health.vault_initialized, do: " (Init)", else: " (Not Init)" %>
+                  {if @current_health.vault_sealed, do: "🔒 Sealed", else: "🔓 Unsealed"}
+                  {if @current_health.vault_initialized, do: " (Init)", else: " (Not Init)"}
                 </div>
                 <div class="stat-desc">Vault state</div>
               </div>
@@ -339,12 +341,12 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
                 <tbody>
                   <%= for metric <- Enum.take(@health_history, 50) do %>
                     <tr>
-                      <td class="text-sm"><%= format_timestamp(metric.timestamp) %></td>
-                      <td><%= health_status_badge(metric.health_status) %></td>
-                      <td><%= format_percentage(metric.cpu_percent) %></td>
-                      <td><%= format_percentage(metric.memory_percent) %></td>
-                      <td><%= format_latency(metric.database_latency_ms) %></td>
-                      <td><%= metric.active_connections || 0 %></td>
+                      <td class="text-sm">{format_timestamp(metric.timestamp)}</td>
+                      <td>{health_status_badge(metric.health_status)}</td>
+                      <td>{format_percentage(metric.cpu_percent)}</td>
+                      <td>{format_percentage(metric.memory_percent)}</td>
+                      <td>{format_latency(metric.database_latency_ms)}</td>
+                      <td>{metric.active_connections || 0}</td>
                     </tr>
                   <% end %>
                 </tbody>
@@ -352,7 +354,7 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
             </div>
 
             <div class="mt-4 text-sm text-gray-600">
-              Showing <%= min(length(@health_history), 50) %> of <%= length(@health_history) %> metrics
+              Showing {min(length(@health_history), 50)} of {length(@health_history)} metrics
             </div>
           <% else %>
             <div class="alert alert-info mt-4">
@@ -361,8 +363,8 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
           <% end %>
         </div>
       </div>
-
-      <!-- Recent Alerts -->
+      
+    <!-- Recent Alerts -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Recent Alerts</h2>
@@ -384,7 +386,7 @@ defmodule SecretHub.WebWeb.NodeHealthLive do
                       d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
                     />
                   </svg>
-                  <span><%= alert.name %></span>
+                  <span>{alert.name}</span>
                 </div>
               <% end %>
             </div>

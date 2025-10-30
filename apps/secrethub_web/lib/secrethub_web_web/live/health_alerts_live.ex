@@ -99,7 +99,7 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
 
       _ ->
         ~H"""
-        <span class="badge badge-ghost"><%= type %></span>
+        <span class="badge badge-ghost">{type}</span>
         """
     end
   end
@@ -166,11 +166,11 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
               d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
             />
           </svg>
-          <span><%= @error %></span>
+          <span>{@error}</span>
         </div>
       <% end %>
-
-      <!-- Alerts List -->
+      
+    <!-- Alerts List -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <%= if Enum.any?(@alerts) do %>
@@ -191,16 +191,16 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
                 <tbody>
                   <%= for alert <- @alerts do %>
                     <tr>
-                      <td class="font-medium"><%= alert.name %></td>
-                      <td><%= alert_type_badge(alert.alert_type) %></td>
+                      <td class="font-medium">{alert.name}</td>
+                      <td>{alert_type_badge(alert.alert_type)}</td>
                       <td class="text-sm">
-                        <%= format_threshold(alert.threshold_value, alert.threshold_operator) %>
+                        {format_threshold(alert.threshold_value, alert.threshold_operator)}
                       </td>
-                      <td class="text-sm"><%= alert.cooldown_minutes %> min</td>
-                      <td class="text-sm"><%= format_channels(alert.notification_channels) %></td>
+                      <td class="text-sm">{alert.cooldown_minutes} min</td>
+                      <td class="text-sm">{format_channels(alert.notification_channels)}</td>
                       <td class="text-sm">
                         <%= if alert.last_triggered_at do %>
-                          <%= Calendar.strftime(alert.last_triggered_at, "%Y-%m-%d %H:%M") %>
+                          {Calendar.strftime(alert.last_triggered_at, "%Y-%m-%d %H:%M")}
                         <% else %>
                           Never
                         <% end %>
@@ -218,7 +218,7 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
                           phx-value-id={alert.id}
                           class="btn btn-sm btn-outline"
                         >
-                          <%= if alert.enabled, do: "Disable", else: "Enable" %>
+                          {if alert.enabled, do: "Disable", else: "Enable"}
                         </button>
                       </td>
                     </tr>
@@ -246,8 +246,8 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
           <% end %>
         </div>
       </div>
-
-      <!-- Info Card -->
+      
+    <!-- Info Card -->
       <div class="card bg-base-200 shadow-xl mt-6">
         <div class="card-body">
           <h2 class="card-title">About Health Alerts</h2>
