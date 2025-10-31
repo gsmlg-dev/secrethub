@@ -65,6 +65,12 @@ defmodule SecretHub.Agent.Template do
   - `json_encode(data)` - Encode as JSON
   - `join(list, separator)` - Join list elements
 
+  Credential formatting helpers:
+
+  - `pg_connection_string(creds)` - Format PostgreSQL connection string
+  - `redis_connection_string(creds)` - Format Redis connection string
+  - `aws_env_vars(creds)` - Format AWS credentials as environment variables map
+
   ## Usage
 
   ```elixir
@@ -254,6 +260,8 @@ defmodule SecretHub.Agent.Template do
   ## Private Functions
 
   defp create_bindings(vars) do
+    alias SecretHub.Agent.CredentialFormatter
+
     # Add helper functions to bindings
     helpers = %{
       upcase: &String.upcase/1,
@@ -261,7 +269,11 @@ defmodule SecretHub.Agent.Template do
       base64_encode: &Base.encode64/1,
       base64_decode: &Base.decode64!/1,
       json_encode: &Jason.encode!/1,
-      join: &Enum.join/2
+      join: &Enum.join/2,
+      # Credential formatting helpers
+      pg_connection_string: fn creds -> CredentialFormatter.format_connection_string(:postgresql, creds) end,
+      redis_connection_string: fn creds -> CredentialFormatter.format_connection_string(:redis, creds) end,
+      aws_env_vars: fn creds -> CredentialFormatter.to_env_vars(:aws_sts, creds) end
     }
 
     # Merge vars with helpers
