@@ -38,6 +38,8 @@ defmodule SecretHub.MixProject do
       # Shared utilities
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.2"},
+      {:oban, "~> 2.18"},
+      {:crontab, "~> 1.1"},
 
       # AWS Integration (for auto-unseal with AWS KMS)
       {:ex_aws, "~> 2.5"},
