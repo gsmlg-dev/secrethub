@@ -16,13 +16,13 @@ defmodule SecretHub.Shared.Schemas.AlertRoutingConfig do
   @foreign_key_type :binary_id
 
   schema "alert_routing_configs" do
-    field :name, :string
-    field :channel_type, Ecto.Enum, values: @channel_types
-    field :enabled, :boolean, default: true
-    field :severity_filter, {:array, :string}, default: []
-    field :config, :map
-    field :last_used_at, :utc_datetime
-    field :metadata, :map, default: %{}
+    field(:name, :string)
+    field(:channel_type, Ecto.Enum, values: @channel_types)
+    field(:enabled, :boolean, default: true)
+    field(:severity_filter, {:array, :string}, default: [])
+    field(:config, :map)
+    field(:last_used_at, :utc_datetime)
+    field(:metadata, :map, default: %{})
 
     timestamps(type: :utc_datetime)
   end

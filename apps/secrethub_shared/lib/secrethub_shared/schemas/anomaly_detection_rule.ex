@@ -26,18 +26,18 @@ defmodule SecretHub.Shared.Schemas.AnomalyDetectionRule do
   @foreign_key_type :binary_id
 
   schema "anomaly_detection_rules" do
-    field :name, :string
-    field :description, :string
-    field :rule_type, Ecto.Enum, values: @rule_types
-    field :enabled, :boolean, default: true
-    field :severity, Ecto.Enum, values: @severities, default: :medium
-    field :condition, :map
-    field :threshold, :map, default: %{}
-    field :alert_on_trigger, :boolean, default: true
-    field :cooldown_minutes, :integer, default: 60
-    field :last_triggered_at, :utc_datetime
-    field :trigger_count, :integer, default: 0
-    field :metadata, :map, default: %{}
+    field(:name, :string)
+    field(:description, :string)
+    field(:rule_type, Ecto.Enum, values: @rule_types)
+    field(:enabled, :boolean, default: true)
+    field(:severity, Ecto.Enum, values: @severities, default: :medium)
+    field(:condition, :map)
+    field(:threshold, :map, default: %{})
+    field(:alert_on_trigger, :boolean, default: true)
+    field(:cooldown_minutes, :integer, default: 60)
+    field(:last_triggered_at, :utc_datetime)
+    field(:trigger_count, :integer, default: 0)
+    field(:metadata, :map, default: %{})
 
     timestamps(type: :utc_datetime)
   end
@@ -135,7 +135,8 @@ defmodule SecretHub.Shared.Schemas.AnomalyDetectionRule do
   defp validate_condition_structure(changeset) do
     condition = get_field(changeset, :condition)
 
-    if is_map(condition) and Map.has_key?(condition, "type") and Map.has_key?(condition, "operator") do
+    if is_map(condition) and Map.has_key?(condition, "type") and
+         Map.has_key?(condition, "operator") do
       changeset
     else
       add_error(changeset, :condition, "must be a map with 'type' and 'operator' keys")

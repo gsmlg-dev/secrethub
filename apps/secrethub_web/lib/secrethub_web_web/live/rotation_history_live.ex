@@ -106,7 +106,7 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
         <div class="sm:flex-auto">
           <h1 class="text-2xl font-semibold text-gray-900">Rotation History</h1>
           <p class="mt-2 text-sm text-gray-700">
-            <%= @schedule.name %> - <%= @schedule.description %>
+            {@schedule.name} - {@schedule.description}
           </p>
         </div>
         <div class="mt-4 sm:mt-0 sm:ml-16 flex gap-2">
@@ -136,21 +136,21 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
       <div class="bg-white overflow-hidden shadow rounded-lg">
         <div class="px-4 py-5 sm:p-6">
           <dt class="text-sm font-medium text-gray-500 truncate">Total Rotations</dt>
-          <dd class="mt-1 text-3xl font-semibold text-gray-900"><%= @stats.total || 0 %></dd>
+          <dd class="mt-1 text-3xl font-semibold text-gray-900">{@stats.total || 0}</dd>
         </div>
       </div>
 
       <div class="bg-white overflow-hidden shadow rounded-lg">
         <div class="px-4 py-5 sm:p-6">
           <dt class="text-sm font-medium text-gray-500 truncate">Successful</dt>
-          <dd class="mt-1 text-3xl font-semibold text-green-600"><%= @stats.successful || 0 %></dd>
+          <dd class="mt-1 text-3xl font-semibold text-green-600">{@stats.successful || 0}</dd>
         </div>
       </div>
 
       <div class="bg-white overflow-hidden shadow rounded-lg">
         <div class="px-4 py-5 sm:p-6">
           <dt class="text-sm font-medium text-gray-500 truncate">Failed</dt>
-          <dd class="mt-1 text-3xl font-semibold text-red-600"><%= @stats.failed || 0 %></dd>
+          <dd class="mt-1 text-3xl font-semibold text-red-600">{@stats.failed || 0}</dd>
         </div>
       </div>
 
@@ -158,7 +158,7 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
         <div class="px-4 py-5 sm:p-6">
           <dt class="text-sm font-medium text-gray-500 truncate">Success Rate</dt>
           <dd class="mt-1 text-3xl font-semibold text-gray-900">
-            <%= Float.round(@stats.success_rate || 0.0, 1) %>%
+            {Float.round(@stats.success_rate || 0.0, 1)}%
           </dd>
         </div>
       </div>
@@ -198,11 +198,11 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
                 <%= for record <- @history do %>
                   <tr class="hover:bg-gray-50">
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900">
-                      <%= Calendar.strftime(record.started_at, "%Y-%m-%d %H:%M:%S") %>
+                      {Calendar.strftime(record.started_at, "%Y-%m-%d %H:%M:%S")}
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <%= if record.completed_at do %>
-                        <%= Calendar.strftime(record.completed_at, "%Y-%m-%d %H:%M:%S") %>
+                        {Calendar.strftime(record.completed_at, "%Y-%m-%d %H:%M:%S")}
                       <% else %>
                         <span class="text-yellow-600">In Progress...</span>
                       <% end %>
@@ -215,21 +215,21 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <%= if record.duration_ms do %>
-                        <%= format_duration(record.duration_ms) %>
+                        {format_duration(record.duration_ms)}
                       <% else %>
                         -
                       <% end %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <%= if record.old_version do %>
-                        <code class="text-xs"><%= String.slice(record.old_version, 0..20) %></code>
+                        <code class="text-xs">{String.slice(record.old_version, 0..20)}</code>
                       <% else %>
                         -
                       <% end %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <%= if record.new_version do %>
-                        <code class="text-xs"><%= String.slice(record.new_version, 0..20) %></code>
+                        <code class="text-xs">{String.slice(record.new_version, 0..20)}</code>
                       <% else %>
                         -
                       <% end %>
@@ -293,7 +293,7 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
                     <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
                       <dt class="text-sm font-medium text-gray-500">Started At</dt>
                       <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                        <%= Calendar.strftime(@history.started_at, "%Y-%m-%d %H:%M:%S UTC") %>
+                        {Calendar.strftime(@history.started_at, "%Y-%m-%d %H:%M:%S UTC")}
                       </dd>
                     </div>
 
@@ -301,7 +301,7 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
                         <dt class="text-sm font-medium text-gray-500">Completed At</dt>
                         <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                          <%= Calendar.strftime(@history.completed_at, "%Y-%m-%d %H:%M:%S UTC") %>
+                          {Calendar.strftime(@history.completed_at, "%Y-%m-%d %H:%M:%S UTC")}
                         </dd>
                       </div>
                     <% end %>
@@ -310,7 +310,7 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
                         <dt class="text-sm font-medium text-gray-500">Duration</dt>
                         <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                          <%= format_duration(@history.duration_ms) %>
+                          {format_duration(@history.duration_ms)}
                         </dd>
                       </div>
                     <% end %>
@@ -319,7 +319,9 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
                         <dt class="text-sm font-medium text-gray-500">Old Version</dt>
                         <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                          <code class="text-xs bg-gray-100 px-2 py-1 rounded"><%= @history.old_version %></code>
+                          <code class="text-xs bg-gray-100 px-2 py-1 rounded">
+                            {@history.old_version}
+                          </code>
                         </dd>
                       </div>
                     <% end %>
@@ -328,7 +330,9 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
                         <dt class="text-sm font-medium text-gray-500">New Version</dt>
                         <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                          <code class="text-xs bg-gray-100 px-2 py-1 rounded"><%= @history.new_version %></code>
+                          <code class="text-xs bg-gray-100 px-2 py-1 rounded">
+                            {@history.new_version}
+                          </code>
                         </dd>
                       </div>
                     <% end %>
@@ -337,7 +341,7 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
                         <dt class="text-sm font-medium text-gray-500">Error</dt>
                         <dd class="mt-1 text-sm text-red-600 sm:col-span-2 sm:mt-0">
-                          <%= @history.error_message %>
+                          {@history.error_message}
                         </dd>
                       </div>
                     <% end %>
@@ -401,7 +405,7 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
     assigns = assign(assigns, :label, label)
 
     ~H"""
-    <span class={"badge #{@color}"}><%= @label %></span>
+    <span class={"badge #{@color}"}>{@label}</span>
     """
   end
 

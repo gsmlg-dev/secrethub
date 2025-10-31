@@ -30,8 +30,6 @@ defmodule SecretHub.Shared.Schemas.RotationSchedule do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias Crontab.CronExpression.Parser, as: CronParser
-
   @rotation_types [:database_password, :aws_iam_key, :api_key, :service_account]
   @target_types [:database, :aws_account, :external_service]
   @rotation_statuses [:success, :failed, :in_progress, :pending]
@@ -91,7 +89,7 @@ defmodule SecretHub.Shared.Schemas.RotationSchedule do
   defp validate_cron_expression(changeset, field) do
     validate_change(changeset, field, fn _, cron ->
       try do
-        case CronParser.parse(cron) do
+        case Crontab.CronExpression.Parser.parse(cron) do
           {:ok, _} -> []
           {:error, _} -> [{field, "is not a valid cron expression"}]
         end

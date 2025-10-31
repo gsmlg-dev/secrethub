@@ -128,7 +128,7 @@ defmodule SecretHub.Core.Alerting do
   def list_open_alerts do
     AnomalyAlert
     |> where([a], a.status in [:open, :acknowledged, :investigating])
-    |> order_by([a], [desc: a.triggered_at])
+    |> order_by([a], desc: a.triggered_at)
     |> Repo.all()
   end
 
@@ -139,7 +139,7 @@ defmodule SecretHub.Core.Alerting do
     AnomalyAlert
     |> where([a], a.severity == :critical)
     |> where([a], a.status in [:open, :acknowledged, :investigating])
-    |> order_by([a], [desc: a.triggered_at])
+    |> order_by([a], desc: a.triggered_at)
     |> Repo.all()
   end
 
@@ -149,7 +149,7 @@ defmodule SecretHub.Core.Alerting do
   def list_alerts_by_severity(severity) do
     AnomalyAlert
     |> where([a], a.severity == ^severity)
-    |> order_by([a], [desc: a.triggered_at])
+    |> order_by([a], desc: a.triggered_at)
     |> limit(100)
     |> Repo.all()
   end

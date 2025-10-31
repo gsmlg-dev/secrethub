@@ -15,19 +15,19 @@ defmodule SecretHub.Shared.Schemas.AuditArchivalJob do
   @foreign_key_type :binary_id
 
   schema "audit_archival_jobs" do
-    field :started_at, :utc_datetime
-    field :completed_at, :utc_datetime
-    field :status, Ecto.Enum, values: @statuses
-    field :from_date, :utc_datetime
-    field :to_date, :utc_datetime
-    field :records_archived, :integer, default: 0
-    field :archive_location, :string
-    field :checksum, :string
-    field :error_message, :string
-    field :duration_ms, :integer
-    field :metadata, :map, default: %{}
+    field(:started_at, :utc_datetime)
+    field(:completed_at, :utc_datetime)
+    field(:status, Ecto.Enum, values: @statuses)
+    field(:from_date, :utc_datetime)
+    field(:to_date, :utc_datetime)
+    field(:records_archived, :integer, default: 0)
+    field(:archive_location, :string)
+    field(:checksum, :string)
+    field(:error_message, :string)
+    field(:duration_ms, :integer)
+    field(:metadata, :map, default: %{})
 
-    belongs_to :archival_config, SecretHub.Shared.Schemas.AuditArchivalConfig
+    belongs_to(:archival_config, SecretHub.Shared.Schemas.AuditArchivalConfig)
 
     timestamps(type: :utc_datetime, updated_at: false)
   end

@@ -285,18 +285,18 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
                 <%= for schedule <- @schedules do %>
                   <tr class="hover:bg-gray-50">
                     <td class="whitespace-nowrap px-3 py-4 text-sm">
-                      <div class="font-medium text-gray-900"><%= schedule.name %></div>
-                      <div class="text-gray-500"><%= schedule.description %></div>
+                      <div class="font-medium text-gray-900">{schedule.name}</div>
+                      <div class="text-gray-500">{schedule.description}</div>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <.rotation_type_badge type={schedule.rotation_type} />
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      <code class="text-xs"><%= schedule.schedule_cron %></code>
+                      <code class="text-xs">{schedule.schedule_cron}</code>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <%= if schedule.next_rotation_at do %>
-                        <%= Calendar.strftime(schedule.next_rotation_at, "%Y-%m-%d %H:%M UTC") %>
+                        {Calendar.strftime(schedule.next_rotation_at, "%Y-%m-%d %H:%M UTC")}
                       <% else %>
                         <span class="text-gray-400">Not scheduled</span>
                       <% end %>
@@ -325,7 +325,7 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
                         phx-value-enabled={!schedule.enabled}
                         class="text-primary-600 hover:text-primary-900"
                       >
-                        <%= if schedule.enabled, do: "Disable", else: "Enable" %>
+                        {if schedule.enabled, do: "Disable", else: "Enable"}
                       </button>
                     </td>
                   </tr>
@@ -371,10 +371,13 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
       <div class="bg-white shadow sm:rounded-lg">
         <div class="px-4 py-5 sm:p-6">
           <h3 class="text-lg font-medium leading-6 text-gray-900">
-            <%= if @mode == :new, do: "Create Rotation Schedule", else: "Edit Rotation Schedule" %>
+            {if @mode == :new, do: "Create Rotation Schedule", else: "Edit Rotation Schedule"}
           </h3>
 
-          <form phx-submit={if @mode == :new, do: "create_schedule", else: "update_schedule"} class="mt-6 space-y-6">
+          <form
+            phx-submit={if @mode == :new, do: "create_schedule", else: "update_schedule"}
+            class="mt-6 space-y-6"
+          >
             <div>
               <label for="name" class="block text-sm font-medium text-gray-700">Name</label>
               <input
@@ -418,7 +421,7 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
                       value={value}
                       selected={@schedule && @schedule.rotation_type == value}
                     >
-                      <%= label %>
+                      {label}
                     </option>
                   <% end %>
                 </select>
@@ -440,7 +443,7 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
                 >
                   <%= for {value, label} <- @target_types do %>
                     <option value={value} selected={@schedule && @schedule.target_type == value}>
-                      <%= label %>
+                      {label}
                     </option>
                   <% end %>
                 </select>
@@ -520,7 +523,7 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
                 Cancel
               </button>
               <button type="submit" class="btn btn-primary">
-                <%= if @mode == :new, do: "Create Schedule", else: "Update Schedule" %>
+                {if @mode == :new, do: "Create Schedule", else: "Update Schedule"}
               </button>
             </div>
           </form>
@@ -537,8 +540,8 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
         <div class="px-4 py-5 sm:p-6">
           <div class="sm:flex sm:items-center sm:justify-between">
             <div>
-              <h3 class="text-lg font-medium leading-6 text-gray-900"><%= @schedule.name %></h3>
-              <p class="mt-1 text-sm text-gray-500"><%= @schedule.description %></p>
+              <h3 class="text-lg font-medium leading-6 text-gray-900">{@schedule.name}</h3>
+              <p class="mt-1 text-sm text-gray-500">{@schedule.description}</p>
             </div>
             <div class="mt-4 sm:mt-0 flex gap-2">
               <button
@@ -571,21 +574,21 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt class="text-sm font-medium text-gray-500">Target Type</dt>
                 <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                  <%= format_atom(@schedule.target_type) %>
+                  {format_atom(@schedule.target_type)}
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt class="text-sm font-medium text-gray-500">Schedule</dt>
                 <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                  <code class="text-xs bg-gray-100 px-2 py-1 rounded"><%= @schedule.schedule_cron %></code>
+                  <code class="text-xs bg-gray-100 px-2 py-1 rounded">{@schedule.schedule_cron}</code>
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt class="text-sm font-medium text-gray-500">Grace Period</dt>
                 <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                  <%= @schedule.grace_period_seconds %> seconds
+                  {@schedule.grace_period_seconds} seconds
                 </dd>
               </div>
 
@@ -600,7 +603,7 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
                 <dt class="text-sm font-medium text-gray-500">Next Rotation</dt>
                 <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
                   <%= if @schedule.next_rotation_at do %>
-                    <%= Calendar.strftime(@schedule.next_rotation_at, "%Y-%m-%d %H:%M:%S UTC") %>
+                    {Calendar.strftime(@schedule.next_rotation_at, "%Y-%m-%d %H:%M:%S UTC")}
                   <% else %>
                     <span class="text-gray-400">Not scheduled</span>
                   <% end %>
@@ -612,11 +615,11 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
                 <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
                   <%= if @schedule.last_rotation_at do %>
                     <div>
-                      <%= Calendar.strftime(@schedule.last_rotation_at, "%Y-%m-%d %H:%M:%S UTC") %>
+                      {Calendar.strftime(@schedule.last_rotation_at, "%Y-%m-%d %H:%M:%S UTC")}
                       <.rotation_status_badge status={@schedule.last_rotation_status} />
                     </div>
                     <%= if @schedule.last_rotation_error do %>
-                      <div class="mt-2 text-sm text-red-600"><%= @schedule.last_rotation_error %></div>
+                      <div class="mt-2 text-sm text-red-600">{@schedule.last_rotation_error}</div>
                     <% end %>
                   <% else %>
                     <span class="text-gray-400">Never run</span>
@@ -627,7 +630,7 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt class="text-sm font-medium text-gray-500">Rotation Count</dt>
                 <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                  <%= @schedule.rotation_count %>
+                  {@schedule.rotation_count}
                 </dd>
               </div>
 
@@ -670,14 +673,14 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
     assigns = assign(assigns, :label, format_atom(assigns.type))
 
     ~H"""
-    <span class={"badge #{@color}"}><%= @label %></span>
+    <span class={"badge #{@color}"}>{@label}</span>
     """
   end
 
   defp enabled_badge(assigns) do
     ~H"""
     <span class={if @enabled, do: "badge badge-success", else: "badge badge-ghost"}>
-      <%= if @enabled, do: "Enabled", else: "Disabled" %>
+      {if @enabled, do: "Enabled", else: "Disabled"}
     </span>
     """
   end
@@ -698,7 +701,7 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
     assigns = assign(assigns, :label, format_atom(assigns.status))
 
     ~H"""
-    <span class={"badge #{@color}"}><%= @label %></span>
+    <span class={"badge #{@color}"}>{@label}</span>
     """
   end
 

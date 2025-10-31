@@ -35,6 +35,9 @@ defmodule SecretHub.Core.MixProject do
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.19"},
       {:jason, "~> 1.4"},
+      {:oban, "~> 2.18"},
+      {:crontab, "~> 1.1"},
+      {:prometheus_ex, "~> 3.1"},
       {:secrethub_shared, in_umbrella: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

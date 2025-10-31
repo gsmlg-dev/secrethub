@@ -116,12 +116,13 @@ defmodule SecretHub.Core.AnomalyDetection do
     # Check if this is a failed login event
     if context.action == "login" and context.result == :failure do
       # Count recent failed logins for this actor
-      count = count_recent_events(
-        "login",
-        :failure,
-        context.actor_id,
-        window_minutes
-      )
+      count =
+        count_recent_events(
+          "login",
+          :failure,
+          context.actor_id,
+          window_minutes
+        )
 
       if count >= threshold do
         trigger_alert(
@@ -142,12 +143,13 @@ defmodule SecretHub.Core.AnomalyDetection do
     window_minutes = get_threshold(rule, "window_minutes", 5)
 
     if context.action == "delete" do
-      count = count_recent_events(
-        "delete",
-        :success,
-        context.actor_id,
-        window_minutes
-      )
+      count =
+        count_recent_events(
+          "delete",
+          :success,
+          context.actor_id,
+          window_minutes
+        )
 
       if count >= threshold do
         trigger_alert(
@@ -189,13 +191,14 @@ defmodule SecretHub.Core.AnomalyDetection do
     window_minutes = get_threshold(rule, "window_minutes", 10)
 
     if context.action == "read" and context.resource_type == "secret" do
-      count = count_recent_events(
-        "read",
-        :success,
-        context.actor_id,
-        window_minutes,
-        "secret"
-      )
+      count =
+        count_recent_events(
+          "read",
+          :success,
+          context.actor_id,
+          window_minutes,
+          "secret"
+        )
 
       if count >= threshold do
         trigger_alert(
@@ -216,12 +219,13 @@ defmodule SecretHub.Core.AnomalyDetection do
     window_minutes = get_threshold(rule, "window_minutes", 5)
 
     if context.action == "generate_credentials" do
-      count = count_recent_events(
-        "generate_credentials",
-        :success,
-        context.actor_id,
-        window_minutes
-      )
+      count =
+        count_recent_events(
+          "generate_credentials",
+          :success,
+          context.actor_id,
+          window_minutes
+        )
 
       if count >= threshold do
         trigger_alert(
@@ -327,11 +331,12 @@ defmodule SecretHub.Core.AnomalyDetection do
     cutoff = DateTime.add(DateTime.utc_now(), -window_minutes * 60, :second)
 
     query =
-      from a in "audit_logs",
+      from(a in "audit_logs",
         where: a.action == ^action,
         where: a.result == ^to_string(result),
         where: a.actor_id == ^actor_id,
         where: a.timestamp >= ^cutoff
+      )
 
     query =
       if resource_type do
@@ -373,6 +378,9 @@ defmodule SecretHub.Core.AnomalyDetection do
   defp evaluate_condition(actual, "not_equals", expected), do: actual != expected
   defp evaluate_condition(actual, "greater_than", expected), do: actual > expected
   defp evaluate_condition(actual, "less_than", expected), do: actual < expected
-  defp evaluate_condition(actual, "contains", expected), do: String.contains?(to_string(actual), expected)
+
+  defp evaluate_condition(actual, "contains", expected),
+    do: String.contains?(to_string(actual), expected)
+
   defp evaluate_condition(_actual, _operator, _expected), do: false
 end

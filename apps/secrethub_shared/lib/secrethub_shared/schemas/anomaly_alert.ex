@@ -16,17 +16,17 @@ defmodule SecretHub.Shared.Schemas.AnomalyAlert do
   @foreign_key_type :binary_id
 
   schema "anomaly_alerts" do
-    field :triggered_at, :utc_datetime
-    field :severity, Ecto.Enum, values: @severities
-    field :status, Ecto.Enum, values: @statuses, default: :open
-    field :description, :string
-    field :context, :map, default: %{}
-    field :resolved_at, :utc_datetime
-    field :resolved_by, :string
-    field :resolution_notes, :string
-    field :metadata, :map, default: %{}
+    field(:triggered_at, :utc_datetime)
+    field(:severity, Ecto.Enum, values: @severities)
+    field(:status, Ecto.Enum, values: @statuses, default: :open)
+    field(:description, :string)
+    field(:context, :map, default: %{})
+    field(:resolved_at, :utc_datetime)
+    field(:resolved_by, :string)
+    field(:resolution_notes, :string)
+    field(:metadata, :map, default: %{})
 
-    belongs_to :rule, SecretHub.Shared.Schemas.AnomalyDetectionRule
+    belongs_to(:rule, SecretHub.Shared.Schemas.AnomalyDetectionRule)
 
     timestamps(type: :utc_datetime, updated_at: false)
   end
@@ -103,7 +103,7 @@ defmodule SecretHub.Shared.Schemas.AnomalyAlert do
   @doc """
   Checks if alert is critical and unresolved.
   """
-  def is_critical_unresolved?(alert) do
+  def critical_unresolved?(alert) do
     alert.severity == :critical and needs_attention?(alert)
   end
 end

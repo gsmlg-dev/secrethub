@@ -16,15 +16,15 @@ defmodule SecretHub.Shared.Schemas.AuditArchivalConfig do
   @foreign_key_type :binary_id
 
   schema "audit_archival_configs" do
-    field :provider, Ecto.Enum, values: @providers
-    field :enabled, :boolean, default: false
-    field :config, :map, default: %{}
-    field :retention_days, :integer, default: 90
-    field :archive_after_days, :integer, default: 30
-    field :last_archival_at, :utc_datetime
-    field :last_archival_status, Ecto.Enum, values: @statuses
-    field :last_archival_error, :string
-    field :metadata, :map, default: %{}
+    field(:provider, Ecto.Enum, values: @providers)
+    field(:enabled, :boolean, default: false)
+    field(:config, :map, default: %{})
+    field(:retention_days, :integer, default: 90)
+    field(:archive_after_days, :integer, default: 30)
+    field(:last_archival_at, :utc_datetime)
+    field(:last_archival_status, Ecto.Enum, values: @statuses)
+    field(:last_archival_error, :string)
+    field(:metadata, :map, default: %{})
 
     timestamps(type: :utc_datetime)
   end
