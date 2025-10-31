@@ -240,7 +240,11 @@ defmodule SecretHub.Core.Engines.Dynamic.Redis do
   end
 
   defp generate_username(role_name) do
-    random = :crypto.strong_rand_bytes(@username_length) |> Base.encode32(case: :lower, padding: false) |> binary_part(0, @username_length)
+    random =
+      :crypto.strong_rand_bytes(@username_length)
+      |> Base.encode32(case: :lower, padding: false)
+      |> binary_part(0, @username_length)
+
     timestamp = System.system_time(:second)
     username = "#{@username_prefix}#{sanitize_role_name(role_name)}_#{random}_#{timestamp}"
 
@@ -296,10 +300,11 @@ defmodule SecretHub.Core.Engines.Dynamic.Redis do
     acl_rules = config["acl_rules"] || []
 
     # Build ACL command: ACL SETUSER <username> on >password ~pattern +command ...
-    acl_parts = [
-      "on",
-      ">#{password}"
-    ] ++ acl_rules
+    acl_parts =
+      [
+        "on",
+        ">#{password}"
+      ] ++ acl_rules
 
     command = ["ACL", "SETUSER", username] ++ acl_parts
 

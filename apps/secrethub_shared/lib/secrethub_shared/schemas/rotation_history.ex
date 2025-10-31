@@ -17,17 +17,17 @@ defmodule SecretHub.Shared.Schemas.RotationHistory do
   @foreign_key_type :binary_id
 
   schema "rotation_history" do
-    belongs_to :rotation_schedule, RotationSchedule
+    belongs_to(:rotation_schedule, RotationSchedule)
 
-    field :started_at, :utc_datetime
-    field :completed_at, :utc_datetime
-    field :status, Ecto.Enum, values: @rotation_statuses
-    field :old_version, :string
-    field :new_version, :string
-    field :error_message, :string
-    field :rollback_performed, :boolean, default: false
-    field :duration_ms, :integer
-    field :metadata, :map
+    field(:started_at, :utc_datetime)
+    field(:completed_at, :utc_datetime)
+    field(:status, Ecto.Enum, values: @rotation_statuses)
+    field(:old_version, :string)
+    field(:new_version, :string)
+    field(:error_message, :string)
+    field(:rollback_performed, :boolean, default: false)
+    field(:duration_ms, :integer)
+    field(:metadata, :map)
   end
 
   @doc false

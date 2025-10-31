@@ -263,13 +263,17 @@ defmodule SecretHub.Agent.CredentialFormatter do
   @spec get_expiration(credentials()) :: DateTime.t() | nil
   def get_expiration(credentials) do
     case credentials["expiration"] do
-      nil -> nil
+      nil ->
+        nil
+
       iso_string when is_binary(iso_string) ->
         case DateTime.from_iso8601(iso_string) do
           {:ok, dt, _offset} -> dt
           {:error, _} -> nil
         end
-      _ -> nil
+
+      _ ->
+        nil
     end
   end
 

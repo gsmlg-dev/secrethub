@@ -271,8 +271,12 @@ defmodule SecretHub.Agent.Template do
       json_encode: &Jason.encode!/1,
       join: &Enum.join/2,
       # Credential formatting helpers
-      pg_connection_string: fn creds -> CredentialFormatter.format_connection_string(:postgresql, creds) end,
-      redis_connection_string: fn creds -> CredentialFormatter.format_connection_string(:redis, creds) end,
+      pg_connection_string: fn creds ->
+        CredentialFormatter.format_connection_string(:postgresql, creds)
+      end,
+      redis_connection_string: fn creds ->
+        CredentialFormatter.format_connection_string(:redis, creds)
+      end,
       aws_env_vars: fn creds -> CredentialFormatter.to_env_vars(:aws_sts, creds) end
     }
 

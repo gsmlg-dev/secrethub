@@ -30,6 +30,8 @@ defmodule SecretHub.Shared.Schemas.RotationSchedule do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Crontab.CronExpression.Parser, as: CronParser
+
   @rotation_types [:database_password, :aws_iam_key, :api_key, :service_account]
   @target_types [:database, :aws_account, :external_service]
   @rotation_statuses [:success, :failed, :in_progress, :pending]
@@ -38,21 +40,21 @@ defmodule SecretHub.Shared.Schemas.RotationSchedule do
   @foreign_key_type :binary_id
 
   schema "rotation_schedules" do
-    field :name, :string
-    field :description, :string
-    field :rotation_type, Ecto.Enum, values: @rotation_types
-    field :target_type, Ecto.Enum, values: @target_types
-    field :target_id, :binary_id
-    field :config, :map
-    field :schedule_cron, :string
-    field :enabled, :boolean, default: true
-    field :grace_period_seconds, :integer, default: 300
-    field :last_rotation_at, :utc_datetime
-    field :last_rotation_status, Ecto.Enum, values: @rotation_statuses
-    field :last_rotation_error, :string
-    field :next_rotation_at, :utc_datetime
-    field :rotation_count, :integer, default: 0
-    field :metadata, :map
+    field(:name, :string)
+    field(:description, :string)
+    field(:rotation_type, Ecto.Enum, values: @rotation_types)
+    field(:target_type, Ecto.Enum, values: @target_types)
+    field(:target_id, :binary_id)
+    field(:config, :map)
+    field(:schedule_cron, :string)
+    field(:enabled, :boolean, default: true)
+    field(:grace_period_seconds, :integer, default: 300)
+    field(:last_rotation_at, :utc_datetime)
+    field(:last_rotation_status, Ecto.Enum, values: @rotation_statuses)
+    field(:last_rotation_error, :string)
+    field(:next_rotation_at, :utc_datetime)
+    field(:rotation_count, :integer, default: 0)
+    field(:metadata, :map)
 
     timestamps(type: :utc_datetime)
   end
@@ -89,7 +91,7 @@ defmodule SecretHub.Shared.Schemas.RotationSchedule do
   defp validate_cron_expression(changeset, field) do
     validate_change(changeset, field, fn _, cron ->
       try do
-        case Crontab.CronExpression.Parser.parse(cron) do
+        case CronParser.parse(cron) do
           {:ok, _} -> []
           {:error, _} -> [{field, "is not a valid cron expression"}]
         end

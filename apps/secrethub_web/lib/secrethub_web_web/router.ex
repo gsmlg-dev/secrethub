@@ -79,6 +79,9 @@ defmodule SecretHub.WebWeb.Router do
     live "/engines", EngineConfigurationLive, :index
     live "/engines/new/:type", EngineSetupWizardLive, :new
     live "/engines/:id/health", EngineHealthDashboardLive, :show
+    live "/rotations", RotationScheduleLive, :index
+    live "/rotations/:id", RotationScheduleLive, :show
+    live "/rotations/:id/history", RotationHistoryLive, :show
 
     delete "/logout", AdminAuthController, :logout
   end
