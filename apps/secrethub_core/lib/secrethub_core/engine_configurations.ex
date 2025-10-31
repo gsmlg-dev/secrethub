@@ -290,9 +290,48 @@ defmodule SecretHub.Core.EngineConfigurations do
   end
 
   defp check_redis_health(config) do
-    # TODO: Implement actual Redis health check
-    # For now, return healthy
-    {:ok, :healthy}
+    connection = config["connection"] || %{}
+
+    opts = [
+      host: connection["host"] || "localhost",
+      port: connection["port"] || 6379,
+      database: connection["database"] || 0
+    ]
+
+    opts =
+      if connection["password"] do
+        Keyword.put(opts, :password, connection["password"])
+      else
+        opts
+      end
+
+    opts =
+      if connection["tls"] do
+        Keyword.put(opts, :ssl, true)
+      else
+        opts
+      end
+
+    case Redix.start_link(opts) do
+      {:ok, conn} ->
+        result =
+          case Redix.command(conn, ["PING"]) do
+            {:ok, "PONG"} ->
+              {:ok, :healthy}
+
+            {:ok, response} ->
+              {:error, "Unexpected PING response: #{inspect(response)}"}
+
+            {:error, reason} ->
+              {:error, inspect(reason)}
+          end
+
+        Redix.stop(conn)
+        result
+
+      {:error, reason} ->
+        {:error, "Connection failed: #{inspect(reason)}"}
+    end
   rescue
     e ->
       Logger.error("Redis health check failed: #{Exception.message(e)}")
@@ -300,9 +339,34 @@ defmodule SecretHub.Core.EngineConfigurations do
   end
 
   defp check_aws_sts_health(config) do
-    # TODO: Implement actual AWS STS health check
-    # For now, return healthy
-    {:ok, :healthy}
+    connection = config["connection"] || %{}
+
+    aws_config = [
+      region: connection["region"] || "us-east-1"
+    ]
+
+    aws_config =
+      if connection["access_key_id"] && connection["secret_access_key"] do
+        Keyword.merge(aws_config,
+          access_key_id: connection["access_key_id"],
+          secret_access_key: connection["secret_access_key"]
+        )
+      else
+        aws_config
+      end
+
+    # Test AWS STS by calling GetCallerIdentity
+    case ExAws.STS.get_caller_identity()
+         |> ExAws.request(aws_config) do
+      {:ok, _response} ->
+        {:ok, :healthy}
+
+      {:error, {:http_error, _status, _response}} ->
+        {:error, "AWS STS API call failed"}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
+    end
   rescue
     e ->
       Logger.error("AWS STS health check failed: #{Exception.message(e)}")
@@ -318,18 +382,16 @@ defmodule SecretHub.Core.EngineConfigurations do
   end
 
   defp test_redis_connection(config) do
-    # TODO: Implement actual connection test
-    :ok
-  rescue
-    e ->
-      {:error, Exception.message(e)}
+    case check_redis_health(config) do
+      {:ok, :healthy} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp test_aws_sts_connection(config) do
-    # TODO: Implement actual connection test
-    :ok
-  rescue
-    e ->
-      {:error, Exception.message(e)}
+    case check_aws_sts_health(config) do
+      {:ok, :healthy} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 end

@@ -442,7 +442,8 @@ defmodule SecretHub.Core.LeaseManager do
 
   defp engine_module_for_type("postgresql"), do: SecretHub.Core.Engines.Dynamic.PostgreSQL
   defp engine_module_for_type("redis"), do: SecretHub.Core.Engines.Dynamic.Redis
-  defp engine_module_for_type("aws"), do: SecretHub.Core.Engines.Dynamic.AWS
+  defp engine_module_for_type("aws_sts"), do: SecretHub.Core.Engines.Dynamic.AWSSTS
+  defp engine_module_for_type("aws"), do: SecretHub.Core.Engines.Dynamic.AWSSTS
   defp engine_module_for_type(type), do: raise("Unknown engine type: #{type}")
 
   defp filter_leases(leases, opts) do
