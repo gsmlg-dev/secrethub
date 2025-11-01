@@ -23,7 +23,7 @@ defmodule SecretHub.Core.Secrets do
   alias SecretHub.Core.{Audit, Policies, Repo}
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
-  alias SecretHub.Shared.Schemas.{AuditLog, Policy, Secret}
+  alias SecretHub.Shared.Schemas.{AuditLog, Policy, Secret, SecretVersion}
 
   @doc """
   Create a new static secret with encryption.
@@ -72,17 +72,63 @@ defmodule SecretHub.Core.Secrets do
   end
 
   @doc """
-  Update an existing secret.
+  Update an existing secret with version tracking.
+
+  Archives the current version before updating.
+
+  ## Parameters
+
+  - `secret_id` - UUID of the secret to update
+  - `attrs` - Map of attributes to update
+  - `opts` - Optional keyword list:
+    - `:created_by` - Actor performing the update (default: "system")
+    - `:change_description` - Description of the change (default: "Secret updated")
+
+  ## Examples
+
+      iex> update_secret(secret_id, %{"secret_data" => %{"password" => "new_pass"}},
+             created_by: "admin@example.com",
+             change_description: "Password rotation")
+      {:ok, %Secret{version: 2}}
   """
-  def update_secret(secret_id, attrs) do
+  def update_secret(secret_id, attrs, opts \\ []) do
+    created_by = Keyword.get(opts, :created_by, "system")
+    change_description = Keyword.get(opts, :change_description, "Secret updated")
+
     case Repo.get(Secret, secret_id) do
       nil ->
         {:error, "Secret not found"}
 
       secret ->
-        secret
-        |> Secret.changeset(attrs)
-        |> Repo.update()
+        Multi.new()
+        |> Multi.run(:archive_version, fn repo, _changes ->
+          archive_current_version(repo, secret, created_by, change_description)
+        end)
+        |> Multi.update(:secret, fn %{archive_version: _version} ->
+          # Increment version and update timestamps
+          attrs_with_version =
+            attrs
+            |> Map.put("version", secret.version + 1)
+            |> Map.put("version_count", secret.version_count + 1)
+            |> Map.put("last_version_at", DateTime.utc_now())
+
+          secret
+          |> Secret.changeset(attrs_with_version)
+        end)
+        |> Repo.transaction()
+        |> case do
+          {:ok, %{secret: updated_secret}} ->
+            Logger.info("Secret updated with version tracking",
+              secret_id: secret_id,
+              new_version: updated_secret.version)
+            {:ok, updated_secret}
+
+          {:error, _step, reason, _changes} ->
+            Logger.error("Failed to update secret",
+              secret_id: secret_id,
+              reason: inspect(reason))
+            {:error, reason}
+        end
     end
   end
 
@@ -295,5 +341,165 @@ defmodule SecretHub.Core.Secrets do
       String.starts_with?(entity_id, "admin-") -> "admin"
       true -> "unknown"
     end
+  end
+
+  ## Version Management Functions
+
+  @doc """
+  Archives the current version of a secret before updating.
+
+  This function is called automatically by `update_secret/3`.
+  """
+  defp archive_current_version(repo, secret, created_by, change_description) do
+    version =
+      SecretVersion.from_secret(secret, created_by, change_description)
+      |> SecretVersion.changeset(%{})
+
+    repo.insert(version)
+  end
+
+  @doc """
+  Lists all versions of a secret, ordered by version number (newest first).
+  """
+  def list_secret_versions(secret_id, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 50)
+
+    from(v in SecretVersion,
+      where: v.secret_id == ^secret_id,
+      order_by: [desc: v.version_number],
+      limit: ^limit
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets a specific version of a secret.
+  """
+  def get_secret_version(secret_id, version_number) do
+    case Repo.get_by(SecretVersion, secret_id: secret_id, version_number: version_number) do
+      nil -> {:error, "Version not found"}
+      version -> {:ok, version}
+    end
+  end
+
+  @doc """
+  Rollback a secret to a previous version.
+
+  Creates a new version (doesn't actually restore the old version number).
+  This maintains a complete audit trail of all changes.
+
+  ## Examples
+
+      iex> rollback_secret(secret_id, 5, created_by: "admin@example.com")
+      {:ok, %Secret{version: 7}}  # New version created with v5's data
+  """
+  def rollback_secret(secret_id, target_version_number, opts \\ []) do
+    created_by = Keyword.get(opts, :created_by, "system")
+
+    with {:ok, secret} <- get_secret(secret_id),
+         {:ok, target_version} <- get_secret_version(secret_id, target_version_number) do
+      # Update with the old version's data
+      attrs = %{
+        "encrypted_data" => target_version.encrypted_data,
+        "metadata" => target_version.metadata,
+        "description" => target_version.description
+      }
+
+      change_description = "Rolled back to version #{target_version_number}"
+
+      update_secret(secret_id, attrs,
+        created_by: created_by,
+        change_description: change_description
+      )
+    end
+  end
+
+  @doc """
+  Compares two versions of a secret.
+
+  Returns a map with:
+  - `:version_numbers` - tuple of {old, new} version numbers
+  - `:changed_at` - timestamps of each version
+  - `:metadata_diff` - differences in metadata
+  - `:data_size_diff` - difference in encrypted data size
+  """
+  def compare_versions(secret_id, version_a, version_b) do
+    with {:ok, v_a} <- get_secret_version(secret_id, version_a),
+         {:ok, v_b} <- get_secret_version(secret_id, version_b) do
+      comparison = %{
+        version_numbers: {v_a.version_number, v_b.version_number},
+        changed_at: {v_a.archived_at, v_b.archived_at},
+        metadata_diff: compare_maps(v_a.metadata || %{}, v_b.metadata || %{}),
+        data_size_diff:
+          SecretVersion.data_size(v_b) - SecretVersion.data_size(v_a),
+        created_by: {v_a.created_by, v_b.created_by},
+        change_descriptions: {v_a.change_description, v_b.change_description}
+      }
+
+      {:ok, comparison}
+    end
+  end
+
+  @doc """
+  Deletes old versions based on retention policy.
+
+  ## Options
+
+  - `:keep_versions` - Number of most recent versions to keep (default: 10)
+  - `:keep_days` - Keep versions newer than this many days (default: 90)
+  """
+  def prune_old_versions(secret_id, opts \\ []) do
+    keep_versions = Keyword.get(opts, :keep_versions, 10)
+    keep_days = Keyword.get(opts, :keep_days, 90)
+    cutoff_date = DateTime.add(DateTime.utc_now(), -keep_days * 24 * 3600, :second)
+
+    # Get all versions for this secret
+    versions = list_secret_versions(secret_id, limit: 1000)
+
+    # Determine which versions to delete
+    {keep, delete} =
+      versions
+      |> Enum.with_index()
+      |> Enum.split_with(fn {version, index} ->
+        # Keep recent versions (by index)
+        index < keep_versions ||
+          # Keep versions newer than cutoff
+          DateTime.compare(version.archived_at, cutoff_date) == :gt
+      end)
+
+    # Delete old versions
+    delete_ids = Enum.map(delete, fn {v, _idx} -> v.id end)
+
+    {count, _} =
+      from(v in SecretVersion, where: v.id in ^delete_ids)
+      |> Repo.delete_all()
+
+    Logger.info("Pruned old versions",
+      secret_id: secret_id,
+      deleted_count: count,
+      kept_count: length(keep)
+    )
+
+    {:ok, %{deleted: count, kept: length(keep)}}
+  end
+
+  defp compare_maps(map_a, map_b) do
+    all_keys = Map.keys(map_a) ++ Map.keys(map_b)  |> Enum.uniq()
+
+    Enum.reduce(all_keys, %{added: [], removed: [], changed: []}, fn key, acc ->
+      cond do
+        not Map.has_key?(map_a, key) ->
+          %{acc | added: [{key, Map.get(map_b, key)} | acc.added]}
+
+        not Map.has_key?(map_b, key) ->
+          %{acc | removed: [{key, Map.get(map_a, key)} | acc.removed]}
+
+        Map.get(map_a, key) != Map.get(map_b, key) ->
+          %{acc | changed: [{key, {Map.get(map_a, key), Map.get(map_b, key)}} | acc.changed]}
+
+        true ->
+          acc
+      end
+    end)
   end
 end
