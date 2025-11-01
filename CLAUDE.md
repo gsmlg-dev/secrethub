@@ -128,11 +128,13 @@ apps/
 - Configuration is centralized in `/config/*.exs`
 
 ### Database (PostgreSQL 16)
+- **Connection:** Unix domain socket at `$DEVENV_STATE/postgres` (no TCP port exposed)
 - **Main database:** `secrethub_dev` (user: `secrethub`, password: `secrethub_dev_password`)
 - **Test database:** `secrethub_test`
 - **Extensions enabled:** `uuid-ossp`, `pgcrypto`
 - **Schemas:** Default schema + `audit` schema for audit logs
 - All migrations are in `apps/secrethub_core/priv/repo/migrations/`
+- **Security:** Unix sockets provide better security (no network exposure) and performance (no TCP overhead)
 
 ### Frontend Assets
 - **Uses Bun, not npm** - Always use `assets-install`, never `npm install`
@@ -177,7 +179,7 @@ apps/
 - Always create migrations in `apps/secrethub_core/`
 - Use descriptive migration names
 - Test migrations up and down: `mix ecto.migrate` / `mix ecto.rollback`
-- PostgreSQL runs on port 4432 in devenv (config files updated accordingly)
+- PostgreSQL uses Unix domain sockets in devenv (no TCP port, enhanced security)
 
 ### Adding New Secret Engines
 Secret engines live in `apps/secrethub_core/lib/secrethub_core/engines/`:
@@ -197,13 +199,13 @@ Secret engines live in `apps/secrethub_core/lib/secrethub_core/engines/`:
 Default development environment variables are set in `devenv.nix`:
 
 ```bash
-DATABASE_URL=postgresql://secrethub:secrethub_dev_password@localhost:5432/secrethub_dev
-DATABASE_TEST_URL=postgresql://secrethub:secrethub_dev_password@localhost:5432/secrethub_test
+# Database (using Unix domain socket for security and performance)
+DATABASE_URL=postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=$DEVENV_STATE/postgres
+DATABASE_TEST_URL=postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=$DEVENV_STATE/postgres
 MIX_ENV=dev
 SECRET_KEY_BASE=dev-secret-key-base-change-in-production
 PHX_HOST=localhost
 PHX_PORT=4000
-REDIS_URL=redis://localhost:6379
 ELIXIR_ERL_OPTIONS=+sbwt none +sbwtdcpu none +sbwtdio none
 ```
 
@@ -224,9 +226,10 @@ The project includes convenient scripts in devenv.nix:
 ## Development Services
 
 devenv automatically manages these services:
-- **PostgreSQL 16**: `localhost:5432` (databases: `secrethub_dev`, `secrethub_test`)
-- **Redis**: `localhost:6379` (caching and sessions)
+- **PostgreSQL 16**: Unix domain socket at `$DEVENV_STATE/postgres` (databases: `secrethub_dev`, `secrethub_test`)
 - **Prometheus**: `localhost:9090` (metrics collection)
+
+**Note:** PostgreSQL uses Unix domain sockets for better security and performance. No TCP port is exposed.
 
 ## CI/CD and GitHub Actions
 

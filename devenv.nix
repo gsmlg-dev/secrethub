@@ -50,26 +50,28 @@ in
         CREATE USER secrethub WITH PASSWORD 'secrethub_dev_password' SUPERUSER;
         GRANT ALL PRIVILEGES ON DATABASE secrethub_dev TO secrethub;
         GRANT ALL PRIVILEGES ON DATABASE secrethub_test TO secrethub;
-        
+
         -- Connect to secrethub_dev and set up extensions
         \c secrethub_dev
         CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
         CREATE EXTENSION IF NOT EXISTS "pgcrypto";
         CREATE SCHEMA IF NOT EXISTS audit;
-        
+
         -- Connect to secrethub_test and set up extensions
         \c secrethub_test
         CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
         CREATE EXTENSION IF NOT EXISTS "pgcrypto";
         CREATE SCHEMA IF NOT EXISTS audit;
       '';
-      listen_addresses = "127.0.0.1";
-      port = 5432;
+      # Use Unix domain socket only (more secure and faster than TCP)
+      listen_addresses = "";
       settings = {
         max_connections = 100;
         shared_buffers = "128MB";
         log_statement = "all";
         log_duration = true;
+        # Unix socket permissions
+        unix_socket_permissions = "0777";
       };
     };
 
@@ -106,10 +108,11 @@ in
 
   # Environment variables
   env = {
-    # Database
-    DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@localhost:5432/secrethub_dev";
-    DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@localhost:5432/secrethub_test";
-    
+    # Database (using Unix domain socket for security and performance)
+    # Socket is located at $DEVENV_STATE/postgres
+    DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=$DEVENV_STATE/postgres";
+    DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=$DEVENV_STATE/postgres";
+
     # Application
     MIX_ENV = "dev";
     SECRET_KEY_BASE = lib.mkDefault "dev-secret-key-base-change-in-production";
@@ -221,7 +224,7 @@ in
        • quality          → Run all quality checks
     
     📝 Services running:
-       • PostgreSQL:  localhost:5432
+       • PostgreSQL:  Unix socket ($DEVENV_STATE/postgres)
        • Prometheus:  localhost:9090
 
     EOF
