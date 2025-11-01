@@ -132,7 +132,6 @@ core:
     # SECRET_KEY_BASE: <generated>
     # LIVE_VIEW_SIGNING_SALT: <generated>
     # DATABASE_URL: <from postgresql config>
-    # REDIS_URL: <from redis config>
 
 # Load Balancer / Ingress configuration
 loadBalancer:
@@ -228,36 +227,6 @@ postgresql:
         cpu: 500m
         memory: 512Mi
 
-# Redis configuration
-redis:
-  # Use external Redis (recommended for production)
-  external: true
-
-  # External Redis connection details
-  externalHost: ""  # e.g., secrethub-redis.xxx.cache.amazonaws.com
-  externalPort: 6379
-  # externalPassword: set via secret
-
-  # SSL/TLS configuration
-  sslEnabled: false
-
-  # Or use bundled Redis (not recommended for production)
-  bundled:
-    enabled: false
-    image:
-      repository: redis
-      tag: "7-alpine"
-    persistence:
-      enabled: true
-      size: 5Gi
-    resources:
-      limits:
-        cpu: 500m
-        memory: 512Mi
-      requests:
-        cpu: 250m
-        memory: 256Mi
-
 # AWS KMS configuration for auto-unseal
 kms:
   enabled: false
@@ -285,9 +254,6 @@ secrets:
 
   # PostgreSQL password (if using external PostgreSQL)
   postgresqlPassword: ""
-
-  # Redis password (if using external Redis with auth)
-  redisPassword: ""
 
 # Monitoring and observability
 monitoring:
