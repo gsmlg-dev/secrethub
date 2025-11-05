@@ -8,19 +8,12 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
   @doc """
   Executes policy commands.
   """
+  # execute/3 clauses (grouped together)
   def execute(:list, _args, opts) do
     with {:ok, _token} <- Auth.ensure_authenticated(),
          {:ok, policies} <- list_policies(opts) do
       format = Keyword.get(opts, :format, Config.get_output_format())
       Output.format(policies, format: format)
-    end
-  end
-
-  def execute(:get, name, _args, opts) do
-    with {:ok, _token} <- Auth.ensure_authenticated(),
-         {:ok, policy} <- get_policy(name, opts) do
-      format = Keyword.get(opts, :format, Config.get_output_format())
-      Output.format(policy, format: format)
     end
   end
 
@@ -37,6 +30,22 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
 
       true ->
         {:error, "Interactive policy creation not yet implemented. Use --from-template"}
+    end
+  end
+
+  def execute(:templates, _args, opts) do
+    with {:ok, templates} <- list_templates(opts) do
+      format = Keyword.get(opts, :format, Config.get_output_format())
+      Output.format(templates, format: format)
+    end
+  end
+
+  # execute/4 clauses (grouped together)
+  def execute(:get, name, _args, opts) do
+    with {:ok, _token} <- Auth.ensure_authenticated(),
+         {:ok, policy} <- get_policy(name, opts) do
+      format = Keyword.get(opts, :format, Config.get_output_format())
+      Output.format(policy, format: format)
     end
   end
 
@@ -61,13 +70,6 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
          {:ok, simulation} <- simulate_policy(name, opts) do
       format = Keyword.get(opts, :format, Config.get_output_format())
       Output.format(simulation, format: format)
-    end
-  end
-
-  def execute(:templates, _args, opts) do
-    with {:ok, templates} <- list_templates(opts) do
-      format = Keyword.get(opts, :format, Config.get_output_format())
-      Output.format(templates, format: format)
     end
   end
 

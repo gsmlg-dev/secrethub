@@ -74,7 +74,7 @@ defmodule SecretHub.CLI.Commands.AgentCommands do
     server = Config.get_server_url()
     # WebSocket URL for log streaming
     ws_url = server |> String.replace("http://", "ws://") |> String.replace("https://", "wss://")
-    url = "#{ws_url}/admin/agents/#{id}/logs"
+    _url = "#{ws_url}/admin/agents/#{id}/logs"
 
     Output.info("Streaming logs for agent #{id}... (Ctrl+C to stop)")
     Output.info("Note: Log streaming requires WebSocket support")
