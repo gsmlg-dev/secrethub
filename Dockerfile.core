@@ -1,0 +1,105 @@
+# Multi-stage Dockerfile for SecretHub Core Service
+# Optimized for production deployment with security best practices
+
+# =====================================
+# Build Stage
+# =====================================
+FROM elixir:1.18-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    git \
+    nodejs \
+    npm
+
+# Set working directory
+WORKDIR /app
+
+# Set build ENV
+ENV MIX_ENV=prod
+
+# Install Elixir & Erlang tooling
+RUN mix local.hex --force && \
+    mix local.rebar --force
+
+# Copy entire umbrella project
+COPY mix.exs mix.lock ./
+COPY config ./config
+COPY apps ./apps
+
+# Install dependencies
+RUN mix deps.get --only prod
+
+# Compile dependencies
+RUN mix deps.compile
+
+# Build assets (if web app has assets)
+RUN cd apps/secrethub_web/assets && \
+    npm install && \
+    npm run deploy
+
+# Compile application
+RUN mix compile
+
+# Build OTP release for core
+RUN mix release secrethub_core
+
+# =====================================
+# Runtime Stage
+# =====================================
+FROM alpine:3.19 AS runtime
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    openssl \
+    ncurses-libs \
+    ca-certificates \
+    curl \
+    libgcc \
+    libstdc++ \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN addgroup -g 1001 -S secrethub && \
+    adduser -D -u 1001 -G secrethub -S secrethub
+
+# Create application directory
+WORKDIR /app
+
+# Copy built OTP release from builder stage
+COPY --from=builder --chown=secrethub:secrethub /app/_build/prod/rel/secrethub_core ./
+
+# Set environment
+ENV HOME=/app
+ENV PORT=4000
+ENV MIX_ENV=prod
+ENV RELEASE_COOKIE=change-me-in-production
+
+# Create necessary directories
+RUN mkdir -p /app/var/log && \
+    mkdir -p /app/tmp && \
+    chown -R secrethub:secrethub /app
+
+# Expose port
+EXPOSE 4000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:4000/health || exit 1
+
+# Switch to non-root user
+USER secrethub
+
+# Entrypoint
+ENTRYPOINT ["/app/bin/secrethub_core"]
+
+# Default command
+CMD ["start"]
+
+# Labels for orchestration
+LABEL maintainer="SecretHub Development Team" \
+      version="0.1.0" \
+      description="SecretHub Core Service - Enterprise secrets management platform" \
+      org.opencontainers.image.source="https://github.com/gsmlg-dev/secrethub" \
+      org.opencontainers.image.licenses="MIT"
