@@ -6,7 +6,49 @@ import Config
 # which you should run after static files are built and
 # before starting your production server.
 config :secrethub_web, SecretHub.WebWeb.Endpoint,
-  cache_static_manifest: "priv/static/cache_manifest.json"
+  cache_static_manifest: "priv/static/cache_manifest.json",
+  # Production security hardening
+  session_options: [
+    secure: true,              # HTTPS only (override dev setting)
+    same_site: "Strict"        # Stricter CSRF protection in production
+  ],
+  # Force HTTPS and set secure headers
+  force_ssl: [rewrite_on: [:x_forwarded_proto]],
+  # Security headers and performance tuning
+  http: [
+    protocol_options: [
+      max_header_length: 16_384,
+      max_request_line_length: 8192
+    ],
+    # Connection and performance tuning
+    transport_options: [
+      num_acceptors: 100,
+      max_connections: 16_384
+    ]
+  ]
+
+# Database connection pool configuration (production)
+config :secrethub_core, SecretHub.Core.Repo,
+  # Pool size based on workload - can be overridden via env var
+  # Formula: (total_db_connections / number_of_nodes) * 0.8
+  pool_size: String.to_integer(System.get_env("DB_POOL_SIZE") || "40"),
+  # Queue target in milliseconds - connection checkout allowed this long
+  queue_target: 50,
+  # Check queue length every interval
+  queue_interval: 1000,
+  # Query timeout
+  timeout: 15_000,
+  # Ownership timeout for long-running queries
+  ownership_timeout: 60_000,
+  # Enable prepared statement caching for better performance
+  prepare: :named,
+  # Connection parameters for better performance
+  parameters: [
+    # Use binary protocol for better performance
+    binary_as: "binary",
+    # Enable JIT compilation (PostgreSQL 11+)
+    jit: "on"
+  ]
 
 # Configures Swoosh API Client
 config :swoosh, api_client: Swoosh.ApiClient.Req

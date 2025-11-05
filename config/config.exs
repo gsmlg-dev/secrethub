@@ -34,7 +34,19 @@ config :secrethub_web, SecretHub.WebWeb.Endpoint,
     layout: false
   ],
   pubsub_server: SecretHub.Web.PubSub,
-  live_view: [signing_salt: "0PScoGoh"]
+  live_view: [signing_salt: "0PScoGoh"],
+  # Secure session configuration
+  session_options: [
+    store: :cookie,
+    key: "_secrethub_session",
+    signing_salt: "secrethub_signing_salt",
+    # Security hardening
+    http_only: true,          # Prevent JavaScript access (XSS protection)
+    secure: false,             # Set to true in production (HTTPS only)
+    same_site: "Lax",          # CSRF protection
+    max_age: 1800,             # 30 minutes session timeout
+    encryption_salt: "secrethub_encryption_salt"
+  ]
 
 # Configures the mailer
 #

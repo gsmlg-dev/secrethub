@@ -29,6 +29,21 @@ defmodule SecretHub.WebWeb.Router do
     plug :require_admin_auth
   end
 
+  # AppRole management pipeline (requires authentication)
+  pipeline :approle_management do
+    plug :api
+    plug SecretHub.WebWeb.Plugs.AppRoleAuth
+  end
+
+  # Rate-limited authentication pipeline
+  pipeline :auth_api do
+    plug :api
+    plug SecretHub.WebWeb.Plugs.RateLimiter,
+      max_requests: 5,
+      window_ms: 60_000,
+      scope: :auth
+  end
+
   scope "/", SecretHub.WebWeb do
     pipe_through :browser
 
@@ -63,6 +78,10 @@ defmodule SecretHub.WebWeb.Router do
     live "/secrets", SecretManagementLive, :index
     live "/secrets/:id/versions", SecretVersionHistoryLive, :index
     live "/policies", PolicyManagementLive, :index
+    live "/policies/new", PolicyEditorLive, :new
+    live "/policies/templates", PolicyTemplatesLive, :index
+    live "/policies/:id/edit", PolicyEditorLive, :edit
+    live "/policies/:id/simulate", PolicySimulatorLive, :show
     live "/audit", AuditLogLive, :index
     live "/pki", PKIManagementLive, :index
     live "/certificates", AdminCertificateLive, :index
@@ -86,6 +105,7 @@ defmodule SecretHub.WebWeb.Router do
     live "/metrics", MetricsDashboardLive, :index
     live "/alerts", AlertConfigurationLive, :index
     live "/anomalies", AnomalyDetectionLive, :index
+    live "/performance", PerformanceDashboardLive, :index
 
     delete "/logout", AdminAuthController, :logout
   end
@@ -120,17 +140,22 @@ defmodule SecretHub.WebWeb.Router do
     get "/health/live", SysController, :liveness
   end
 
-  # Authentication API routes (AppRole management)
+  # Authentication API routes (AppRole management - PROTECTED)
   scope "/v1/auth/approle", SecretHub.WebWeb do
-    pipe_through :api
+    pipe_through :approle_management
 
-    # Role management
+    # Role management (requires admin authentication)
     post "/role/:role_name", AuthController, :create_role
-    get "/role/:role_name", AuthController, :get_role
     get "/role", AuthController, :list_roles
     delete "/role/:role_name", AuthController, :delete_role
+  end
 
-    # SecretID operations
+  # Authentication API routes (AppRole usage - rate limited)
+  scope "/v1/auth/approle", SecretHub.WebWeb do
+    pipe_through :auth_api
+
+    # Public endpoints for AppRole authentication (rate limited)
+    get "/role/:role_name", AuthController, :get_role
     post "/role/:role_name/secret-id", AuthController, :rotate_secret_id
     get "/role/:role_name/role-id", AuthController, :get_role_id
   end
