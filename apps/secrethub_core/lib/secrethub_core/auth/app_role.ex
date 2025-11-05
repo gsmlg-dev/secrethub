@@ -24,7 +24,6 @@ defmodule SecretHub.Core.Auth.AppRole do
   import Ecto.Query
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.{AuditLog, Role}
 
   # 10 minutes in seconds
@@ -84,7 +83,7 @@ defmodule SecretHub.Core.Auth.AppRole do
     case %Role{}
          |> Role.changeset(role_attrs)
          |> Repo.insert() do
-      {:ok, role} ->
+      {:ok, _role} ->
         Logger.info("Created AppRole: #{role_name} (RoleID: #{role_id})")
         audit_event("approle_created", role_id, %{role_name: role_name})
 

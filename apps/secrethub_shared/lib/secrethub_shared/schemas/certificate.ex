@@ -124,4 +124,24 @@ defmodule SecretHub.Shared.Schemas.Certificate do
       changeset
     end
   end
+
+  @doc """
+  Parse a PEM-encoded certificate.
+
+  TODO: Implement proper X.509 certificate parsing using :public_key module.
+  """
+  def from_pem(_pem_string) do
+    # Placeholder implementation
+    {:error, "Certificate parsing not yet implemented"}
+  end
+
+  @doc """
+  Calculate the fingerprint of a certificate.
+
+  TODO: Implement SHA-256 fingerprint calculation from parsed certificate.
+  """
+  def fingerprint(_cert) do
+    # Placeholder implementation
+    ""
+  end
 end

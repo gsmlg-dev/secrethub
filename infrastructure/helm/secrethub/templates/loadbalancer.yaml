@@ -1,0 +1,31 @@
+{{- if .Values.loadBalancer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "secrethub.fullname" . }}-lb
+  labels:
+    {{- include "secrethub.labels" . | nindent 4 }}
+    component: loadbalancer
+  {{- with .Values.loadBalancer.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.loadBalancer.type }}
+  {{- if .Values.loadBalancer.sessionAffinity }}
+  sessionAffinity: {{ .Values.loadBalancer.sessionAffinity }}
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: {{ .Values.loadBalancer.sessionAffinityTimeout }}
+  {{- end }}
+  {{- if .Values.loadBalancer.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.loadBalancer.externalTrafficPolicy }}
+  {{- end }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 4000
+      protocol: TCP
+  selector:
+    {{- include "secrethub.selectorLabels" . | nindent 4 }}
+{{- end }}

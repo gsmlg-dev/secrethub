@@ -47,14 +47,15 @@ defmodule SecretHub.Agent.Cache do
 
   defmodule CacheEntry do
     @moduledoc false
-    defstruct [:secret_path, :data, :fetched_at, :expires_at, :version]
+    defstruct [:secret_path, :data, :fetched_at, :expires_at, :version, :engine_type]
 
     @type t :: %__MODULE__{
             secret_path: String.t(),
             data: map(),
             fetched_at: DateTime.t(),
             expires_at: DateTime.t(),
-            version: integer()
+            version: integer(),
+            engine_type: atom() | nil
           }
   end
 
@@ -84,6 +85,7 @@ defmodule SecretHub.Agent.Cache do
 
   - `:ttl` - TTL in seconds (default: configured TTL)
   - `:version` - Secret version number
+  - `:engine_type` - Secret engine type (:postgresql, :redis, :aws_sts, etc.)
   """
   @spec put(String.t(), map(), keyword()) :: :ok
   def put(secret_path, data, opts \\ []) do
@@ -226,13 +228,15 @@ defmodule SecretHub.Agent.Cache do
   def handle_cast({:put, secret_path, data, opts}, state) do
     ttl = Keyword.get(opts, :ttl, state.ttl_seconds)
     version = Keyword.get(opts, :version, 1)
+    engine_type = Keyword.get(opts, :engine_type)
 
     entry = %CacheEntry{
       secret_path: secret_path,
       data: data,
       fetched_at: DateTime.utc_now(),
       expires_at: DateTime.add(DateTime.utc_now(), ttl, :second),
-      version: version
+      version: version,
+      engine_type: engine_type
     }
 
     new_cache = Map.put(state.cache, secret_path, entry)

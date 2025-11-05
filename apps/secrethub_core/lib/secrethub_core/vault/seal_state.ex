@@ -25,7 +25,6 @@ defmodule SecretHub.Core.Vault.SealState do
 
   # Auto-seal after 30 seconds of no activity
   @unseal_timeout_ms 30_000
-  @max_unseal_attempts 5
 
   defmodule State do
     @moduledoc false
@@ -110,6 +109,24 @@ defmodule SecretHub.Core.Vault.SealState do
         }
   def status do
     GenServer.call(__MODULE__, :status)
+  end
+
+  @doc """
+  Returns whether the vault is initialized.
+  """
+  @spec initialized?() :: boolean()
+  def initialized? do
+    status = status()
+    status.initialized
+  end
+
+  @doc """
+  Returns whether the vault is sealed.
+  """
+  @spec sealed?() :: boolean()
+  def sealed? do
+    status = status()
+    status.sealed
   end
 
   @doc """

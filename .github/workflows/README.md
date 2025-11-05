@@ -93,6 +93,30 @@ REDIS_URL=redis://localhost:6379
             │   Test   │
             │ (with DB)│
             └──────────┘
+
+
+┌──────────────────────────────────────────┐
+│         Push version tag (v1.0.0)        │
+└────────────────┬─────────────────────────┘
+                 │
+    ┌────────────┴────────────────────────────────┐
+    │       Release Workflow (4 parallel jobs)    │
+    │                                             │
+    ├──────────┬────────────┬─────────┬──────────┤
+    │          │            │         │          │
+┌───▼───┐  ┌──▼───┐  ┌─────▼────┐ ┌─▼─────────┐
+│ Build │  │Build │  │  Build   │ │  Build    │
+│ Core  │  │Agent │  │   Core   │ │  Agent    │
+│Release│  │Release│ │  Docker  │ │  Docker   │
+└───┬───┘  └──┬───┘  └────┬─────┘ └─────┬─────┘
+    │         │            │             │
+    └─────────┴────────────┴─────────────┘
+                     │
+              ┌──────▼───────┐
+              │   Create     │
+              │   GitHub     │
+              │   Release    │
+              └──────────────┘
 ```
 
 **Benefits of Parallel Execution:**
@@ -121,11 +145,14 @@ All workflows use GitHub Actions cache to speed up builds:
 Add these to your README.md:
 
 ```markdown
-![CI](https://github.com/YOUR_USERNAME/secrethub/workflows/CI/badge.svg)
-![Test](https://github.com/YOUR_USERNAME/secrethub/workflows/Test/badge.svg)
+![CI](https://github.com/gsmlg-dev/secrethub/workflows/CI/badge.svg)
+![Test](https://github.com/gsmlg-dev/secrethub/workflows/Test/badge.svg)
+![Release](https://github.com/gsmlg-dev/secrethub/workflows/Release/badge.svg)
 ```
 
-The CI badge shows the combined status of all four parallel jobs (Compile, Format, Credo, Dialyzer).
+- **CI badge**: Combined status of all four parallel jobs (Compile, Format, Credo, Dialyzer)
+- **Test badge**: Test suite execution status
+- **Release badge**: Latest release build status
 
 ## Local Testing
 
@@ -277,6 +304,74 @@ The workflows use specific versions:
 
 **Update regularly** to get security patches.
 
+### 3. Release (`release.yml`)
+
+**Triggers**:
+- Push to version tags (e.g., `v1.0.0`, `v1.2.3`)
+- Manual dispatch via GitHub Actions UI
+
+**Purpose**: Build production releases and Docker images
+
+**Jobs** (4 parallel jobs + final job):
+
+1. **Build Core Release**
+   - Compiles Core + Web + Shared apps
+   - Builds frontend assets with npm
+   - Creates OTP release tarball
+   - **Output**: `secrethub_core-vX.Y.Z.tar.gz`
+
+2. **Build Agent Release**
+   - Compiles Agent + Shared apps
+   - Creates OTP release tarball
+   - **Output**: `secrethub_agent-vX.Y.Z.tar.gz`
+
+3. **Build Core Docker Image**
+   - Multi-stage Docker build
+   - Multi-architecture (amd64, arm64)
+   - Published to GitHub Container Registry
+   - **Image**: `ghcr.io/gsmlg-dev/secrethub/core:vX.Y.Z`
+
+4. **Build Agent Docker Image**
+   - Multi-stage Docker build
+   - Multi-architecture (amd64, arm64)
+   - Published to GitHub Container Registry
+   - **Image**: `ghcr.io/gsmlg-dev/secrethub/agent:vX.Y.Z`
+
+5. **Create GitHub Release** (final job)
+   - Waits for all 4 build jobs to complete
+   - Downloads all artifacts
+   - Generates release notes
+   - Creates GitHub release with:
+     - Binary tarballs
+     - Docker image references
+     - Quick start instructions
+
+**Docker Tags**:
+Each Docker image is tagged with:
+- Full version: `v1.0.0`
+- Major.Minor: `1.0`
+- Major: `1`
+- Git SHA: `sha-abc1234`
+- Latest: `latest` (only for default branch tags)
+
+**Typical Duration**: 20-25 minutes (parallel execution)
+
+**Usage**:
+```bash
+# Tag-based release (recommended)
+git tag v1.0.0
+git push origin v1.0.0
+
+# Manual release via GitHub UI
+# Go to Actions → Release → Run workflow
+```
+
+**Artifacts**:
+- Binary releases downloadable from GitHub Releases
+- Docker images published to `ghcr.io/gsmlg-dev/secrethub/`
+
+---
+
 ## Future Enhancements
 
 Planned workflow additions:
@@ -285,7 +380,7 @@ Planned workflow additions:
 - [ ] **Dependency Audit**: Check for vulnerable dependencies
 - [ ] **Performance Testing**: Run performance benchmarks on PRs
 - [ ] **E2E Tests**: Run E2E integration tests in isolated environment
-- [ ] **Release**: Automated release creation and Docker image publishing
+- [x] **Release**: Automated release creation and Docker image publishing ✅
 - [ ] **Deploy**: Automated deployment to staging/production
 
 ## Contributing
