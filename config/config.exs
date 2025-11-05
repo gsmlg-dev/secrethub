@@ -41,10 +41,14 @@ config :secrethub_web, SecretHub.WebWeb.Endpoint,
     key: "_secrethub_session",
     signing_salt: "secrethub_signing_salt",
     # Security hardening
-    http_only: true,          # Prevent JavaScript access (XSS protection)
-    secure: false,             # Set to true in production (HTTPS only)
-    same_site: "Lax",          # CSRF protection
-    max_age: 1800,             # 30 minutes session timeout
+    # Prevent JavaScript access (XSS protection)
+    http_only: true,
+    # Set to true in production (HTTPS only)
+    secure: false,
+    # CSRF protection
+    same_site: "Lax",
+    # 30 minutes session timeout
+    max_age: 1800,
     encryption_salt: "secrethub_encryption_salt"
   ]
 

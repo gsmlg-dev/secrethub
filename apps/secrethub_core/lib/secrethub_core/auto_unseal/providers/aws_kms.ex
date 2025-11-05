@@ -196,28 +196,29 @@ defmodule SecretHub.Core.AutoUnseal.Providers.AWSKMS do
     end
   end
 
-  defp build_aws_config(region, config) do
+  defp build_aws_config(region, provider_config) do
     base_config = [
       region: region,
       http_client: ExAws.Request.Hackney
     ]
 
     # Add explicit credentials if provided (not recommended for production)
-    config =
-      if Map.has_key?(config, :access_key_id) && Map.has_key?(config, :secret_access_key) do
+    aws_config =
+      if Map.has_key?(provider_config, :access_key_id) &&
+           Map.has_key?(provider_config, :secret_access_key) do
         Keyword.merge(base_config,
-          access_key_id: config.access_key_id,
-          secret_access_key: config.secret_access_key
+          access_key_id: provider_config.access_key_id,
+          secret_access_key: provider_config.secret_access_key
         )
       else
         base_config
       end
 
     # Add session token if provided (for temporary credentials)
-    if Map.has_key?(config, :session_token) do
-      Keyword.put(config, :session_token, config.session_token)
+    if Map.has_key?(provider_config, :session_token) do
+      Keyword.put(aws_config, :session_token, provider_config.session_token)
     else
-      config
+      aws_config
     end
   end
 

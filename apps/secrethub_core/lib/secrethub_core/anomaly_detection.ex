@@ -28,7 +28,7 @@ defmodule SecretHub.Core.AnomalyDetection do
   require Logger
 
   alias SecretHub.Core.{Repo, Alerting}
-  alias SecretHub.Shared.Schemas.{AnomalyDetectionRule, AnomalyAlert}
+  alias SecretHub.Shared.Schemas.AnomalyDetectionRule
 
   import Ecto.Query
 

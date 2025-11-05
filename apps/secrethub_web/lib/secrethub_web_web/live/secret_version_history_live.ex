@@ -139,19 +139,18 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
     ~H"""
     <div class="space-y-6">
       <.header>
-        <%= @secret.name %> - Version History
+        {@secret.name} - Version History
         <:subtitle>
-          Path: <%= @secret.secret_path %> | Current Version: v<%= @secret.version %> | Total Versions: <%= @secret.version_count %>
+          Path: {@secret.secret_path} | Current Version: v{@secret.version} | Total Versions: {@secret.version_count}
         </:subtitle>
         <:actions>
-          <.button navigate={"/admin/secrets"}>
-            <.icon name="arrow-left" class="h-5 w-5 mr-2" />
-            Back to Secrets
+          <.button navigate="/admin/secrets">
+            <.icon name="arrow-left" class="h-5 w-5 mr-2" /> Back to Secrets
           </.button>
         </:actions>
       </.header>
-
-      <!-- Comparison Tool -->
+      
+    <!-- Comparison Tool -->
       <div class="bg-white rounded-lg border shadow-sm p-6">
         <h3 class="text-lg font-semibold mb-4">Compare Versions</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -170,10 +169,10 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
                   value={version.version_number}
                   selected={@selected_version_a == version.version_number}
                 >
-                  v<%= version.version_number %> - <%= Calendar.strftime(
+                  v{version.version_number} - {Calendar.strftime(
                     version.archived_at,
                     "%Y-%m-%d %H:%M"
-                  ) %>
+                  )}
                 </option>
               <% end %>
             </select>
@@ -193,10 +192,10 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
                   value={version.version_number}
                   selected={@selected_version_b == version.version_number}
                 >
-                  v<%= version.version_number %> - <%= Calendar.strftime(
+                  v{version.version_number} - {Calendar.strftime(
                     version.archived_at,
                     "%Y-%m-%d %H:%M"
-                  ) %>
+                  )}
                 </option>
               <% end %>
             </select>
@@ -220,8 +219,8 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
           </div>
         <% end %>
       </div>
-
-      <!-- Version Timeline -->
+      
+    <!-- Version Timeline -->
       <div class="bg-white rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b">
           <h3 class="text-lg font-semibold">Version Timeline</h3>
@@ -233,7 +232,7 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
                 <div class="flex-1">
                   <div class="flex items-center gap-3">
                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                      v<%= version.version_number %>
+                      v{version.version_number}
                     </span>
                     <%= if version.version_number == @secret.version do %>
                       <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
@@ -241,22 +240,22 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
                       </span>
                     <% end %>
                     <span class="text-sm text-gray-500">
-                      <%= Calendar.strftime(version.archived_at, "%Y-%m-%d %H:%M:%S") %>
+                      {Calendar.strftime(version.archived_at, "%Y-%m-%d %H:%M:%S")}
                     </span>
                   </div>
                   <%= if version.change_description do %>
-                    <p class="mt-2 text-sm text-gray-900"><%= version.change_description %></p>
+                    <p class="mt-2 text-sm text-gray-900">{version.change_description}</p>
                   <% end %>
                   <div class="mt-2 flex items-center gap-4 text-xs text-gray-500">
                     <%= if version.created_by do %>
                       <span>
-                        <.icon name="user" class="h-4 w-4 inline" /> <%= version.created_by %>
+                        <.icon name="user" class="h-4 w-4 inline" /> {version.created_by}
                       </span>
                     <% end %>
                     <span>
-                      <.icon name="document" class="h-4 w-4 inline" /> <%= format_bytes(
+                      <.icon name="document" class="h-4 w-4 inline" /> {format_bytes(
                         SecretVersion.data_size(version)
-                      ) %>
+                      )}
                     </span>
                     <%= if version.description do %>
                       <span title={version.description}>
@@ -289,15 +288,15 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
           <% end %>
         </div>
       </div>
-
-      <!-- Rollback Confirmation Modal -->
+      
+    <!-- Rollback Confirmation Modal -->
       <%= if @show_rollback_modal do %>
         <div class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
           <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 class="text-lg font-semibold mb-4">Confirm Rollback</h3>
             <p class="text-sm text-gray-600 mb-6">
-              Are you sure you want to rollback to version <%= @rollback_target %>? This will create a new version (v<%= @secret.version +
-                1 %>) with the data from v<%= @rollback_target %>.
+              Are you sure you want to rollback to version {@rollback_target}? This will create a new version (v{@secret.version +
+                1}) with the data from v{@rollback_target}.
             </p>
             <div class="flex gap-2 justify-end">
               <.button phx-click="cancel_rollback" color="secondary">
@@ -319,28 +318,26 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
     <div class="bg-gray-50 rounded-lg p-4 space-y-4">
       <div class="grid grid-cols-2 gap-4 text-sm">
         <div>
-          <span class="font-medium">Version:</span>
-          v<%= elem(@comparison.version_numbers, 0) %>
+          <span class="font-medium">Version:</span> v{elem(@comparison.version_numbers, 0)}
         </div>
         <div>
-          <span class="font-medium">Version:</span>
-          v<%= elem(@comparison.version_numbers, 1) %>
-        </div>
-        <div>
-          <span class="font-medium">Changed At:</span>
-          <%= Calendar.strftime(elem(@comparison.changed_at, 0), "%Y-%m-%d %H:%M") %>
+          <span class="font-medium">Version:</span> v{elem(@comparison.version_numbers, 1)}
         </div>
         <div>
           <span class="font-medium">Changed At:</span>
-          <%= Calendar.strftime(elem(@comparison.changed_at, 1), "%Y-%m-%d %H:%M") %>
+          {Calendar.strftime(elem(@comparison.changed_at, 0), "%Y-%m-%d %H:%M")}
+        </div>
+        <div>
+          <span class="font-medium">Changed At:</span>
+          {Calendar.strftime(elem(@comparison.changed_at, 1), "%Y-%m-%d %H:%M")}
         </div>
         <div>
           <span class="font-medium">Created By:</span>
-          <%= elem(@comparison.created_by, 0) || "unknown" %>
+          {elem(@comparison.created_by, 0) || "unknown"}
         </div>
         <div>
           <span class="font-medium">Created By:</span>
-          <%= elem(@comparison.created_by, 1) || "unknown" %>
+          {elem(@comparison.created_by, 1) || "unknown"}
         </div>
       </div>
 
@@ -349,11 +346,11 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
         <p class="text-sm">
           <%= if @comparison.data_size_diff > 0 do %>
             <span class="text-green-600">
-              +<%= format_bytes(@comparison.data_size_diff) %>
+              +{format_bytes(@comparison.data_size_diff)}
             </span>
           <% else %>
             <span class="text-red-600">
-              <%= format_bytes(@comparison.data_size_diff) %>
+              {format_bytes(@comparison.data_size_diff)}
             </span>
           <% end %>
         </p>
@@ -367,7 +364,7 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
               <span class="text-xs font-medium text-green-700">Added:</span>
               <ul class="text-sm text-gray-700 ml-4">
                 <%= for {key, value} <- @comparison.metadata_diff.added do %>
-                  <li><code class="text-xs"><%= key %></code>: <%= inspect(value) %></li>
+                  <li><code class="text-xs"><%= key %></code>: {inspect(value)}</li>
                 <% end %>
               </ul>
             </div>
@@ -377,7 +374,7 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
               <span class="text-xs font-medium text-red-700">Removed:</span>
               <ul class="text-sm text-gray-700 ml-4">
                 <%= for {key, value} <- @comparison.metadata_diff.removed do %>
-                  <li><code class="text-xs"><%= key %></code>: <%= inspect(value) %></li>
+                  <li><code class="text-xs"><%= key %></code>: {inspect(value)}</li>
                 <% end %>
               </ul>
             </div>
@@ -389,9 +386,8 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
                 <%= for {key, {old_val, new_val}} <- @comparison.metadata_diff.changed do %>
                   <li>
                     <code class="text-xs"><%= key %></code>:
-                    <span class="line-through text-red-600"><%= inspect(old_val) %></span>
-                    →
-                    <span class="text-green-600"><%= inspect(new_val) %></span>
+                    <span class="line-through text-red-600">{inspect(old_val)}</span>
+                    → <span class="text-green-600">{inspect(new_val)}</span>
                   </li>
                 <% end %>
               </ul>

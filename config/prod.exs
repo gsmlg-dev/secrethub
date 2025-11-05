@@ -9,8 +9,10 @@ config :secrethub_web, SecretHub.WebWeb.Endpoint,
   cache_static_manifest: "priv/static/cache_manifest.json",
   # Production security hardening
   session_options: [
-    secure: true,              # HTTPS only (override dev setting)
-    same_site: "Strict"        # Stricter CSRF protection in production
+    # HTTPS only (override dev setting)
+    secure: true,
+    # Stricter CSRF protection in production
+    same_site: "Strict"
   ],
   # Force HTTPS and set secure headers
   force_ssl: [rewrite_on: [:x_forwarded_proto]],

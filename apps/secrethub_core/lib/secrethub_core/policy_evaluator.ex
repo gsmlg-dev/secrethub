@@ -9,6 +9,7 @@ defmodule SecretHub.Core.PolicyEvaluator do
   """
 
   require Logger
+  import Bitwise
 
   alias SecretHub.Shared.Schemas.Policy
 
@@ -175,7 +176,9 @@ defmodule SecretHub.Core.PolicyEvaluator do
 
   defp check_ttl_restrictions(policy, context) do
     requested_ttl = Map.get(context, :requested_ttl)
-    max_ttl = policy.max_ttl_seconds || get_in(policy.policy_document, ["conditions", "max_ttl_seconds"])
+
+    max_ttl =
+      policy.max_ttl_seconds || get_in(policy.policy_document, ["conditions", "max_ttl_seconds"])
 
     cond do
       is_nil(requested_ttl) ->
@@ -203,7 +206,7 @@ defmodule SecretHub.Core.PolicyEvaluator do
       |> String.replace("**", "___DOUBLE_STAR___")
       |> String.replace("*", "[^.]+")
       |> String.replace("___DOUBLE_STAR___", ".*")
-      |> then(&("^#{&1}$"))
+      |> then(&"^#{&1}$")
 
     Regex.match?(Regex.compile!(regex_pattern), secret_path)
   end
@@ -332,15 +335,15 @@ defmodule SecretHub.Core.PolicyEvaluator do
     network_int = tuple_to_int(network)
     bits = tuple_size(network) * 8
 
-    mask = bnot(Bitwise.bsl(1, bits - prefix_len) - 1)
+    mask = bnot(bsl(1, bits - prefix_len) - 1)
 
-    Bitwise.band(ip_int, mask) == Bitwise.band(network_int, mask)
+    band(ip_int, mask) == band(network_int, mask)
   end
 
   defp tuple_to_int(ip_tuple) do
     ip_tuple
     |> Tuple.to_list()
-    |> Enum.reduce(0, fn byte, acc -> Bitwise.bsl(acc, 8) + byte end)
+    |> Enum.reduce(0, fn byte, acc -> bsl(acc, 8) + byte end)
   end
 
   defp format_simulation_steps(steps) do

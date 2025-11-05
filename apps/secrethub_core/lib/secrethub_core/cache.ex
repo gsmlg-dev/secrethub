@@ -18,8 +18,10 @@ defmodule SecretHub.Core.Cache do
   use GenServer
   require Logger
 
-  @default_ttl_seconds 300  # 5 minutes
-  @cleanup_interval 60_000  # 1 minute
+  # 5 minutes
+  @default_ttl_seconds 300
+  # 1 minute
+  @cleanup_interval 60_000
   @max_cache_entries 10_000
 
   # Cache tables
@@ -150,6 +152,7 @@ defmodule SecretHub.Core.Cache do
 
       _table ->
         info = :ets.info(table)
+
         %{
           size: info[:size],
           memory_bytes: info[:memory] * :erlang.system_info(:wordsize),

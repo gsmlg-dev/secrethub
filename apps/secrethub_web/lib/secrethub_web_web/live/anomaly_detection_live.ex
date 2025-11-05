@@ -118,8 +118,8 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
         Anomaly Detection
         <:subtitle>Real-time anomaly detection and alerting</:subtitle>
       </.header>
-
-      <!-- Statistics Cards -->
+      
+    <!-- Statistics Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <.stat_card
           title="Total Alerts"
@@ -146,8 +146,8 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
           color="green"
         />
       </div>
-
-      <!-- Detection Rules -->
+      
+    <!-- Detection Rules -->
       <div class="bg-white rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b">
           <h2 class="text-lg font-semibold">Detection Rules</h2>
@@ -158,7 +158,7 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
               <div class="flex items-start justify-between">
                 <div class="flex-1">
                   <div class="flex items-center gap-3">
-                    <h3 class="text-sm font-medium text-gray-900"><%= rule.name %></h3>
+                    <h3 class="text-sm font-medium text-gray-900">{rule.name}</h3>
                     <.rule_type_badge type={rule.rule_type} />
                     <.severity_badge severity={rule.severity} />
                     <%= if rule.enabled do %>
@@ -171,12 +171,12 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
                       </span>
                     <% end %>
                   </div>
-                  <p class="mt-1 text-sm text-gray-500"><%= rule.description %></p>
+                  <p class="mt-1 text-sm text-gray-500">{rule.description}</p>
                   <div class="mt-2 flex items-center gap-4 text-xs text-gray-500">
-                    <span>Triggered: <%= rule.trigger_count %> times</span>
+                    <span>Triggered: {rule.trigger_count} times</span>
                     <%= if rule.last_triggered_at do %>
                       <span>
-                        Last: <%= Calendar.strftime(rule.last_triggered_at, "%Y-%m-%d %H:%M") %>
+                        Last: {Calendar.strftime(rule.last_triggered_at, "%Y-%m-%d %H:%M")}
                       </span>
                     <% end %>
                   </div>
@@ -186,15 +186,15 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
                   phx-value-id={rule.id}
                   class="ml-4 text-sm text-indigo-600 hover:text-indigo-900"
                 >
-                  <%= if rule.enabled, do: "Disable", else: "Enable" %>
+                  {if rule.enabled, do: "Disable", else: "Enable"}
                 </button>
               </div>
             </div>
           <% end %>
         </div>
       </div>
-
-      <!-- Recent Alerts -->
+      
+    <!-- Recent Alerts -->
       <div class="bg-white rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b flex items-center justify-between">
           <h2 class="text-lg font-semibold">Recent Alerts</h2>
@@ -230,13 +230,13 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
                     <.severity_badge severity={alert.severity} />
                     <.status_badge status={alert.status} />
                     <span class="text-xs text-gray-500">
-                      <%= Calendar.strftime(alert.triggered_at, "%Y-%m-%d %H:%M:%S") %>
+                      {Calendar.strftime(alert.triggered_at, "%Y-%m-%d %H:%M:%S")}
                     </span>
                   </div>
-                  <p class="mt-2 text-sm text-gray-900"><%= alert.description %></p>
+                  <p class="mt-2 text-sm text-gray-900">{alert.description}</p>
                   <%= if alert.context do %>
                     <div class="mt-2 text-xs text-gray-500 font-mono bg-gray-50 p-2 rounded">
-                      <%= Jason.encode!(alert.context, pretty: true) %>
+                      {Jason.encode!(alert.context, pretty: true)}
                     </div>
                   <% end %>
                 </div>
@@ -270,7 +270,7 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
                 <%= if @selected_severity == :all do %>
                   All systems operating normally
                 <% else %>
-                  No <%= @selected_severity %> severity alerts
+                  No {@selected_severity} severity alerts
                 <% end %>
               </p>
             </div>
@@ -286,8 +286,8 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
     <div class="bg-white rounded-lg border p-6 shadow-sm">
       <div class="flex items-start justify-between">
         <div>
-          <p class="text-sm font-medium text-gray-600"><%= @title %></p>
-          <p class={"text-3xl font-bold mt-2 text-#{@color}-600"}><%= @value %></p>
+          <p class="text-sm font-medium text-gray-600">{@title}</p>
+          <p class={"text-3xl font-bold mt-2 text-#{@color}-600"}>{@value}</p>
         </div>
         <div class={"rounded-full p-3 bg-#{@color}-100"}>
           <.icon name={@icon} class={"h-6 w-6 text-#{@color}-600"} />
@@ -300,7 +300,7 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
   defp rule_type_badge(assigns) do
     ~H"""
     <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-      <%= format_rule_type(@type) %>
+      {format_rule_type(@type)}
     </span>
     """
   end
@@ -320,7 +320,7 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
 
     ~H"""
     <span class={"inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-#{@color}-100 text-#{@color}-800"}>
-      <%= String.upcase(to_string(@severity)) %>
+      {String.upcase(to_string(@severity))}
     </span>
     """
   end
@@ -340,7 +340,7 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
 
     ~H"""
     <span class={"inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-#{@color}-100 text-#{@color}-800"}>
-      <%= @label %>
+      {@label}
     </span>
     """
   end
@@ -363,7 +363,7 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
         )
       ]}
     >
-      <%= @label %>
+      {@label}
     </button>
     """
   end
@@ -374,13 +374,13 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
 
   defp list_rules do
     AnomalyDetectionRule
-    |> order_by([r], [desc: r.enabled, desc: r.severity, asc: r.name])
+    |> order_by([r], desc: r.enabled, desc: r.severity, asc: r.name)
     |> Repo.all()
   end
 
   defp list_recent_alerts(:all) do
     AnomalyAlert
-    |> order_by([a], [desc: a.triggered_at])
+    |> order_by([a], desc: a.triggered_at)
     |> limit(50)
     |> Repo.all()
   end
@@ -388,7 +388,7 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
   defp list_recent_alerts(severity) do
     AnomalyAlert
     |> where([a], a.severity == ^severity)
-    |> order_by([a], [desc: a.triggered_at])
+    |> order_by([a], desc: a.triggered_at)
     |> limit(50)
     |> Repo.all()
   end

@@ -100,8 +100,7 @@ defmodule SecretHub.WebWeb.PolicySimulatorLive do
           <form phx-submit="run_simulation" class="space-y-4">
             <div>
               <label class="block text-sm font-medium text-gray-700">
-                Entity ID
-                <span class="text-red-500">*</span>
+                Entity ID <span class="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -117,8 +116,7 @@ defmodule SecretHub.WebWeb.PolicySimulatorLive do
 
             <div>
               <label class="block text-sm font-medium text-gray-700">
-                Secret Path
-                <span class="text-red-500">*</span>
+                Secret Path <span class="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -134,8 +132,7 @@ defmodule SecretHub.WebWeb.PolicySimulatorLive do
 
             <div>
               <label class="block text-sm font-medium text-gray-700">
-                Operation
-                <span class="text-red-500">*</span>
+                Operation <span class="text-red-500">*</span>
               </label>
               <select
                 phx-change="update_field"
@@ -287,7 +284,9 @@ defmodule SecretHub.WebWeb.PolicySimulatorLive do
                 </div>
                 <div class="ml-3">
                   <h3 class={"text-lg font-medium #{if @simulation_result.result == :allow, do: "text-green-800", else: "text-red-800"}"}>
-                    {if @simulation_result.result == :allow, do: "ACCESS ALLOWED", else: "ACCESS DENIED"}
+                    {if @simulation_result.result == :allow,
+                      do: "ACCESS ALLOWED",
+                      else: "ACCESS DENIED"}
                   </h3>
                   <p class={"mt-1 text-sm #{if @simulation_result.result == :allow, do: "text-green-700", else: "text-red-700"}"}>
                     {@simulation_result.reason}

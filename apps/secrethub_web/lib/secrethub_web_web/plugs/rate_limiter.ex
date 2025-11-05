@@ -99,7 +99,8 @@ defmodule SecretHub.WebWeb.Plugs.RateLimiter do
           # Rate limit exceeded
           true ->
             time_until_reset = opts.window_ms - (now - first_request_time)
-            retry_after = div(time_until_reset, 1000) + 1  # Convert to seconds, round up
+            # Convert to seconds, round up
+            retry_after = div(time_until_reset, 1000) + 1
 
             {:error, :rate_limited, retry_after}
         end

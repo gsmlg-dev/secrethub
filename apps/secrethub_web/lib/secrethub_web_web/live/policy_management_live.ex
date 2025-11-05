@@ -703,7 +703,7 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
                           <% else %>
                             <span class="text-xs text-gray-400">No bindings</span>
                           <% end %>
-                          <%= render_conditions_summary(policy) %>
+                          {render_conditions_summary(policy)}
                         </div>
                       </div>
                     </div>

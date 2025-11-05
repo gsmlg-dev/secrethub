@@ -179,7 +179,8 @@ defmodule SecretHub.Core.PolicyTemplates do
     %{
       name: "production_readonly",
       display_name: "Production Read-Only",
-      description: "Read-only access to production secrets during business hours from trusted IPs",
+      description:
+        "Read-only access to production secrets during business hours from trusted IPs",
       category: "production",
       policy_document: %{
         "version" => "2024-01-01",
@@ -289,7 +290,9 @@ defmodule SecretHub.Core.PolicyTemplates do
         invalid_fields =
           params
           |> Map.keys()
-          |> Enum.reject(fn key -> key in customizable ++ [:name, :description, :entity_bindings] end)
+          |> Enum.reject(fn key ->
+            key in (customizable ++ [:name, :description, :entity_bindings])
+          end)
 
         if invalid_fields == [] do
           {:ok, params}

@@ -193,11 +193,16 @@ defmodule SecretHub.WebWeb.Telemetry do
   def measure_vm_metrics do
     # VM memory metrics
     memory = :erlang.memory()
-    :telemetry.execute([:vm, :memory], %{
-      total: memory[:total],
-      processes: memory[:processes],
-      ets: memory[:ets]
-    }, %{})
+
+    :telemetry.execute(
+      [:vm, :memory],
+      %{
+        total: memory[:total],
+        processes: memory[:processes],
+        ets: memory[:ets]
+      },
+      %{}
+    )
 
     # Process and port counts
     :telemetry.execute([:vm, :process_count], %{count: :erlang.system_info(:process_count)}, %{})
@@ -241,8 +246,9 @@ defmodule SecretHub.WebWeb.Telemetry do
     # For now, we'll check for Phoenix.PubSub subscribers
     try do
       # Count subscribers to agent channels
-      count = Phoenix.PubSub.subscribers(SecretHub.Web.PubSub, "agents")
-              |> length()
+      count =
+        Phoenix.PubSub.subscribers(SecretHub.Web.PubSub, "agents")
+        |> length()
 
       :telemetry.execute(
         [:secrethub, :agents, :connected],

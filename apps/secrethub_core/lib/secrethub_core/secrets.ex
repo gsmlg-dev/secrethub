@@ -120,13 +120,17 @@ defmodule SecretHub.Core.Secrets do
           {:ok, %{secret: updated_secret}} ->
             Logger.info("Secret updated with version tracking",
               secret_id: secret_id,
-              new_version: updated_secret.version)
+              new_version: updated_secret.version
+            )
+
             {:ok, updated_secret}
 
           {:error, _step, reason, _changes} ->
             Logger.error("Failed to update secret",
               secret_id: secret_id,
-              reason: inspect(reason))
+              reason: inspect(reason)
+            )
+
             {:error, reason}
         end
     end
@@ -430,8 +434,7 @@ defmodule SecretHub.Core.Secrets do
         version_numbers: {v_a.version_number, v_b.version_number},
         changed_at: {v_a.archived_at, v_b.archived_at},
         metadata_diff: compare_maps(v_a.metadata || %{}, v_b.metadata || %{}),
-        data_size_diff:
-          SecretVersion.data_size(v_b) - SecretVersion.data_size(v_a),
+        data_size_diff: SecretVersion.data_size(v_b) - SecretVersion.data_size(v_a),
         created_by: {v_a.created_by, v_b.created_by},
         change_descriptions: {v_a.change_description, v_b.change_description}
       }
@@ -462,8 +465,8 @@ defmodule SecretHub.Core.Secrets do
       |> Enum.with_index()
       |> Enum.split_with(fn {version, index} ->
         # Keep recent versions (by index)
+        # Keep versions newer than cutoff
         index < keep_versions ||
-          # Keep versions newer than cutoff
           DateTime.compare(version.archived_at, cutoff_date) == :gt
       end)
 
@@ -484,7 +487,7 @@ defmodule SecretHub.Core.Secrets do
   end
 
   defp compare_maps(map_a, map_b) do
-    all_keys = Map.keys(map_a) ++ Map.keys(map_b)  |> Enum.uniq()
+    all_keys = (Map.keys(map_a) ++ Map.keys(map_b)) |> Enum.uniq()
 
     Enum.reduce(all_keys, %{added: [], removed: [], changed: []}, fn key, acc ->
       cond do

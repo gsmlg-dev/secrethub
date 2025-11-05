@@ -11,9 +11,9 @@ defmodule SecretHub.Core.Application do
 
     children =
       cache_children() ++
-      repo_children() ++
-      seal_state_children() ++
-      lease_manager_children()
+        repo_children() ++
+        seal_state_children() ++
+        lease_manager_children()
 
     opts = [strategy: :one_for_one, name: SecretHub.Core.Supervisor]
     result = Supervisor.start_link(children, opts)

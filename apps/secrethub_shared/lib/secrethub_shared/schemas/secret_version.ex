@@ -19,14 +19,14 @@ defmodule SecretHub.Shared.Schemas.SecretVersion do
   @foreign_key_type :binary_id
 
   schema "secret_versions" do
-    belongs_to :secret, Secret
-    field :version_number, :integer
-    field :encrypted_data, :binary
-    field :metadata, :map
-    field :description, :string
-    field :created_by, :string
-    field :change_description, :string
-    field :archived_at, :utc_datetime
+    belongs_to(:secret, Secret)
+    field(:version_number, :integer)
+    field(:encrypted_data, :binary)
+    field(:metadata, :map)
+    field(:description, :string)
+    field(:created_by, :string)
+    field(:change_description, :string)
+    field(:archived_at, :utc_datetime)
 
     timestamps(type: :utc_datetime, updated_at: false)
   end

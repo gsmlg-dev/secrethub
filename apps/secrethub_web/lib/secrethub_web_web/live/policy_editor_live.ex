@@ -37,7 +37,8 @@ defmodule SecretHub.WebWeb.PolicyEditorLive do
           "description" => policy.description || "",
           "deny_policy" => policy.deny_policy || false,
           "allowed_secrets" => get_in(policy.policy_document, ["allowed_secrets"]) || [],
-          "allowed_operations" => get_in(policy.policy_document, ["allowed_operations"]) || ["read"],
+          "allowed_operations" =>
+            get_in(policy.policy_document, ["allowed_operations"]) || ["read"],
           "conditions" => get_in(policy.policy_document, ["conditions"]) || %{},
           "entity_bindings" => policy.entity_bindings || []
         }
@@ -323,15 +324,15 @@ defmodule SecretHub.WebWeb.PolicyEditorLive do
             <div class="p-6">
               <%= case @active_tab do %>
                 <% "basic" -> %>
-                  <%= render_basic_tab(assigns) %>
+                  {render_basic_tab(assigns)}
                 <% "secrets" -> %>
-                  <%= render_secrets_tab(assigns) %>
+                  {render_secrets_tab(assigns)}
                 <% "operations" -> %>
-                  <%= render_operations_tab(assigns) %>
+                  {render_operations_tab(assigns)}
                 <% "conditions" -> %>
-                  <%= render_conditions_tab(assigns) %>
+                  {render_conditions_tab(assigns)}
                 <% "entities" -> %>
-                  <%= render_entities_tab(assigns) %>
+                  {render_entities_tab(assigns)}
               <% end %>
             </div>
           </div>
@@ -373,8 +374,7 @@ defmodule SecretHub.WebWeb.PolicyEditorLive do
     <div class="space-y-6">
       <div>
         <label class="block text-sm font-medium text-gray-700">
-          Policy Name
-          <span class="text-red-500">*</span>
+          Policy Name <span class="text-red-500">*</span>
         </label>
         <input
           type="text"
@@ -431,13 +431,11 @@ defmodule SecretHub.WebWeb.PolicyEditorLive do
     <div class="space-y-6">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-2">
-          Allowed Secret Patterns
-          <span class="text-red-500">*</span>
+          Allowed Secret Patterns <span class="text-red-500">*</span>
         </label>
         <p class="text-sm text-gray-500 mb-4">
           Define which secrets this policy applies to using glob patterns.
-          Use <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">*</code>
-          to match any segment.
+          Use <code class="px-1 py-0.5 bg-gray-100 rounded text-xs">*</code> to match any segment.
         </p>
 
         <div class="flex gap-2 mb-3">
@@ -504,8 +502,7 @@ defmodule SecretHub.WebWeb.PolicyEditorLive do
     <div class="space-y-6">
       <div>
         <label class="block text-sm font-medium text-gray-700 mb-2">
-          Allowed Operations
-          <span class="text-red-500">*</span>
+          Allowed Operations <span class="text-red-500">*</span>
         </label>
         <p class="text-sm text-gray-500 mb-4">
           Select which operations are permitted by this policy.
@@ -632,7 +629,7 @@ defmodule SecretHub.WebWeb.PolicyEditorLive do
           phx-value-value={get_textarea_value("ip-ranges")}
           rows="3"
           class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm font-mono text-xs"
-          placeholder={"10.0.0.0/8\n192.168.1.0/24"}
+          placeholder="10.0.0.0/8\n192.168.1.0/24"
         >{format_ip_ranges(@form_data["conditions"])}</textarea>
         <p class="mt-1 text-xs text-gray-500">One CIDR block per line</p>
       </div>

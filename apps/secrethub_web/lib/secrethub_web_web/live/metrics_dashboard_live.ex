@@ -55,12 +55,12 @@ defmodule SecretHubWeb.MetricsDashboardLive do
         <:subtitle>Real-time system metrics and performance indicators</:subtitle>
         <:actions>
           <div class="text-sm text-gray-500">
-            Last updated: <%= Calendar.strftime(@last_updated, "%Y-%m-%d %H:%M:%S UTC") %>
+            Last updated: {Calendar.strftime(@last_updated, "%Y-%m-%d %H:%M:%S UTC")}
           </div>
         </:actions>
       </.header>
-
-      <!-- Audit Metrics -->
+      
+    <!-- Audit Metrics -->
       <div>
         <h2 class="text-lg font-semibold mb-4">Audit Logs</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -84,8 +84,8 @@ defmodule SecretHubWeb.MetricsDashboardLive do
           />
         </div>
       </div>
-
-      <!-- Secret Metrics -->
+      
+    <!-- Secret Metrics -->
       <div>
         <h2 class="text-lg font-semibold mb-4">Secret Operations</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -109,8 +109,8 @@ defmodule SecretHubWeb.MetricsDashboardLive do
           />
         </div>
       </div>
-
-      <!-- Rotation Metrics -->
+      
+    <!-- Rotation Metrics -->
       <div>
         <h2 class="text-lg font-semibold mb-4">Secret Rotation</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -128,8 +128,8 @@ defmodule SecretHubWeb.MetricsDashboardLive do
           />
         </div>
       </div>
-
-      <!-- Anomaly Detection Metrics -->
+      
+    <!-- Anomaly Detection Metrics -->
       <div>
         <h2 class="text-lg font-semibold mb-4">Anomaly Detection</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -147,8 +147,8 @@ defmodule SecretHubWeb.MetricsDashboardLive do
           />
         </div>
       </div>
-
-      <!-- Agent Metrics -->
+      
+    <!-- Agent Metrics -->
       <div>
         <h2 class="text-lg font-semibold mb-4">Agent Connectivity</h2>
         <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
@@ -160,8 +160,8 @@ defmodule SecretHubWeb.MetricsDashboardLive do
           />
         </div>
       </div>
-
-      <!-- Lease Metrics -->
+      
+    <!-- Lease Metrics -->
       <div>
         <h2 class="text-lg font-semibold mb-4">Dynamic Credentials</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -179,8 +179,8 @@ defmodule SecretHubWeb.MetricsDashboardLive do
           />
         </div>
       </div>
-
-      <!-- Engine Health -->
+      
+    <!-- Engine Health -->
       <div>
         <h2 class="text-lg font-semibold mb-4">Engine Health</h2>
         <div class="grid grid-cols-1 md:grid-cols-1 gap-4">
@@ -192,8 +192,8 @@ defmodule SecretHubWeb.MetricsDashboardLive do
           />
         </div>
       </div>
-
-      <!-- System Metrics -->
+      
+    <!-- System Metrics -->
       <div>
         <h2 class="text-lg font-semibold mb-4">System Status</h2>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -217,11 +217,11 @@ defmodule SecretHubWeb.MetricsDashboardLive do
 
   defp metric_card(assigns) do
     ~H"""
-    <div class={"rounded-lg border p-6 bg-white shadow-sm hover:shadow-md transition-shadow"}>
+    <div class="rounded-lg border p-6 bg-white shadow-sm hover:shadow-md transition-shadow">
       <div class="flex items-start justify-between">
         <div class="flex-1">
-          <p class="text-sm font-medium text-gray-600"><%= @title %></p>
-          <p class={"text-3xl font-bold mt-2 text-#{@color}-600"}><%= @value %></p>
+          <p class="text-sm font-medium text-gray-600">{@title}</p>
+          <p class={"text-3xl font-bold mt-2 text-#{@color}-600"}>{@value}</p>
         </div>
         <div class={"rounded-full p-3 bg-#{@color}-100"}>
           <.icon name={@icon} class={"h-6 w-6 text-#{@color}-600"} />

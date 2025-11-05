@@ -97,7 +97,8 @@ defmodule SecretHub.WebWeb.Plugs.AppRoleAuth do
     case DateTime.from_iso8601(login_at_str) do
       {:ok, login_at, _offset} ->
         now = DateTime.utc_now()
-        timeout_seconds = 30 * 60  # 30 minutes
+        # 30 minutes
+        timeout_seconds = 30 * 60
 
         DateTime.diff(now, login_at, :second) > timeout_seconds
 

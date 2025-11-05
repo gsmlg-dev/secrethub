@@ -19,7 +19,7 @@ defmodule SecretHub.Shared.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger, :crontab]
     ]
   end
 
@@ -28,6 +28,7 @@ defmodule SecretHub.Shared.MixProject do
     [
       {:ecto, "~> 3.12"},
       {:ecto_network, "~> 1.5"},
+      {:crontab, "~> 1.1"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]

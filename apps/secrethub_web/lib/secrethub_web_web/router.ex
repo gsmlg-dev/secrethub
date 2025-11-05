@@ -38,6 +38,7 @@ defmodule SecretHub.WebWeb.Router do
   # Rate-limited authentication pipeline
   pipeline :auth_api do
     plug :api
+
     plug SecretHub.WebWeb.Plugs.RateLimiter,
       max_requests: 5,
       window_ms: 60_000,

@@ -93,7 +93,10 @@ defmodule SecretHubWeb.AlertConfigurationLive do
         socket =
           socket
           |> assign(:configs, list_configs())
-          |> put_flash(:info, "Configuration #{if config.enabled, do: "disabled", else: "enabled"}")
+          |> put_flash(
+            :info,
+            "Configuration #{if config.enabled, do: "disabled", else: "enabled"}"
+          )
 
         {:noreply, socket}
 
@@ -129,17 +132,16 @@ defmodule SecretHubWeb.AlertConfigurationLive do
         <:subtitle>Configure alert routing and delivery channels</:subtitle>
         <:actions>
           <.button phx-click="new_config">
-            <.icon name="plus" class="h-5 w-5 mr-2" />
-            New Alert Route
+            <.icon name="plus" class="h-5 w-5 mr-2" /> New Alert Route
           </.button>
         </:actions>
       </.header>
-
-      <!-- Configuration Form -->
+      
+    <!-- Configuration Form -->
       <%= if @show_form do %>
         <div class="bg-white p-6 rounded-lg border shadow-sm">
           <h3 class="text-lg font-semibold mb-4">
-            <%= if @editing_config, do: "Edit Alert Route", else: "New Alert Route" %>
+            {if @editing_config, do: "Edit Alert Route", else: "New Alert Route"}
           </h3>
 
           <form phx-submit="save_config" class="space-y-4">
@@ -230,8 +232,8 @@ defmodule SecretHubWeb.AlertConfigurationLive do
           </form>
         </div>
       <% end %>
-
-      <!-- Configuration List -->
+      
+    <!-- Configuration List -->
       <div class="bg-white rounded-lg border shadow-sm overflow-hidden">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
@@ -260,14 +262,16 @@ defmodule SecretHubWeb.AlertConfigurationLive do
             <%= for config <- @configs do %>
               <tr>
                 <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="text-sm font-medium text-gray-900"><%= config.name %></div>
+                  <div class="text-sm font-medium text-gray-900">{config.name}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <.channel_badge type={config.channel_type} />
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <div class="text-sm text-gray-500">
-                    <%= if config.severity_filter == [], do: "All", else: Enum.join(config.severity_filter, ", ") %>
+                    {if config.severity_filter == [],
+                      do: "All",
+                      else: Enum.join(config.severity_filter, ", ")}
                   </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
@@ -275,7 +279,7 @@ defmodule SecretHubWeb.AlertConfigurationLive do
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   <%= if config.last_used_at do %>
-                    <%= Calendar.strftime(config.last_used_at, "%Y-%m-%d %H:%M") %>
+                    {Calendar.strftime(config.last_used_at, "%Y-%m-%d %H:%M")}
                   <% else %>
                     Never
                   <% end %>
@@ -287,7 +291,7 @@ defmodule SecretHubWeb.AlertConfigurationLive do
                       phx-value-id={config.id}
                       class="text-indigo-600 hover:text-indigo-900"
                     >
-                      <%= if config.enabled, do: "Disable", else: "Enable" %>
+                      {if config.enabled, do: "Disable", else: "Enable"}
                     </button>
                     <button
                       phx-click="edit_config"
@@ -320,8 +324,7 @@ defmodule SecretHubWeb.AlertConfigurationLive do
             </p>
             <div class="mt-6">
               <.button phx-click="new_config">
-                <.icon name="plus" class="h-5 w-5 mr-2" />
-                New Alert Route
+                <.icon name="plus" class="h-5 w-5 mr-2" /> New Alert Route
               </.button>
             </div>
           </div>
@@ -346,7 +349,7 @@ defmodule SecretHubWeb.AlertConfigurationLive do
 
     ~H"""
     <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-#{@color}-100 text-#{@color}-800"}>
-      <%= String.capitalize(to_string(@type)) %>
+      {String.capitalize(to_string(@type))}
     </span>
     """
   end
@@ -367,7 +370,7 @@ defmodule SecretHubWeb.AlertConfigurationLive do
 
   defp list_configs do
     AlertRoutingConfig
-    |> order_by([c], [desc: c.enabled, asc: c.name])
+    |> order_by([c], desc: c.enabled, asc: c.name)
     |> Repo.all()
   end
 
