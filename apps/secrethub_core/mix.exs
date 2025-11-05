@@ -39,6 +39,10 @@ defmodule SecretHub.Core.MixProject do
       {:crontab, "~> 1.1"},
       {:prometheus_ex, "~> 3.1"},
       {:redix, "~> 1.5"},
+      {:ex_aws, "~> 2.5"},
+      {:ex_aws_kms, "~> 2.3"},
+      {:ex_aws_sts, "~> 2.3"},
+      {:hackney, "~> 1.20"},
       {:secrethub_shared, in_umbrella: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

@@ -14,7 +14,6 @@ defmodule SecretHub.Core.Agents do
   require Logger
   import Ecto.Query
 
-  alias Ecto.{Changeset, Multi}
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.{Agent, AuditLog, Certificate, Lease, Policy}
 
@@ -24,9 +23,8 @@ defmodule SecretHub.Core.Agents do
   Bootstrap a new agent using RoleID/SecretID authentication.
   """
   def bootstrap_agent(role_id, secret_id, metadata \\ %{}) do
-    Multi.new(fn ->
-      # Validate bootstrap credentials
-      case validate_bootstrap_credentials(role_id, secret_id) do
+    # Validate bootstrap credentials
+    case validate_bootstrap_credentials(role_id, secret_id) do
         :ok ->
           # Check if agent already exists
           agent_id = generate_agent_id(metadata)
@@ -92,7 +90,6 @@ defmodule SecretHub.Core.Agents do
         {:error, reason} ->
           {:error, reason}
       end
-    end)
   end
 
   @doc """
@@ -166,8 +163,7 @@ defmodule SecretHub.Core.Agents do
   Suspend an agent (temporary disable).
   """
   def suspend_agent(agent_id, reason \\ nil) do
-    Multi.new(fn ->
-      case Repo.get_by(Agent, agent_id: agent_id) do
+    case Repo.get_by(Agent, agent_id: agent_id) do
         %Agent{} = agent ->
           # Suspend agent
           Agent.suspend_changeset(agent, reason)
@@ -196,15 +192,13 @@ defmodule SecretHub.Core.Agents do
         nil ->
           {:error, "Agent not found"}
       end
-    end)
   end
 
   @doc """
   Revoke an agent (permanent disable).
   """
   def revoke_agent(agent_id, reason \\ nil) do
-    Multi.new(fn ->
-      case Repo.get_by(Agent, agent_id: agent_id) do
+    case Repo.get_by(Agent, agent_id: agent_id) do
         %Agent{} = agent ->
           # Revoke agent
           Agent.revoke_changeset(agent, reason)
@@ -233,7 +227,6 @@ defmodule SecretHub.Core.Agents do
         nil ->
           {:error, "Agent not found"}
       end
-    end)
   end
 
   @doc """
@@ -416,12 +409,14 @@ defmodule SecretHub.Core.Agents do
     certificate_pem =
       "-----BEGIN CERTIFICATE-----\nMOCK_CERTIFICATE_DATA_#{cert_data.serial_number}\n-----END CERTIFICATE-----"
 
+    # Add certificate_pem and other required fields
+    cert_attrs = Map.put(cert_data, :certificate_pem, certificate_pem)
+    cert_attrs = Map.put(cert_attrs, :fingerprint, Certificate.fingerprint(nil))
+    cert_attrs = Map.put(cert_attrs, :issuer, "CN=SecretHub CA")
+
     certificate_changeset =
       %Certificate{}
-      |> Certificate.changeset(%{
-        cert_data
-        | certificate_pem: certificate_pem
-      })
+      |> Certificate.changeset(cert_attrs)
 
     Repo.insert(certificate_changeset)
   end

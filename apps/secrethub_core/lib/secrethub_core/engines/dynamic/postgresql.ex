@@ -75,7 +75,7 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
          {:ok, password} <- generate_password(),
          {:ok, conn} <- connect(connection_config),
          :ok <- create_user(conn, config, username, password, ttl),
-         :ok <- Postgrex.close(conn) do
+         :ok <- (GenServer.stop(conn); :ok) do
       Logger.info("Generated PostgreSQL credentials",
         role: role_name,
         username: username,
@@ -124,7 +124,7 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
     with {:ok, connection_config} <- validate_connection_config(config),
          {:ok, conn} <- connect(connection_config),
          :ok <- revoke_user(conn, config, username),
-         :ok <- Postgrex.close(conn) do
+         :ok <- (GenServer.stop(conn); :ok) do
       Logger.info("Revoked PostgreSQL credentials",
         lease_id: lease_id,
         username: username

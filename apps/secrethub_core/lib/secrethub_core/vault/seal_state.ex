@@ -25,7 +25,6 @@ defmodule SecretHub.Core.Vault.SealState do
 
   # Auto-seal after 30 seconds of no activity
   @unseal_timeout_ms 30_000
-  @max_unseal_attempts 5
 
   defmodule State do
     @moduledoc false

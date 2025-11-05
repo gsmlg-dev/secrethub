@@ -169,10 +169,12 @@ defmodule SecretHub.Core.AutoUnseal.Providers.AWSKMS do
     operation_result =
       case operation do
         :encrypt ->
-          ExAws.KMS.encrypt(params)
+          # ExAws.KMS.encrypt/2 takes (key_id, plaintext)
+          ExAws.KMS.encrypt(params["KeyId"], params["Plaintext"])
 
         :decrypt ->
-          ExAws.KMS.decrypt(params)
+          # ExAws.KMS.decrypt/1 takes (ciphertext_blob)
+          ExAws.KMS.decrypt(params["CiphertextBlob"])
       end
 
     # Execute the request

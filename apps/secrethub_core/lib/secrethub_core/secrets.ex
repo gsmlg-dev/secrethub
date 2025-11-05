@@ -19,11 +19,11 @@ defmodule SecretHub.Core.Secrets do
   require Logger
   import Ecto.Query
 
-  alias Ecto.{Changeset, Multi}
+  alias Ecto.Multi
   alias SecretHub.Core.{Audit, Policies, Repo}
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
-  alias SecretHub.Shared.Schemas.{AuditLog, Policy, Secret, SecretVersion}
+  alias SecretHub.Shared.Schemas.{Secret, SecretVersion}
 
   @doc """
   Create a new static secret with encryption.
@@ -349,11 +349,8 @@ defmodule SecretHub.Core.Secrets do
 
   ## Version Management Functions
 
-  @doc """
-  Archives the current version of a secret before updating.
-
-  This function is called automatically by `update_secret/3`.
-  """
+  # Archives the current version of a secret before updating.
+  # This function is called automatically by `update_secret/3`.
   defp archive_current_version(repo, secret, created_by, change_description) do
     version =
       SecretVersion.from_secret(secret, created_by, change_description)

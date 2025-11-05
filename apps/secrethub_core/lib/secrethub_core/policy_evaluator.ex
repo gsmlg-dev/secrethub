@@ -11,8 +11,6 @@ defmodule SecretHub.Core.PolicyEvaluator do
   require Logger
   import Bitwise
 
-  alias SecretHub.Shared.Schemas.Policy
-
   @doc """
   Evaluates if a policy allows access given a context.
 

@@ -75,7 +75,7 @@ defmodule SecretHub.Core.Rotation.DatabasePassword do
          {:ok, new_password} <- generate_new_password(config),
          {:ok, conn} <- connect_as_admin(conn_config) do
       if dry_run do
-        Postgrex.close(conn)
+        GenServer.stop(conn)
         {:ok, %{dry_run: true, message: "Validation successful, no changes made"}}
       else
         perform_rotation(conn, target_username, new_password, schedule)
@@ -229,7 +229,7 @@ defmodule SecretHub.Core.Rotation.DatabasePassword do
          :ok <- wait_grace_period(schedule.grace_period_seconds),
          :ok <- verify_new_password(conn, username) do
       duration_ms = System.monotonic_time(:millisecond) - start_time
-      Postgrex.close(conn)
+      GenServer.stop(conn)
 
       Logger.info("Database password rotation completed",
         schedule_id: schedule.id,
@@ -249,7 +249,7 @@ defmodule SecretHub.Core.Rotation.DatabasePassword do
        }}
     else
       {:error, reason} = error ->
-        Postgrex.close(conn)
+        GenServer.stop(conn)
         error
     end
   end

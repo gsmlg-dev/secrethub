@@ -369,6 +369,64 @@ defmodule SecretHub.Core.Audit do
     |> Enum.map_join("\n", &Enum.join(&1, ","))
   end
 
+  @doc """
+  List audit logs for verification (hash chain verification worker).
+
+  Returns logs older than the cutoff date that need verification.
+
+  ## Options
+
+  - `:limit` - Maximum number of logs to return (default: 1000)
+  """
+  @spec list_logs_for_verification(DateTime.t(), keyword()) :: [AuditLog.t()]
+  def list_logs_for_verification(cutoff_date, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 1000)
+
+    query =
+      from(a in AuditLog,
+        where: a.timestamp < ^cutoff_date,
+        order_by: [asc: a.sequence_number],
+        limit: ^limit
+      )
+
+    Repo.all(query)
+  end
+
+  @doc """
+  List audit logs for archival (audit archival worker).
+
+  Returns logs older than the cutoff date that need to be archived.
+
+  ## Options
+
+  - `:limit` - Maximum number of logs to return (default: 10000)
+  """
+  @spec list_logs_for_archival(DateTime.t(), keyword()) :: [AuditLog.t()]
+  def list_logs_for_archival(cutoff_date, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 10_000)
+
+    query =
+      from(a in AuditLog,
+        where: a.timestamp < ^cutoff_date,
+        order_by: [asc: a.sequence_number],
+        limit: ^limit
+      )
+
+    Repo.all(query)
+  end
+
+  @doc """
+  Mark audit logs as archived.
+
+  Updates the archived status of logs with the given IDs.
+  """
+  @spec mark_as_archived([binary()]) :: {integer(), nil | [term()]}
+  def mark_as_archived(log_ids) when is_list(log_ids) do
+    query = from(a in AuditLog, where: a.id in ^log_ids)
+
+    Repo.update_all(query, set: [archived: true, archived_at: DateTime.utc_now()])
+  end
+
   ## Private Functions
 
   defp calculate_entry_hash(attrs) do

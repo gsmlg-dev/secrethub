@@ -257,19 +257,10 @@ defmodule SecretHub.Core.Shutdown do
 
   defp get_cowboy_connections do
     # Get all ranch listener connections
-    # This is a simplified version - in production you might want to track this more carefully
-    case :ranch.info() do
-      listeners when is_list(listeners) ->
-        Enum.reduce(listeners, 0, fn {_ref, info}, acc ->
-          all_conns = Keyword.get(info, :all_connections, 0)
-          acc + all_conns
-        end)
-
-      _ ->
-        0
-    end
-  rescue
-    _ -> 0
+    # Note: :ranch.info/0 doesn't exist - we'd need specific listener refs for :ranch.info/1
+    # This is a simplified version - in production you might want to track listeners explicitly
+    # For now, return 0 and let the timeout-based graceful shutdown handle connection draining
+    0
   end
 
   defp get_oban_status do
