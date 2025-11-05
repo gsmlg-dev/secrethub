@@ -9,10 +9,10 @@ config :secrethub_core, start_seal_state: false
 # Configure the database
 config :secrethub_core, SecretHub.Core.Repo,
   username: "secrethub",
-  password: "secrethub_dev_password",
-  hostname: "localhost",
+  password: System.get_env("DATABASE_PASSWORD", "secrethub_test_password"),
+  hostname: System.get_env("DATABASE_HOST", "localhost"),
   database: "secrethub_test#{System.get_env("MIX_TEST_PARTITION")}",
-  port: 5432,
+  port: String.to_integer(System.get_env("DATABASE_PORT", "5432")),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
 
