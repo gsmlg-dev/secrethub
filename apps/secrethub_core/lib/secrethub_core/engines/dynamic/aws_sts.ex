@@ -275,10 +275,11 @@ defmodule SecretHub.Core.Engines.Dynamic.AWSSTS do
       end
 
     # Merge all parameters for assume_role/2
-    options = Map.merge(params, %{
-      "RoleSessionName" => session_name,
-      "DurationSeconds" => duration_seconds
-    })
+    options =
+      Map.merge(params, %{
+        "RoleSessionName" => session_name,
+        "DurationSeconds" => duration_seconds
+      })
 
     case ExAws.STS.assume_role(role_arn, options)
          |> ExAws.request(aws_config) do
