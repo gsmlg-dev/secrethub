@@ -184,7 +184,7 @@ defmodule SecretHub.Core.Rotation.DatabasePassword do
     end
   end
 
-  defp validate_current_password(conn_config, username) do
+  defp validate_current_password(_conn_config, username) do
     # Try to connect with the current credentials to verify they work
     # This is a placeholder - in production, you'd query pg_authid or similar
     Logger.debug("Validating current password for user", username: username)
@@ -248,7 +248,7 @@ defmodule SecretHub.Core.Rotation.DatabasePassword do
          }
        }}
     else
-      {:error, reason} = error ->
+      {:error, _reason} = error ->
         GenServer.stop(conn)
         error
     end

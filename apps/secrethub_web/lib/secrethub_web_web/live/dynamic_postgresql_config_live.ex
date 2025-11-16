@@ -10,7 +10,6 @@ defmodule SecretHub.WebWeb.DynamicPostgreSQLConfigLive do
   - Manage role-based permissions
   """
   use SecretHub.WebWeb, :live_view
-  alias SecretHub.Core.Engines.Dynamic.PostgreSQL
   require Logger
 
   @impl true

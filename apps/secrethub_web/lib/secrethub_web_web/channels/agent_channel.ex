@@ -32,8 +32,6 @@ defmodule SecretHub.WebWeb.AgentChannel do
   alias SecretHub.Core.Auth.AppRole
   alias SecretHub.Core.Secrets
 
-  # 30 seconds
-  @heartbeat_interval 30_000
   # 90 seconds (3 missed heartbeats)
   @heartbeat_timeout 90_000
 
@@ -222,9 +220,7 @@ defmodule SecretHub.WebWeb.AgentChannel do
     {:reply, {:error, %{reason: "invalid_csr_payload"}}, socket}
   end
 
-  @doc """
-  Handles unknown messages.
-  """
+  # Catch-all clause for unknown messages
   def handle_in(event, payload, socket) do
     Logger.warning("Unknown event received: #{event} with payload: #{inspect(payload)}")
     {:reply, {:error, %{reason: "unknown_event"}}, socket}

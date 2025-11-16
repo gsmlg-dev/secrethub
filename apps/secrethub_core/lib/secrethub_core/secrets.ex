@@ -397,7 +397,7 @@ defmodule SecretHub.Core.Secrets do
   def rollback_secret(secret_id, target_version_number, opts \\ []) do
     created_by = Keyword.get(opts, :created_by, "system")
 
-    with {:ok, secret} <- get_secret(secret_id),
+    with {:ok, _secret} <- get_secret(secret_id),
          {:ok, target_version} <- get_secret_version(secret_id, target_version_number) do
       # Update with the old version's data
       attrs = %{

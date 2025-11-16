@@ -4,6 +4,7 @@ defmodule SecretHub.WebWeb.AgentDetailsComponent do
   """
 
   use SecretHub.WebWeb, :live_component
+  require Logger
 
   @impl true
   def update(assigns, socket) do

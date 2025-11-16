@@ -415,7 +415,7 @@ defmodule SecretHub.WebWeb.LeaseViewerLive do
   # Private helper functions
 
   defp load_leases(socket) do
-    case LeaseManager.list_leases() do
+    case LeaseManager.list_active_leases() do
       {:ok, leases} ->
         stats = calculate_stats(leases)
 

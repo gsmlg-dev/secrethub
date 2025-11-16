@@ -246,9 +246,9 @@ defmodule SecretHub.WebWeb.TemplateManagementLive do
         socket
       ) do
     try do
-      mock_data = Jason.decode!(mock_data_json)
+      _mock_data = Jason.decode!(mock_data_json)
 
-      # TODO: Call Agent's template preview API
+      # TODO: Call Agent's template preview API (will use _mock_data)
       socket =
         socket
         |> assign(:preview_content, "Preview: #{content}")

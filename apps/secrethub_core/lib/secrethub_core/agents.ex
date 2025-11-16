@@ -471,7 +471,7 @@ defmodule SecretHub.Core.Agents do
     end)
   end
 
-  defp audit_agent_action(agent_id, action, success, event_data \\ %{}) do
+  defp audit_agent_action(agent_id, action, success, event_data) do
     # Get next sequence number (simplified - in production use database sequence)
     sequence_num = :erlang.system_time(:millisecond)
 

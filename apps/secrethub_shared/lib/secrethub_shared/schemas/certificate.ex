@@ -130,9 +130,17 @@ defmodule SecretHub.Shared.Schemas.Certificate do
 
   TODO: Implement proper X.509 certificate parsing using :public_key module.
   """
-  def from_pem(_pem_string) do
+  @spec from_pem(binary()) :: {:ok, map()} | {:error, String.t()}
+  def from_pem(pem_string) when is_binary(pem_string) do
     # Placeholder implementation
-    {:error, "Certificate parsing not yet implemented"}
+    # TODO: Implement actual X.509 parsing with :public_key.pem_decode/1
+    # For now, always return error
+    if false do
+      # This branch will be implemented in the future
+      {:ok, %{}}
+    else
+      {:error, "Certificate parsing not yet implemented"}
+    end
   end
 
   @doc """

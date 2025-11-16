@@ -1,4 +1,4 @@
-defmodule SecretHubWeb.AlertConfigurationLive do
+defmodule SecretHub.WebWeb.AlertConfigurationLive do
   @moduledoc """
   LiveView for managing alert routing configurations.
 

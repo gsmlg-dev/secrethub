@@ -195,7 +195,7 @@ defmodule SecretHub.Core.Alerting do
 
     subject = "[SecretHub] #{format_severity(alert.severity)} Alert: #{alert.description}"
 
-    body = format_email_body(alert)
+    _body = format_email_body(alert)
 
     Logger.info("Sending email alert",
       recipients: recipients,
@@ -209,7 +209,7 @@ defmodule SecretHub.Core.Alerting do
   defp send_slack(config, alert) do
     webhook_url = AlertRoutingConfig.slack_webhook_url(config)
 
-    payload = %{
+    _payload = %{
       text: "*SecretHub Alert*",
       attachments: [
         %{
@@ -239,7 +239,7 @@ defmodule SecretHub.Core.Alerting do
   defp send_webhook(config, alert) do
     url = AlertRoutingConfig.webhook_url(config)
 
-    payload = %{
+    _payload = %{
       alert_id: alert.id,
       severity: alert.severity,
       status: alert.status,

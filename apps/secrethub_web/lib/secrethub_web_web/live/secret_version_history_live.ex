@@ -11,8 +11,8 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
 
   use SecretHub.WebWeb, :live_view
 
-  alias SecretHub.Core.{Repo, Secrets}
-  alias SecretHub.Shared.Schemas.{Secret, SecretVersion}
+  alias SecretHub.Core.Secrets
+  alias SecretHub.Shared.Schemas.SecretVersion
 
   @impl true
   def mount(%{"id" => secret_id}, _session, socket) do

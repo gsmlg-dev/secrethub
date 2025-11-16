@@ -14,7 +14,6 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
   require Logger
 
   alias SecretHub.Core.{Agents, Policies}
-  alias SecretHub.Shared.Schemas.Policy
 
   @impl true
   def mount(_params, _session, socket) do

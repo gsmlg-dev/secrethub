@@ -1,4 +1,4 @@
-defmodule SecretHubWeb.AnomalyDetectionLive do
+defmodule SecretHub.WebWeb.AnomalyDetectionLive do
   @moduledoc """
   LiveView for anomaly detection dashboard.
 
@@ -11,7 +11,7 @@ defmodule SecretHubWeb.AnomalyDetectionLive do
 
   use SecretHub.WebWeb, :live_view
 
-  alias SecretHub.Core.{AnomalyDetection, Alerting}
+  alias SecretHub.Core.Alerting
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.{AnomalyDetectionRule, AnomalyAlert}
 

@@ -355,7 +355,7 @@ defmodule SecretHub.WebWeb.LeaseDashboardLive do
   end
 
   defp load_upcoming_renewals do
-    case LeaseManager.list_leases() do
+    case LeaseManager.list_active_leases() do
       {:ok, leases} ->
         now = DateTime.utc_now()
 
@@ -366,7 +366,7 @@ defmodule SecretHub.WebWeb.LeaseDashboardLive do
           remaining > 0 && remaining < threshold
         end)
         |> Enum.map(fn lease ->
-          remaining = DateTime.diff(lease.expires_at, now)
+          _remaining = DateTime.diff(lease.expires_at, now)
           renewal_threshold = lease.lease_duration * 0.33
           renewal_time = DateTime.add(lease.expires_at, -trunc(renewal_threshold), :second)
 
@@ -392,7 +392,7 @@ defmodule SecretHub.WebWeb.LeaseDashboardLive do
   end
 
   defp load_engine_breakdown do
-    case LeaseManager.list_leases() do
+    case LeaseManager.list_active_leases() do
       {:ok, leases} ->
         total = length(leases)
 

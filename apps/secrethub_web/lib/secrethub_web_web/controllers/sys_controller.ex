@@ -122,6 +122,12 @@ defmodule SecretHub.WebWeb.SysController do
     end
   end
 
+  def unseal(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "Missing 'share' parameter"})
+  end
+
   defp log_unseal_status(%{sealed: false}), do: Logger.info("Vault successfully unsealed")
 
   defp log_unseal_status(%{progress: progress, threshold: threshold}) do
@@ -134,12 +140,6 @@ defmodule SecretHub.WebWeb.SysController do
     conn
     |> put_status(:bad_request)
     |> json(%{error: reason})
-  end
-
-  def unseal(conn, _params) do
-    conn
-    |> put_status(:bad_request)
-    |> json(%{error: "Missing 'share' parameter"})
   end
 
   @doc """

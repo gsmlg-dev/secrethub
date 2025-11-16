@@ -658,8 +658,6 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
   end
 
   defp rotation_type_badge(assigns) do
-    type_str = to_string(assigns.type)
-
     color =
       case assigns.type do
         :database_password -> "badge-info"
@@ -686,8 +684,6 @@ defmodule SecretHub.WebWeb.RotationScheduleLive do
   end
 
   defp rotation_status_badge(assigns) do
-    status_str = to_string(assigns.status)
-
     color =
       case assigns.status do
         :success -> "badge-success"

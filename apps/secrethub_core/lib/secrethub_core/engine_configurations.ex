@@ -279,7 +279,7 @@ defmodule SecretHub.Core.EngineConfigurations do
 
   # Private helper functions
 
-  defp check_postgresql_health(config) do
+  defp check_postgresql_health(_config) do
     # TODO: Implement actual PostgreSQL health check
     # For now, return healthy
     {:ok, :healthy}
@@ -373,7 +373,7 @@ defmodule SecretHub.Core.EngineConfigurations do
       {:error, Exception.message(e)}
   end
 
-  defp test_postgresql_connection(config) do
+  defp test_postgresql_connection(_config) do
     # TODO: Implement actual connection test
     :ok
   rescue
