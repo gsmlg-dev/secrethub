@@ -903,6 +903,7 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
     policy = assigns
 
     conditions = get_in(policy.policy_document, ["conditions"]) || %{}
+    assigns = assign(assigns, :conditions, conditions)
 
     cond do
       map_size(conditions) == 0 ->
@@ -910,24 +911,24 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
 
       true ->
         ~H"""
-        <%= if Map.has_key?(conditions, "time_of_day") do %>
+        <%= if Map.has_key?(@conditions, "time_of_day") do %>
           <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-            Time: {conditions["time_of_day"]}
+            Time: {@conditions["time_of_day"]}
           </span>
         <% end %>
-        <%= if Map.has_key?(conditions, "days_of_week") do %>
+        <%= if Map.has_key?(@conditions, "days_of_week") do %>
           <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-            Days: {length(conditions["days_of_week"])}
+            Days: {length(@conditions["days_of_week"])}
           </span>
         <% end %>
-        <%= if Map.has_key?(conditions, "ip_ranges") do %>
+        <%= if Map.has_key?(@conditions, "ip_ranges") do %>
           <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
             IP Restricted
           </span>
         <% end %>
-        <%= if Map.has_key?(conditions, "max_ttl_seconds") do %>
+        <%= if Map.has_key?(@conditions, "max_ttl_seconds") do %>
           <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-            Max TTL: {conditions["max_ttl_seconds"]}s
+            Max TTL: {@conditions["max_ttl_seconds"]}s
           </span>
         <% end %>
         """
