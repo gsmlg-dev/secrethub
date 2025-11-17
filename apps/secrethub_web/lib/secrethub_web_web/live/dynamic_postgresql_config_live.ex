@@ -120,22 +120,18 @@ defmodule SecretHub.WebWeb.DynamicPostgreSQLConfigLive do
       {:ok, valid_config} ->
         role_name = form_data.role_name
 
-        case save_role_config(role_name, valid_config, socket.assigns.form_mode) do
-          :ok ->
-            socket =
-              socket
-              |> assign(:roles, list_roles())
-              |> assign(:form_mode, :list)
-              |> assign(:selected_role, nil)
-              |> assign(:form_data, default_form_data())
-              |> assign(:validation_errors, %{})
-              |> put_flash(:info, "Role '#{role_name}' saved successfully")
+        :ok = save_role_config(role_name, valid_config, socket.assigns.form_mode)
 
-            {:noreply, socket}
+        socket =
+          socket
+          |> assign(:roles, list_roles())
+          |> assign(:form_mode, :list)
+          |> assign(:selected_role, nil)
+          |> assign(:form_data, default_form_data())
+          |> assign(:validation_errors, %{})
+          |> put_flash(:info, "Role '#{role_name}' saved successfully")
 
-          {:error, reason} ->
-            {:noreply, put_flash(socket, :error, "Failed to save role: #{inspect(reason)}")}
-        end
+        {:noreply, socket}
 
       {:error, errors} ->
         socket =
@@ -149,18 +145,14 @@ defmodule SecretHub.WebWeb.DynamicPostgreSQLConfigLive do
 
   @impl true
   def handle_event("delete_role", %{"role" => role_name}, socket) do
-    case delete_role_config(role_name) do
-      :ok ->
-        socket =
-          socket
-          |> assign(:roles, list_roles())
-          |> put_flash(:info, "Role '#{role_name}' deleted successfully")
+    :ok = delete_role_config(role_name)
 
-        {:noreply, socket}
+    socket =
+      socket
+      |> assign(:roles, list_roles())
+      |> put_flash(:info, "Role '#{role_name}' deleted successfully")
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to delete role: #{inspect(reason)}")}
-    end
+    {:noreply, socket}
   end
 
   @impl true

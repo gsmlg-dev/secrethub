@@ -171,50 +171,12 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
 
   @impl true
   def handle_info({:save_secret, secret_params}, socket) do
-    case create_secret(socket, secret_params) do
-      {:ok, _secret} ->
-        secrets = fetch_secrets()
-
-        socket =
-          socket
-          |> assign(:secrets, secrets)
-          |> assign(:show_form, false)
-          |> put_flash(:info, "Secret created successfully")
-          |> push_patch(to: "/admin/secrets")
-
-        {:noreply, socket}
-
-      {:error, _changeset} ->
-        socket =
-          socket
-          |> put_flash(:error, "Failed to create secret")
-
-        {:noreply, socket}
-    end
+    create_secret(socket, secret_params)
   end
 
   @impl true
   def handle_info({:update_secret, secret_id, secret_params}, socket) do
-    case update_secret(socket, secret_id, secret_params) do
-      {:ok, _secret} ->
-        secrets = fetch_secrets()
-
-        socket =
-          socket
-          |> assign(:secrets, secrets)
-          |> assign(:show_form, false)
-          |> put_flash(:info, "Secret updated successfully")
-          |> push_patch(to: "/admin/secrets")
-
-        {:noreply, socket}
-
-      {:error, _changeset} ->
-        socket =
-          socket
-          |> put_flash(:error, "Failed to update secret")
-
-        {:noreply, socket}
-    end
+    update_secret(socket, secret_id, secret_params)
   end
 
   @impl true
