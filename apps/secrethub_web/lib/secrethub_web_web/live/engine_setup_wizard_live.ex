@@ -65,24 +65,6 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
   end
 
   @impl true
-  def handle_info(:perform_connection_test, socket) do
-    config = build_config(socket.assigns.engine_type, socket.assigns.form_data)
-
-    result =
-      case EngineConfigurations.test_connection(socket.assigns.engine_type, config) do
-        :ok -> {:success, "Connection successful!"}
-        {:error, reason} -> {:error, reason}
-      end
-
-    socket =
-      socket
-      |> assign(:testing, false)
-      |> assign(:test_result, result)
-
-    {:noreply, socket}
-  end
-
-  @impl true
   def handle_event("save_configuration", _params, socket) do
     config = build_config(socket.assigns.engine_type, socket.assigns.form_data)
 
@@ -107,6 +89,24 @@ defmodule SecretHub.WebWeb.EngineSetupWizardLive do
         errors = extract_errors(changeset)
         {:noreply, assign(socket, :errors, errors)}
     end
+  end
+
+  @impl true
+  def handle_info(:perform_connection_test, socket) do
+    config = build_config(socket.assigns.engine_type, socket.assigns.form_data)
+
+    result =
+      case EngineConfigurations.test_connection(socket.assigns.engine_type, config) do
+        :ok -> {:success, "Connection successful!"}
+        {:error, reason} -> {:error, reason}
+      end
+
+    socket =
+      socket
+      |> assign(:testing, false)
+      |> assign(:test_result, result)
+
+    {:noreply, socket}
   end
 
   # Private helpers

@@ -54,40 +54,6 @@ defmodule SecretHub.WebWeb.EngineHealthDashboardLive do
   end
 
   @impl true
-  def handle_event("toggle_refresh", _params, socket) do
-    new_auto_refresh = !socket.assigns.auto_refresh
-
-    if new_auto_refresh do
-      schedule_refresh()
-    end
-
-    {:noreply, assign(socket, :auto_refresh, new_auto_refresh)}
-  end
-
-  @impl true
-  def handle_event("change_time_range", %{"days" => days}, socket) do
-    time_range = String.to_integer(days)
-
-    socket =
-      socket
-      |> assign(:time_range, time_range)
-      |> load_health_data()
-
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_event("refresh_now", _params, socket) do
-    {:noreply, load_health_data(socket)}
-  end
-
-  @impl true
-  def handle_event("run_health_check", _params, socket) do
-    send(self(), :perform_health_check)
-    {:noreply, assign(socket, :checking, true)}
-  end
-
-  @impl true
   def handle_info(:perform_health_check, socket) do
     config = socket.assigns.config
 
@@ -133,6 +99,40 @@ defmodule SecretHub.WebWeb.EngineHealthDashboardLive do
       end
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("toggle_refresh", _params, socket) do
+    new_auto_refresh = !socket.assigns.auto_refresh
+
+    if new_auto_refresh do
+      schedule_refresh()
+    end
+
+    {:noreply, assign(socket, :auto_refresh, new_auto_refresh)}
+  end
+
+  @impl true
+  def handle_event("change_time_range", %{"days" => days}, socket) do
+    time_range = String.to_integer(days)
+
+    socket =
+      socket
+      |> assign(:time_range, time_range)
+      |> load_health_data()
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("refresh_now", _params, socket) do
+    {:noreply, load_health_data(socket)}
+  end
+
+  @impl true
+  def handle_event("run_health_check", _params, socket) do
+    send(self(), :perform_health_check)
+    {:noreply, assign(socket, :checking, true)}
   end
 
   # Private helpers
