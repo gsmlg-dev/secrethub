@@ -183,8 +183,10 @@ defmodule SecretHub.WebWeb.EngineHealthDashboardLive do
         """
 
       _ ->
+        assigns = assign(assigns, :status, status)
+
         ~H"""
-        <span class="badge badge-ghost badge-lg">{to_string(status)}</span>
+        <span class="badge badge-ghost badge-lg">{to_string(@status)}</span>
         """
     end
   end
