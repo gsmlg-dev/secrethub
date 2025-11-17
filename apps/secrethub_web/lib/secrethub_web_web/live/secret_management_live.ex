@@ -399,29 +399,19 @@ defmodule SecretHub.WebWeb.SecretManagementLive do
   end
 
   defp update_secret(socket, secret_id, secret_params) do
-    case Secret.update(secret_id, secret_params) do
-      {:ok, secret} ->
-        Logger.info("Updated secret: #{secret.id}")
+    {:ok, secret} = Secret.update(secret_id, secret_params)
+    Logger.info("Updated secret: #{secret.id}")
 
-        secrets = fetch_secrets()
+    secrets = fetch_secrets()
 
-        socket =
-          socket
-          |> assign(:secrets, secrets)
-          |> assign(:show_form, false)
-          |> put_flash(:info, "Secret updated successfully")
-          |> push_patch(to: "/admin/secrets")
+    socket =
+      socket
+      |> assign(:secrets, secrets)
+      |> assign(:show_form, false)
+      |> put_flash(:info, "Secret updated successfully")
+      |> push_patch(to: "/admin/secrets")
 
-        {:noreply, socket}
-
-      {:error, changeset} ->
-        socket =
-          socket
-          |> assign(:form_changeset, changeset)
-          |> put_flash(:error, "Failed to update secret")
-
-        {:noreply, socket}
-    end
+    {:noreply, socket}
   end
 
   defp fetch_secrets do

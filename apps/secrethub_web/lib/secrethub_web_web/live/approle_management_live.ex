@@ -95,7 +95,7 @@ defmodule SecretHub.WebWeb.AppRoleManagementLive do
   @impl true
   def handle_event("delete_role", %{"role_id" => role_id}, socket) do
     case AppRole.delete_role(role_id) do
-      {:ok, _} ->
+      :ok ->
         socket =
           socket
           |> assign(:roles, list_approles())

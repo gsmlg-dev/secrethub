@@ -99,6 +99,12 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
   end
 
   @impl true
+  def handle_event("noop", _params, socket) do
+    # No-op event handler to prevent event propagation
+    {:noreply, socket}
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div class="px-4 sm:px-6 lg:px-8">
@@ -272,7 +278,7 @@ defmodule SecretHub.WebWeb.RotationHistoryLive do
 
         <div
           class="inline-block overflow-hidden text-left align-bottom transition-all transform bg-white rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full"
-          phx-click={JS.stop_propagation()}
+          phx-click="noop"
         >
           <div class="px-4 pt-5 pb-4 bg-white sm:p-6 sm:pb-4">
             <div class="sm:flex sm:items-start">

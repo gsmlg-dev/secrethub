@@ -243,20 +243,14 @@ defmodule SecretHub.WebWeb.Telemetry do
   """
   def measure_agent_connections do
     # This will need to be implemented based on how agents are tracked
-    # For now, we'll check for Phoenix.PubSub subscribers
-    try do
-      # Count subscribers to agent channels
-      count =
-        Phoenix.PubSub.subscribers(SecretHub.Web.PubSub, "agents")
-        |> length()
+    # TODO: Implement proper agent connection counting via Registry or ETS
+    # Phoenix.PubSub doesn't expose subscribers/2 function
+    count = 0
 
-      :telemetry.execute(
-        [:secrethub, :agents, :connected],
-        %{count: count},
-        %{}
-      )
-    rescue
-      _ -> :ok
-    end
+    :telemetry.execute(
+      [:secrethub, :agents, :connected],
+      %{count: count},
+      %{}
+    )
   end
 end

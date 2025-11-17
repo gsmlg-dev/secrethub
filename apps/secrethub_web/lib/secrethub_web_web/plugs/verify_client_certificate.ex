@@ -165,11 +165,6 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificate do
 
             send_unauthorized(conn, "Certificate revoked")
             return(conn)
-
-          {:error, reason} ->
-            Logger.error("Failed to check revocation status: #{inspect(reason)}")
-            # Continue anyway - revocation check failure shouldn't block
-            :ok
         end
       end
 

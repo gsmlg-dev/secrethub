@@ -269,16 +269,11 @@ defmodule SecretHub.WebWeb.AgentChannel do
     end
   end
 
-  defp get_source_ip(socket) do
+  defp get_source_ip(_socket) do
     # Extract source IP from socket transport
-    case Phoenix.Socket.get_transport_pid(socket) do
-      pid when is_pid(pid) ->
-        # FIXME: Extract actual IP from transport
-        "unknown"
-
-      _ ->
-        "unknown"
-    end
+    # FIXME: Implement proper IP extraction from Phoenix.Socket
+    # Phoenix.Socket doesn't expose get_transport_pid/1, need alternative approach
+    "unknown"
   end
 
   defp find_secret_by_path(secret_path) do
@@ -298,7 +293,7 @@ defmodule SecretHub.WebWeb.AgentChannel do
   end
 
   defp fetch_agent(agent_id) do
-    case Agents.get_agent_by_id(agent_id) do
+    case Agents.get_agent(agent_id) do
       nil -> {:error, "Agent not found"}
       agent -> {:ok, agent}
     end
@@ -307,8 +302,14 @@ defmodule SecretHub.WebWeb.AgentChannel do
   defp sign_csr_for_agent(csr_pem, agent, agent_id) do
     alias SecretHub.Core.PKI.CA
 
-    CA.sign_csr(csr_pem,
-      cert_type: :agent_client,
+    # Get the CA certificate ID - for now use nil as placeholder
+    # TODO: Implement proper CA certificate selection
+    ca_cert_id = nil
+
+    CA.sign_csr(
+      csr_pem,
+      ca_cert_id,
+      :agent_client,
       entity_id: agent.id,
       entity_type: "agent",
       common_name: agent_id,

@@ -142,4 +142,11 @@ defmodule SecretHub.Shared.Schemas.AnomalyDetectionRule do
       add_error(changeset, :condition, "must be a map with 'type' and 'operator' keys")
     end
   end
+
+  @doc """
+  Toggle the enabled status of an anomaly detection rule.
+  """
+  def toggle(rule) do
+    changeset(rule, %{enabled: !rule.enabled})
+  end
 end

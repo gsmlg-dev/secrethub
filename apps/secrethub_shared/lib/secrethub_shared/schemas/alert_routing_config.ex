@@ -191,4 +191,11 @@ defmodule SecretHub.Shared.Schemas.AlertRoutingConfig do
   defp validate_opsgenie_config(changeset, _config) do
     add_error(changeset, :config, "config must be a map")
   end
+
+  @doc """
+  Toggle the enabled status of a routing configuration.
+  """
+  def toggle(routing_config) do
+    changeset(routing_config, %{enabled: !routing_config.enabled})
+  end
 end
