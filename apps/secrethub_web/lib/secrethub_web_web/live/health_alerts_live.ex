@@ -98,8 +98,10 @@ defmodule SecretHub.WebWeb.HealthAlertsLive do
         """
 
       _ ->
+        assigns = assign(assigns, :type, type)
+
         ~H"""
-        <span class="badge badge-ghost">{type}</span>
+        <span class="badge badge-ghost">{@type}</span>
         """
     end
   end

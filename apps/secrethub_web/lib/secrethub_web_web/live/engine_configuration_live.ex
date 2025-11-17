@@ -180,8 +180,10 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
         """
 
       _ ->
+        assigns = assign(assigns, :type, type)
+
         ~H"""
-        <span class="badge badge-ghost">{to_string(type)}</span>
+        <span class="badge badge-ghost">{to_string(@type)}</span>
         """
     end
   end
@@ -209,8 +211,10 @@ defmodule SecretHub.WebWeb.EngineConfigurationLive do
         """
 
       _ ->
+        assigns = assign(assigns, :status, status)
+
         ~H"""
-        <span class="badge badge-ghost">{to_string(status)}</span>
+        <span class="badge badge-ghost">{to_string(@status)}</span>
         """
     end
   end
