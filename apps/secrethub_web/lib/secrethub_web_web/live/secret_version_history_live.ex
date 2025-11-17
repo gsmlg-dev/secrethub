@@ -299,7 +299,7 @@ defmodule SecretHub.WebWeb.SecretVersionHistoryLive do
                 1}) with the data from v{@rollback_target}.
             </p>
             <div class="flex gap-2 justify-end">
-              <.button phx-click="cancel_rollback" color="secondary">
+              <.button phx-click="cancel_rollback" class="btn-secondary">
                 Cancel
               </.button>
               <.button phx-click="confirm_rollback">

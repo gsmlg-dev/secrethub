@@ -225,7 +225,7 @@ defmodule SecretHub.WebWeb.AlertConfigurationLive do
               <.button type="submit">
                 Save Configuration
               </.button>
-              <.button type="button" phx-click="cancel_form" color="secondary">
+              <.button type="button" phx-click="cancel_form" class="btn-secondary">
                 Cancel
               </.button>
             </div>
