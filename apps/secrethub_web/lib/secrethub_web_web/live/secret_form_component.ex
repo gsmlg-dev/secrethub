@@ -5,7 +5,6 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
 
   use SecretHub.WebWeb, :live_component
   require Logger
-  alias SecretHub.Shared.Schemas.Secret
 
   @impl true
   def update(assigns, socket) do
