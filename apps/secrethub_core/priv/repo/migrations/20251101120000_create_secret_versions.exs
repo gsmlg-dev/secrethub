@@ -18,7 +18,6 @@ defmodule SecretHub.Core.Repo.Migrations.CreateSecretVersions do
     end
 
     create index(:secret_versions, [:secret_id])
-    create index(:secret_versions, [:secret_id, :version_number])
     create unique_index(:secret_versions, [:secret_id, :version_number])
     create index(:secret_versions, [:archived_at])
 
