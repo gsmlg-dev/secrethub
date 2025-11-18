@@ -38,3 +38,7 @@ config :phoenix, :plug_init_mode, :runtime
 # Enable helpful, but potentially expensive runtime checks
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
+
+# Configure agent to use temp directory for Unix Domain Socket in test
+config :secrethub_agent,
+  socket_path: "/tmp/secrethub_test_agent.sock"
