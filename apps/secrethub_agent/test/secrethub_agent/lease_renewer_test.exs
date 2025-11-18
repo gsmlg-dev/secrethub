@@ -4,19 +4,15 @@ defmodule SecretHub.Agent.LeaseRenewerTest do
   alias SecretHub.Agent.LeaseRenewer
 
   setup do
-    # Start renewer with test configuration
-    {:ok, pid} =
-      start_supervised(
-        {LeaseRenewer,
-         [
-           core_url: "http://localhost:4000",
-           callbacks: %{
-             on_renewed: fn _lease -> send(self(), :renewed) end,
-             on_failed: fn _lease -> send(self(), :failed) end,
-             on_expiring_soon: fn _lease -> send(self(), :expiring_soon) end
-           }
-         ]}
-      )
+    # LeaseRenewer is already started by the application supervision tree
+    # Get the PID and use it for tests
+    pid = Process.whereis(LeaseRenewer)
+
+    # Clean up any existing leases from previous tests
+    if pid do
+      leases = LeaseRenewer.list_leases()
+      Enum.each(leases, fn lease -> LeaseRenewer.untrack_lease(lease.id) end)
+    end
 
     {:ok, renewer: pid}
   end
@@ -107,12 +103,7 @@ defmodule SecretHub.Agent.LeaseRenewerTest do
     end
 
     test "returns empty list when no leases tracked" do
-      # Stop and restart to get clean state
-      stop_supervised(LeaseRenewer)
-
-      {:ok, _} =
-        start_supervised({LeaseRenewer, [core_url: "http://localhost:4000", callbacks: %{}]})
-
+      # The setup already cleans up leases from previous tests
       leases = LeaseRenewer.list_leases()
       assert leases == []
     end
