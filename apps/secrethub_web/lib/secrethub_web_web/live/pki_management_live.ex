@@ -653,12 +653,12 @@ defmodule SecretHub.WebWeb.PKIManagementLive do
       end
 
     case CA.generate_root_ca(
-           common_name: ca_params["common_name"],
-           organization: ca_params["organization"],
+           ca_params["common_name"],
+           ca_params["organization"],
            country: ca_params["country"],
            key_type: key_type,
-           key_bits: key_bits,
-           ttl_days: ttl_days
+           key_size: key_bits,
+           validity_days: ttl_days
          ) do
       {:ok, _certificate} ->
         certificates = list_certificates()
@@ -694,9 +694,13 @@ defmodule SecretHub.WebWeb.PKIManagementLive do
         _ -> :rsa
       end
 
+    # TODO: Get root CA certificate ID from database
+    root_ca_cert_id = nil
+
     case CA.generate_intermediate_ca(
-           common_name: ca_params["common_name"],
-           organization: ca_params["organization"],
+           ca_params["common_name"],
+           ca_params["organization"],
+           root_ca_cert_id,
            country: ca_params["country"],
            key_type: key_type,
            key_bits: key_bits,

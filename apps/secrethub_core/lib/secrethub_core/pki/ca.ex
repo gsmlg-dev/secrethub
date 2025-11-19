@@ -842,4 +842,47 @@ defmodule SecretHub.Core.PKI.CA do
         {:ok, ca_chain}
     end
   end
+
+  @doc """
+  Get a certificate by ID.
+  TODO: Implement proper certificate retrieval.
+  """
+  def get_certificate(cert_id) do
+    case Repo.get(Certificate, cert_id) do
+      nil -> {:error, :not_found}
+      cert -> {:ok, cert}
+    end
+  end
+
+  @doc """
+  Revoke a certificate.
+  TODO: Implement proper certificate revocation with CRL updates.
+  """
+  def revoke_certificate(cert_id) do
+    case Repo.get(Certificate, cert_id) do
+      nil ->
+        {:error, :not_found}
+
+      cert ->
+        changeset =
+          Ecto.Changeset.change(cert, %{
+            revoked: true,
+            revoked_at: DateTime.utc_now(),
+            revocation_reason: "manual_revocation"
+          })
+
+        case Repo.update(changeset) do
+          {:ok, updated_cert} -> {:ok, updated_cert}
+          {:error, changeset} -> {:error, changeset}
+        end
+    end
+  end
+
+  @doc """
+  List all certificates.
+  TODO: Add pagination and filtering options.
+  """
+  def list_certificates do
+    Repo.all(Certificate)
+  end
 end

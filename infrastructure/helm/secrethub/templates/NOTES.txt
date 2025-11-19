@@ -1,0 +1,118 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }} -n {{ .Release.Namespace }}
+  $ helm get all {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+=============================================================================
+
+SecretHub Core has been deployed with {{ .Values.core.replicaCount }} replicas.
+
+{{- if .Values.loadBalancer.enabled }}
+
+1. Get the LoadBalancer external IP:
+
+   kubectl get svc {{ include "secrethub.fullname" . }}-lb -n {{ .Release.Namespace }}
+
+   NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+
+2. Once you have the external IP, you can access SecretHub at:
+
+   http://<EXTERNAL-IP>/
+
+{{- else if .Values.ingress.enabled }}
+
+1. SecretHub is accessible via Ingress at:
+
+{{- range .Values.ingress.hosts }}
+   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+
+{{- else }}
+
+1. Access SecretHub via port-forward:
+
+   kubectl port-forward svc/{{ include "secrethub.fullname" . }}-lb 4000:80 -n {{ .Release.Namespace }}
+
+   Then access at: http://localhost:4000
+
+{{- end }}
+
+=============================================================================
+
+IMPORTANT NEXT STEPS:
+
+{{- if not .Values.secrets.create }}
+
+⚠️  You need to create the secrets manually:
+
+   kubectl create secret generic {{ include "secrethub.fullname" . }}-secrets \
+     --from-literal=SECRET_KEY_BASE="$(openssl rand -base64 48)" \
+     --from-literal=LIVE_VIEW_SIGNING_SALT="$(openssl rand -base64 32)" \
+     -n {{ .Release.Namespace }}
+
+{{- end }}
+
+{{- if .Values.postgresql.external }}
+
+1. Ensure your external PostgreSQL database is accessible from the cluster
+2. Run database migrations:
+
+   kubectl exec -it {{ include "secrethub.fullname" . }}-0 -n {{ .Release.Namespace }} -- \
+     bin/secrethub eval "SecretHub.Core.Release.migrate"
+
+{{- end }}
+
+3. Initialize and unseal the vault:
+
+   # Initialize
+   kubectl exec -it {{ include "secrethub.fullname" . }}-0 -n {{ .Release.Namespace }} -- \
+     bin/secrethub rpc "SecretHub.Core.Vault.SealState.initialize()"
+
+   # Unseal (if not using auto-unseal)
+   kubectl exec -it {{ include "secrethub.fullname" . }}-0 -n {{ .Release.Namespace }} -- \
+     bin/secrethub rpc "SecretHub.Core.Vault.SealState.unseal(key)"
+
+4. Check cluster status:
+
+   kubectl get pods -n {{ .Release.Namespace }}
+   kubectl exec -it {{ include "secrethub.fullname" . }}-0 -n {{ .Release.Namespace }} -- \
+     bin/secrethub rpc "SecretHub.Core.ClusterState.get_cluster_status()"
+
+=============================================================================
+
+MONITORING:
+
+{{- if .Values.monitoring.prometheus.enabled }}
+
+✓ Prometheus metrics are enabled at: http://pod-ip:{{ .Values.monitoring.prometheus.port }}{{ .Values.monitoring.prometheus.path }}
+
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+✓ ServiceMonitor has been created for Prometheus Operator
+{{- end }}
+
+{{- else }}
+
+Prometheus metrics are disabled. Enable with:
+  --set monitoring.prometheus.enabled=true
+
+{{- end }}
+
+=============================================================================
+
+TROUBLESHOOTING:
+
+View logs:
+  kubectl logs -f {{ include "secrethub.fullname" . }}-0 -n {{ .Release.Namespace }}
+
+Check health:
+  kubectl exec {{ include "secrethub.fullname" . }}-0 -n {{ .Release.Namespace }} -- \
+    wget -qO- http://localhost:4000/v1/sys/health/ready
+
+Get help:
+  https://github.com/gsmlg-dev/secrethub
+
+=============================================================================

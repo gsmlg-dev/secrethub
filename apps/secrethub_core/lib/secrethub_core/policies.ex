@@ -41,7 +41,7 @@ defmodule SecretHub.Core.Policies do
   import Ecto.Query
 
   alias SecretHub.Core.{Audit, Repo}
-  alias SecretHub.Shared.Schemas.{Agent, Policy, Secret}
+  alias SecretHub.Shared.Schemas.Policy
 
   @doc """
   Create a new policy.
@@ -458,7 +458,7 @@ defmodule SecretHub.Core.Policies do
     if String.contains?(range_str, "/") do
       # CIDR notation
       [network, _prefix] = String.split(range_str, "/")
-      String.starts_with?(ip_str, String.slice(network, 0..-3))
+      String.starts_with?(ip_str, String.slice(network, 0..-3//-1))
     else
       # Exact IP match
       ip_str == range_str

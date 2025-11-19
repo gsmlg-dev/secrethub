@@ -1,0 +1,99 @@
+# Multi-stage Dockerfile for SecretHub Agent
+# Lightweight daemon for deployment alongside applications
+
+# =====================================
+# Build Stage
+# =====================================
+FROM elixir:1.18-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    git
+
+# Set working directory
+WORKDIR /app
+
+# Set build ENV
+ENV MIX_ENV=prod
+
+# Install Elixir & Erlang tooling
+RUN mix local.hex --force && \
+    mix local.rebar --force
+
+# Copy entire umbrella project
+COPY mix.exs mix.lock ./
+COPY config ./config
+COPY apps ./apps
+
+# Install dependencies
+RUN mix deps.get --only prod
+
+# Compile dependencies
+RUN mix deps.compile
+
+# Compile application
+RUN mix compile
+
+# Build OTP release for agent
+RUN mix release secrethub_agent
+
+# =====================================
+# Runtime Stage
+# =====================================
+FROM alpine:3.19 AS runtime
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    openssl \
+    ncurses-libs \
+    ca-certificates \
+    curl \
+    socat \
+    libgcc \
+    libstdc++ \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user for security
+RUN addgroup -g 1002 -S secrethub && \
+    adduser -D -u 1002 -G secrethub -S secrethub
+
+# Create application directory
+WORKDIR /app
+
+# Copy built OTP release from builder stage
+COPY --from=builder --chown=secrethub:secrethub /app/_build/prod/rel/secrethub_agent ./
+
+# Set environment variables
+ENV HOME=/app
+ENV AGENT_ID=${AGENT_ID:-agent-default}
+ENV CORE_URL=${CORE_URL:-ws://localhost:4000}
+ENV MIX_ENV=prod
+ENV RELEASE_COOKIE=change-me-in-production
+
+# Create necessary directories for agent operation
+RUN mkdir -p /app/var/log && \
+    mkdir -p /app/var/run && \
+    mkdir -p /app/tmp && \
+    mkdir -p /app/etc/certs && \
+    chown -R secrethub:secrethub /app
+
+# Switch to non-root user
+USER secrethub
+
+# Health check for the agent
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD test -f /app/var/run/agent.pid || exit 1
+
+# Entrypoint
+ENTRYPOINT ["/app/bin/secrethub_agent"]
+
+# Default command to run if no arguments provided
+CMD ["start"]
+
+# Labels for orchestration
+LABEL maintainer="SecretHub Development Team" \
+      version="0.1.0" \
+      description="SecretHub Agent - Daemon for secure secret delivery to applications" \
+      org.opencontainers.image.source="https://github.com/gsmlg-dev/secrethub" \
+      org.opencontainers.image.licenses="MIT"

@@ -14,7 +14,6 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
   require Logger
 
   alias SecretHub.Core.{Agents, Policies}
-  alias SecretHub.Shared.Schemas.Policy
 
   @impl true
   def mount(_params, _session, socket) do
@@ -302,33 +301,46 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
       
     <!-- Create New Policy Button -->
       <div class="mb-6 flex justify-between items-center">
-        <button
-          phx-click="new_policy"
-          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-        >
-          <svg
-            class="-ml-1 mr-2 h-5 w-5"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
+        <div class="flex gap-3">
+          <.link
+            navigate="/admin/policies/new"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            <path
-              fill-rule="evenodd"
-              d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          Create New Policy
-        </button>
-
-        <%= if @selected_policy do %>
-          <button
-            phx-click="toggle_test_mode"
-            class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            <svg
+              class="-ml-1 mr-2 h-5 w-5"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            Create New Policy
+          </.link>
+          <.link
+            navigate="/admin/policies/templates"
+            class="inline-flex items-center px-4 py-2 border border-blue-600 shadow-sm text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-blue-50"
           >
-            Test Policy
-          </button>
-        <% end %>
+            <svg
+              class="-ml-1 mr-2 h-5 w-5"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
+              />
+            </svg>
+            From Template
+          </.link>
+        </div>
       </div>
       
     <!-- Policy Form Modal -->
@@ -679,7 +691,7 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
                       <div class="ml-4">
                         <div class="text-sm font-medium text-gray-900">{policy.name}</div>
                         <div class="text-sm text-gray-500">{policy.description}</div>
-                        <div class="mt-1 flex items-center gap-2">
+                        <div class="mt-1 flex items-center gap-2 flex-wrap">
                           <span class={"inline-flex items-center px-2 py-0.5 rounded text-xs font-medium #{if policy.deny_policy, do: "bg-red-100 text-red-800", else: "bg-green-100 text-green-800"}"}>
                             {if policy.deny_policy, do: "DENY", else: "ALLOW"}
                           </span>
@@ -690,18 +702,44 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
                           <% else %>
                             <span class="text-xs text-gray-400">No bindings</span>
                           <% end %>
+                          {render_conditions_summary(policy)}
                         </div>
                       </div>
                     </div>
                   </div>
                   <div class="ml-4 flex-shrink-0 flex space-x-2">
-                    <button
-                      phx-click="edit_policy"
-                      phx-value-policy_id={policy.id}
+                    <.link
+                      navigate={"/admin/policies/#{policy.id}/simulate"}
+                      class="inline-flex items-center px-3 py-1.5 border border-blue-300 shadow-sm text-xs font-medium rounded text-blue-700 bg-white hover:bg-blue-50"
+                    >
+                      <svg
+                        class="-ml-0.5 mr-1 h-4 w-4"
+                        xmlns="http://www.w3.org/2000/svg"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"
+                        />
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                        />
+                      </svg>
+                      Simulate
+                    </.link>
+                    <.link
+                      navigate={"/admin/policies/#{policy.id}/edit"}
                       class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
                     >
                       Edit
-                    </button>
+                    </.link>
                     <button
                       phx-click="delete_policy"
                       phx-value-policy_id={policy.id}
@@ -859,5 +897,41 @@ defmodule SecretHub.WebWeb.PolicyManagementLive do
       "allowed_operations" => ["read"],
       "conditions" => %{}
     }
+  end
+
+  defp render_conditions_summary(assigns) do
+    policy = assigns
+
+    conditions = get_in(policy.policy_document, ["conditions"]) || %{}
+    assigns = assign(assigns, :conditions, conditions)
+
+    cond do
+      map_size(conditions) == 0 ->
+        ~H""
+
+      true ->
+        ~H"""
+        <%= if Map.has_key?(@conditions, "time_of_day") do %>
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+            Time: {@conditions["time_of_day"]}
+          </span>
+        <% end %>
+        <%= if Map.has_key?(@conditions, "days_of_week") do %>
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+            Days: {length(@conditions["days_of_week"])}
+          </span>
+        <% end %>
+        <%= if Map.has_key?(@conditions, "ip_ranges") do %>
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+            IP Restricted
+          </span>
+        <% end %>
+        <%= if Map.has_key?(@conditions, "max_ttl_seconds") do %>
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+            Max TTL: {@conditions["max_ttl_seconds"]}s
+          </span>
+        <% end %>
+        """
+    end
   end
 end

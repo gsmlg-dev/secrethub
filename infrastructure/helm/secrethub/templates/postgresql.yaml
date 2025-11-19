@@ -1,0 +1,84 @@
+{{- if and .Values.postgresql.bundled.enabled (not .Values.postgresql.external) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "secrethub.fullname" . }}-postgresql
+  labels:
+    {{- include "secrethub.labels" . | nindent 4 }}
+    component: postgresql
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: postgresql
+      protocol: TCP
+      name: postgresql
+  selector:
+    {{- include "secrethub.selectorLabels" . | nindent 4 }}
+    component: postgresql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "secrethub.fullname" . }}-postgresql
+  labels:
+    {{- include "secrethub.labels" . | nindent 4 }}
+    component: postgresql
+spec:
+  serviceName: {{ include "secrethub.fullname" . }}-postgresql
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "secrethub.selectorLabels" . | nindent 6 }}
+      component: postgresql
+  template:
+    metadata:
+      labels:
+        {{- include "secrethub.selectorLabels" . | nindent 8 }}
+        component: postgresql
+    spec:
+      containers:
+        - name: postgresql
+          image: "{{ .Values.postgresql.bundled.image.repository }}:{{ .Values.postgresql.bundled.image.tag }}"
+          ports:
+            - name: postgresql
+              containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              value: secrethub
+            - name: POSTGRES_USER
+              value: secrethub
+            - name: POSTGRES_PASSWORD
+              value: secrethub
+          resources:
+            {{- toYaml .Values.postgresql.bundled.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  {{- if .Values.postgresql.bundled.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        {{- if (include "secrethub.storageClass" .) }}
+        storageClassName: {{ include "secrethub.storageClass" . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.bundled.persistence.size }}
+  {{- else }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+  {{- end }}
+{{- end }}

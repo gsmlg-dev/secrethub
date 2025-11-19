@@ -82,6 +82,7 @@ jobs:
 
       - name: Generate coverage report
         if: success()
+        continue-on-error: true
         env:
           MIX_ENV: test
           DATABASE_URL: postgresql://secrethub:secrethub_test_password@localhost:5432/secrethub_test

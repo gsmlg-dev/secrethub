@@ -29,6 +29,22 @@ defmodule SecretHub.WebWeb.Router do
     plug :require_admin_auth
   end
 
+  # AppRole management pipeline (requires authentication)
+  pipeline :approle_management do
+    plug :api
+    plug SecretHub.WebWeb.Plugs.AppRoleAuth
+  end
+
+  # Rate-limited authentication pipeline
+  pipeline :auth_api do
+    plug :api
+
+    plug SecretHub.WebWeb.Plugs.RateLimiter,
+      max_requests: 5,
+      window_ms: 60_000,
+      scope: :auth
+  end
+
   scope "/", SecretHub.WebWeb do
     pipe_through :browser
 
@@ -61,11 +77,37 @@ defmodule SecretHub.WebWeb.Router do
     live "/agents", AgentMonitoringLive, :index
     live "/agents/:id", AgentMonitoringLive, :show
     live "/secrets", SecretManagementLive, :index
+    live "/secrets/:id/versions", SecretVersionHistoryLive, :index
     live "/policies", PolicyManagementLive, :index
+    live "/policies/new", PolicyEditorLive, :new
+    live "/policies/templates", PolicyTemplatesLive, :index
+    live "/policies/:id/edit", PolicyEditorLive, :edit
+    live "/policies/:id/simulate", PolicySimulatorLive, :show
     live "/audit", AuditLogLive, :index
     live "/pki", PKIManagementLive, :index
     live "/certificates", AdminCertificateLive, :index
     live "/approles", AppRoleManagementLive, :index
+    live "/dynamic/postgresql", DynamicPostgreSQLConfigLive, :index
+    live "/leases", LeaseViewerLive, :index
+    live "/leases/dashboard", LeaseDashboardLive, :index
+    live "/templates", TemplateManagementLive, :index
+    live "/templates/:template_id", TemplateManagementLive, :show
+    live "/cluster", ClusterStatusLive, :index
+    live "/cluster/nodes/:node_id", NodeHealthLive, :show
+    live "/cluster/alerts", HealthAlertsLive, :index
+    live "/cluster/auto-unseal", AutoUnsealConfigLive, :index
+    live "/cluster/deployment", DeploymentStatusLive, :index
+    live "/engines", EngineConfigurationLive, :index
+    live "/engines/new/:type", EngineSetupWizardLive, :new
+    live "/engines/:id/health", EngineHealthDashboardLive, :show
+    live "/rotations", RotationScheduleLive, :index
+    live "/rotations/:id", RotationScheduleLive, :show
+    live "/rotations/:id/history", RotationHistoryLive, :show
+    # TODO: Implement MetricsDashboardLive module
+    # live "/metrics", MetricsDashboardLive, :index
+    live "/alerts", AlertConfigurationLive, :index
+    live "/anomalies", AnomalyDetectionLive, :index
+    live "/performance", PerformanceDashboardLive, :index
 
     delete "/logout", AdminAuthController, :logout
   end
@@ -96,21 +138,47 @@ defmodule SecretHub.WebWeb.Router do
     post "/seal", SysController, :seal
     get "/seal-status", SysController, :status
     get "/health", SysController, :health
+    get "/health/ready", SysController, :readiness
+    get "/health/live", SysController, :liveness
   end
 
-  # Authentication API routes (AppRole management)
+  # Authentication API routes (AppRole management - PROTECTED)
   scope "/v1/auth/approle", SecretHub.WebWeb do
-    pipe_through :api
+    pipe_through :approle_management
 
-    # Role management
+    # Role management (requires admin authentication)
     post "/role/:role_name", AuthController, :create_role
-    get "/role/:role_name", AuthController, :get_role
     get "/role", AuthController, :list_roles
     delete "/role/:role_name", AuthController, :delete_role
+  end
 
-    # SecretID operations
+  # Authentication API routes (AppRole usage - rate limited)
+  scope "/v1/auth/approle", SecretHub.WebWeb do
+    pipe_through :auth_api
+
+    # Public endpoints for AppRole authentication (rate limited)
+    get "/role/:role_name", AuthController, :get_role
     post "/role/:role_name/secret-id", AuthController, :rotate_secret_id
     get "/role/:role_name/role-id", AuthController, :get_role_id
+  end
+
+  # Dynamic Secrets API routes
+  scope "/v1/secrets/dynamic", SecretHub.WebWeb do
+    pipe_through :api
+
+    # Generate dynamic credentials
+    post "/:role", DynamicSecretsController, :generate
+  end
+
+  # Lease management API routes
+  scope "/v1/sys/leases", SecretHub.WebWeb do
+    pipe_through :api
+
+    # Lease operations
+    post "/renew", DynamicSecretsController, :renew
+    post "/revoke", DynamicSecretsController, :revoke
+    get "/", DynamicSecretsController, :list
+    get "/stats", DynamicSecretsController, :stats
   end
 
   # PKI API routes (Certificate Authority operations)
@@ -126,6 +194,30 @@ defmodule SecretHub.WebWeb.Router do
     get "/certificates", PKIController, :list_certificates
     get "/certificates/:id", PKIController, :get_certificate
     post "/certificates/:id/revoke", PKIController, :revoke_certificate
+
+    # Application certificate operations
+    post "/app/issue", PKIController, :issue_app_certificate
+    post "/app/renew", PKIController, :renew_app_certificate
+    post "/app/revoke", PKIController, :revoke_app_certificate
+  end
+
+  # Application management API routes
+  scope "/v1/apps", SecretHub.WebWeb do
+    pipe_through :api
+
+    # Application registration and management
+    post "/", AppsController, :register_app
+    get "/", AppsController, :list_apps
+    get "/:id", AppsController, :get_app
+    put "/:id", AppsController, :update_app
+    delete "/:id", AppsController, :delete_app
+
+    # Application lifecycle
+    post "/:id/suspend", AppsController, :suspend_app
+    post "/:id/activate", AppsController, :activate_app
+
+    # Application certificates
+    get "/:id/certificates", AppsController, :list_certificates
   end
 
   # Other API scopes may use custom stacks.
