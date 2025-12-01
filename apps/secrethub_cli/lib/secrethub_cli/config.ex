@@ -57,7 +57,7 @@ defmodule SecretHub.CLI.Config do
   """
   def get(key) when is_binary(key) do
     with {:ok, config} <- load() do
-      value = get_in(config, parse_key(key))
+      value = get_in(config, parse_key_for_get(key))
       {:ok, value}
     end
   end
@@ -67,7 +67,7 @@ defmodule SecretHub.CLI.Config do
   """
   def set(key, value) when is_binary(key) do
     with {:ok, config} <- load() do
-      updated_config = put_in(config, parse_key(key), value)
+      updated_config = put_in(config, parse_key_for_set(key), value)
       save(updated_config)
     end
   end
@@ -77,7 +77,7 @@ defmodule SecretHub.CLI.Config do
   """
   def delete(key) when is_binary(key) do
     with {:ok, config} <- load() do
-      {_, updated_config} = pop_in(config, parse_key(key))
+      {_, updated_config} = pop_in(config, parse_key_for_get(key))
       save(updated_config)
     end
   end
@@ -178,7 +178,15 @@ defmodule SecretHub.CLI.Config do
     }
   end
 
-  defp parse_key(key) do
+  # Parse key for get operations - returns nil for non-existent keys
+  defp parse_key_for_get(key) do
+    key
+    |> String.split(".")
+    |> Enum.map(&Access.key/1)
+  end
+
+  # Parse key for set operations - creates intermediate maps
+  defp parse_key_for_set(key) do
     key
     |> String.split(".")
     |> Enum.map(&Access.key(&1, %{}))
@@ -219,6 +227,15 @@ defmodule SecretHub.CLI.Config do
   defp encode_toml_value(value) when is_list(value) do
     items = Enum.map(value, &encode_toml_value/1)
     "[" <> Enum.join(items, ", ") <> "]"
+  end
+  defp encode_toml_value(value) when is_map(value) do
+    # Encode as TOML inline table: {key = "value", key2 = "value2"}
+    items =
+      value
+      |> Enum.map(fn {k, v} -> "#{k} = #{encode_toml_value(v)}" end)
+      |> Enum.join(", ")
+
+    "{" <> items <> "}"
   end
   defp encode_toml_value(value), do: inspect(value)
 end

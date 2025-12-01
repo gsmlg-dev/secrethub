@@ -120,7 +120,8 @@ defmodule SecretHub.CLI.Output do
   Prints success message in green.
   """
   def success(message) do
-    Owl.IO.puts(Owl.Data.tag(message, :green))
+    tagged = Owl.Data.tag(message, :green)
+    IO.puts(Owl.Data.to_chardata(tagged))
   end
 
   @doc """
@@ -135,7 +136,8 @@ defmodule SecretHub.CLI.Output do
   Prints warning message in yellow.
   """
   def warning(message) do
-    Owl.IO.puts(Owl.Data.tag("Warning: #{message}", :yellow))
+    tagged = Owl.Data.tag("Warning: #{message}", :yellow)
+    IO.puts(Owl.Data.to_chardata(tagged))
   end
 
   @doc """
