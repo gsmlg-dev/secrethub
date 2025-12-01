@@ -377,7 +377,7 @@ defmodule SecretHub.Core.LeaseManager do
   defp load_active_leases do
     leases =
       Lease
-      |> where([l], l.status == "active")
+      |> where([l], l.revoked == false)
       |> where([l], l.expires_at > ^DateTime.utc_now())
       |> Repo.all()
       |> Map.new(fn lease -> {lease.id, lease} end)
