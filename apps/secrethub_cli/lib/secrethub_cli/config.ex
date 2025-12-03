@@ -5,18 +5,21 @@ defmodule SecretHub.CLI.Config do
   Stores configuration in `~/.secrethub/config.toml`.
   """
 
-  @config_dir Path.expand("~/.secrethub")
-  @config_file Path.join(@config_dir, "config.toml")
+  @default_config_dir Path.expand("~/.secrethub")
 
   @doc """
   Gets the configuration directory path.
   """
-  def config_dir, do: @config_dir
+  def config_dir do
+    Application.get_env(:secrethub_cli, :config_dir, @default_config_dir)
+  end
 
   @doc """
   Gets the configuration file path.
   """
-  def config_file, do: @config_file
+  def config_file do
+    Path.join(config_dir(), "config.toml")
+  end
 
   @doc """
   Loads the configuration from disk.
@@ -24,7 +27,7 @@ defmodule SecretHub.CLI.Config do
   Returns a map with configuration values.
   """
   def load do
-    case File.read(@config_file) do
+    case File.read(config_file()) do
       {:ok, content} ->
         case Toml.decode(content) do
           {:ok, config} -> {:ok, config}
@@ -45,7 +48,7 @@ defmodule SecretHub.CLI.Config do
   def save(config) do
     with :ok <- ensure_config_dir(),
          toml = encode_toml(config),
-         :ok <- File.write(@config_file, toml) do
+         :ok <- File.write(config_file(), toml) do
       :ok
     else
       {:error, reason} -> {:error, "Failed to save config: #{inspect(reason)}"}
@@ -110,7 +113,7 @@ defmodule SecretHub.CLI.Config do
       {:ok, token} when is_binary(token) ->
         # Check if token is expired
         case get("auth.expires_at") do
-          {:ok, expires_str} ->
+          {:ok, expires_str} when is_binary(expires_str) ->
             case DateTime.from_iso8601(expires_str) do
               {:ok, expires, _} ->
                 if DateTime.compare(expires, DateTime.utc_now()) == :gt do
@@ -120,10 +123,16 @@ defmodule SecretHub.CLI.Config do
                 end
 
               _ ->
+                # Invalid date format, assume token is valid
                 {:ok, token}
             end
 
+          {:ok, nil} ->
+            # No expires_at field, assume token is valid
+            {:ok, token}
+
           _ ->
+            # No expires_at field, assume token is valid
             {:ok, token}
         end
 
@@ -158,10 +167,12 @@ defmodule SecretHub.CLI.Config do
   ## Private Functions
 
   defp ensure_config_dir do
-    case File.mkdir_p(@config_dir) do
+    dir = config_dir()
+
+    case File.mkdir_p(dir) do
       :ok ->
         # Set directory permissions to 0700 (owner only)
-        File.chmod(@config_dir, 0o700)
+        File.chmod(dir, 0o700)
 
       error ->
         error
