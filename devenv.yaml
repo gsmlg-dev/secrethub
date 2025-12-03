@@ -9,7 +9,7 @@ inputs:
   nixpkgs:
     url: github:cachix/devenv-nixpkgs/rolling
   nixpkgs-stable:
-    url: github:nixos/nixpkgs/release-25.05
+    url: github:nixos/nixpkgs/release-25.11
 
 # Devenv modules to import (if you create any)
 # imports:
