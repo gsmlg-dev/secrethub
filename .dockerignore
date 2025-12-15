@@ -1,37 +1,95 @@
 # Docker build ignore patterns
 
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github
+.gitlab-ci.yml
+
+# Development tools
+.devenv
+.devenv.flake.nix
+devenv.nix
+devenv.lock
+.direnv
+.envrc
+
 # Mix artifacts
-_mix/
+_build/
 deps/
-!deps/
-build/
-.lock
+erl_crash.dump
+*.ez
+mix.lock.old
 
 # Testing
-_test/
+test/
+apps/*/test/
 cover/
 .coveralls
+.excoveralls
+.credo.exs
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+.elixir_ls/
+.lexical/
 
 # Documentation
 docs/
 *.md
 !README.md
+CHANGELOG*
+LICENSE*
+CONTRIBUTING*
 
 # Logs
 logs/
+log/
 *.log
 
 # Local development
-.env.local
-.env.dev
+.env
+.env.*
+!.env.example
 tmp/
+temp/
+*.tmp
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Node modules
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Dialyzer
+priv/plts/
+*.plt
+*.plt.hash
+
+# Release artifacts
+rel/
+releases/
+burrito_out/
+
+# Infrastructure
+infrastructure/
+terraform/
+ansible/
+k8s/
+kubernetes/
+helm/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3

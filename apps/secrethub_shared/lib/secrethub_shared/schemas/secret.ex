@@ -38,8 +38,14 @@ defmodule SecretHub.Shared.Schemas.Secret do
     # active, rotating, error
     field(:status, :string, default: "active")
 
+    # Version tracking
+    field(:version_count, :integer, default: 1)
+    field(:last_version_at, :utc_datetime)
+
     # Relationships
     many_to_many(:policies, SecretHub.Shared.Schemas.Policy, join_through: "secrets_policies")
+    has_many(:versions, SecretHub.Shared.Schemas.SecretVersion)
+    belongs_to(:current_version, SecretHub.Shared.Schemas.SecretVersion)
 
     timestamps(type: :utc_datetime)
   end

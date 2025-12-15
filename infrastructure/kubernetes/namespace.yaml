@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: secrethub
+  labels:
+    name: secrethub
+    environment: production
+    app: secrethub

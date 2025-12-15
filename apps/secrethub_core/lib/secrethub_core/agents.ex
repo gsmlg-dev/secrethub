@@ -14,7 +14,6 @@ defmodule SecretHub.Core.Agents do
   require Logger
   import Ecto.Query
 
-  alias Ecto.{Changeset, Multi}
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.{Agent, AuditLog, Certificate, Lease, Policy}
 
@@ -24,75 +23,73 @@ defmodule SecretHub.Core.Agents do
   Bootstrap a new agent using RoleID/SecretID authentication.
   """
   def bootstrap_agent(role_id, secret_id, metadata \\ %{}) do
-    Multi.new(fn ->
-      # Validate bootstrap credentials
-      case validate_bootstrap_credentials(role_id, secret_id) do
-        :ok ->
-          # Check if agent already exists
-          agent_id = generate_agent_id(metadata)
+    # Validate bootstrap credentials
+    case validate_bootstrap_credentials(role_id, secret_id) do
+      :ok ->
+        # Check if agent already exists
+        agent_id = generate_agent_id(metadata)
 
-          case Repo.get_by(Agent, agent_id: agent_id) do
-            nil ->
-              # Create new agent
-              agent_attrs = %{
-                agent_id: agent_id,
-                name: Map.get(metadata, "name", agent_id),
-                description: Map.get(metadata, "description", ""),
-                role_id: role_id,
-                secret_id: secret_id,
-                ip_address: Map.get(metadata, "ip_address"),
-                hostname: Map.get(metadata, "hostname"),
-                user_agent: Map.get(metadata, "user_agent"),
-                metadata: metadata
-              }
+        case Repo.get_by(Agent, agent_id: agent_id) do
+          nil ->
+            # Create new agent
+            agent_attrs = %{
+              agent_id: agent_id,
+              name: Map.get(metadata, "name", agent_id),
+              description: Map.get(metadata, "description", ""),
+              role_id: role_id,
+              secret_id: secret_id,
+              ip_address: Map.get(metadata, "ip_address"),
+              hostname: Map.get(metadata, "hostname"),
+              user_agent: Map.get(metadata, "user_agent"),
+              metadata: metadata
+            }
 
-              agent_changeset = Agent.bootstrap_changeset(%Agent{}, agent_attrs)
+            agent_changeset = Agent.bootstrap_changeset(%Agent{}, agent_attrs)
 
-              case Repo.insert(agent_changeset) do
-                {:ok, agent} ->
-                  # Issue client certificate
-                  case issue_agent_certificate(agent) do
-                    {:ok, certificate} ->
-                      # Update agent with certificate
-                      Agent.authenticate_changeset(agent, certificate)
-                      |> Repo.update()
-
-                    {:error, cert_error} ->
-                      Logger.error(
-                        "Failed to issue certificate for agent #{agent_id}: #{inspect(cert_error)}"
-                      )
-
-                      {:error, "Failed to issue certificate"}
-                  end
-
-                {:error, changeset_error} ->
-                  {:error, "Failed to create agent: #{inspect(changeset_error)}"}
-              end
-
-            %Agent{} = existing_agent ->
-              # Existing agent - re-issue certificate if needed
-              if should_reissue_certificate?(existing_agent) do
-                case issue_agent_certificate(existing_agent) do
+            case Repo.insert(agent_changeset) do
+              {:ok, agent} ->
+                # Issue client certificate
+                case issue_agent_certificate(agent) do
                   {:ok, certificate} ->
-                    Agent.authenticate_changeset(existing_agent, certificate)
+                    # Update agent with certificate
+                    Agent.authenticate_changeset(agent, certificate)
                     |> Repo.update()
 
                   {:error, cert_error} ->
                     Logger.error(
-                      "Failed to re-issue certificate for agent #{agent_id}: #{inspect(cert_error)}"
+                      "Failed to issue certificate for agent #{agent_id}: #{inspect(cert_error)}"
                     )
 
-                    {:error, "Failed to re-issue certificate"}
+                    {:error, "Failed to issue certificate"}
                 end
-              else
-                {:ok, existing_agent}
-              end
-          end
 
-        {:error, reason} ->
-          {:error, reason}
-      end
-    end)
+              {:error, changeset_error} ->
+                {:error, "Failed to create agent: #{inspect(changeset_error)}"}
+            end
+
+          %Agent{} = existing_agent ->
+            # Existing agent - re-issue certificate if needed
+            if should_reissue_certificate?(existing_agent) do
+              case issue_agent_certificate(existing_agent) do
+                {:ok, certificate} ->
+                  Agent.authenticate_changeset(existing_agent, certificate)
+                  |> Repo.update()
+
+                {:error, cert_error} ->
+                  Logger.error(
+                    "Failed to re-issue certificate for agent #{agent_id}: #{inspect(cert_error)}"
+                  )
+
+                  {:error, "Failed to re-issue certificate"}
+              end
+            else
+              {:ok, existing_agent}
+            end
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc """
@@ -166,74 +163,70 @@ defmodule SecretHub.Core.Agents do
   Suspend an agent (temporary disable).
   """
   def suspend_agent(agent_id, reason \\ nil) do
-    Multi.new(fn ->
-      case Repo.get_by(Agent, agent_id: agent_id) do
-        %Agent{} = agent ->
-          # Suspend agent
-          Agent.suspend_changeset(agent, reason)
-          |> Repo.update()
+    case Repo.get_by(Agent, agent_id: agent_id) do
+      %Agent{} = agent ->
+        # Suspend agent
+        Agent.suspend_changeset(agent, reason)
+        |> Repo.update()
 
-          # Revoke certificate if exists
-          if agent.certificate_id do
-            certificate = Repo.get(Certificate, agent.certificate_id)
+        # Revoke certificate if exists
+        if agent.certificate_id do
+          certificate = Repo.get(Certificate, agent.certificate_id)
 
-            if certificate do
-              Certificate.revoke_changeset(certificate, "Agent suspended")
-              |> Repo.update()
-            end
+          if certificate do
+            Certificate.revoke_changeset(certificate, "Agent suspended")
+            |> Repo.update()
           end
+        end
 
-          # Cancel active leases
-          cancel_agent_leases(agent_id)
+        # Cancel active leases
+        cancel_agent_leases(agent_id)
 
-          # Log suspension
-          audit_agent_action(agent_id, "agent_suspended", false, %{reason: reason})
+        # Log suspension
+        audit_agent_action(agent_id, "agent_suspended", false, %{reason: reason})
 
-          Logger.info("Suspended agent: #{agent_id}")
+        Logger.info("Suspended agent: #{agent_id}")
 
-          {:ok, agent}
+        {:ok, agent}
 
-        nil ->
-          {:error, "Agent not found"}
-      end
-    end)
+      nil ->
+        {:error, "Agent not found"}
+    end
   end
 
   @doc """
   Revoke an agent (permanent disable).
   """
   def revoke_agent(agent_id, reason \\ nil) do
-    Multi.new(fn ->
-      case Repo.get_by(Agent, agent_id: agent_id) do
-        %Agent{} = agent ->
-          # Revoke agent
-          Agent.revoke_changeset(agent, reason)
-          |> Repo.update()
+    case Repo.get_by(Agent, agent_id: agent_id) do
+      %Agent{} = agent ->
+        # Revoke agent
+        Agent.revoke_changeset(agent, reason)
+        |> Repo.update()
 
-          # Revoke certificate if exists
-          if agent.certificate_id do
-            certificate = Repo.get(Certificate, agent.certificate_id)
+        # Revoke certificate if exists
+        if agent.certificate_id do
+          certificate = Repo.get(Certificate, agent.certificate_id)
 
-            if certificate do
-              Certificate.revoke_changeset(certificate, "Agent revoked")
-              |> Repo.update()
-            end
+          if certificate do
+            Certificate.revoke_changeset(certificate, "Agent revoked")
+            |> Repo.update()
           end
+        end
 
-          # Cancel all leases
-          cancel_agent_leases(agent_id)
+        # Cancel all leases
+        cancel_agent_leases(agent_id)
 
-          # Log revocation
-          audit_agent_action(agent_id, "agent_revoked", false, %{reason: reason})
+        # Log revocation
+        audit_agent_action(agent_id, "agent_revoked", false, %{reason: reason})
 
-          Logger.info("Revoked agent: #{agent_id}")
+        Logger.info("Revoked agent: #{agent_id}")
 
-          {:ok, agent}
+        {:ok, agent}
 
-        nil ->
-          {:error, "Agent not found"}
-      end
-    end)
+      nil ->
+        {:error, "Agent not found"}
+    end
   end
 
   @doc """
@@ -416,12 +409,14 @@ defmodule SecretHub.Core.Agents do
     certificate_pem =
       "-----BEGIN CERTIFICATE-----\nMOCK_CERTIFICATE_DATA_#{cert_data.serial_number}\n-----END CERTIFICATE-----"
 
+    # Add certificate_pem and other required fields
+    cert_attrs = Map.put(cert_data, :certificate_pem, certificate_pem)
+    cert_attrs = Map.put(cert_attrs, :fingerprint, Certificate.fingerprint(nil))
+    cert_attrs = Map.put(cert_attrs, :issuer, "CN=SecretHub CA")
+
     certificate_changeset =
       %Certificate{}
-      |> Certificate.changeset(%{
-        cert_data
-        | certificate_pem: certificate_pem
-      })
+      |> Certificate.changeset(cert_attrs)
 
     Repo.insert(certificate_changeset)
   end
@@ -476,7 +471,7 @@ defmodule SecretHub.Core.Agents do
     end)
   end
 
-  defp audit_agent_action(agent_id, action, success, event_data \\ %{}) do
+  defp audit_agent_action(agent_id, action, success, event_data) do
     # Get next sequence number (simplified - in production use database sequence)
     sequence_num = :erlang.system_time(:millisecond)
 

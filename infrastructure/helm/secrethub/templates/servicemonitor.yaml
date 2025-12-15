@@ -1,0 +1,17 @@
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "secrethub.fullname" . }}
+  labels:
+    {{- include "secrethub.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "secrethub.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      path: {{ .Values.monitoring.prometheus.path }}
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+{{- end }}

@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "secrethub.fullname" . }}
+  labels:
+    {{- include "secrethub.labels" . | nindent 4 }}
+  {{- with .Values.core.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.core.service.type }}
+  ports:
+    - port: {{ .Values.core.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+    {{- if .Values.monitoring.prometheus.enabled }}
+    - port: {{ .Values.monitoring.prometheus.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- end }}
+  selector:
+    {{- include "secrethub.selectorLabels" . | nindent 4 }}
+  clusterIP: None

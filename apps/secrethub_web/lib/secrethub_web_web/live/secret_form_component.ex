@@ -5,7 +5,6 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
 
   use SecretHub.WebWeb, :live_component
   require Logger
-  alias SecretHub.Shared.Schemas.Secret
 
   @impl true
   def update(assigns, socket) do
@@ -43,7 +42,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   class="form-input w-full"
                   placeholder="e.g., Production Database"
                 />
-                <%= if error = Phoenix.HTML.Form.input_error(@changeset, :name) do %>
+                <%= if error = get_field_error(@changeset, :name) do %>
                   <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
@@ -58,7 +57,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                   class="form-input w-full"
                   placeholder="Brief description of what this secret provides access to"
                 ><%= Phoenix.HTML.Form.input_value(@changeset, :description) %></textarea>
-                <%= if error = Phoenix.HTML.Form.input_error(@changeset, :description) do %>
+                <%= if error = get_field_error(@changeset, :description) do %>
                   <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
@@ -77,7 +76,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                 <p class="mt-1 text-xs text-gray-500">
                   Hierarchical path for secret organization (e.g., environment/service/credential)
                 </p>
-                <%= if error = Phoenix.HTML.Form.input_error(@changeset, :path) do %>
+                <%= if error = get_field_error(@changeset, :path) do %>
                   <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
@@ -105,7 +104,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                     </option>
                   <% end %>
                 </select>
-                <%= if error = Phoenix.HTML.Form.input_error(@changeset, :engine_type) do %>
+                <%= if error = get_field_error(@changeset, :engine_type) do %>
                   <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
@@ -131,7 +130,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                     Dynamic (temporary)
                   </option>
                 </select>
-                <%= if error = Phoenix.HTML.Form.input_error(@changeset, :type) do %>
+                <%= if error = get_field_error(@changeset, :type) do %>
                   <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
@@ -154,7 +153,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                 <p class="mt-1 text-xs text-gray-500">
                   Time to live for dynamic secrets (hours)
                 </p>
-                <%= if error = Phoenix.HTML.Form.input_error(@changeset, :ttl_hours) do %>
+                <%= if error = get_field_error(@changeset, :ttl_hours) do %>
                   <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
@@ -174,7 +173,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                 <p class="mt-1 text-xs text-gray-500">
                   How often to rotate static secrets (hours)
                 </p>
-                <%= if error = Phoenix.HTML.Form.input_error(@changeset, :rotation_period_hours) do %>
+                <%= if error = get_field_error(@changeset, :rotation_period_hours) do %>
                   <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
               </div>
@@ -408,6 +407,14 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
           </p>
         </div>
         """
+    end
+  end
+
+  # Helper function to get field error from changeset
+  defp get_field_error(changeset, field) do
+    case Keyword.get(changeset.errors, field) do
+      {msg, _opts} -> msg
+      nil -> nil
     end
   end
 end

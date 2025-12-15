@@ -30,6 +30,7 @@ defmodule SecretHub.Agent.MixProject do
       {:phoenix_client, "~> 0.11"},
       {:websocket_client, "~> 1.5"},
       {:jason, "~> 1.4"},
+      {:httpoison, "~> 2.2"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]

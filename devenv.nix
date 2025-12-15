@@ -1,5 +1,8 @@
-{ pkgs, lib, config, ... }:
+{ pkgs, lib, config, inputs, ... }:
 
+let
+  pkgs-stable = import inputs.nixpkgs-stable { system = pkgs.stdenv.system; };
+in
 {
   # Project metadata
   name = "secrethub";
@@ -30,7 +33,6 @@
   languages = {
     elixir = {
       enable = true;
-      package = pkgs.beam.packages.erlang_28.elixir_1_18;
     };
   };
 
@@ -39,7 +41,7 @@
     # PostgreSQL - Main database
     postgres = {
       enable = true;
-      package = pkgs.postgresql_16;
+      package = pkgs-stable.postgresql_16;
       initialDatabases = [
         { name = "secrethub_dev"; }
         { name = "secrethub_test"; }
@@ -48,33 +50,29 @@
         CREATE USER secrethub WITH PASSWORD 'secrethub_dev_password' SUPERUSER;
         GRANT ALL PRIVILEGES ON DATABASE secrethub_dev TO secrethub;
         GRANT ALL PRIVILEGES ON DATABASE secrethub_test TO secrethub;
-        
+
         -- Connect to secrethub_dev and set up extensions
         \c secrethub_dev
         CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
         CREATE EXTENSION IF NOT EXISTS "pgcrypto";
         CREATE SCHEMA IF NOT EXISTS audit;
-        
+
         -- Connect to secrethub_test and set up extensions
         \c secrethub_test
         CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
         CREATE EXTENSION IF NOT EXISTS "pgcrypto";
         CREATE SCHEMA IF NOT EXISTS audit;
       '';
-      listen_addresses = "127.0.0.1";
-      port = 5432;
+      # Use Unix domain socket only (more secure and faster than TCP)
+      listen_addresses = "";
       settings = {
         max_connections = 100;
         shared_buffers = "128MB";
         log_statement = "all";
         log_duration = true;
+        # Unix socket permissions
+        unix_socket_permissions = "0777";
       };
-    };
-
-    # Redis - Caching and sessions
-    redis = {
-      enable = true;
-      port = 6379;
     };
 
     # Test PostgreSQL - For testing dynamic secret engines
@@ -92,13 +90,10 @@
     #       postgres = {
     #         condition = "process_healthy";
     #       };
-    #       redis = {
-    #         condition = "process_healthy";
-    #       };
     #     };
     #   };
     # };
-    
+
     # Prometheus (for metrics)
     prometheus = {
       exec = "prometheus --config.file=$DEVENV_ROOT/infrastructure/prometheus/prometheus.yml --storage.tsdb.path=$DEVENV_STATE/prometheus";
@@ -113,10 +108,11 @@
 
   # Environment variables
   env = {
-    # Database
-    DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@localhost:5432/secrethub_dev";
-    DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@localhost:5432/secrethub_test";
-    
+    # Database (using Unix domain socket for security and performance)
+    # Socket is located at $DEVENV_STATE/postgres
+    DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=$DEVENV_STATE/postgres";
+    DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=$DEVENV_STATE/postgres";
+
     # Application
     MIX_ENV = "dev";
     SECRET_KEY_BASE = lib.mkDefault "dev-secret-key-base-change-in-production";
@@ -124,10 +120,7 @@
     # Phoenix
     PHX_HOST = "localhost";
     PHX_PORT = "4000";
-    
-    # Redis
-    REDIS_URL = "redis://localhost:6379";
-    
+
     # Development flags
     ELIXIR_ERL_OPTIONS = "+sbwt none +sbwtdcpu none +sbwtdio none";
   };
@@ -206,33 +199,6 @@
     '';
   };
 
-  # Pre-commit hooks
-  pre-commit.hooks = {
-    # Format code
-    mix-format = {
-      enable = true;
-      entry = "mix format";
-      files = "\\.(ex|exs)$";
-      pass_filenames = false;
-    };
-    
-    # Lint code
-    credo = {
-      enable = true;
-      entry = "mix credo --strict --all";
-      files = "\\.(ex|exs)$";
-      pass_filenames = false;
-    };
-    
-    # Check compilation
-    mix-compile = {
-      enable = true;
-      entry = "mix compile --warnings-as-errors";
-      files = "\\.(ex|exs)$";
-      pass_filenames = false;
-    };
-  };
-
   # Enter shell hooks
   enterShell = ''
     # Welcome message
@@ -245,9 +211,8 @@
        • Elixir 1.18
        • Erlang/OTP 28
        • PostgreSQL 16
-       • Redis
        • Bun (JavaScript runtime)
-    
+
     🚀 Quick commands:
        • db-setup         → Create and migrate database
        • db-reset         → Reset database
@@ -259,18 +224,11 @@
        • quality          → Run all quality checks
     
     📝 Services running:
-       • PostgreSQL:  localhost:5432
-       • Redis:       localhost:6379
+       • PostgreSQL:  Unix socket ($DEVENV_STATE/postgres)
        • Prometheus:  localhost:9090
 
     EOF
-    
-    # Check if database exists
-    if ! psql -lqt | cut -d \| -f 1 | grep -qw secrethub_dev; then
-      echo "⚠️  Database not initialized. Run: db-setup"
-      echo ""
-    fi
-    
+        
     # Check if dependencies are installed
     if [ ! -d "deps" ]; then
       echo "📦 Installing Elixir dependencies..."

@@ -462,6 +462,24 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       assert {:error, :sealed} = SealState.get_master_key()
     end
 
+    test "initialized? and sealed? helper functions work correctly" do
+      {:ok, shares} = SealState.initialize(5, 3)
+
+      # After initialization (but sealed)
+      assert SealState.initialized?() == true
+      assert SealState.sealed?() == true
+
+      # After unsealing
+      Enum.take(shares, 3) |> Enum.each(&SealState.unseal/1)
+      assert SealState.initialized?() == true
+      assert SealState.sealed?() == false
+
+      # After sealing again
+      SealState.seal()
+      assert SealState.initialized?() == true
+      assert SealState.sealed?() == true
+    end
+
     test "insufficient shares cannot unseal vault" do
       {:ok, shares} = SealState.initialize(5, 3)
 

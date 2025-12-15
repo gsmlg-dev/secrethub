@@ -68,6 +68,9 @@ defmodule SecretHub.Web.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:ecto, "~> 3.12"},
+      {:postgrex, "~> 0.19"},
+      {:secrethub_shared, in_umbrella: true},
+      {:secrethub_core, in_umbrella: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
