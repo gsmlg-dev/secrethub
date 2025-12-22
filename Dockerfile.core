@@ -9,9 +9,7 @@ FROM elixir:1.18-alpine AS builder
 # Install build dependencies
 RUN apk add --no-cache \
     build-base \
-    git \
-    nodejs \
-    npm
+    git
 
 # Set working directory
 WORKDIR /app
@@ -34,10 +32,9 @@ RUN mix deps.get --only prod
 # Compile dependencies
 RUN mix deps.compile
 
-# Build assets (if web app has assets)
-RUN cd apps/secrethub_web/assets && \
-    npm install && \
-    npm run deploy
+# Build assets using Elixir's esbuild and tailwind
+RUN mix assets.setup && \
+    mix assets.deploy
 
 # Compile application
 RUN mix compile
