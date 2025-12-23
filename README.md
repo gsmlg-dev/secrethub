@@ -2,7 +2,7 @@
 
 > Enterprise-grade Machine-to-Machine secrets management platform
 
-**Status:** 🚧 In Development - Week 1
+**Status:** 🚀 v1.0.0-rc2 Released
 
 ---
 
@@ -62,7 +62,7 @@ SecretHub is a secure, reliable, and highly automated secrets management platfor
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/secrethub.git
+git clone https://github.com/gsmlg-dev/secrethub.git
 cd secrethub
 
 # If using direnv (recommended)
@@ -85,12 +85,11 @@ The application will be available at:
 
 ### Development Services
 
-devenv automatically starts:
-- **PostgreSQL 16** on `localhost:5432`
+devenv automatically manages:
+- **PostgreSQL 16** via Unix domain socket (no TCP port exposed for security)
   - Database: `secrethub_dev`
   - User: `secrethub`
   - Password: `secrethub_dev_password`
-- **Redis** on `localhost:6379`
 - **Prometheus** on `localhost:9090`
 
 ### Quick Commands
@@ -101,9 +100,9 @@ db-setup        # Create and migrate database
 db-reset        # Reset database (drop, create, migrate, seed)
 db-migrate      # Run pending migrations
 
-# Assets (Frontend)
-assets-install  # Install frontend dependencies with Bun
-assets-build    # Build frontend assets
+# Assets (Frontend - uses Elixir's esbuild/tailwind, no Node.js required)
+mix assets.setup   # Install esbuild and tailwind binaries
+mix assets.deploy  # Build minified assets for production
 
 # Development
 server          # Start Phoenix server
@@ -237,33 +236,18 @@ mix ecto.gen.migration create_secrets_table
 
 ## 🔧 Configuration
 
-### Development Configuration
-
-Edit `config/dev.exs`:
-
-```elixir
-config :secrethub_core, SecretHub.Core.Repo,
-  username: "secrethub",
-  password: "secrethub_dev_password",
-  hostname: "localhost",
-  database: "secrethub_dev",
-  port: 5432
-
-config :secrethub_web, SecretHubWeb.Endpoint,
-  http: [port: 4000],
-  debug_errors: true
-```
-
 ### Environment Variables
+
+Development environment variables are automatically set by devenv. For production:
 
 ```bash
 # Core service
-export DATABASE_URL="postgresql://secrethub:password@localhost/secrethub_dev"
+export DATABASE_URL="postgresql://user:password@host/secrethub_prod"
 export SECRET_KEY_BASE="generate-with-mix-phx.gen.secret"
 
 # Agent
-export SECRETHUB_CORE_URL="wss://localhost:4001"
-export SECRETHUB_AGENT_ID="agent-dev-01"
+export SECRETHUB_CORE_URL="wss://core.example.com:4000"
+export SECRETHUB_AGENT_ID="agent-prod-01"
 ```
 
 ---
@@ -277,19 +261,22 @@ export SECRETHUB_AGENT_ID="agent-dev-01"
 
 ---
 
-## 🧪 Development Workflow
+## 🧪 Development Status
 
-### Week 1 Checklist
+### Completed Features
 
-- [x] ✅ Umbrella project structure created
-- [ ] 🚧 Database schemas defined
-- [ ] 🚧 Basic authentication implemented
-- [ ] 🚧 PKI engine foundation
-- [ ] 🚧 Agent bootstrap flow
-
-### Current Focus: Database Schema Design
-
-See [Week 1 Plan](docs/development/week-01.md) for detailed tasks.
+- [x] Umbrella project structure
+- [x] Database schemas and migrations
+- [x] AppRole authentication backend
+- [x] PKI engine with CA management
+- [x] Agent bootstrap and WebSocket connection
+- [x] Static and dynamic secret engines
+- [x] Policy engine for authorization
+- [x] Audit logging with hash chains
+- [x] Template rendering for config files
+- [x] CLI tool for management
+- [x] CI/CD with GitHub Actions
+- [x] Docker images (multi-arch)
 
 ---
 
@@ -345,28 +332,28 @@ Closes #123
 
 ## 🗺️ Roadmap
 
-### Phase 1: MVP (Weeks 1-12) 🚧 Current
+### Phase 1: MVP (Weeks 1-12) ✅ Complete
 - Basic authentication & storage
 - PKI engine
 - Static secrets
 - Basic audit logging
 
-### Phase 2: Production (Weeks 13-24)
+### Phase 2: Production (Weeks 13-24) ✅ Complete
 - Dynamic secrets (PostgreSQL, Redis, AWS)
 - Template rendering
 - High availability
 - Secret rotation
 
-### Phase 3: Advanced (Weeks 25-28)
+### Phase 3: Advanced (Weeks 25-28) ✅ Complete
 - Secret versioning
 - Advanced policies
 - CLI tool
 
-### Phase 4: Launch (Weeks 29-32)
+### Phase 4: Launch (Weeks 29-32) 🚀 Current
 - Security audit
 - Performance testing
 - Documentation
-- Production deployment
+- Production deployment (v1.0.0-rc2 released)
 
 ---
 
@@ -378,5 +365,5 @@ Closes #123
 
 ---
 
-**Status:** Week 1, Day 1 - Project initialization complete! 🎉
+**Latest Release:** [v1.0.0-rc2](https://github.com/gsmlg-dev/secrethub/releases/tag/v1.0.0-rc2) 🎉
 

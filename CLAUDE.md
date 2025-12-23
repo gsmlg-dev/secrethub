@@ -11,7 +11,7 @@ SecretHub is an enterprise-grade Machine-to-Machine secrets management platform 
 - **SecretHub Agent**: Local daemon deployed alongside applications for secure secret delivery via Unix Domain Sockets
 - **Communication**: Persistent mTLS WebSocket connections between Core and Agents
 
-**Current Status:** Week 1 - Initial project setup complete, database schema design in progress
+**Current Status:** v1.0.0-rc2 released - Core features implemented, preparing for production
 
 ## Development Environment
 
@@ -46,10 +46,11 @@ db-reset        # Drop, recreate, migrate, and seed database
 db-migrate      # Run pending migrations only
 ```
 
-**Frontend (uses Bun, not npm):**
+**Frontend Assets:**
 ```bash
-assets-install  # Install dependencies with Bun
-assets-build    # Build assets with Bun
+mix assets.setup   # Install esbuild and tailwind binaries
+mix assets.build   # Build assets for development
+mix assets.deploy  # Build minified assets for production
 ```
 
 **Testing:**
@@ -137,12 +138,13 @@ apps/
 - **Security:** Unix sockets provide better security (no network exposure) and performance (no TCP overhead)
 
 ### Frontend Assets
-- **Uses Bun, not npm** - Always use `assets-install`, never `npm install`
+- **Uses Elixir's built-in esbuild and tailwind packages** - No Node.js/npm required
 - Tailwind CSS v4.1.7 for styling
 - esbuild v0.25.4 for JavaScript bundling
 - Phoenix LiveView for interactive components
 - DaisyUI for UI components (pre-configured)
 - Heroicons for icons (optimized version)
+- Build assets with `mix assets.setup` (installs binaries) and `mix assets.deploy` (production build)
 
 ### Authentication & Security
 - mTLS everywhere between Core and Agents
@@ -281,6 +283,12 @@ GitHub Actions runs with:
 All workflows use caching to speed up builds:
 - Dependencies cache (keyed by `mix.lock`)
 - Dialyzer PLT cache (keyed by `mix.lock`)
+
+**Release Workflow** (`release.yml`) - Triggered on version tags (`v*.*.*`):
+- Builds Core and Agent tar.gz releases
+- Builds Core and Agent Docker images (multi-arch: linux/amd64, linux/arm64)
+- Publishes to GitHub Container Registry (`ghcr.io/gsmlg-dev/secrethub/core` and `agent`)
+- Creates GitHub Release with artifacts
 
 See `.github/workflows/README.md` for detailed CI/CD documentation.
 
