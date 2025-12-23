@@ -1,12 +1,11 @@
 import Config
 
-# Configure the database
+# Configure the database (using Unix domain socket via PGHOST env var)
 config :secrethub_core, SecretHub.Core.Repo,
-  username: "secrethub",
-  password: "secrethub_dev_password",
-  hostname: "localhost",
-  database: "secrethub_dev",
-  port: 5432,
+  username: System.get_env("PGUSER", "secrethub"),
+  password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
+  database: System.get_env("PGDATABASE", "secrethub_dev"),
+  socket_dir: System.get_env("PGHOST"),
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10

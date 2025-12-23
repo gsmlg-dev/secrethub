@@ -72,6 +72,8 @@ in
         log_duration = true;
         # Unix socket permissions
         unix_socket_permissions = "0777";
+        # Socket in project directory to avoid conflicts
+        unix_socket_directories = "${config.devenv.root}/.devenv/state/postgres";
       };
     };
 
@@ -108,10 +110,17 @@ in
 
   # Environment variables
   env = {
-    # Database (using Unix domain socket for security and performance)
-    # Socket is located at $DEVENV_STATE/postgres
-    DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=$DEVENV_STATE/postgres";
-    DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=$DEVENV_STATE/postgres";
+    # PostgreSQL environment variables for Unix socket connection
+    # These are used by both psql CLI and Elixir config
+    # Socket path is under project directory: .devenv/state/postgres
+    PGHOST = "${config.devenv.root}/.devenv/state/postgres";
+    PGUSER = "secrethub";
+    PGPASSWORD = "secrethub_dev_password";
+    PGDATABASE = "secrethub_dev";
+
+    # Database URLs (using Unix domain socket for security and performance)
+    DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=${config.devenv.root}/.devenv/state/postgres";
+    DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=${config.devenv.root}/.devenv/state/postgres";
 
     # Application
     MIX_ENV = "dev";

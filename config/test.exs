@@ -7,14 +7,27 @@ config :secrethub_core, env: :test
 config :secrethub_core, start_seal_state: false
 
 # Configure the database
-config :secrethub_core, SecretHub.Core.Repo,
-  username: "secrethub",
-  password: System.get_env("DATABASE_PASSWORD", "secrethub_test_password"),
-  hostname: System.get_env("DATABASE_HOST", "localhost"),
+# Supports both Unix socket (devenv) and TCP (CI) connections
+db_config = [
+  username: System.get_env("PGUSER", "secrethub"),
+  password: System.get_env("PGPASSWORD", "secrethub_test_password"),
   database: "secrethub_test#{System.get_env("MIX_TEST_PARTITION")}",
-  port: String.to_integer(System.get_env("DATABASE_PORT", "5432")),
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
+]
+
+db_config =
+  if socket_dir = System.get_env("PGHOST") do
+    # Use Unix domain socket (devenv local development)
+    Keyword.put(db_config, :socket_dir, socket_dir)
+  else
+    # Use TCP connection (CI environment)
+    db_config
+    |> Keyword.put(:hostname, System.get_env("DATABASE_HOST", "localhost"))
+    |> Keyword.put(:port, String.to_integer(System.get_env("DATABASE_PORT", "5432")))
+  end
+
+config :secrethub_core, SecretHub.Core.Repo, db_config
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
