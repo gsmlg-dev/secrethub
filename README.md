@@ -2,51 +2,137 @@
 
 > Enterprise-grade Machine-to-Machine secrets management platform
 
-**Status:** 🚀 v1.0.0-rc2 Released
+**Status:** 🚀 v1.0.0-rc3 Released
 
 ---
 
 ## 🎯 Project Overview
 
-SecretHub is a secure, reliable, and highly automated secrets management platform designed specifically for Machine-to-Machine (M2M) communication. It eliminates hardcoded credentials and static secrets through centralized management, dynamic generation, and automatic rotation.
+SecretHub is a secure, reliable, and highly automated secrets management platform designed specifically for Machine-to-Machine (M2M) communication. Built in Elixir with a HashiCorp Vault-like architecture, it eliminates hardcoded credentials through centralized management, dynamic generation, and automatic rotation.
 
 ### Core Features
-- 🔐 **mTLS Everywhere** - Mutual TLS for all communications
-- 🔑 **Dynamic Secrets** - Short-lived credentials for PostgreSQL, Redis, AWS
-- 🔄 **Automatic Rotation** - Zero-downtime secret rotation
-- 📝 **Template Rendering** - Inject secrets into configuration files
-- 📊 **Comprehensive Audit** - Every action logged with tamper-proof hash chains
-- ⚡ **High Availability** - Multi-node deployment with auto-failover
+
+| Feature | Description |
+|---------|-------------|
+| 🔐 **mTLS Everywhere** | Mutual TLS for all Core-Agent communications with PKI-issued certificates |
+| 🔑 **Dynamic Secrets** | Short-lived credentials for PostgreSQL, Redis, and AWS STS |
+| 🔄 **Automatic Rotation** | Oban-scheduled zero-downtime secret rotation |
+| 📝 **Template Rendering** | EEx-based secret injection into configuration files |
+| 📊 **Tamper-Proof Audit** | SHA-256 hash-chained logs with HMAC signatures |
+| 🛡️ **Vault Seal/Unseal** | Shamir's Secret Sharing for master key protection |
+| ⚡ **High Availability** | Multi-node deployment with distributed locking |
+| 🔓 **Auto-Unseal** | AWS KMS, Azure Key Vault, GCP KMS integrations |
 
 ---
 
 ## 🏗️ Architecture
 
+SecretHub implements a **two-tier architecture** with a central Core service and distributed Agents:
+
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    SecretHub Core                       │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
-│  │   PKI    │  │  Policy  │  │  Secret  │            │
-│  │  Engine  │  │  Engine  │  │  Engines │            │
-│  └──────────┘  └──────────┘  └──────────┘            │
-│                                                         │
-│  Phoenix WebSocket API + Web UI                       │
-└─────────────────────────────────────────────────────────┘
-                         ↕ mTLS WebSocket
-┌─────────────────────────────────────────────────────────┐
-│                  SecretHub Agent                        │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
-│  │Connection│  │  Cache   │  │ Template │            │
-│  │ Manager  │  │  Layer   │  │ Renderer │            │
-│  └──────────┘  └──────────┘  └──────────┘            │
-│                                                         │
-│  Unix Domain Socket (mTLS)                            │
-└─────────────────────────────────────────────────────────┘
-                         ↕
-                 ┌──────────────┐
-                 │ Applications │
-                 └──────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        SecretHub Core                                │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐       │
+│  │    PKI    │  │  Policy   │  │  Secret   │  │   Audit   │       │
+│  │  Engine   │  │  Engine   │  │  Engines  │  │  Logger   │       │
+│  │           │  │           │  │           │  │           │       │
+│  │ • Root CA │  │ • JSONB   │  │ • Static  │  │ • Hash    │       │
+│  │ • Int. CA │  │ • Glob    │  │ • Dynamic │  │   Chain   │       │
+│  │ • CSR     │  │   Match   │  │ • Leases  │  │ • HMAC    │       │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘       │
+│                                                                      │
+│  ┌───────────┐  ┌───────────┐  ┌───────────────────────────┐       │
+│  │  AppRole  │  │   Vault   │  │      REST API + WebSocket  │       │
+│  │   Auth    │  │ Seal/     │  │  /v1/secrets, /v1/auth,   │       │
+│  │           │  │ Unseal    │  │  /v1/pki, /v1/sys         │       │
+│  └───────────┘  └───────────┘  └───────────────────────────┘       │
+│                                                                      │
+│                    Phoenix LiveView Admin Dashboard                  │
+└─────────────────────────────────────────────────────────────────────┘
+                              ↕ mTLS WebSocket
+┌─────────────────────────────────────────────────────────────────────┐
+│                       SecretHub Agent                                │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐       │
+│  │ Bootstrap │  │Connection │  │   Cache   │  │  Sinker   │       │
+│  │           │  │  Manager  │  │   Layer   │  │           │       │
+│  │ • AppRole │  │           │  │           │  │ • Atomic  │       │
+│  │ • CSR Gen │  │ • Reconn  │  │ • TTL     │  │   Write   │       │
+│  │ • Cert    │  │ • Backoff │  │ • LRU     │  │ • Reload  │       │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘       │
+│                                                                      │
+│  ┌───────────┐  ┌───────────┐  ┌───────────────────────────┐       │
+│  │ Template  │  │  Lease    │  │   Unix Domain Socket API   │       │
+│  │ Renderer  │  │ Renewer   │  │   (for local applications) │       │
+│  └───────────┘  └───────────┘  └───────────────────────────┘       │
+└─────────────────────────────────────────────────────────────────────┘
+                              ↕ UDS + mTLS
+                    ┌──────────────────────┐
+                    │    Applications      │
+                    └──────────────────────┘
 ```
+
+### Agent Lifecycle
+
+1. **Bootstrap Phase**: AppRole auth → RSA-2048 keypair generation → CSR → Certificate issuance
+2. **Operational Phase**: mTLS WebSocket to Core → Secret requests → Local caching
+3. **Delivery Phase**: EEx template rendering → Atomic file writes → Application reload triggers
+4. **Local Access**: Unix Domain Socket API for application secret retrieval
+
+---
+
+## 🔒 Security Architecture
+
+### Encryption
+
+| Layer | Algorithm | Details |
+|-------|-----------|---------|
+| At Rest | AES-256-GCM | Per-secret nonces, 128-bit auth tags |
+| Master Key | Shamir's Secret Sharing | Configurable N shares, K threshold |
+| Key Derivation | PBKDF2-SHA256 | 100,000 iterations |
+
+### Authentication Flow
+
+```
+┌─────────────┐     RoleID/SecretID      ┌─────────────┐
+│   Agent     │ ─────────────────────────▶│    Core     │
+│  Bootstrap  │                           │   AppRole   │
+└─────────────┘                           └─────────────┘
+       │                                         │
+       │              CSR Request                │
+       │ ◀───────────────────────────────────────│
+       │                                         │
+       │           Signed Certificate            │
+       │ ────────────────────────────────────────▶
+       │                                         │
+       ▼                                         ▼
+┌─────────────┐      mTLS WebSocket      ┌─────────────┐
+│   Agent     │ ◀═══════════════════════▶│    Core     │
+│   Running   │                           │   Running   │
+└─────────────┘                           └─────────────┘
+```
+
+### PKI Hierarchy
+
+- **Root CA**: Self-signed, RSA-4096 or ECDSA P-384
+- **Intermediate CA**: Root-signed, issues client certificates
+- **Client Certificates**: 1-year validity, auto-renewal 7 days before expiry
+
+---
+
+## 🔑 Secret Engines
+
+### Static Secrets
+- Encrypted storage with versioning
+- Oban-scheduled rotation
+- Template rendering support
+
+### Dynamic Secrets
+
+| Engine | Description | Lease Management |
+|--------|-------------|------------------|
+| **PostgreSQL** | Temporary users with `VALID UNTIL`, custom SQL templates | Auto-revocation |
+| **Redis** | Dynamic ACL-based credentials | Auto-revocation |
+| **AWS STS** | Temporary IAM credentials via AssumeRole | TTL-based |
 
 ---
 
@@ -55,8 +141,7 @@ SecretHub is a secure, reliable, and highly automated secrets management platfor
 ### Prerequisites
 
 - **devenv:** [Install from devenv.sh](https://devenv.sh/getting-started/)
-- **direnv (optional):** [Install from direnv.net](https://direnv.net/) - For automatic environment activation
-- **Nix:** Installed automatically with devenv
+- **direnv (optional):** [Install from direnv.net](https://direnv.net/)
 
 ### Installation
 
@@ -65,10 +150,7 @@ SecretHub is a secure, reliable, and highly automated secrets management platfor
 git clone https://github.com/gsmlg-dev/secrethub.git
 cd secrethub
 
-# If using direnv (recommended)
-direnv allow
-
-# Or activate devenv manually
+# Activate devenv (or use direnv allow)
 devenv shell
 
 # Set up the database
@@ -78,19 +160,10 @@ db-setup
 server
 ```
 
-The application will be available at:
-- **Web UI:** http://localhost:4000
-- **API:** http://localhost:4000/api/v1
+**Available at:**
+- **Web UI / Admin Dashboard:** http://localhost:4000/admin
+- **REST API:** http://localhost:4000/v1
 - **Metrics:** http://localhost:9090 (Prometheus)
-
-### Development Services
-
-devenv automatically manages:
-- **PostgreSQL 16** via Unix domain socket (no TCP port exposed for security)
-  - Database: `secrethub_dev`
-  - User: `secrethub`
-  - Password: `secrethub_dev_password`
-- **Prometheus** on `localhost:9090`
 
 ### Quick Commands
 
@@ -98,27 +171,17 @@ devenv automatically manages:
 # Database
 db-setup        # Create and migrate database
 db-reset        # Reset database (drop, create, migrate, seed)
-db-migrate      # Run pending migrations
-
-# Assets (Frontend - uses Elixir's esbuild/tailwind, no Node.js required)
-mix assets.setup   # Install esbuild and tailwind binaries
-mix assets.deploy  # Build minified assets for production
 
 # Development
 server          # Start Phoenix server
 console         # Start IEx shell with app loaded
 
 # Testing
-test-all        # Run all tests
-test-watch      # Run tests in watch mode
+mix test                    # Run all tests
+mix coveralls.html          # Generate coverage report
 
 # Code Quality
-format          # Format code
-lint            # Run Credo linter
-quality         # Run all quality checks (format, lint, dialyzer)
-
-# Utilities
-gen-secret      # Generate a secret key for Phoenix
+quality         # Run format, credo, dialyzer
 ```
 
 ---
@@ -126,244 +189,177 @@ gen-secret      # Generate a secret key for Phoenix
 ## 📁 Project Structure
 
 ```
-secrethub/                          # Umbrella root
+secrethub/                              # Elixir Umbrella Application
 ├── apps/
-│   ├── secrethub_core/            # Core service (backend logic)
-│   │   ├── lib/
-│   │   │   └── secrethub_core/
-│   │   │       ├── auth/          # Authentication backends
-│   │   │       ├── engines/       # Secret engines
-│   │   │       ├── pki/           # PKI & certificate management
-│   │   │       ├── policies/      # Policy engine
-│   │   │       ├── audit/         # Audit logging
-│   │   │       └── crypto/        # Encryption & unsealing
-│   │   ├── priv/repo/migrations/  # Database migrations
-│   │   └── test/
+│   ├── secrethub_core/                 # Core Business Logic
+│   │   └── lib/secrethub_core/
+│   │       ├── auth/app_role.ex        # AppRole authentication
+│   │       ├── pki/ca.ex               # PKI/CA management
+│   │       ├── policies.ex             # Policy engine
+│   │       ├── audit.ex                # Hash-chained audit logs
+│   │       ├── vault/seal_state.ex     # Seal/unseal with Shamir
+│   │       ├── engines/dynamic/        # PostgreSQL, Redis, AWS STS
+│   │       ├── auto_unseal/providers/  # KMS integrations
+│   │       ├── lease_manager.ex        # Lease lifecycle
+│   │       └── rotation_manager.ex     # Oban-scheduled rotation
 │   │
-│   ├── secrethub_web/             # Web UI & API endpoints
-│   │   ├── lib/
-│   │   │   └── secrethub_web/
-│   │   │       ├── controllers/   # REST API
-│   │   │       ├── live/          # LiveView components
-│   │   │       └── channels/      # WebSocket for agents
-│   │   ├── assets/                # Frontend assets
-│   │   └── test/
+│   ├── secrethub_web/                  # Phoenix Web Layer
+│   │   └── lib/secrethub_web_web/
+│   │       ├── controllers/            # REST API endpoints
+│   │       ├── live/admin/             # LiveView admin dashboard
+│   │       ├── channels/               # Agent WebSocket channels
+│   │       └── plugs/                  # Rate limiter, mTLS verification
 │   │
-│   ├── secrethub_agent/           # Agent service
-│   │   ├── lib/
-│   │   │   └── secrethub_agent/
-│   │   │       ├── bootstrap.ex   # Bootstrap & authentication
-│   │   │       ├── connection.ex  # WebSocket client
-│   │   │       ├── cache.ex       # Local caching
-│   │   │       ├── template.ex    # Template rendering
-│   │   │       └── sinker.ex      # File writer
-│   │   └── test/
+│   ├── secrethub_agent/                # Distributed Agent Daemon
+│   │   └── lib/secrethub_agent/
+│   │       ├── bootstrap.ex            # AppRole → Certificate flow
+│   │       ├── connection.ex           # WebSocket client with reconnect
+│   │       ├── cache.ex                # TTL + LRU secret cache
+│   │       ├── sinker.ex               # Atomic file writer
+│   │       ├── template_renderer.ex    # EEx template engine
+│   │       ├── uds_server.ex           # Unix Domain Socket API
+│   │       └── lease_renewer.ex        # Auto lease renewal
 │   │
-│   └── secrethub_shared/          # Shared code
-│       ├── lib/
-│       │   └── secrethub_shared/
-│       │       ├── schemas/       # Ecto schemas
-│       │       └── protocols/     # Communication protocols
-│       └── test/
+│   └── secrethub_shared/               # Shared Code
+│       └── lib/secrethub_shared/
+│           ├── schemas/                # 20+ Ecto schemas
+│           └── crypto/                 # AES-256-GCM, Shamir
 │
-├── config/                        # Configuration files
-├── docs/                          # Documentation
-├── infrastructure/                # Infrastructure as Code
-│   ├── docker/                    # Docker configs
-│   ├── terraform/                 # Terraform modules
-│   └── kubernetes/                # K8s manifests
-├── docker-compose.yml             # Development environment
-└── mix.exs                        # Umbrella configuration
+├── config/                             # Environment configs
+├── infrastructure/                     # IaC (Docker, K8s, Terraform)
+└── .github/workflows/                  # CI/CD pipelines
 ```
 
 ---
 
-## 🛠️ Development
+## 🌐 API Endpoints
 
-### Running Tests
-
-```bash
-# Run all tests
-mix test
-
-# Run tests for specific app
-cd apps/secrethub_core && mix test
-
-# Run tests with coverage
-mix coveralls.html
-
-# Watch mode (auto-run on file changes)
-mix test.watch
-```
-
-### Code Quality
-
-```bash
-# Format code
-mix format
-
-# Run linter
-mix credo --strict
-
-# Run static analysis
-mix dialyzer
-
-# Run all quality checks
-mix quality
-```
-
-### Database Management
-
-```bash
-# Create database
-mix ecto.create
-
-# Run migrations
-mix ecto.migrate
-
-# Rollback migration
-mix ecto.rollback
-
-# Reset database (drop, create, migrate, seed)
-mix ecto.reset
-
-# Generate new migration
-cd apps/secrethub_core
-mix ecto.gen.migration create_secrets_table
-```
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/sys/init` | Initialize vault with Shamir shares |
+| `POST /v1/sys/unseal` | Unseal vault with key shares |
+| `GET /v1/sys/health` | Health check |
+| `POST /v1/auth/approle/login` | AppRole authentication |
+| `GET /v1/secrets/:path` | Read secret |
+| `POST /v1/secrets/:path` | Write secret |
+| `POST /v1/secrets/dynamic/postgresql/creds/:role` | Generate PostgreSQL credentials |
+| `POST /v1/pki/issue` | Issue certificate |
+| `GET /v1/sys/leases` | List active leases |
+| `POST /v1/sys/leases/revoke` | Revoke lease |
 
 ---
 
-## 🔧 Configuration
+## 🖥️ Admin Dashboard
+
+The LiveView-based admin dashboard provides:
+
+- **Dashboard**: System overview, health metrics
+- **Agents**: Connected agents, status monitoring
+- **Secrets**: Secret browser, version history
+- **Policies**: Policy management, entity bindings
+- **PKI**: CA management, certificate issuance
+- **Audit**: Log viewer, CSV export
+- **Dynamic Engines**: PostgreSQL/Redis configuration
+- **Leases**: Active lease management
+- **Cluster**: Node health, distributed state
+
+---
+
+## 🚢 Deployment
+
+### Release Artifacts
+
+| Release | Includes |
+|---------|----------|
+| `secrethub_core` | Core + Web + Shared |
+| `secrethub_agent` | Agent + Shared |
+
+### Docker Images
+
+```bash
+# Core Service
+docker run -d -p 4000:4000 \
+  -e DATABASE_URL="postgresql://..." \
+  -e SECRET_KEY_BASE="..." \
+  ghcr.io/gsmlg-dev/secrethub/core:v1.0.0-rc3
+
+# Agent
+docker run -d \
+  -e SECRETHUB_CORE_URL="wss://core:4000" \
+  -e SECRETHUB_ROLE_ID="..." \
+  -e SECRETHUB_SECRET_ID="..." \
+  ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc3
+```
 
 ### Environment Variables
 
-Development environment variables are automatically set by devenv. For production:
-
 ```bash
-# Core service
-export DATABASE_URL="postgresql://user:password@host/secrethub_prod"
-export SECRET_KEY_BASE="generate-with-mix-phx.gen.secret"
+# Core Service
+DATABASE_URL=postgresql://user:pass@host/db  # Or with socket: ?host=/var/run/postgresql
+SECRET_KEY_BASE=<64-char-hex>
+PHX_HOST=secrethub.example.com
 
 # Agent
-export SECRETHUB_CORE_URL="wss://core.example.com:4000"
-export SECRETHUB_AGENT_ID="agent-prod-01"
+SECRETHUB_CORE_URL=wss://core.example.com:4000
+SECRETHUB_ROLE_ID=<role-id>
+SECRETHUB_SECRET_ID=<secret-id>
 ```
-
----
-
-## 📚 Documentation
-
-- [Architecture Overview](docs/architecture/overview.md)
-- [API Reference](docs/api/README.md)
-- [Deployment Guide](docs/deployment/README.md)
-- [Security Model](docs/security/README.md)
 
 ---
 
 ## 🧪 Development Status
 
-### Completed Features
+### ✅ Completed Features
 
-- [x] Umbrella project structure
-- [x] Database schemas and migrations
-- [x] AppRole authentication backend
-- [x] PKI engine with CA management
-- [x] Agent bootstrap and WebSocket connection
-- [x] Static and dynamic secret engines
-- [x] Policy engine for authorization
-- [x] Audit logging with hash chains
-- [x] Template rendering for config files
-- [x] CLI tool for management
+- [x] Umbrella project structure with 4 apps
+- [x] PostgreSQL 16 with UUID, pgcrypto extensions
+- [x] AppRole authentication (RoleID/SecretID)
+- [x] Full PKI engine (Root CA, Intermediate CA, CSR)
+- [x] Vault seal/unseal with Shamir's Secret Sharing
+- [x] Policy engine with glob patterns and conditions
+- [x] Tamper-evident audit logging (hash chains + HMAC)
+- [x] Dynamic secret engines (PostgreSQL, Redis, AWS STS)
+- [x] Auto-unseal providers (AWS KMS, Azure, GCP)
+- [x] Agent bootstrap and mTLS WebSocket connection
+- [x] Secret caching with TTL and LRU eviction
+- [x] Template rendering and atomic file writes
+- [x] Lease management with auto-renewal
+- [x] Oban-scheduled secret rotation
+- [x] LiveView admin dashboard
 - [x] CI/CD with GitHub Actions
-- [x] Docker images (multi-arch)
-
----
-
-## 👥 Team
-
-**Development Team:**
-- **Lead Developer:** [Your Name] - Architecture & Integration
-- **AI Assistant 1:** Claude - Architecture, Security, Documentation
-- **AI Assistant 2:** Kimi K2 - Core Backend, Database
-- **AI Assistant 3:** GLM-4.6 - Agent, OTP, GenServers
+- [x] Multi-arch Docker images (amd64/arm64)
 
 ---
 
 ## 📝 Contributing
 
-### Commit Message Convention
+### Commit Convention
 
 ```
 type(scope): subject
 
-body
-
-footer
+Types: feat, fix, docs, style, refactor, test, chore
 ```
-
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation
-- `style`: Formatting
-- `refactor`: Code restructuring
-- `test`: Adding tests
-- `chore`: Maintenance
 
 **Example:**
 ```
-feat(core): implement AppRole authentication backend
+feat(core): implement AWS STS dynamic secret engine
 
-- Add RoleID/SecretID generation
-- Implement token validation
+- Add AssumeRole credential generation
+- Implement lease management
 - Add integration tests
-
-Closes #123
 ```
 
 ---
 
 ## 📄 License
 
-[Your License Here]
+MIT License
 
 ---
 
-## 🗺️ Roadmap
+## 🔗 Links
 
-### Phase 1: MVP (Weeks 1-12) ✅ Complete
-- Basic authentication & storage
-- PKI engine
-- Static secrets
-- Basic audit logging
-
-### Phase 2: Production (Weeks 13-24) ✅ Complete
-- Dynamic secrets (PostgreSQL, Redis, AWS)
-- Template rendering
-- High availability
-- Secret rotation
-
-### Phase 3: Advanced (Weeks 25-28) ✅ Complete
-- Secret versioning
-- Advanced policies
-- CLI tool
-
-### Phase 4: Launch (Weeks 29-32) 🚀 Current
-- Security audit
-- Performance testing
-- Documentation
-- Production deployment (v1.0.0-rc2 released)
-
----
-
-## 🆘 Getting Help
-
-- **Documentation:** Check `docs/` folder
-- **Issues:** Open an issue on GitHub
-- **Discussions:** Use GitHub Discussions
-
----
-
-**Latest Release:** [v1.0.0-rc2](https://github.com/gsmlg-dev/secrethub/releases/tag/v1.0.0-rc2) 🎉
-
+- **Repository:** https://github.com/gsmlg-dev/secrethub
+- **Latest Release:** [v1.0.0-rc3](https://github.com/gsmlg-dev/secrethub/releases/tag/v1.0.0-rc3)
+- **Docker Images:** `ghcr.io/gsmlg-dev/secrethub/core` | `ghcr.io/gsmlg-dev/secrethub/agent`
