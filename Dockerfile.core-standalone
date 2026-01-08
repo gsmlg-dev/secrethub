@@ -1,0 +1,202 @@
+# Multi-stage Dockerfile for SecretHub Core Standalone
+# Includes PostgreSQL 16 for single-container deployment
+# Persists data to /data volume
+
+# =====================================
+# Build Stage
+# =====================================
+FROM elixir:1.18-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    build-base \
+    git
+
+# Set working directory
+WORKDIR /app
+
+# Set build ENV
+ENV MIX_ENV=prod
+
+# Install Elixir & Erlang tooling
+RUN mix local.hex --force && \
+    mix local.rebar --force
+
+# Copy entire umbrella project
+COPY mix.exs mix.lock ./
+COPY config ./config
+COPY apps ./apps
+
+# Install dependencies
+RUN mix deps.get --only prod
+
+# Compile dependencies
+RUN mix deps.compile
+
+# Build assets using Elixir's esbuild and tailwind
+RUN mix assets.setup && \
+    mix assets.deploy
+
+# Compile application
+RUN mix compile
+
+# Build OTP release for core
+RUN mix release secrethub_core
+
+# =====================================
+# Runtime Stage
+# =====================================
+FROM alpine:3.22 AS runtime
+
+# Install runtime dependencies including PostgreSQL 16
+RUN apk add --no-cache \
+    openssl \
+    ncurses-libs \
+    ca-certificates \
+    curl \
+    libgcc \
+    libstdc++ \
+    postgresql16 \
+    postgresql16-contrib \
+    su-exec \
+    bash \
+    && rm -rf /var/cache/apk/*
+
+# Create secrethub user and postgres user
+RUN addgroup -g 1001 -S secrethub && \
+    adduser -D -u 1001 -G secrethub -S secrethub && \
+    addgroup -g 70 -S postgres && \
+    adduser -D -u 70 -G postgres -S postgres
+
+# Create data directory for PostgreSQL persistence
+RUN mkdir -p /data/postgres /data/secrethub && \
+    chown -R postgres:postgres /data/postgres && \
+    chown -R secrethub:secrethub /data/secrethub
+
+# Create PostgreSQL run directory (for Unix domain socket)
+RUN mkdir -p /run/postgresql && \
+    chown -R postgres:postgres /run/postgresql && \
+    chmod 2775 /run/postgresql
+
+# Create application directory
+WORKDIR /app
+
+# Copy built OTP release from builder stage
+COPY --from=builder --chown=secrethub:secrethub /app/_build/prod/rel/secrethub_core ./
+
+# Create entrypoint script
+COPY --chmod=755 <<'EOF' /usr/local/bin/entrypoint.sh
+#!/bin/bash
+set -e
+
+# Configuration
+PGDATA="/data/postgres"
+PGRUN="/run/postgresql"
+PGUSER="secrethub"
+PGPASSWORD="${POSTGRES_PASSWORD:-secrethub_standalone_password}"
+PGDATABASE="${POSTGRES_DATABASE:-secrethub}"
+
+# Initialize PostgreSQL if data directory is empty
+if [ ! -s "$PGDATA/PG_VERSION" ]; then
+    echo "==> Initializing PostgreSQL database..."
+
+    # Initialize database cluster as postgres user
+    su-exec postgres initdb -D "$PGDATA" --auth-local=trust --auth-host=scram-sha-256
+
+    # Configure PostgreSQL
+    cat >> "$PGDATA/postgresql.conf" <<PGCONF
+listen_addresses = ''
+unix_socket_directories = '$PGRUN'
+max_connections = 100
+shared_buffers = 128MB
+dynamic_shared_memory_type = posix
+log_destination = 'stderr'
+logging_collector = off
+log_line_prefix = '%m [%p] '
+log_timezone = 'UTC'
+datestyle = 'iso, mdy'
+timezone = 'UTC'
+lc_messages = 'en_US.UTF-8'
+lc_monetary = 'en_US.UTF-8'
+lc_numeric = 'en_US.UTF-8'
+lc_time = 'en_US.UTF-8'
+default_text_search_config = 'pg_catalog.english'
+PGCONF
+
+    # Configure client authentication
+    cat > "$PGDATA/pg_hba.conf" <<PGHBA
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+local   all             all                                     trust
+PGHBA
+
+    echo "==> PostgreSQL initialized successfully"
+fi
+
+# Start PostgreSQL
+echo "==> Starting PostgreSQL..."
+su-exec postgres pg_ctl -D "$PGDATA" -l /data/postgres/postgresql.log start -w -t 60
+
+# Wait for PostgreSQL to be ready
+echo "==> Waiting for PostgreSQL to be ready..."
+until su-exec postgres pg_isready -h "$PGRUN" -q; do
+    sleep 1
+done
+
+# Create database and user if they don't exist
+echo "==> Setting up database..."
+su-exec postgres psql -h "$PGRUN" -c "SELECT 1 FROM pg_roles WHERE rolname='$PGUSER'" | grep -q 1 || \
+    su-exec postgres psql -h "$PGRUN" -c "CREATE USER $PGUSER WITH PASSWORD '$PGPASSWORD' CREATEDB;"
+
+su-exec postgres psql -h "$PGRUN" -tc "SELECT 1 FROM pg_database WHERE datname='$PGDATABASE'" | grep -q 1 || \
+    su-exec postgres psql -h "$PGRUN" -c "CREATE DATABASE $PGDATABASE OWNER $PGUSER;"
+
+# Enable extensions
+su-exec postgres psql -h "$PGRUN" -d "$PGDATABASE" -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" 2>/dev/null || true
+su-exec postgres psql -h "$PGRUN" -d "$PGDATABASE" -c "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";" 2>/dev/null || true
+
+# Set database URL using Unix domain socket
+export DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@/$PGDATABASE?host=$PGRUN"
+
+# Run migrations
+echo "==> Running database migrations..."
+/app/bin/secrethub_core eval "SecretHub.Core.Release.migrate()"
+
+echo "==> Starting SecretHub Core..."
+
+# Handle graceful shutdown
+trap 'echo "==> Shutting down..."; /app/bin/secrethub_core stop; su-exec postgres pg_ctl -D "$PGDATA" stop -m fast; exit 0' SIGTERM SIGINT
+
+# Start SecretHub Core as secrethub user
+exec su-exec secrethub /app/bin/secrethub_core start
+EOF
+
+# Set environment
+ENV HOME=/app
+ENV PORT=4000
+ENV MIX_ENV=prod
+ENV PHX_SERVER=true
+ENV RELEASE_COOKIE=change-me-in-production
+
+# Create necessary directories
+RUN mkdir -p /app/var/log /app/tmp && \
+    chown -R secrethub:secrethub /app
+
+# Expose port
+EXPOSE 4000
+
+# Define data volume
+VOLUME ["/data"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:4000/health || exit 1
+
+# Entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Labels for orchestration
+LABEL maintainer="SecretHub Development Team" \
+      version="1.0.0-rc4" \
+      description="SecretHub Core Standalone - Enterprise secrets management with embedded PostgreSQL" \
+      org.opencontainers.image.source="https://github.com/gsmlg-dev/secrethub" \
+      org.opencontainers.image.licenses="MIT"

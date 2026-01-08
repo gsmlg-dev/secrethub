@@ -218,11 +218,58 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
 
+  # Job 5: Build Core Standalone Docker Image (includes PostgreSQL)
+  build-core-standalone-docker:
+    name: Build Core Standalone Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/core-standalone
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Core Standalone Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.core-standalone
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
   # Final Job: Create GitHub Release with all artifacts
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-core-release, build-agent-release, build-core-docker, build-agent-docker]
+    needs: [build-core-release, build-agent-release, build-core-docker, build-agent-docker, build-core-standalone-docker]
     permissions:
       contents: write
 
@@ -255,6 +302,7 @@ jobs:
 
           ### Docker Images
           - **Core**: \`ghcr.io/${{ github.repository }}/core:${VERSION}\`
+          - **Core Standalone** (with PostgreSQL): \`ghcr.io/${{ github.repository }}/core-standalone:${VERSION}\`
           - **Agent**: \`ghcr.io/${{ github.repository }}/agent:${VERSION}\`
 
           ## 🚀 Quick Start
@@ -277,6 +325,12 @@ jobs:
           # Run Core service
           docker run -d -p 4000:4000 \\
             ghcr.io/${{ github.repository }}/core:${VERSION}
+
+          # Run Core Standalone (includes PostgreSQL, no external DB needed)
+          docker run -d -p 4000:4000 \\
+            -v secrethub-data:/data \\
+            -e SECRET_KEY_BASE=\$(openssl rand -base64 48) \\
+            ghcr.io/${{ github.repository }}/core-standalone:${VERSION}
 
           # Run Agent
           docker run -d \\
@@ -320,8 +374,10 @@ jobs:
           echo "- ✅ Core Release (tar.gz)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Agent Release (tar.gz)" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Core Docker Image" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Core Standalone Docker Image" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Agent Docker Image" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Docker Images:" >> $GITHUB_STEP_SUMMARY
           echo "- \`ghcr.io/${{ github.repository }}/core:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository }}/core-standalone:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`ghcr.io/${{ github.repository }}/agent:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
