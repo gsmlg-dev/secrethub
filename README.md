@@ -22,6 +22,8 @@ SecretHub is a secure, reliable, and highly automated secrets management platfor
 | 🛡️ **Vault Seal/Unseal** | Shamir's Secret Sharing for master key protection |
 | ⚡ **High Availability** | Multi-node deployment with distributed locking |
 | 🔓 **Auto-Unseal** | AWS KMS, Azure Key Vault, GCP KMS integrations |
+| 🚨 **Anomaly Detection** | Real-time security anomaly detection and alerting |
+| 📋 **Policy Templates** | Pre-built policy templates for common use cases |
 
 ---
 
@@ -41,13 +43,13 @@ SecretHub implements a **two-tier architecture** with a central Core service and
 │  │ • CSR     │  │   Match   │  │ • Leases  │  │ • HMAC    │       │
 │  └───────────┘  └───────────┘  └───────────┘  └───────────┘       │
 │                                                                      │
-│  ┌───────────┐  ┌───────────┐  ┌───────────────────────────┐       │
-│  │  AppRole  │  │   Vault   │  │      REST API + WebSocket  │       │
-│  │   Auth    │  │ Seal/     │  │  /v1/secrets, /v1/auth,   │       │
-│  │           │  │ Unseal    │  │  /v1/pki, /v1/sys         │       │
-│  └───────────┘  └───────────┘  └───────────────────────────┘       │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐       │
+│  │  AppRole  │  │   Vault   │  │  Anomaly  │  │   Apps    │       │
+│  │   Auth    │  │ Seal/     │  │ Detection │  │  Manager  │       │
+│  │           │  │ Unseal    │  │           │  │           │       │
+│  └───────────┘  └───────────┘  └───────────┘  └───────────┘       │
 │                                                                      │
-│                    Phoenix LiveView Admin Dashboard                  │
+│              REST API + WebSocket + LiveView Admin                  │
 └─────────────────────────────────────────────────────────────────────┘
                               ↕ mTLS WebSocket
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -196,10 +198,14 @@ secrethub/                              # Elixir Umbrella Application
 │   │       ├── auth/app_role.ex        # AppRole authentication
 │   │       ├── pki/ca.ex               # PKI/CA management
 │   │       ├── policies.ex             # Policy engine
+│   │       ├── policy_templates.ex     # Pre-built policy templates
+│   │       ├── apps.ex                 # Application management
 │   │       ├── audit.ex                # Hash-chained audit logs
 │   │       ├── vault/seal_state.ex     # Seal/unseal with Shamir
 │   │       ├── engines/dynamic/        # PostgreSQL, Redis, AWS STS
-│   │       ├── auto_unseal/providers/  # KMS integrations
+│   │       ├── auto_unseal/providers/  # AWS KMS, Azure KV, GCP KMS
+│   │       ├── anomaly_detection.ex    # Security anomaly detection
+│   │       ├── alerting.ex             # Multi-channel alerting
 │   │       ├── lease_manager.ex        # Lease lifecycle
 │   │       └── rotation_manager.ex     # Oban-scheduled rotation
 │   │
@@ -226,42 +232,162 @@ secrethub/                              # Elixir Umbrella Application
 │           └── crypto/                 # AES-256-GCM, Shamir
 │
 ├── config/                             # Environment configs
-├── infrastructure/                     # IaC (Docker, K8s, Terraform)
+├── infrastructure/                     # IaC
+│   ├── helm/                           # Helm charts
+│   ├── kubernetes/                     # K8s manifests
+│   └── prometheus/                     # Prometheus configs
 └── .github/workflows/                  # CI/CD pipelines
 ```
 
 ---
 
-## 🌐 API Endpoints
+## 🌐 API Reference
 
-| Endpoint | Description |
-|----------|-------------|
-| `POST /v1/sys/init` | Initialize vault with Shamir shares |
-| `POST /v1/sys/unseal` | Unseal vault with key shares |
-| `GET /v1/sys/health` | Health check |
-| `POST /v1/auth/approle/login` | AppRole authentication |
-| `GET /v1/secrets/:path` | Read secret |
-| `POST /v1/secrets/:path` | Write secret |
-| `POST /v1/secrets/dynamic/postgresql/creds/:role` | Generate PostgreSQL credentials |
-| `POST /v1/pki/issue` | Issue certificate |
-| `GET /v1/sys/leases` | List active leases |
-| `POST /v1/sys/leases/revoke` | Revoke lease |
+### System Endpoints (`/v1/sys`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/sys/init` | POST | Initialize vault with Shamir shares |
+| `/v1/sys/seal` | POST | Seal the vault |
+| `/v1/sys/unseal` | POST | Unseal vault with key shares |
+| `/v1/sys/seal-status` | GET | Get vault seal status |
+| `/v1/sys/health` | GET | Health check |
+| `/v1/sys/health/ready` | GET | Kubernetes readiness probe |
+| `/v1/sys/health/live` | GET | Kubernetes liveness probe |
+
+### Authentication (`/v1/auth`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/auth/approle/login` | POST | AppRole login |
+| `/v1/auth/approle/role` | GET | List all roles |
+| `/v1/auth/approle/role/:role_name` | POST | Create AppRole |
+| `/v1/auth/approle/role/:role_name` | DELETE | Delete AppRole |
+| `/v1/auth/approle/role/:role_name/role-id` | GET | Get Role ID |
+| `/v1/auth/approle/role/:role_name/secret-id` | POST | Generate Secret ID |
+
+### Secrets (`/v1/secrets`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/secrets/:path` | GET | Read secret |
+| `/v1/secrets/:path` | POST | Write secret |
+| `/v1/secrets/:path` | DELETE | Delete secret |
+| `/v1/secrets/dynamic/postgresql/creds/:role` | POST | Generate PostgreSQL credentials |
+| `/v1/secrets/dynamic/redis/creds/:role` | POST | Generate Redis credentials |
+| `/v1/secrets/dynamic/aws/creds/:role` | POST | Generate AWS STS credentials |
+
+### PKI (`/v1/pki`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/pki/ca/root/generate` | POST | Generate Root CA |
+| `/v1/pki/ca/intermediate/generate` | POST | Generate Intermediate CA |
+| `/v1/pki/issue` | POST | Issue certificate |
+| `/v1/pki/sign-request` | POST | Sign a CSR |
+| `/v1/pki/certificates` | GET | List certificates |
+| `/v1/pki/certificates/:id` | GET | Get certificate details |
+| `/v1/pki/certificates/:id/revoke` | POST | Revoke certificate |
+| `/v1/pki/app/issue` | POST | Issue app certificate (bootstrap) |
+| `/v1/pki/app/renew` | POST | Renew app certificate |
+
+### Applications (`/v1/apps`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/apps` | GET | List applications |
+| `/v1/apps` | POST | Register application |
+| `/v1/apps/:id` | GET | Get application details |
+| `/v1/apps/:id` | PUT | Update application |
+| `/v1/apps/:id` | DELETE | Delete application |
+| `/v1/apps/:id/suspend` | POST | Suspend application |
+| `/v1/apps/:id/activate` | POST | Activate application |
+| `/v1/apps/:id/certificates` | GET | List app certificates |
+
+### Leases (`/v1/sys/leases`)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/sys/leases` | GET | List active leases |
+| `/v1/sys/leases/stats` | GET | Get lease statistics |
+| `/v1/sys/leases/renew` | POST | Renew a lease |
+| `/v1/sys/leases/revoke` | POST | Revoke a lease |
 
 ---
 
 ## 🖥️ Admin Dashboard
 
-The LiveView-based admin dashboard provides:
+The LiveView-based admin dashboard (`/admin`) provides:
 
-- **Dashboard**: System overview, health metrics
-- **Agents**: Connected agents, status monitoring
-- **Secrets**: Secret browser, version history
-- **Policies**: Policy management, entity bindings
-- **PKI**: CA management, certificate issuance
-- **Audit**: Log viewer, CSV export
-- **Dynamic Engines**: PostgreSQL/Redis configuration
-- **Leases**: Active lease management
-- **Cluster**: Node health, distributed state
+### Core Management
+- **Dashboard**: System overview, health metrics, quick stats
+- **Secrets**: Secret browser, version history, bulk operations
+- **Policies**: Policy editor, entity bindings, simulator
+- **Policy Templates**: Pre-built templates for common scenarios
+
+### Security & PKI
+- **PKI**: Root/Intermediate CA management, certificate issuance
+- **Certificates**: Certificate browser, revocation, renewal
+- **AppRoles**: Role management, secret ID rotation
+
+### Infrastructure
+- **Agents**: Connected agents, status monitoring, health checks
+- **Dynamic Engines**: PostgreSQL/Redis engine configuration
+- **Engine Health**: Real-time engine status dashboard
+- **Leases**: Active lease management, bulk revocation
+
+### Operations
+- **Audit**: Log viewer, search, CSV export
+- **Rotations**: Rotation schedules, history, manual triggers
+- **Templates**: Secret template management
+
+### Cluster & Monitoring
+- **Cluster**: Node health, distributed state, deployment status
+- **Auto-Unseal**: KMS provider configuration
+- **Alerts**: Alert rules, notification channels
+- **Anomalies**: Anomaly detection rules, triggered alerts
+- **Performance**: Performance metrics dashboard
+
+---
+
+## 🚨 Anomaly Detection
+
+SecretHub includes a built-in anomaly detection engine with rules for:
+
+| Rule Type | Description |
+|-----------|-------------|
+| Failed Logins | Detect brute-force authentication attempts |
+| Bulk Deletion | Alert on mass secret deletion |
+| Unusual Access Time | Detect access outside business hours |
+| Mass Secret Access | Alert on abnormal secret read patterns |
+| Credential Export Spike | Detect unusual credential generation |
+| Rotation Failures | Alert on failed secret rotations |
+| Policy Violations | Detect policy bypass attempts |
+
+### Alert Channels
+
+- Email notifications
+- Slack webhooks
+- Generic webhooks
+- PagerDuty integration
+- Opsgenie integration
+
+---
+
+## 📋 Policy Templates
+
+Pre-built policy templates for common scenarios:
+
+| Template | Description |
+|----------|-------------|
+| `business_hours` | Access restricted to business hours (9-5) |
+| `ip_restricted` | Access limited to specific IP ranges |
+| `read_only` | Read-only access to secrets |
+| `emergency_access` | Break-glass emergency access |
+| `dev_environment` | Development environment access |
+| `production_readonly` | Production read-only access |
+| `time_limited` | Time-limited access with expiration |
+| `multi_region` | Multi-region access policies |
 
 ---
 
@@ -291,6 +417,14 @@ docker run -d \
   ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc3
 ```
 
+### Kubernetes (Helm)
+
+```bash
+helm install secrethub ./infrastructure/helm/secrethub \
+  --set core.database.url="postgresql://..." \
+  --set core.secretKeyBase="..."
+```
+
 ### Environment Variables
 
 ```bash
@@ -298,6 +432,7 @@ docker run -d \
 DATABASE_URL=postgresql://user:pass@host/db  # Or with socket: ?host=/var/run/postgresql
 SECRET_KEY_BASE=<64-char-hex>
 PHX_HOST=secrethub.example.com
+POOL_SIZE=10
 
 # Agent
 SECRETHUB_CORE_URL=wss://core.example.com:4000
@@ -312,22 +447,27 @@ SECRETHUB_SECRET_ID=<secret-id>
 ### ✅ Completed Features
 
 - [x] Umbrella project structure with 4 apps
-- [x] PostgreSQL 16 with UUID, pgcrypto extensions
+- [x] PostgreSQL 16 with UUID, pgcrypto extensions (Unix socket support)
 - [x] AppRole authentication (RoleID/SecretID)
 - [x] Full PKI engine (Root CA, Intermediate CA, CSR)
 - [x] Vault seal/unseal with Shamir's Secret Sharing
 - [x] Policy engine with glob patterns and conditions
+- [x] Policy templates for common scenarios
 - [x] Tamper-evident audit logging (hash chains + HMAC)
 - [x] Dynamic secret engines (PostgreSQL, Redis, AWS STS)
-- [x] Auto-unseal providers (AWS KMS, Azure, GCP)
+- [x] Auto-unseal providers (AWS KMS, Azure Key Vault, GCP KMS)
 - [x] Agent bootstrap and mTLS WebSocket connection
 - [x] Secret caching with TTL and LRU eviction
 - [x] Template rendering and atomic file writes
 - [x] Lease management with auto-renewal
 - [x] Oban-scheduled secret rotation
-- [x] LiveView admin dashboard
+- [x] Application management system
+- [x] Anomaly detection engine
+- [x] Multi-channel alerting (Email, Slack, PagerDuty, Opsgenie)
+- [x] LiveView admin dashboard (20+ pages)
 - [x] CI/CD with GitHub Actions
 - [x] Multi-arch Docker images (amd64/arm64)
+- [x] Helm charts for Kubernetes deployment
 
 ---
 
