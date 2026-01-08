@@ -62,11 +62,9 @@ RUN apk add --no-cache \
     bash \
     && rm -rf /var/cache/apk/*
 
-# Create secrethub user and postgres user
+# Create secrethub user (postgres user/group already created by postgresql16 package)
 RUN addgroup -g 1001 -S secrethub && \
-    adduser -D -u 1001 -G secrethub -S secrethub && \
-    addgroup -g 70 -S postgres && \
-    adduser -D -u 70 -G postgres -S postgres
+    adduser -D -u 1001 -G secrethub -S secrethub
 
 # Create data directory for PostgreSQL persistence
 RUN mkdir -p /data/postgres /data/secrethub && \
