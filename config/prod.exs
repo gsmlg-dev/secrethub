@@ -44,10 +44,8 @@ config :secrethub_core, SecretHub.Core.Repo,
   ownership_timeout: 60_000,
   # Enable prepared statement caching for better performance
   prepare: :named,
-  # Connection parameters for better performance
+  # Connection parameters for PostgreSQL session variables
   parameters: [
-    # Use binary protocol for better performance
-    binary_as: "binary",
     # Enable JIT compilation (PostgreSQL 11+)
     jit: "on"
   ]
