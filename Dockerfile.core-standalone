@@ -101,9 +101,10 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
     # Initialize database cluster as postgres user
     su-exec postgres initdb -D "$PGDATA" --auth-local=trust --auth-host=scram-sha-256
 
-    # Configure PostgreSQL
+    # Configure PostgreSQL (listen on localhost for Ecto compatibility)
     cat >> "$PGDATA/postgresql.conf" <<PGCONF
-listen_addresses = ''
+listen_addresses = '127.0.0.1'
+port = 5432
 unix_socket_directories = '$PGRUN'
 max_connections = 100
 shared_buffers = 128MB
@@ -125,6 +126,7 @@ PGCONF
     cat > "$PGDATA/pg_hba.conf" <<PGHBA
 # TYPE  DATABASE        USER            ADDRESS                 METHOD
 local   all             all                                     trust
+host    all             all             127.0.0.1/32            scram-sha-256
 PGHBA
 
     echo "==> PostgreSQL initialized successfully"
@@ -152,8 +154,8 @@ su-exec postgres psql -h "$PGRUN" -tc "SELECT 1 FROM pg_database WHERE datname='
 su-exec postgres psql -h "$PGRUN" -d "$PGDATABASE" -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";" 2>/dev/null || true
 su-exec postgres psql -h "$PGRUN" -d "$PGDATABASE" -c "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";" 2>/dev/null || true
 
-# Set database URL using Unix domain socket
-export DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@/$PGDATABASE?host=$PGRUN"
+# Set database URL using localhost (internal only, not exposed)
+export DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@127.0.0.1:5432/$PGDATABASE"
 
 # Run migrations
 echo "==> Running database migrations..."
