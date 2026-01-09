@@ -16,14 +16,12 @@ config :secrethub_web, SecretHub.WebWeb.Endpoint,
   ],
   # Force HTTPS and set secure headers
   force_ssl: [rewrite_on: [:x_forwarded_proto]],
-  # Security headers and performance tuning
+  # Bandit HTTP server configuration
   http: [
-    protocol_options: [
-      max_header_length: 16_384,
-      max_request_line_length: 8192
-    ],
-    # Connection and performance tuning
-    transport_options: [
+    # Request timeouts (in milliseconds)
+    read_timeout: 60_000,
+    # Thousand Island transport options
+    thousand_island_options: [
       num_acceptors: 100,
       max_connections: 16_384
     ]
