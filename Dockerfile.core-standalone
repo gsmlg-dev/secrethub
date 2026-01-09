@@ -100,9 +100,13 @@ if [ ! -s "$PGDATA/PG_VERSION" ]; then
 
     # Initialize database cluster as postgres user
     su-exec postgres initdb -D "$PGDATA" --auth-local=trust --auth-host=scram-sha-256
+    echo "==> PostgreSQL initialized successfully"
+fi
 
-    # Configure PostgreSQL (listen on localhost for Ecto compatibility)
-    cat >> "$PGDATA/postgresql.conf" <<PGCONF
+# Always ensure correct PostgreSQL configuration (handles upgrades)
+echo "==> Configuring PostgreSQL..."
+cat > "$PGDATA/postgresql.conf" <<PGCONF
+# SecretHub standalone PostgreSQL configuration
 listen_addresses = '127.0.0.1'
 port = 5432
 unix_socket_directories = '$PGRUN'
@@ -122,15 +126,14 @@ lc_time = 'en_US.UTF-8'
 default_text_search_config = 'pg_catalog.english'
 PGCONF
 
-    # Configure client authentication
-    cat > "$PGDATA/pg_hba.conf" <<PGHBA
+# Configure client authentication
+cat > "$PGDATA/pg_hba.conf" <<PGHBA
 # TYPE  DATABASE        USER            ADDRESS                 METHOD
 local   all             all                                     trust
 host    all             all             127.0.0.1/32            scram-sha-256
 PGHBA
 
-    echo "==> PostgreSQL initialized successfully"
-fi
+chown postgres:postgres "$PGDATA/postgresql.conf" "$PGDATA/pg_hba.conf"
 
 # Start PostgreSQL
 echo "==> Starting PostgreSQL..."
