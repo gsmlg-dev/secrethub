@@ -49,13 +49,16 @@ if config_env() == :prod do
       You can generate one by calling: mix phx.gen.secret
       """
 
-  host = System.get_env("PHX_HOST") || "example.com"
+  host = System.get_env("PHX_HOST") || "localhost"
   port = String.to_integer(System.get_env("PORT") || "4000")
+  scheme = System.get_env("PHX_SCHEME") || "http"
+  url_port = String.to_integer(System.get_env("PHX_URL_PORT") || (if scheme == "https", do: "443", else: to_string(port)))
 
   config :secrethub_web, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  config :secrethub_web, SecretHub.WebWeb.Endpoint,
-    url: [host: host, port: 443, scheme: "https"],
+  # Base endpoint configuration
+  endpoint_config = [
+    url: [host: host, port: url_port, scheme: scheme],
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
@@ -65,6 +68,17 @@ if config_env() == :prod do
       port: port
     ],
     secret_key_base: secret_key_base
+  ]
+
+  # Optionally enable force_ssl for deployments behind SSL-terminating proxy
+  endpoint_config =
+    if System.get_env("FORCE_SSL") == "true" do
+      Keyword.put(endpoint_config, :force_ssl, rewrite_on: [:x_forwarded_proto])
+    else
+      endpoint_config
+    end
+
+  config :secrethub_web, SecretHub.WebWeb.Endpoint, endpoint_config
 
   # ## SSL Support
   #

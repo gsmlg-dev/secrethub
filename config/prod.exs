@@ -7,15 +7,13 @@ import Config
 # before starting your production server.
 config :secrethub_web, SecretHub.WebWeb.Endpoint,
   cache_static_manifest: "priv/static/cache_manifest.json",
-  # Production security hardening
+  # Production security hardening (session cookie settings)
+  # Note: secure: true requires HTTPS - set PHX_SECURE_COOKIES=false for HTTP-only deployments
   session_options: [
-    # HTTPS only (override dev setting)
-    secure: true,
-    # Stricter CSRF protection in production
-    same_site: "Strict"
-  ],
-  # Force HTTPS and set secure headers
-  force_ssl: [rewrite_on: [:x_forwarded_proto]]
+    same_site: "Lax"
+  ]
+  # Note: force_ssl should be configured via runtime.exs with FORCE_SSL=true
+  # for deployments behind an SSL-terminating reverse proxy
 
 # Database connection pool configuration (production)
 config :secrethub_core, SecretHub.Core.Repo,
