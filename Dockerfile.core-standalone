@@ -175,7 +175,7 @@ EOF
 
 # Set environment
 ENV HOME=/app
-ENV PORT=4000
+ENV PORT=4737
 ENV MIX_ENV=prod
 ENV PHX_SERVER=true
 ENV RELEASE_COOKIE=change-me-in-production
@@ -185,14 +185,14 @@ RUN mkdir -p /app/var/log /app/tmp && \
     chown -R secrethub:secrethub /app
 
 # Expose port
-EXPOSE 4000
+EXPOSE 4737
 
 # Define data volume
 VOLUME ["/data"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:4000/health || exit 1
+    CMD curl -f http://localhost:4737/health || exit 1
 
 # Entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
