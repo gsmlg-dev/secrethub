@@ -51,34 +51,17 @@ if config_env() == :prod do
 
   host = System.get_env("PHX_HOST") || "localhost"
   port = String.to_integer(System.get_env("PORT") || "4000")
-  scheme = System.get_env("PHX_SCHEME") || "http"
-  url_port = String.to_integer(System.get_env("PHX_URL_PORT") || (if scheme == "https", do: "443", else: to_string(port)))
 
   config :secrethub_web, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  # Base endpoint configuration
-  endpoint_config = [
-    url: [host: host, port: url_port, scheme: scheme],
+  config :secrethub_web, SecretHub.WebWeb.Endpoint,
+    url: [host: host, port: port],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://hexdocs.pm/bandit/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
       port: port
     ],
-    secret_key_base: secret_key_base
-  ]
-
-  # Optionally enable force_ssl for deployments behind SSL-terminating proxy
-  endpoint_config =
-    if System.get_env("FORCE_SSL") == "true" do
-      Keyword.put(endpoint_config, :force_ssl, rewrite_on: [:x_forwarded_proto])
-    else
-      endpoint_config
-    end
-
-  config :secrethub_web, SecretHub.WebWeb.Endpoint, endpoint_config
+    secret_key_base: secret_key_base,
+    check_origin: false
 
   # ## SSL Support
   #

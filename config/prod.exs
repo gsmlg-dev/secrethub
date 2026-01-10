@@ -6,14 +6,7 @@ import Config
 # which you should run after static files are built and
 # before starting your production server.
 config :secrethub_web, SecretHub.WebWeb.Endpoint,
-  cache_static_manifest: "priv/static/cache_manifest.json",
-  # Production security hardening (session cookie settings)
-  # Note: secure: true requires HTTPS - set PHX_SECURE_COOKIES=false for HTTP-only deployments
-  session_options: [
-    same_site: "Lax"
-  ]
-  # Note: force_ssl should be configured via runtime.exs with FORCE_SSL=true
-  # for deployments behind an SSL-terminating reverse proxy
+  cache_static_manifest: "priv/static/cache_manifest.json"
 
 # Database connection pool configuration (production)
 config :secrethub_core, SecretHub.Core.Repo,
