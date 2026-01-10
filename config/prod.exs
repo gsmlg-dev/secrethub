@@ -15,17 +15,7 @@ config :secrethub_web, SecretHub.WebWeb.Endpoint,
     same_site: "Strict"
   ],
   # Force HTTPS and set secure headers
-  force_ssl: [rewrite_on: [:x_forwarded_proto]],
-  # Bandit HTTP server configuration
-  http: [
-    # Request timeouts (in milliseconds)
-    read_timeout: 60_000,
-    # Thousand Island transport options
-    thousand_island_options: [
-      num_acceptors: 100,
-      max_connections: 16_384
-    ]
-  ]
+  force_ssl: [rewrite_on: [:x_forwarded_proto]]
 
 # Database connection pool configuration (production)
 config :secrethub_core, SecretHub.Core.Repo,
