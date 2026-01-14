@@ -19,7 +19,7 @@ config :secrethub_core, SecretHub.Core.Repo,
 config :secrethub_web, SecretHub.WebWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
+  http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4664")],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
@@ -94,7 +94,7 @@ config :swoosh, :api_client, false
 # Agent configuration (for development)
 config :secrethub_agent,
   agent_id: "agent-dev-01",
-  core_url: "ws://localhost:4000",
+  core_url: "ws://localhost:4664",
   # Use /tmp for socket in development (no root permissions needed)
   socket_path: "/tmp/secrethub_dev_agent.sock",
   # TLS certificates (will be used in production with wss://)
