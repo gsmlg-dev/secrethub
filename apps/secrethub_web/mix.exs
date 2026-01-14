@@ -50,7 +50,6 @@ defmodule SecretHub.Web.MixProject do
       {:phoenix_live_view, "~> 1.1.0"},
       {:lazy_html, ">= 0.1.0", only: :test},
       {:phoenix_live_dashboard, "~> 0.8.3"},
-      {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
       {:heroicons,
        github: "tailwindlabs/heroicons",
@@ -85,11 +84,11 @@ defmodule SecretHub.Web.MixProject do
   defp aliases do
     [
       setup: ["deps.get", "assets.setup", "assets.build"],
-      "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
-      "assets.build": ["compile", "tailwind secrethub_web", "esbuild secrethub_web"],
+      "assets.setup": ["tailwind.install --if-missing", "cmd --cd assets bun install"],
+      "assets.build": ["compile", "tailwind secrethub_web", "cmd --cd assets bun run build"],
       "assets.deploy": [
         "tailwind secrethub_web --minify",
-        "esbuild secrethub_web --minify",
+        "cmd --cd assets bun run build",
         "phx.digest"
       ],
       precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"],

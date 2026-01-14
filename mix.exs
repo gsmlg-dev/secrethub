@@ -21,7 +21,10 @@ defmodule SecretHub.MixProject do
         "coveralls.detail": :test,
         "coveralls.post": :test,
         "coveralls.html": :test
-      ]
+      ],
+
+      # Phoenix code reloader listener (required for Phoenix 1.8+)
+      listeners: [Phoenix.CodeReloader]
     ]
   end
 
