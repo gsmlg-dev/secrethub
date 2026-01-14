@@ -20,6 +20,12 @@ if System.get_env("PHX_SERVER") do
   config :secrethub_web, SecretHub.WebWeb.Endpoint, server: true
 end
 
+# Configure tailwind path from environment variable
+# This allows NixOS and other systems to use system-provided binaries
+if tailwind_path = System.get_env("TAILWIND_PATH") do
+  config :tailwind, path: tailwind_path
+end
+
 if config_env() == :prod do
   # Database configuration from environment
   database_url =

@@ -11,22 +11,26 @@ in
   packages = with pkgs; [
     # Elixir & Erlang (managed by languages.elixir)
     git
-    
+
     # JavaScript runtime for Phoenix assets
     bun
-    
+
     # Database tools
     postgresql_16
-    
+
     # Additional tools
     openssl
-    
+
     # For testing AWS integrations locally
     awscli2
-    
+
     # Monitoring tools
     prometheus
     grafana
+
+    # Frontend build tools (NixOS-compatible binaries)
+    tailwindcss
+    inotify-tools
   ];
 
   # Language configuration
@@ -132,14 +136,61 @@ in
 
     # Development flags
     ELIXIR_ERL_OPTIONS = "+sbwt none +sbwtdcpu none +sbwtdio none";
+
+    # Bun and frontend build tools (NixOS compatibility)
+    BUN_PATH = "${pkgs.bun}/bin/bun";
+    # Tailwind v4 requires bun-installed version since nixpkgs only has v3
+    TAILWIND_PATH = "$HOME/.bun/bin/tailwindcss";
   };
 
   # Scripts for common tasks
   scripts = {
+    # Clean up stale postgres lock files (useful after unclean shutdown)
+    db-clean.exec = ''
+      rm -f "$DEVENV_STATE/postgres/postmaster.pid" 2>/dev/null || true
+      echo "✅ Cleaned stale postgres lock files"
+    '';
+
+    # Database initialization (run after devenv up to ensure user/databases exist)
+    db-init.exec = ''
+      # Find the actual socket location (devenv uses /tmp/devenv-*/postgres)
+      SOCKET_DIR=$(dirname $(find /tmp -name ".s.PGSQL.5432" -path "*devenv*" 2>/dev/null | head -1) 2>/dev/null)
+      if [ -z "$SOCKET_DIR" ]; then
+        echo "❌ PostgreSQL socket not found. Is devenv up running?"
+        exit 1
+      fi
+
+      # Create symlink if needed
+      mkdir -p "$DEVENV_STATE/postgres"
+      ln -sf "$SOCKET_DIR/.s.PGSQL.5432" "$DEVENV_STATE/postgres/.s.PGSQL.5432" 2>/dev/null || true
+
+      # Check if secrethub user exists
+      if ! psql -h "$SOCKET_DIR" -U "$USER" -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='secrethub'" | grep -q 1; then
+        echo "📦 Creating secrethub user..."
+        psql -h "$SOCKET_DIR" -U "$USER" -d postgres -c "CREATE USER secrethub WITH PASSWORD 'secrethub_dev_password' SUPERUSER;"
+      fi
+
+      # Create databases if they don't exist
+      if ! psql -h "$SOCKET_DIR" -U "$USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='secrethub_dev'" | grep -q 1; then
+        echo "📦 Creating secrethub_dev database..."
+        psql -h "$SOCKET_DIR" -U "$USER" -d postgres -c "CREATE DATABASE secrethub_dev OWNER secrethub;"
+        psql -h "$SOCKET_DIR" -U "$USER" -d secrethub_dev -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"; CREATE EXTENSION IF NOT EXISTS \"pgcrypto\"; CREATE SCHEMA IF NOT EXISTS audit; GRANT ALL ON SCHEMA audit TO secrethub;"
+      fi
+
+      if ! psql -h "$SOCKET_DIR" -U "$USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='secrethub_test'" | grep -q 1; then
+        echo "📦 Creating secrethub_test database..."
+        psql -h "$SOCKET_DIR" -U "$USER" -d postgres -c "CREATE DATABASE secrethub_test OWNER secrethub;"
+        psql -h "$SOCKET_DIR" -U "$USER" -d secrethub_test -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"; CREATE EXTENSION IF NOT EXISTS \"pgcrypto\"; CREATE SCHEMA IF NOT EXISTS audit; GRANT ALL ON SCHEMA audit TO secrethub;"
+      fi
+
+      echo "✅ Database initialized successfully!"
+    '';
+
     # Database management
     db-setup.exec = ''
+      db-init
       cd apps/secrethub_core
-      mix ecto.create
+      mix ecto.create 2>/dev/null || true
       mix ecto.migrate
       mix run priv/repo/seeds.exs
     '';
@@ -157,8 +208,19 @@ in
       mix ecto.migrate
     '';
     
+    # Install tailwindcss v4 globally via bun (required for NixOS compatibility)
+    tailwind-install.exec = ''
+      if [ ! -f "$HOME/.bun/bin/tailwindcss" ]; then
+        echo "📦 Installing tailwindcss v4 via bun..."
+        bun add -g @tailwindcss/cli@4.1.7
+      else
+        echo "✅ tailwindcss already installed"
+      fi
+    '';
+
     # Asset management (using Bun)
     assets-install.exec = ''
+      tailwind-install
       cd apps/secrethub_web/assets
       bun install
     '';
@@ -210,6 +272,9 @@ in
 
   # Enter shell hooks
   enterShell = ''
+    # Add bun global bin to PATH (for tailwindcss)
+    export PATH="$HOME/.bun/bin:$PATH"
+
     # Welcome message
     cat << 'EOF'
     
@@ -237,7 +302,10 @@ in
        • Prometheus:  localhost:9090
 
     EOF
-        
+
+    # Initialize database (creates user/databases if needed)
+    db-init 2>/dev/null || true
+
     # Check if dependencies are installed
     if [ ! -d "deps" ]; then
       echo "📦 Installing Elixir dependencies..."
@@ -245,6 +313,12 @@ in
       echo ""
     fi
     
+    # Check if tailwindcss is installed
+    if [ ! -f "$HOME/.bun/bin/tailwindcss" ]; then
+      echo "📦 Tailwind CSS v4 not installed. Run: tailwind-install"
+      echo ""
+    fi
+
     # Check if assets dependencies are installed
     if [ -d "apps/secrethub_web/assets" ] && [ ! -d "apps/secrethub_web/assets/node_modules" ]; then
       echo "📦 Frontend dependencies not installed. Run: assets-install"
