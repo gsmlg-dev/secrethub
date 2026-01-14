@@ -4,6 +4,10 @@
     "watch": "bun build js/app.js --outdir=../priv/static/assets/js --target=browser --sourcemap=inline --watch"
   },
   "dependencies": {
+    "phoenix": "file:../../../deps/phoenix",
+    "phoenix_html": "file:../../../deps/phoenix_html",
+    "phoenix_live_view": "file:../../../deps/phoenix_live_view",
+    "phoenix-colocated": "file:../../../deps/phoenix_live_view",
     "tailwindcss": "4.1.7"
   }
 }
