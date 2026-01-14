@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "build": "bun build js/app.js --outdir=../priv/static/assets/js --target=browser --sourcemap=external",
+    "watch": "bun build js/app.js --outdir=../priv/static/assets/js --target=browser --sourcemap=inline --watch"
+  },
+  "dependencies": {
+    "tailwindcss": "4.1.7"
+  }
+}
