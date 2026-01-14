@@ -132,15 +132,14 @@ in
     
     # Phoenix
     PHX_HOST = "localhost";
-    PHX_PORT = "4000";
+    PHX_PORT = "4664";
 
     # Development flags
     ELIXIR_ERL_OPTIONS = "+sbwt none +sbwtdcpu none +sbwtdio none";
 
-    # Bun and frontend build tools (NixOS compatibility)
+    # Bun path (NixOS compatibility)
     BUN_PATH = "${pkgs.bun}/bin/bun";
-    # Tailwind v4 requires bun-installed version since nixpkgs only has v3
-    TAILWIND_PATH = "$HOME/.bun/bin/tailwindcss";
+    # Note: TAILWIND_PATH is set in enterShell for proper $HOME expansion
   };
 
   # Scripts for common tasks
@@ -274,6 +273,8 @@ in
   enterShell = ''
     # Add bun global bin to PATH (for tailwindcss)
     export PATH="$HOME/.bun/bin:$PATH"
+    # Set TAILWIND_PATH with proper $HOME expansion (Nix env block doesn't expand shell vars)
+    export TAILWIND_PATH="$HOME/.bun/bin/tailwindcss"
 
     # Welcome message
     cat << 'EOF'
