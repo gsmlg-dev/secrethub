@@ -25,8 +25,12 @@ config :secrethub_web, SecretHub.WebWeb.Endpoint,
   debug_errors: true,
   secret_key_base: "vAPoEmgczs3B5WPFpsHw8tV5a+VV79FjDI7umvmAt1YdlBvpz1J9sXW+/mb5Tj5A",
   watchers: [
-    esbuild: {Esbuild, :install_and_run, [:secrethub_web, ~w(--sourcemap=inline --watch)]},
-    tailwind: {Tailwind, :install_and_run, [:secrethub_web, ~w(--watch)]}
+    tailwind: {Tailwind, :install_and_run, [:secrethub_web, ~w(--watch)]},
+    bun: [
+      "run",
+      "watch",
+      cd: Path.expand("../apps/secrethub_web/assets", __DIR__)
+    ]
   ]
 
 # ## SSL Support
@@ -87,10 +91,12 @@ config :phoenix_live_view,
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
 
-# Agent configuration (for testing)
+# Agent configuration (for development)
 config :secrethub_agent,
   agent_id: "agent-dev-01",
   core_url: "ws://localhost:4000",
+  # Use /tmp for socket in development (no root permissions needed)
+  socket_path: "/tmp/secrethub_dev_agent.sock",
   # TLS certificates (will be used in production with wss://)
   cert_path: nil,
   key_path: nil,
