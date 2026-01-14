@@ -10,7 +10,8 @@ FROM elixir:1.18-alpine AS builder
 # Install build dependencies
 RUN apk add --no-cache \
     build-base \
-    git
+    git \
+    npm
 
 # Set working directory
 WORKDIR /app
@@ -33,7 +34,10 @@ RUN mix deps.get --only prod
 # Compile dependencies
 RUN mix deps.compile
 
-# Build assets using Elixir's esbuild and tailwind
+# Install bun for JavaScript bundling
+RUN npm install -g bun
+
+# Build assets using bun and tailwind
 RUN mix assets.setup && \
     mix assets.deploy
 
