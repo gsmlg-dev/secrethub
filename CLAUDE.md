@@ -48,7 +48,7 @@ db-migrate      # Run pending migrations only
 
 **Frontend Assets:**
 ```bash
-mix assets.setup   # Install esbuild and tailwind binaries
+mix assets.setup   # Install tailwind and bun dependencies
 mix assets.build   # Build assets for development
 mix assets.deploy  # Build minified assets for production
 ```
@@ -105,7 +105,7 @@ apps/
 │   │   ├── controllers/ # REST API endpoints
 │   │   ├── live/        # LiveView components for UI
 │   │   └── channels/    # WebSocket channels for Agent communication
-│   └── assets/          # Frontend (Tailwind + esbuild, managed by Bun)
+│   └── assets/          # Frontend (Tailwind + Bun for JS bundling)
 │
 ├── secrethub_agent/     # Agent daemon (deployed with applications)
 │   ├── lib/secrethub_agent/
@@ -138,13 +138,13 @@ apps/
 - **Security:** Unix sockets provide better security (no network exposure) and performance (no TCP overhead)
 
 ### Frontend Assets
-- **Uses Elixir's built-in esbuild and tailwind packages** - No Node.js/npm required
-- Tailwind CSS v4.1.7 for styling
-- esbuild v0.25.4 for JavaScript bundling
+- **Uses Bun for JavaScript bundling and Tailwind CSS for styling**
+- Tailwind CSS v4.1.7 for styling (installed via bun globally)
+- Bun for JavaScript bundling (faster alternative to esbuild)
 - Phoenix LiveView for interactive components
 - DaisyUI for UI components (pre-configured)
 - Heroicons for icons (optimized version)
-- Build assets with `mix assets.setup` (installs binaries) and `mix assets.deploy` (production build)
+- Build assets with `mix assets.setup` (installs dependencies) and `mix assets.deploy` (production build)
 
 ### Authentication & Security
 - mTLS everywhere between Core and Agents
@@ -309,7 +309,7 @@ Infrastructure code is in `/infrastructure/`:
 - Kubernetes manifests in `infrastructure/kubernetes/`
 
 ### Asset Build Configuration
-- **esbuild**: v0.25.4, bundles JavaScript to `priv/static/assets/js/`
+- **Bun**: JavaScript bundler, outputs to `priv/static/assets/js/`
 - **Tailwind CSS**: v4.1.7, compiles to `priv/static/assets/css/app.css`
 - Assets are managed through mix aliases: `assets.setup`, `assets.build`, `assets.deploy`
 

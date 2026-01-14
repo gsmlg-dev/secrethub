@@ -549,7 +549,7 @@ to Core-2           established
 ### Frontend
 - **UI Framework:** Phoenix LiveView
 - **CSS:** Tailwind CSS 4.1
-- **JavaScript:** esbuild, AlpineJS
+- **JavaScript:** Bun (bundler)
 - **Icons:** Heroicons
 
 ### Security
