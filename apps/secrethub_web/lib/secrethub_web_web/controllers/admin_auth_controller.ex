@@ -14,12 +14,26 @@ defmodule SecretHub.WebWeb.AdminAuthController do
   Plug to require admin authentication.
   """
   def require_admin_auth(conn, _opts) do
+    # First check if already authenticated via session
+    case get_session(conn, :admin_id) do
+      nil ->
+        # No session, try certificate authentication
+        authenticate_with_certificate(conn)
+
+      _admin_id ->
+        # Already authenticated via session
+        conn
+    end
+  end
+
+  defp authenticate_with_certificate(conn) do
     case get_client_certificate(conn) do
       nil ->
+        # No certificate - redirect to login page for browser requests
         conn
-        |> put_status(:unauthorized)
-        |> put_resp_header("www-authenticate", "Certificate required")
-        |> text("Certificate required for admin access")
+        |> put_flash(:error, "Please log in to access the admin area")
+        |> redirect(to: "/admin/auth/login")
+        |> halt()
 
       cert ->
         case verify_admin_certificate(cert) do
@@ -32,8 +46,9 @@ defmodule SecretHub.WebWeb.AdminAuthController do
             Logger.warning("Admin auth failed: #{reason}")
 
             conn
-            |> put_status(:forbidden)
-            |> text("Access denied: #{reason}")
+            |> put_flash(:error, "Authentication failed: #{reason}")
+            |> redirect(to: "/admin/auth/login")
+            |> halt()
         end
     end
   end
@@ -48,32 +63,53 @@ defmodule SecretHub.WebWeb.AdminAuthController do
   end
 
   @doc """
-  Handle admin login with certificate validation.
+  Handle admin login with certificate validation or dev password.
   """
-  def login(conn, _params) do
-    case get_client_certificate(conn) do
-      nil ->
+  def login(conn, params) do
+    cond do
+      # Development mode: allow password-based login
+      Mix.env() == :dev and params["dev_password"] == dev_password() ->
         conn
-        |> put_flash(:error, "No client certificate provided")
-        |> put_layout(false)
-        |> render(:login)
+        |> put_session(:admin_id, "dev-admin")
+        |> configure_session_timeout()
+        |> put_flash(:info, "Development login successful")
+        |> redirect(to: "/admin/dashboard")
 
-      cert ->
-        case verify_admin_certificate(cert) do
-          {:ok, admin_id} ->
-            conn
-            |> put_session(:admin_id, admin_id)
-            |> configure_session_timeout()
-            |> put_flash(:info, "Successfully logged in")
-            |> redirect(to: "/admin")
+      # Development mode: wrong password
+      Mix.env() == :dev and params["dev_password"] != nil ->
+        conn
+        |> put_flash(:error, "Invalid development password")
+        |> redirect(to: "/admin/auth/login")
 
-          {:error, reason} ->
+      # Production/certificate mode
+      true ->
+        case get_client_certificate(conn) do
+          nil ->
             conn
-            |> put_flash(:error, "Authentication failed: #{reason}")
-            |> put_layout(false)
-            |> render(:login)
+            |> put_flash(:error, "No client certificate provided")
+            |> redirect(to: "/admin/auth/login")
+
+          cert ->
+            case verify_admin_certificate(cert) do
+              {:ok, admin_id} ->
+                conn
+                |> put_session(:admin_id, admin_id)
+                |> configure_session_timeout()
+                |> put_flash(:info, "Successfully logged in")
+                |> redirect(to: "/admin/dashboard")
+
+              {:error, reason} ->
+                conn
+                |> put_flash(:error, "Authentication failed: #{reason}")
+                |> redirect(to: "/admin/auth/login")
+            end
         end
     end
+  end
+
+  defp dev_password do
+    # Simple dev password - NOT for production use
+    Application.get_env(:secrethub_web, :dev_admin_password, "secrethub_dev")
   end
 
   @doc """

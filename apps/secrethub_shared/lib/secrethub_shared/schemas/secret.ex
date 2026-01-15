@@ -94,20 +94,20 @@ defmodule SecretHub.Shared.Schemas.Secret do
   def create(changeset) do
     case changeset.valid? do
       true ->
-        # Mock successful creation
+        # Mock successful creation - use get_field to get merged changes + data values
         secret = %{
           id: Ecto.UUID.generate(),
-          name: changeset.changes.name,
-          secret_path: changeset.changes.secret_path,
-          secret_type: changeset.changes.secret_type,
-          engine_type: changeset.changes.engine_type,
-          description: Map.get(changeset.changes, :description),
-          rotation_period_hours: Map.get(changeset.changes, :rotation_period_hours, 168),
-          ttl_hours: Map.get(changeset.changes, :ttl_hours, 24),
+          name: get_field(changeset, :name),
+          secret_path: get_field(changeset, :secret_path),
+          secret_type: get_field(changeset, :secret_type),
+          engine_type: get_field(changeset, :engine_type, "static"),
+          description: get_field(changeset, :description),
+          rotation_period_hours: get_field(changeset, :rotation_period_hours, 168),
+          ttl_hours: get_field(changeset, :ttl_hours, 24),
           status: "active",
           last_rotated_at: DateTime.utc_now(),
           next_rotation_at:
-            calculate_next_rotation(Map.get(changeset.changes, :rotation_period_hours, 168))
+            calculate_next_rotation(get_field(changeset, :rotation_period_hours, 168))
         }
 
         {:ok, secret}

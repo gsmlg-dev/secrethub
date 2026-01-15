@@ -6,6 +6,11 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
   use SecretHub.WebWeb, :live_view
   require Logger
 
+  alias SecretHub.Core.{Agents, Audit, Secrets}
+  alias SecretHub.Core.Repo
+  alias SecretHub.Shared.Schemas.{Lease, RotationSchedule}
+  import Ecto.Query
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -355,67 +360,220 @@ defmodule SecretHub.WebWeb.AdminDashboardLive do
     """
   end
 
-  # Private functions
+  # Private functions - Real data fetching from Core modules
+
   defp load_system_stats do
-    # FIXME: Call SecretHub.Core.Stats.system_stats()
+    # Get secret statistics (with fallback for missing tables)
+    secret_stats =
+      try do
+        Secrets.get_secret_stats()
+      rescue
+        _ -> %{total: 0, static: 0, dynamic: 0}
+      end
+
+    # Get agent statistics (with fallback for missing tables)
+    agent_stats =
+      try do
+        Agents.get_agent_stats()
+      rescue
+        _ -> %{active: 0, total: 0}
+      end
+
+    # Calculate uptime from VM start time
+    {uptime_ms, _} = :erlang.statistics(:wall_clock)
+    uptime_hours = uptime_ms / 1000 / 60 / 60
+
+    # Get last rotation from rotation schedules
+    last_rotation = get_last_rotation_time()
+
+    # Estimate storage (database size approximation)
+    storage_gb = estimate_storage_usage()
+
     %{
-      total_secrets: 156,
-      static_secrets: 89,
-      dynamic_secrets: 67,
-      active_agents: 12,
-      uptime_hours: 72.5,
-      storage_used_gb: 2.3,
-      last_rotation: "2025-01-20T14:30:00Z"
+      total_secrets: secret_stats.total || 0,
+      static_secrets: secret_stats.static || 0,
+      dynamic_secrets: secret_stats.dynamic || 0,
+      active_agents: agent_stats.active || 0,
+      uptime_hours: Float.round(uptime_hours, 1),
+      storage_used_gb: storage_gb,
+      last_rotation: last_rotation
     }
   end
 
   defp load_agents do
-    # FIXME: Call SecretHub.Core.Agents.list_connected_agents()
-    [
+    # Get all agents from database, ordered by last seen
+    # With fallback for missing agents table
+    agents =
+      try do
+        Agents.list_agents()
+      rescue
+        _ -> []
+      end
+
+    # Transform to the format expected by the template
+    Enum.map(agents, fn agent ->
       %{
-        id: "agent-prod-01",
-        name: "Production Web Server",
-        status: :connected,
-        last_seen: DateTime.utc_now() |> DateTime.add(-300, :second),
-        ip_address: "10.0.1.42"
-      },
-      %{
-        id: "agent-prod-02",
-        name: "Backend Worker",
-        status: :connected,
-        last_seen: DateTime.utc_now() |> DateTime.add(-600, :second),
-        ip_address: "10.0.1.45"
-      },
-      %{
-        id: "agent-dev-01",
-        name: "Development Environment",
-        status: :disconnected,
-        last_seen: DateTime.utc_now() |> DateTime.add(-1800, :second),
-        ip_address: "192.168.1.100"
+        id: agent.agent_id,
+        name: agent.name || agent.agent_id,
+        status: map_agent_status(agent.status),
+        last_seen: agent.last_seen_at || agent.last_heartbeat_at,
+        ip_address: agent.ip_address || "Unknown"
       }
-    ]
+    end)
+    |> Enum.sort_by(& &1.last_seen, {:desc, DateTime})
   end
 
   defp load_secret_stats do
-    # FIXME: Call SecretHub.Core.Stats.secret_stats()
+    # Get basic secret stats with fallback
+    secret_stats =
+      try do
+        Secrets.get_secret_stats()
+      rescue
+        _ -> %{total: 0, static: 0, dynamic: 0}
+      end
+
+    # Get rotation stats for last 24 hours
+    yesterday = DateTime.add(DateTime.utc_now(), -86_400, :second)
+
+    rotated_24h =
+      try do
+        Repo.aggregate(
+          from(r in RotationSchedule,
+            where: r.last_rotated_at >= ^yesterday
+          ),
+          :count,
+          :id
+        ) || 0
+      rescue
+        _ -> 0
+      end
+
+    # Get leases expiring in next 7 days
+    next_week = DateTime.add(DateTime.utc_now(), 7 * 86_400, :second)
+
+    expiring_7d =
+      try do
+        Repo.aggregate(
+          from(l in Lease,
+            where: l.expires_at <= ^next_week and l.expires_at > ^DateTime.utc_now()
+          ),
+          :count,
+          :id
+        ) || 0
+      rescue
+        _ -> 0
+      end
+
     %{
-      total_secrets: 156,
-      static_secrets: 89,
-      dynamic_secrets: 67,
-      secrets_rotated_24h: 12,
-      secrets_expiring_7d: 8,
-      most_accessed_secret: "prod.db.postgres.password"
+      total_secrets: secret_stats.total || 0,
+      static_secrets: secret_stats.static || 0,
+      dynamic_secrets: secret_stats.dynamic || 0,
+      secrets_rotated_24h: rotated_24h,
+      secrets_expiring_7d: expiring_7d,
+      most_accessed_secret: get_most_accessed_secret()
     }
   end
 
   defp load_audit_stats do
-    # FIXME: Call SecretHub.Core.Stats.audit_stats()
+    # Get audit statistics from the Audit module with fallback
+    audit_stats =
+      try do
+        Audit.get_stats()
+      rescue
+        _ -> %{recent_24h: 0, access_denied: 0}
+      end
+
+    # Count active policies
+    active_policies =
+      try do
+        Repo.aggregate(
+          from(p in SecretHub.Shared.Schemas.Policy,
+            where: p.enabled == true
+          ),
+          :count,
+          :id
+        ) || 0
+      rescue
+        _ -> 0
+      end
+
     %{
-      total_events_24h: 1247,
-      access_denied_24h: 23,
-      active_policies: 12
+      total_events_24h: audit_stats.recent_24h || 0,
+      access_denied_24h: audit_stats.access_denied || 0,
+      active_policies: active_policies
     }
   end
+
+  # Helper functions for data fetching
+
+  defp get_last_rotation_time do
+    try do
+      query =
+        from(r in RotationSchedule,
+          where: not is_nil(r.last_rotated_at),
+          order_by: [desc: r.last_rotated_at],
+          limit: 1,
+          select: r.last_rotated_at
+        )
+
+      case Repo.one(query) do
+        nil -> "Never"
+        datetime -> DateTime.to_iso8601(datetime)
+      end
+    rescue
+      _ -> "N/A"
+    end
+  end
+
+  defp estimate_storage_usage do
+    # Simple estimate based on table counts
+    # In production, you could query pg_database_size() or similar
+    try do
+      secret_count = Repo.aggregate(SecretHub.Shared.Schemas.Secret, :count, :id) || 0
+      audit_count = Repo.aggregate(SecretHub.Shared.Schemas.AuditLog, :count, :id) || 0
+
+      # Rough estimate: ~10KB per secret, ~1KB per audit log
+      gb = (secret_count * 10 + audit_count * 1) / 1_000_000
+      Float.round(max(gb, 0.01), 2)
+    rescue
+      _ -> 0.0
+    end
+  end
+
+  defp get_most_accessed_secret do
+    # Get the most accessed secret from audit logs
+    try do
+      query =
+        from(a in SecretHub.Shared.Schemas.AuditLog,
+          where: a.event_type == "secret.accessed" and not is_nil(a.secret_id),
+          group_by: a.secret_id,
+          order_by: [desc: count(a.id)],
+          limit: 1,
+          select: a.secret_id
+        )
+
+      case Repo.one(query) do
+        nil ->
+          "N/A"
+
+        secret_id ->
+          case Repo.get(SecretHub.Shared.Schemas.Secret, secret_id) do
+            nil -> "Unknown"
+            secret -> secret.secret_path || secret.name || "Unknown"
+          end
+      end
+    rescue
+      _ -> "N/A"
+    end
+  end
+
+  defp map_agent_status(:active), do: :connected
+  defp map_agent_status(:connected), do: :connected
+  defp map_agent_status(:disconnected), do: :disconnected
+  defp map_agent_status(:suspended), do: :error
+  defp map_agent_status(:revoked), do: :error
+  defp map_agent_status(:pending_bootstrap), do: :disconnected
+  defp map_agent_status(_), do: :disconnected
 
   defp status_color(:connected), do: "bg-green-500"
   defp status_color(:disconnected), do: "bg-gray-400"
