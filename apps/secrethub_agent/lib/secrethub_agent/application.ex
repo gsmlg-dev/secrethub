@@ -5,6 +5,17 @@ defmodule SecretHub.Agent.Application do
 
   @impl true
   def start(_type, _args) do
+    # Check if agent is enabled (default: true)
+    # Set `config :secrethub_agent, enabled: false` in dev.exs to disable
+    if Application.get_env(:secrethub_agent, :enabled, true) do
+      start_agent()
+    else
+      # Return empty supervisor when disabled
+      Supervisor.start_link([], strategy: :one_for_one, name: SecretHub.Agent.Supervisor)
+    end
+  end
+
+  defp start_agent do
     # Get core endpoints from configuration
     core_endpoints =
       Application.get_env(:secrethub_agent, :core_endpoints) ||

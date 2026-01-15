@@ -92,7 +92,9 @@ config :phoenix_live_view,
 config :swoosh, :api_client, false
 
 # Agent configuration (for development)
+# Disable agent in development to avoid connection noise in logs
 config :secrethub_agent,
+  enabled: false,
   agent_id: "agent-dev-01",
   core_url: "ws://localhost:4664",
   # Use /tmp for socket in development (no root permissions needed)
