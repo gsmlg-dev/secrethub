@@ -107,13 +107,12 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                 <select
                   name="secret[engine_type]"
                   class="form-select w-full"
-                  phx-change="engine_changed"
                 >
                   <%= for engine <- @engines do %>
                     <option
                       value={engine.type}
                       selected={
-                        Phoenix.HTML.Form.input_value(@form, :engine_type) == engine.type
+                        to_string(Phoenix.HTML.Form.input_value(@form, :engine_type)) == engine.type
                       }
                     >
                       {engine.name}
@@ -135,13 +134,13 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
                 >
                   <option
                     value="static"
-                    selected={Phoenix.HTML.Form.input_value(@form, :secret_type) == :static}
+                    selected={to_string(Phoenix.HTML.Form.input_value(@form, :secret_type)) == "static"}
                   >
                     Static (long-lived)
                   </option>
                   <option
                     value="dynamic"
-                    selected={Phoenix.HTML.Form.input_value(@form, :secret_type) == :dynamic}
+                    selected={to_string(Phoenix.HTML.Form.input_value(@form, :secret_type)) == "dynamic"}
                   >
                     Dynamic (temporary)
                   </option>
@@ -285,7 +284,7 @@ defmodule SecretHub.WebWeb.SecretFormComponent do
 
   # Helper functions for rendering engine-specific configuration
   defp render_engine_config(assigns) do
-    engine_type = Phoenix.HTML.Form.input_value(assigns.form, :engine_type)
+    engine_type = to_string(Phoenix.HTML.Form.input_value(assigns.form, :engine_type))
 
     case engine_type do
       "static" ->
