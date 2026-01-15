@@ -23,7 +23,16 @@ end
 # Configure tailwind path from environment variable
 # This allows NixOS and other systems to use system-provided binaries
 if tailwind_path = System.get_env("TAILWIND_PATH") do
-  config :tailwind, path: tailwind_path
+  # Expand $HOME if present (Nix env block doesn't expand shell variables)
+  expanded_path =
+    if String.contains?(tailwind_path, "$HOME") do
+      home = System.get_env("HOME") || ""
+      String.replace(tailwind_path, "$HOME", home)
+    else
+      tailwind_path
+    end
+
+  config :tailwind, path: expanded_path
 end
 
 if config_env() == :prod do
