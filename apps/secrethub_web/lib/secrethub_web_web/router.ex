@@ -73,43 +73,48 @@ defmodule SecretHub.WebWeb.Router do
     pipe_through :admin_browser
 
     get "/", AdminPageController, :index
-    live "/dashboard", AdminDashboardLive, :index
-    live "/agents", AgentMonitoringLive, :index
-    live "/agents/:id", AgentMonitoringLive, :show
-    live "/secrets", SecretManagementLive, :index
-    live "/secrets/:id/versions", SecretVersionHistoryLive, :index
-    live "/policies", PolicyManagementLive, :index
-    live "/policies/new", PolicyEditorLive, :new
-    live "/policies/templates", PolicyTemplatesLive, :index
-    live "/policies/:id/edit", PolicyEditorLive, :edit
-    live "/policies/:id/simulate", PolicySimulatorLive, :show
-    live "/audit", AuditLogLive, :index
-    live "/pki", PKIManagementLive, :index
-    live "/certificates", AdminCertificateLive, :index
-    live "/approles", AppRoleManagementLive, :index
-    live "/dynamic/postgresql", DynamicPostgreSQLConfigLive, :index
-    live "/leases", LeaseViewerLive, :index
-    live "/leases/dashboard", LeaseDashboardLive, :index
-    live "/templates", TemplateManagementLive, :index
-    live "/templates/:template_id", TemplateManagementLive, :show
-    live "/cluster", ClusterStatusLive, :index
-    live "/cluster/nodes/:node_id", NodeHealthLive, :show
-    live "/cluster/alerts", HealthAlertsLive, :index
-    live "/cluster/auto-unseal", AutoUnsealConfigLive, :index
-    live "/cluster/deployment", DeploymentStatusLive, :index
-    live "/engines", EngineConfigurationLive, :index
-    live "/engines/new/:type", EngineSetupWizardLive, :new
-    live "/engines/:id/health", EngineHealthDashboardLive, :show
-    live "/rotations", RotationScheduleLive, :index
-    live "/rotations/:id", RotationScheduleLive, :show
-    live "/rotations/:id/history", RotationHistoryLive, :show
-    # TODO: Implement MetricsDashboardLive module
-    # live "/metrics", MetricsDashboardLive, :index
-    live "/alerts", AlertConfigurationLive, :index
-    live "/anomalies", AnomalyDetectionLive, :index
-    live "/performance", PerformanceDashboardLive, :index
-
     delete "/logout", AdminAuthController, :logout
+
+    # All admin LiveViews use the admin layout and hook
+    live_session :admin,
+      on_mount: [{SecretHub.WebWeb.AdminLayoutHook, :default}],
+      layout: {SecretHub.WebWeb.Layouts, :admin} do
+      live "/dashboard", AdminDashboardLive, :index
+      live "/agents", AgentMonitoringLive, :index
+      live "/agents/:id", AgentMonitoringLive, :show
+      live "/secrets", SecretManagementLive, :index
+      live "/secrets/:id/versions", SecretVersionHistoryLive, :index
+      live "/policies", PolicyManagementLive, :index
+      live "/policies/new", PolicyEditorLive, :new
+      live "/policies/templates", PolicyTemplatesLive, :index
+      live "/policies/:id/edit", PolicyEditorLive, :edit
+      live "/policies/:id/simulate", PolicySimulatorLive, :show
+      live "/audit", AuditLogLive, :index
+      live "/pki", PKIManagementLive, :index
+      live "/certificates", AdminCertificateLive, :index
+      live "/approles", AppRoleManagementLive, :index
+      live "/dynamic/postgresql", DynamicPostgreSQLConfigLive, :index
+      live "/leases", LeaseViewerLive, :index
+      live "/leases/dashboard", LeaseDashboardLive, :index
+      live "/templates", TemplateManagementLive, :index
+      live "/templates/:template_id", TemplateManagementLive, :show
+      live "/cluster", ClusterStatusLive, :index
+      live "/cluster/nodes/:node_id", NodeHealthLive, :show
+      live "/cluster/alerts", HealthAlertsLive, :index
+      live "/cluster/auto-unseal", AutoUnsealConfigLive, :index
+      live "/cluster/deployment", DeploymentStatusLive, :index
+      live "/engines", EngineConfigurationLive, :index
+      live "/engines/new/:type", EngineSetupWizardLive, :new
+      live "/engines/:id/health", EngineHealthDashboardLive, :show
+      live "/rotations", RotationScheduleLive, :index
+      live "/rotations/:id", RotationScheduleLive, :show
+      live "/rotations/:id/history", RotationHistoryLive, :show
+      # TODO: Implement MetricsDashboardLive module
+      # live "/metrics", MetricsDashboardLive, :index
+      live "/alerts", AlertConfigurationLive, :index
+      live "/anomalies", AnomalyDetectionLive, :index
+      live "/performance", PerformanceDashboardLive, :index
+    end
   end
 
   # Admin API routes
