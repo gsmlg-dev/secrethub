@@ -26,11 +26,11 @@ config :secrethub_web,
   ecto_repos: [SecretHub.Core.Repo]
 
 # Configures the endpoint
-config :secrethub_web, SecretHub.WebWeb.Endpoint,
+config :secrethub_web, SecretHub.Web.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [
-    formats: [html: SecretHub.WebWeb.ErrorHTML, json: SecretHub.WebWeb.ErrorJSON],
+    formats: [html: SecretHub.Web.ErrorHTML, json: SecretHub.Web.ErrorJSON],
     layout: false
   ],
   pubsub_server: SecretHub.Web.PubSub,

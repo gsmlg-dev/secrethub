@@ -12,13 +12,13 @@ defmodule SecretHub.Web.Application do
     Process.flag(:trap_exit, true)
 
     children = [
-      SecretHub.WebWeb.Telemetry,
+      SecretHub.Web.Telemetry,
       {DNSCluster, query: Application.get_env(:secrethub_web, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: SecretHub.Web.PubSub},
       # Start a worker by calling: SecretHub.Web.Worker.start_link(arg)
       # {SecretHub.Web.Worker, arg},
       # Start to serve requests, typically the last entry
-      SecretHub.WebWeb.Endpoint
+      SecretHub.Web.Endpoint
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -50,7 +50,7 @@ defmodule SecretHub.Web.Application do
   # whenever the application is updated.
   @impl true
   def config_change(changed, _new, removed) do
-    SecretHub.WebWeb.Endpoint.config_change(changed, removed)
+    SecretHub.Web.Endpoint.config_change(changed, removed)
     :ok
   end
 end

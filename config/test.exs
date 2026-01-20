@@ -31,7 +31,7 @@ config :secrethub_core, SecretHub.Core.Repo, db_config
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
-config :secrethub_web, SecretHub.WebWeb.Endpoint,
+config :secrethub_web, SecretHub.Web.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
   secret_key_base: "2ZOJa2EtaKKkdOjsRG7Ph4JsrwXMy1A1zDkWadar3rKTkRmfTMnO0nSVfIUjaiA7",
   server: false

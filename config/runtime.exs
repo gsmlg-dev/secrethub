@@ -17,7 +17,7 @@ import Config
 # Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
 # script that automatically sets the env var above.
 if System.get_env("PHX_SERVER") do
-  config :secrethub_web, SecretHub.WebWeb.Endpoint, server: true
+  config :secrethub_web, SecretHub.Web.Endpoint, server: true
 end
 
 # Configure tailwind path from environment variable
@@ -69,7 +69,7 @@ if config_env() == :prod do
 
   config :secrethub_web, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  config :secrethub_web, SecretHub.WebWeb.Endpoint,
+  config :secrethub_web, SecretHub.Web.Endpoint,
     url: [host: host, port: port],
     http: [
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
@@ -83,7 +83,7 @@ if config_env() == :prod do
   # To get SSL working, you will need to add the `https` key
   # to your endpoint configuration:
   #
-  #     config :secrethub_web, SecretHub.WebWeb.Endpoint,
+  #     config :secrethub_web, SecretHub.Web.Endpoint,
   #       https: [
   #         ...,
   #         port: 443,
@@ -105,7 +105,7 @@ if config_env() == :prod do
   # We also recommend setting `force_ssl` in your config/prod.exs,
   # ensuring no data is ever sent via http, always redirecting to https:
   #
-  #     config :secrethub_web, SecretHub.WebWeb.Endpoint,
+  #     config :secrethub_web, SecretHub.Web.Endpoint,
   #       force_ssl: [hsts: true]
   #
   # Check `Plug.SSL` for all available options in `force_ssl`.

@@ -16,7 +16,7 @@ config :secrethub_core, SecretHub.Core.Repo,
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
-config :secrethub_web, SecretHub.WebWeb.Endpoint,
+config :secrethub_web, SecretHub.Web.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4664")],
@@ -57,7 +57,7 @@ config :secrethub_web, SecretHub.WebWeb.Endpoint,
 # different ports.
 
 # Watch static and templates for browser reloading.
-config :secrethub_web, SecretHub.WebWeb.Endpoint,
+config :secrethub_web, SecretHub.Web.Endpoint,
   live_reload: [
     web_console_logger: true,
     patterns: [
