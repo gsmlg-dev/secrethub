@@ -1,0 +1,72 @@
+<div class="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+  <!-- Header -->
+  <header class="bg-slate-900/50 backdrop-blur-sm border-b border-slate-700/50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <a href="/" class="flex items-center space-x-3">
+          <div class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+              />
+            </svg>
+          </div>
+          <span class="text-xl font-bold text-white">SecretHub</span>
+        </a>
+
+        <nav class="flex items-center space-x-4">
+          <a
+            href="/vault/init"
+            class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors"
+          >
+            Initialize
+          </a>
+          <a
+            href="/vault/unseal"
+            class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors"
+          >
+            Unseal
+          </a>
+          <a
+            href="/admin/auth/login"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
+          >
+            Admin Login
+          </a>
+        </nav>
+      </div>
+    </div>
+  </header>
+  
+<!-- Main Content -->
+  <main class="flex-1">
+    <.flash_group flash={@flash} />
+    {@inner_content}
+  </main>
+  
+<!-- Footer -->
+  <footer class="bg-slate-900/50 border-t border-slate-700/50 py-6 mt-auto">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between">
+        <p class="text-slate-400 text-sm">
+          SecretHub - Enterprise Secrets Management
+        </p>
+        <div class="flex items-center space-x-4">
+          <a
+            href="/v1/sys/health"
+            class="text-slate-400 hover:text-white text-sm transition-colors"
+          >
+            Health Check
+          </a>
+          <span class="text-slate-600">|</span>
+          <span class="text-slate-500 text-sm">
+            v{Application.spec(:secrethub_web, :vsn) || "1.0.0"}
+          </span>
+        </div>
+      </div>
+    </div>
+  </footer>
+</div>
