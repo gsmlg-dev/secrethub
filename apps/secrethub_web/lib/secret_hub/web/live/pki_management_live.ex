@@ -733,6 +733,8 @@ defmodule SecretHub.Web.PKIManagementLive do
     case CA.list_certificates() do
       {:ok, certificates} -> certificates
       {:error, _} -> []
+      # Handle when CA returns raw list instead of tuple
+      certificates when is_list(certificates) -> certificates
     end
   end
 

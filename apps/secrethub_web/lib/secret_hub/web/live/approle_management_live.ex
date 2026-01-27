@@ -402,10 +402,9 @@ defmodule SecretHub.Web.AppRoleManagementLive do
   ## Private Functions
 
   defp list_approles do
-    # Query all AppRole roles
+    # Query all AppRole roles - the roles table is specifically for AppRoles
     query =
       from(r in Role,
-        where: r.auth_type == "approle",
         order_by: [desc: r.inserted_at]
       )
 

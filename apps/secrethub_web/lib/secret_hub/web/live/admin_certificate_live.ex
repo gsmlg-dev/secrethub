@@ -27,7 +27,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
      |> assign(:selected_cert, nil)
      |> load_certificates()
      |> allow_upload(:certificate,
-       accept: [".pem", ".crt", ".cer"],
+       accept: :any,
        max_entries: 1,
        max_file_size: 50_000
      )}

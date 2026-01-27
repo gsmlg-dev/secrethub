@@ -428,6 +428,14 @@ defmodule SecretHub.Web.LeaseViewerLive do
         socket
         |> assign(:leases, [])
         |> assign(:stats, %{total: 0, active: 0, expiring_soon: 0, expired: 0})
+
+      # Handle when LeaseManager returns raw list instead of tuple
+      leases when is_list(leases) ->
+        stats = calculate_stats(leases)
+
+        socket
+        |> assign(:leases, leases)
+        |> assign(:stats, stats)
     end
   end
 
