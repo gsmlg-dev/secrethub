@@ -11,333 +11,146 @@ SecretHub is an enterprise-grade Machine-to-Machine secrets management platform 
 - **SecretHub Agent**: Local daemon deployed alongside applications for secure secret delivery via Unix Domain Sockets
 - **Communication**: Persistent mTLS WebSocket connections between Core and Agents
 
-**Current Status:** v1.0.0-rc2 released - Core features implemented, preparing for production
-
 ## Development Environment
 
-This project uses **devenv** (devenv.sh) with Nix for reproducible development environments. All services (PostgreSQL, Redis, Prometheus) are automatically managed.
+This project uses **devenv** (devenv.sh) with Nix for reproducible development environments. PostgreSQL and Prometheus are automatically managed by devenv.
 
 ### Initial Setup
 
 ```bash
-# Enter devenv shell (or use direnv for automatic activation)
-devenv shell
-
-# Initialize database
-db-setup
-
-# Install frontend dependencies (using Bun, not npm)
-assets-install
+devenv shell          # Enter devenv shell (or use direnv for automatic activation)
+db-setup              # Create database, run migrations, seed data
+assets-install        # Install frontend dependencies (Bun + Tailwind)
 ```
 
 ### Essential Commands
 
-**Development:**
 ```bash
-server          # Start Phoenix server (http://localhost:4000)
-console         # Start IEx shell with application loaded
-iex -S mix      # Alternative way to start console
-```
+# Development
+server                # Start Phoenix server (http://localhost:4664)
+console               # Start IEx shell with application loaded
 
-**Database:**
-```bash
-db-setup        # Create database and run migrations
-db-reset        # Drop, recreate, migrate, and seed database
-db-migrate      # Run pending migrations only
-```
+# Database
+db-setup              # Create database and run migrations + seeds
+db-reset              # Drop, recreate, migrate, and seed database
+db-migrate            # Run pending migrations only
 
-**Frontend Assets:**
-```bash
-mix assets.setup   # Install tailwind and bun dependencies
-mix assets.build   # Build assets for development
-mix assets.deploy  # Build minified assets for production
-```
+# Testing
+mix test                                    # Run all tests
+mix test apps/secrethub_core/test/          # Test specific app
+mix test path/to/test_file.exs              # Run single test file
+mix test path/to/test_file.exs:42           # Run single test at line
+test-watch                                  # Watch mode for tests
 
-**Testing:**
-```bash
-mix test                              # Run all tests
-mix test apps/secrethub_core/test/... # Test specific app
-mix coveralls.html                     # Generate coverage report
-test-watch                             # Watch mode for tests
-mix test.watch                        # Alternative watch mode
-```
+# Code Quality
+mix format                                  # Format code
+mix credo --strict                          # Linter
+mix dialyzer                                # Static type analysis
+quality                                     # Run format check + credo + dialyzer
+./scripts/quality-check.sh                  # Full CI checks locally (includes tests)
+SKIP_TESTS=1 ./scripts/quality-check.sh     # CI checks without tests
 
-**Code Quality:**
-```bash
-mix format              # Format code
-mix credo --strict      # Run linter
-mix dialyzer            # Static analysis
-quality                 # Run all quality checks (format, credo, dialyzer)
-./scripts/quality-check.sh  # Run all CI checks locally (format, compile, credo, dialyzer, tests)
-```
-
-**Database Migrations:**
-```bash
-# Generate new migration (run from app directory)
-cd apps/secrethub_core
-mix ecto.gen.migration create_table_name
-
-# Run migrations from specific app
+# Database Migrations (always from secrethub_core)
+cd apps/secrethub_core && mix ecto.gen.migration create_table_name
 cd apps/secrethub_core && mix ecto.migrate
-
-# Rollback migration
 cd apps/secrethub_core && mix ecto.rollback
 ```
 
 ## Project Structure (Umbrella App)
 
-This is an Elixir umbrella project with multiple apps:
+Elixir umbrella project with 5 apps sharing `mix.lock`, `deps/`, and `_build/` at the root. Configuration is centralized in `/config/*.exs`.
 
 ```
 apps/
-├── secrethub_core/      # Core business logic
-│   ├── lib/secrethub_core/
-│   │   ├── auth/        # Authentication backends (AppRole, K8s SA)
-│   │   ├── engines/     # Secret engines (Static, Dynamic PostgreSQL, Redis, AWS)
-│   │   ├── pki/         # PKI & certificate management (CA, CRL, OCSP)
-│   │   ├── policies/    # Policy engine for authorization
-│   │   ├── audit/       # Audit logging with hash chains
-│   │   └── crypto/      # Encryption & unsealing
-│   └── priv/repo/migrations/  # Database migrations live here
-│
-├── secrethub_web/       # Phoenix web interface & API
-│   ├── lib/secrethub_web_web/
-│   │   ├── controllers/ # REST API endpoints
-│   │   ├── live/        # LiveView components for UI
-│   │   └── channels/    # WebSocket channels for Agent communication
-│   └── assets/          # Frontend (Tailwind + Bun for JS bundling)
-│
-├── secrethub_agent/     # Agent daemon (deployed with applications)
-│   ├── lib/secrethub_agent/
-│   │   ├── bootstrap.ex   # Bootstrap & authentication flow
-│   │   ├── connection.ex  # WebSocket client to Core
-│   │   ├── cache.ex       # Local secret caching
-│   │   ├── template.ex    # Template rendering engine
-│   │   └── sinker.ex      # File writer for secrets
-│
-└── secrethub_shared/    # Shared code (schemas, protocols)
-    └── lib/secrethub_shared/
-        ├── schemas/     # Ecto schemas shared across apps
-        └── protocols/   # Communication protocols
+  secrethub_core/       Core business logic (auth, engines, PKI, policies, audit, crypto)
+                        All database migrations live in priv/repo/migrations/
+  secrethub_web/        Phoenix web interface & REST API
+                        Source: lib/secret_hub/web/ (namespace: SecretHub.Web)
+  secrethub_agent/      Agent daemon (bootstrap, WebSocket connection, cache, sinker)
+  secrethub_shared/     Shared Ecto schemas and communication protocols
+  secrethub_cli/        CLI tool (escript, built with `mix escript.build`)
 ```
 
-## Key Architecture Concepts
+### Key Module Namespaces
 
-### Umbrella App Structure
-- All apps share the same `mix.lock`, `deps/`, and `_build/` directories at the umbrella root
-- Database operations are in `secrethub_core` - migrations must be run from that app's directory
-- Configuration is centralized in `/config/*.exs`
+- `SecretHub.Core.*` - Core business logic (auth, engines, PKI, etc.)
+- `SecretHub.Web.*` - Phoenix web layer (endpoint: `SecretHub.Web.Endpoint`)
+- `SecretHub.Agent.*` - Agent daemon modules
+- `SecretHub.Shared.*` - Shared schemas and protocols
+- `SecretHub.CLI` - CLI escript entry point
+
+**Important:** The web app's namespace is `SecretHub.Web` (configured in `config.exs`), and source lives at `apps/secrethub_web/lib/secret_hub/web/` - not `lib/secrethub_web_web/` as Phoenix typically generates.
+
+## Architecture Concepts
 
 ### Database (PostgreSQL 16)
-- **Connection:** Unix domain socket at `$DEVENV_STATE/postgres` (no TCP port exposed)
-- **Main database:** `secrethub_dev` (user: `secrethub`, password: `secrethub_dev_password`)
-- **Test database:** `secrethub_test`
-- **Extensions enabled:** `uuid-ossp`, `pgcrypto`
-- **Schemas:** Default schema + `audit` schema for audit logs
-- All migrations are in `apps/secrethub_core/priv/repo/migrations/`
-- **Security:** Unix sockets provide better security (no network exposure) and performance (no TCP overhead)
+- **Connection**: Unix domain socket at `$DEVENV_STATE/postgres` (no TCP port exposed)
+- **Dev database**: `secrethub_dev` (user: `secrethub`, password: `secrethub_dev_password`)
+- **Test database**: `secrethub_test` (same credentials)
+- **Extensions**: `uuid-ossp`, `pgcrypto`
+- **Schemas**: Default schema + `audit` schema for audit logs
+- All migrations must be created in `apps/secrethub_core/`
 
 ### Frontend Assets
-- **Uses Bun for JavaScript bundling and Tailwind CSS for styling**
-- Tailwind CSS v4.1.7 for styling (installed via bun globally)
-- Bun for JavaScript bundling (faster alternative to esbuild)
-- Phoenix LiveView for interactive components
-- DaisyUI for UI components (pre-configured)
-- Heroicons for icons (optimized version)
-- Build assets with `mix assets.setup` (installs dependencies) and `mix assets.deploy` (production build)
+- **Bun** for JavaScript bundling (not npm/esbuild)
+- **Tailwind CSS v4.1.7** (installed globally via bun, path: `$HOME/.bun/bin/tailwindcss`)
+- **DaisyUI** for UI components, **Heroicons** for icons
+- Phoenix LiveView for interactive admin dashboard components
 
 ### Authentication & Security
-- mTLS everywhere between Core and Agents
-- PKI engine manages internal Certificate Authority
-- Agent bootstrap uses "secret zero" (RoleID/SecretID) to obtain client certificates
-- Applications connect to local Agent via Unix Domain Sockets with mTLS
+- mTLS between Core and Agents; PKI engine manages internal CA
+- Agent bootstrap: AppRole auth (RoleID/SecretID) -> CSR -> Certificate issuance -> mTLS WebSocket
+- Applications connect to local Agent via Unix Domain Sockets
 
 ### Background Jobs
-- Oban for persistent background tasks (primarily static secret rotation)
-- Ensure Oban is properly configured when adding new background jobs
+- **Oban** for persistent background tasks (secret rotation, lease cleanup)
+- New background jobs must integrate with Oban configuration
 
 ### Audit Logging
 - All operations must be logged to the audit subsystem
-- Hash chain implementation for tamper-evident logs
-- Multi-tier storage strategy (hot/warm/cold)
+- Hash chain implementation (SHA-256 + HMAC) for tamper-evident logs
 
-## Development Guidelines
+### Secret Engines
+Located in `apps/secrethub_core/lib/secrethub_core/engines/`:
+- **Dynamic engines**: Generate temporary credentials (PostgreSQL, Redis, AWS STS) - integrate with Lease Manager
+- **Static engines**: Rotate long-lived credentials - integrate with Oban scheduler
 
-### Testing Approach
-- Write tests alongside new features
-- Use ExUnit for all testing
-- Test coverage tracked with ExCoveralls
-- Run `mix test` from umbrella root to test all apps
-- For focused testing, cd into specific app directory
+### REST API Routes
+- `/v1/sys/*` - System operations (init, seal/unseal, health) - no auth required
+- `/v1/auth/approle/*` - AppRole authentication and management
+- `/v1/secrets/*` - Secret read/write operations
+- `/v1/secrets/dynamic/*` - Dynamic credential generation
+- `/v1/sys/leases/*` - Lease management
+- `/v1/pki/*` - PKI and certificate operations
+- `/v1/apps/*` - Application registration and management
+- `/admin/*` - LiveView admin dashboard (session-based auth)
+- `/dev/dashboard` - Phoenix LiveDashboard (dev only)
+- `/dev/mailbox` - Swoosh email preview (dev only)
 
-### Code Style
-- Pre-commit hooks enforce: formatting, Credo linting, and compilation checks
-- Run `mix format` before committing
-- Run `quality` script to ensure all checks pass
-- Use `mix compile --warnings-as-errors` to treat warnings as errors
-- Pre-commit hooks are configured in `devenv.nix` and run automatically
+## CI/CD
 
-### Database Changes
-- Always create migrations in `apps/secrethub_core/`
-- Use descriptive migration names
-- Test migrations up and down: `mix ecto.migrate` / `mix ecto.rollback`
-- PostgreSQL uses Unix domain sockets in devenv (no TCP port, enhanced security)
+**CI Workflow** (`ci.yml`) - 4 parallel jobs on every push: compile (`--warnings-as-errors`), format check, credo (strict), dialyzer.
 
-### Adding New Secret Engines
-Secret engines live in `apps/secrethub_core/lib/secrethub_core/engines/`:
-- **Dynamic engines**: Generate temporary credentials (e.g., PostgreSQL, Redis, AWS)
-- **Static engines**: Rotate long-lived credentials in external systems
-- Must integrate with Lease Manager for dynamic secrets
-- Must integrate with Oban scheduler for static secret rotation
+**Test Workflow** (`test.yml`) - On push to main/develop and PRs: full test suite with PostgreSQL 16 + Redis 7 services.
 
-### Working with Agents
-- Agent code is in `apps/secrethub_agent/`
-- Agents maintain persistent WebSocket connections to Core
-- Local caching strategy is critical for resilience
-- Template rendering allows secret injection into config files
+**Release Workflow** (`release.yml`) - On version tags (`v*.*.*`): builds tar.gz releases + multi-arch Docker images, publishes to `ghcr.io/gsmlg-dev/secrethub/{core,agent}`.
 
-## Environment Variables
-
-Default development environment variables are set in `devenv.nix`:
-
-```bash
-# Database (using Unix domain socket for security and performance)
-DATABASE_URL=postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=$DEVENV_STATE/postgres
-DATABASE_TEST_URL=postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=$DEVENV_STATE/postgres
-MIX_ENV=dev
-SECRET_KEY_BASE=dev-secret-key-base-change-in-production
-PHX_HOST=localhost
-PHX_PORT=4000
-ELIXIR_ERL_OPTIONS=+sbwt none +sbwtdcpu none +sbwtdio none
-```
-
-Production deployments require:
-- `SECRET_KEY_BASE` (generate with `mix phx.gen.secret`)
-- `DATABASE_URL` for production database
-- Proper mTLS certificates for Core-Agent communication
-
-### devenv Scripts
-The project includes convenient scripts in devenv.nix:
-- `db-setup`, `db-reset`, `db-migrate` - Database operations
-- `assets-install`, `assets-build` - Frontend asset management
-- `server`, `console` - Development operations
-- `test-all`, `test-watch` - Testing operations
-- `format`, `lint`, `quality` - Code quality checks
-- `gen-secret` - Generate Phoenix secrets
-
-## Development Services
-
-devenv automatically manages these services:
-- **PostgreSQL 16**: Unix domain socket at `$DEVENV_STATE/postgres` (databases: `secrethub_dev`, `secrethub_test`)
-- **Prometheus**: `localhost:9090` (metrics collection)
-
-**Note:** PostgreSQL uses Unix domain sockets for better security and performance. No TCP port is exposed.
-
-## CI/CD and GitHub Actions
-
-The project uses GitHub Actions for continuous integration and testing. See `.github/workflows/` for workflow definitions.
-
-### Workflows
-
-**CI Workflow** (`ci.yml`) - Runs on every push with 4 parallel jobs:
-1. **Compile**: Code compilation with `--warnings-as-errors`
-2. **Format**: Code formatting check
-3. **Credo**: Strict mode linting
-4. **Dialyzer**: Static type analysis
-
-All jobs run in parallel for fastest feedback (~5 min vs ~15 min sequential).
-
-**Test Workflow** (`test.yml`) - Runs on push to main/develop and PRs:
-- Sets up PostgreSQL 16 and Redis 7 services
-- Runs full test suite with `mix test`
-- Generates coverage reports
-- Uploads coverage artifacts
-
-### Local CI Checks
-
-Before pushing code, run all CI checks locally:
-
-```bash
-# Run all quality checks (same as CI)
-./scripts/quality-check.sh
-
-# Skip tests for faster feedback
-SKIP_TESTS=1 ./scripts/quality-check.sh
-
-# Individual checks
-mix format --check-formatted  # Format check
-mix compile --warnings-as-errors  # Compilation
-mix credo --strict  # Linting
-mix dialyzer  # Static analysis
-mix test  # Tests
-```
-
-### CI Environment
-
-GitHub Actions runs with:
-- **Elixir**: 1.18
-- **OTP**: 28
-- **PostgreSQL**: 16 (service container)
-- **Redis**: 7 (service container)
-
-All workflows use caching to speed up builds:
-- Dependencies cache (keyed by `mix.lock`)
-- Dialyzer PLT cache (keyed by `mix.lock`)
-
-**Release Workflow** (`release.yml`) - Triggered on version tags (`v*.*.*`):
-- Builds Core and Agent tar.gz releases
-- Builds Core and Agent Docker images (multi-arch: linux/amd64, linux/arm64)
-- Publishes to GitHub Container Registry (`ghcr.io/gsmlg-dev/secrethub/core` and `agent`)
-- Creates GitHub Release with artifacts
-
-See `.github/workflows/README.md` for detailed CI/CD documentation.
+CI environment: Elixir 1.18, OTP 28. Caches: deps (keyed by `mix.lock`), dialyzer PLT.
 
 ## Deployment
 
-The project has two separate release configurations in `mix.exs`:
+Two release configurations in root `mix.exs`:
+1. **secrethub_core**: `secrethub_core` + `secrethub_web` + `secrethub_shared`
+2. **secrethub_agent**: `secrethub_agent` + `secrethub_shared`
 
-1. **secrethub_core**: Includes `secrethub_core`, `secrethub_web`, and `secrethub_shared`
-2. **secrethub_agent**: Includes `secrethub_agent` and `secrethub_shared`
+Infrastructure code in `/infrastructure/` (Helm charts, Kubernetes manifests, Prometheus configs).
 
-Both releases:
-- Include executables for Unix only
-- Use standard `:assemble, :tar` steps
+## Commit Convention
 
-Infrastructure code is in `/infrastructure/`:
-- Docker configs in `infrastructure/docker/`
-- Terraform modules in `infrastructure/terraform/`
-- Kubernetes manifests in `infrastructure/kubernetes/`
-
-### Asset Build Configuration
-- **Bun**: JavaScript bundler, outputs to `priv/static/assets/js/`
-- **Tailwind CSS**: v4.1.7, compiles to `priv/static/assets/css/app.css`
-- Assets are managed through mix aliases: `assets.setup`, `assets.build`, `assets.deploy`
-
-## Team & Development Process
-
-Development team includes AI assistants with specific responsibilities:
-- **Claude**: Architecture, Security, Documentation
-- **Kimi K2**: Core Backend, Database
-- **GLM-4.6**: Agent, OTP, GenServers
-
-**Commit Message Convention:**
 ```
 type(scope): subject
-
-body
-
-footer
 ```
 
 Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
-Example:
-```
-feat(core): implement AppRole authentication backend
-
-- Add RoleID/SecretID generation
-- Implement token validation
-- Add integration tests
-
-Closes #123
-```
+Scopes: `core`, `web`, `agent`, `shared`, `cli`, `infra`
