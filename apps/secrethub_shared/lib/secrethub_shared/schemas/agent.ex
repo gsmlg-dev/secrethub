@@ -103,8 +103,8 @@ defmodule SecretHub.Shared.Schemas.Agent do
   """
   def bootstrap_changeset(agent, attrs) do
     agent
-    |> cast(attrs, [:role_id, :secret_id, :ip_address, :hostname, :user_agent])
-    |> validate_required([:role_id, :secret_id])
+    |> cast(attrs, [:agent_id, :name, :description, :role_id, :secret_id, :ip_address, :hostname, :user_agent, :metadata])
+    |> validate_required([:agent_id, :role_id, :secret_id])
     |> validate_format(
       :role_id,
       ~r/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/,
@@ -123,8 +123,8 @@ defmodule SecretHub.Shared.Schemas.Agent do
   """
   def heartbeat_changeset(agent) do
     change(agent, %{
-      last_heartbeat_at: DateTime.utc_now(),
-      last_seen_at: DateTime.utc_now()
+      last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second)
     })
   end
 
@@ -134,9 +134,9 @@ defmodule SecretHub.Shared.Schemas.Agent do
   def authenticate_changeset(agent, certificate) do
     change(agent, %{
       status: :active,
-      authenticated_at: DateTime.utc_now(),
-      last_seen_at: DateTime.utc_now(),
-      last_heartbeat_at: DateTime.utc_now(),
+      authenticated_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
       certificate_id: certificate.id
     })
   end
@@ -167,8 +167,8 @@ defmodule SecretHub.Shared.Schemas.Agent do
   def active?(agent) do
     agent.status == :active and
       DateTime.compare(
-        agent.last_heartbeat_at || DateTime.add(DateTime.utc_now(), -3600, :second),
-        DateTime.add(DateTime.utc_now(), -300, :second)
+        agent.last_heartbeat_at || DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -3600, :second),
+        DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -300, :second)
       ) != :lt
   end
 
@@ -176,8 +176,8 @@ defmodule SecretHub.Shared.Schemas.Agent do
   Check if agent needs re-authentication due to stale heartbeat.
   """
   def stale_heartbeat?(agent, timeout_seconds \\ 300) do
-    cutoff = DateTime.add(DateTime.utc_now(), -timeout_seconds, :second)
-    DateTime.compare(agent.last_heartbeat_at || DateTime.utc_now(), cutoff) == :lt
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -timeout_seconds, :second)
+    DateTime.compare(agent.last_heartbeat_at || DateTime.utc_now() |> DateTime.truncate(:second), cutoff) == :lt
   end
 
   # Private validation functions

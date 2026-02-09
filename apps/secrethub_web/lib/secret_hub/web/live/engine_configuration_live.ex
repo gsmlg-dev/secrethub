@@ -222,7 +222,7 @@ defmodule SecretHub.Web.EngineConfigurationLive do
   defp format_timestamp(nil), do: "Never"
 
   defp format_timestamp(timestamp) do
-    diff = DateTime.diff(DateTime.utc_now(), timestamp, :second)
+    diff = DateTime.diff(DateTime.utc_now() |> DateTime.truncate(:second), timestamp, :second)
 
     cond do
       diff < 60 -> "#{diff}s ago"

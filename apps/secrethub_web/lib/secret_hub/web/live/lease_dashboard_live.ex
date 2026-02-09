@@ -357,7 +357,7 @@ defmodule SecretHub.Web.LeaseDashboardLive do
   defp load_upcoming_renewals do
     case LeaseManager.list_active_leases() do
       {:ok, leases} ->
-        now = DateTime.utc_now()
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
 
         leases
         |> Enum.filter(fn lease ->
@@ -467,7 +467,7 @@ defmodule SecretHub.Web.LeaseDashboardLive do
   defp urgency_text(_), do: "Normal"
 
   defp format_time_ago(timestamp) do
-    seconds = DateTime.diff(DateTime.utc_now(), timestamp)
+    seconds = DateTime.diff(DateTime.utc_now() |> DateTime.truncate(:second), timestamp)
 
     cond do
       seconds < 60 -> "#{seconds}s ago"

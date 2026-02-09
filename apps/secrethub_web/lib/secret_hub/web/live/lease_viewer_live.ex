@@ -533,11 +533,11 @@ defmodule SecretHub.Web.LeaseViewerLive do
   end
 
   defp is_expired?(lease) do
-    DateTime.compare(lease.expires_at, DateTime.utc_now()) == :lt
+    DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) == :lt
   end
 
   defp is_expiring_soon?(lease) do
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
     remaining = DateTime.diff(lease.expires_at, now)
     threshold = lease.lease_duration * 0.2
 
@@ -549,7 +549,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
   end
 
   defp format_ttl(lease) do
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
     remaining = DateTime.diff(lease.expires_at, now)
 
     cond do

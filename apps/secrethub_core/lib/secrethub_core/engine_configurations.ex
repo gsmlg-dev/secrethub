@@ -110,7 +110,7 @@ defmodule SecretHub.Core.EngineConfigurations do
       update_configuration(config, %{
         health_status: status,
         health_message: message,
-        last_health_check_at: DateTime.utc_now()
+        last_health_check_at: DateTime.utc_now() |> DateTime.truncate(:second)
       })
     end
   end
@@ -121,7 +121,7 @@ defmodule SecretHub.Core.EngineConfigurations do
   def record_health_check(config_id, status, opts \\ []) do
     attrs = %{
       engine_configuration_id: config_id,
-      checked_at: DateTime.utc_now(),
+      checked_at: DateTime.utc_now() |> DateTime.truncate(:second),
       status: status,
       response_time_ms: opts[:response_time_ms],
       error_message: opts[:error_message],
@@ -171,7 +171,7 @@ defmodule SecretHub.Core.EngineConfigurations do
   - `avg_response_time`: Average response time in ms
   """
   def get_health_stats(config_id, opts \\ []) do
-    since = opts[:since] || DateTime.add(DateTime.utc_now(), -7 * 24 * 3600, :second)
+    since = opts[:since] || DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -7 * 24 * 3600, :second)
 
     query =
       from(h in EngineHealthCheck,

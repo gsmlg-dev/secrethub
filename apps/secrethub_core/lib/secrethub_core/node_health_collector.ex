@@ -27,7 +27,7 @@ defmodule SecretHub.Core.NodeHealthCollector do
   def collect do
     try do
       metrics = %{
-        timestamp: DateTime.utc_now(),
+        timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
         health_status: determine_health_status(),
         cpu_percent: collect_cpu_usage(),
         memory_percent: collect_memory_usage(),
@@ -35,7 +35,7 @@ defmodule SecretHub.Core.NodeHealthCollector do
         active_connections: collect_active_connections(),
         vault_sealed: vault_sealed?(),
         vault_initialized: vault_initialized?(),
-        last_heartbeat_at: DateTime.utc_now(),
+        last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
         metadata: collect_metadata()
       }
 

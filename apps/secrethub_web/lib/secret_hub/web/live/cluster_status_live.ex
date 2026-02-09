@@ -27,7 +27,7 @@ defmodule SecretHub.Web.ClusterStatusLive do
       socket
       |> assign(:loading, true)
       |> assign(:auto_refresh, true)
-      |> assign(:last_refresh, DateTime.utc_now())
+      |> assign(:last_refresh, DateTime.utc_now() |> DateTime.truncate(:second))
       |> load_cluster_data()
 
     {:ok, socket}
@@ -41,7 +41,7 @@ defmodule SecretHub.Web.ClusterStatusLive do
 
     socket =
       socket
-      |> assign(:last_refresh, DateTime.utc_now())
+      |> assign(:last_refresh, DateTime.utc_now() |> DateTime.truncate(:second))
       |> load_cluster_data()
 
     {:noreply, socket}
@@ -62,7 +62,7 @@ defmodule SecretHub.Web.ClusterStatusLive do
   def handle_event("refresh_now", _params, socket) do
     socket =
       socket
-      |> assign(:last_refresh, DateTime.utc_now())
+      |> assign(:last_refresh, DateTime.utc_now() |> DateTime.truncate(:second))
       |> load_cluster_data()
 
     {:noreply, socket}
@@ -127,7 +127,7 @@ defmodule SecretHub.Web.ClusterStatusLive do
   defp format_timestamp(nil), do: "Never"
 
   defp format_timestamp(timestamp) do
-    diff = DateTime.diff(DateTime.utc_now(), timestamp, :second)
+    diff = DateTime.diff(DateTime.utc_now() |> DateTime.truncate(:second), timestamp, :second)
 
     cond do
       diff < 60 -> "#{diff}s ago"

@@ -75,7 +75,7 @@ defmodule SecretHub.Core.Auth.AppRole do
         "bound_cidr_list" => bound_cidr_list,
         "policies" => policies,
         "secret_id" => secret_id,
-        "secret_id_created_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+        "secret_id_created_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
         "secret_id_uses" => 0
       }
     }
@@ -113,6 +113,17 @@ defmodule SecretHub.Core.Auth.AppRole do
           {:ok, %{token: String.t(), policies: list(), role_name: String.t()}}
           | {:error, String.t()}
   def login(role_id, secret_id, source_ip \\ "unknown") do
+    # Validate role_id is a valid UUID before querying
+    case Ecto.UUID.cast(role_id) do
+      :error ->
+        {:error, "Invalid credentials"}
+
+      {:ok, _} ->
+        login_with_valid_role_id(role_id, secret_id, source_ip)
+    end
+  end
+
+  defp login_with_valid_role_id(role_id, secret_id, source_ip) do
     case Repo.get_by(Role, role_id: role_id, auth_type: "approle") do
       nil ->
         audit_event("approle_login_failed", role_id, %{
@@ -187,7 +198,7 @@ defmodule SecretHub.Core.Auth.AppRole do
         updated_metadata =
           role.metadata
           |> Map.put("secret_id", new_secret_id)
-          |> Map.put("secret_id_created_at", DateTime.utc_now() |> DateTime.to_iso8601())
+          |> Map.put("secret_id_created_at", DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601())
           |> Map.put("secret_id_uses", 0)
 
         role
@@ -314,7 +325,7 @@ defmodule SecretHub.Core.Auth.AppRole do
     case DateTime.from_iso8601(created_at_str) do
       {:ok, created_at, _offset} ->
         expires_at = DateTime.add(created_at, ttl, :second)
-        DateTime.compare(DateTime.utc_now(), expires_at) == :lt
+        DateTime.compare(DateTime.utc_now() |> DateTime.truncate(:second), expires_at) == :lt
 
       _ ->
         false
@@ -349,8 +360,8 @@ defmodule SecretHub.Core.Auth.AppRole do
       role_id: role.role_id,
       role_name: role.role_name,
       policies: Map.get(role.metadata, "policies", []),
-      issued_at: DateTime.utc_now() |> DateTime.to_unix(),
-      expires_at: DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.to_unix()
+      issued_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix(),
+      expires_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(3600, :second) |> DateTime.to_unix()
     }
 
     # For now, use simple base64 encoding
@@ -366,8 +377,8 @@ defmodule SecretHub.Core.Auth.AppRole do
       actor_type: "approle",
       actor_id: role_id,
       event_data: metadata,
-      timestamp: DateTime.utc_now(),
-      created_at: DateTime.utc_now(),
+      timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
+      created_at: DateTime.utc_now() |> DateTime.truncate(:second),
       access_granted: String.contains?(event_type, "success"),
       response_time_ms: 0,
       correlation_id: Ecto.UUID.generate()

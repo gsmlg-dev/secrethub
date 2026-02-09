@@ -1,4 +1,4 @@
-defmodule SecretHub.WebWeb.ChannelCase do
+defmodule SecretHub.Web.ChannelCase do
   @moduledoc """
   This module defines the test case to be used by
   channel tests.
@@ -11,7 +11,7 @@ defmodule SecretHub.WebWeb.ChannelCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use SecretHub.WebWeb.ChannelCase, async: true`, although
+  by setting `use SecretHub.Web.ChannelCase, async: true`, although
   this option is not recommended for other databases.
   """
 
@@ -21,15 +21,15 @@ defmodule SecretHub.WebWeb.ChannelCase do
     quote do
       # Import conveniences for testing with channels
       import Phoenix.ChannelTest
-      import SecretHub.WebWeb.ChannelCase
+      import SecretHub.Web.ChannelCase
 
       # The default endpoint for testing
-      @endpoint SecretHub.WebWeb.Endpoint
+      @endpoint SecretHub.Web.Endpoint
     end
   end
 
   setup tags do
-    SecretHub.WebWeb.ChannelCase.setup_sandbox(tags)
+    SecretHub.Web.ChannelCase.setup_sandbox(tags)
     :ok
   end
 

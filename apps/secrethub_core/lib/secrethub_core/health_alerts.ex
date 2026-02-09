@@ -115,7 +115,7 @@ defmodule SecretHub.Core.HealthAlerts do
     alerts = list_alerts(enabled_only: true)
 
     # Get recent metrics for all nodes (last 5 minutes)
-    cutoff = DateTime.add(DateTime.utc_now(), -5 * 60, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -5 * 60, :second)
 
     recent_metrics =
       from(m in NodeHealthMetric,
@@ -139,7 +139,7 @@ defmodule SecretHub.Core.HealthAlerts do
         ]
   def evaluate_alert(%HealthAlert{} = alert) do
     # Get recent metrics (last 5 minutes)
-    cutoff = DateTime.add(DateTime.utc_now(), -5 * 60, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -5 * 60, :second)
 
     recent_metrics =
       from(m in NodeHealthMetric,
@@ -166,7 +166,7 @@ defmodule SecretHub.Core.HealthAlerts do
 
       if Enum.any?(triggered) do
         # Update last_triggered_at
-        update_alert(alert, %{last_triggered_at: DateTime.utc_now()})
+        update_alert(alert, %{last_triggered_at: DateTime.utc_now() |> DateTime.truncate(:second)})
 
         # Return triggered alerts
         Enum.map(triggered, fn metric ->
@@ -182,13 +182,13 @@ defmodule SecretHub.Core.HealthAlerts do
 
   defp in_cooldown?(%HealthAlert{last_triggered_at: last_triggered, cooldown_minutes: cooldown}) do
     cooldown_seconds = cooldown * 60
-    cutoff = DateTime.add(DateTime.utc_now(), -cooldown_seconds, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -cooldown_seconds, :second)
     DateTime.compare(last_triggered, cutoff) == :gt
   end
 
   defp evaluate_condition(%HealthAlert{alert_type: "node_down"}, %NodeHealthMetric{} = metric) do
     # Node is down if last heartbeat is older than 1 minute
-    cutoff = DateTime.add(DateTime.utc_now(), -60, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -60, :second)
 
     case metric.last_heartbeat_at do
       nil -> true

@@ -1,9 +1,9 @@
-defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificateTest do
-  use SecretHub.WebWeb.ConnCase, async: false
+defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
+  use SecretHub.Web.ConnCase, async: false
 
-  alias SecretHub.Core.PKI.CA
-  alias SecretHub.Shared.Schemas.{Agent, Certificate}
-  alias SecretHub.WebWeb.Plugs.VerifyClientCertificate
+  alias SecretHub.Core.Repo
+  alias SecretHub.Shared.Schemas.Agent
+  alias SecretHub.Web.Plugs.VerifyClientCertificate
 
   describe "VerifyClientCertificate plug" do
     setup do
@@ -12,7 +12,7 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificateTest do
         %Agent{}
         |> Agent.changeset(%{
           agent_id: "test-agent-01",
-          agent_name: "Test Agent",
+          name: "Test Agent",
           status: :active,
           ip_address: "127.0.0.1",
           metadata: %{}
@@ -22,21 +22,13 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificateTest do
       %{agent: agent}
     end
 
-    test "allows request with valid client certificate", %{conn: conn, agent: agent} do
+    test "allows request with valid client certificate", %{conn: _conn, agent: _agent} do
       # TODO: Generate test certificate and configure conn with it
       # This test is a placeholder - full implementation requires:
       # 1. Generate Root CA
       # 2. Generate client certificate for test agent
       # 3. Mock TLS connection with certificate
       # 4. Verify plug extracts and validates certificate
-
-      # For now, skip this test
-      # opts = VerifyClientCertificate.init(required: true)
-      # conn = VerifyClientCertificate.call(conn, opts)
-      #
-      # assert conn.assigns.mtls_authenticated == true
-      # assert conn.assigns.agent_id == "test-agent-01"
-
       assert true
     end
 
@@ -64,21 +56,13 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificateTest do
       refute Map.has_key?(conn.assigns, :mtls_authenticated)
     end
 
-    test "rejects revoked certificate", %{conn: conn, agent: agent} do
+    test "rejects revoked certificate", %{conn: _conn, agent: _agent} do
       # TODO: Implement test with revoked certificate
-      # This requires:
-      # 1. Create certificate in database
-      # 2. Mark it as revoked
-      # 3. Mock TLS conn with that certificate
-      # 4. Verify plug rejects it
-
       assert true
     end
 
-    test "rejects expired certificate", %{conn: conn} do
+    test "rejects expired certificate", %{conn: _conn} do
       # TODO: Implement test with expired certificate
-      # This requires generating a certificate with past expiry date
-
       assert true
     end
   end
@@ -98,11 +82,6 @@ defmodule SecretHub.WebWeb.Plugs.VerifyClientCertificateTest do
   describe "certificate validation" do
     test "validates certificate against CA chain" do
       # TODO: Test CA chain validation
-      # Requires:
-      # 1. Root CA generated
-      # 2. Client cert signed by CA
-      # 3. Validation logic
-
       assert true
     end
 

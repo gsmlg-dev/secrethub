@@ -102,7 +102,7 @@ defmodule SecretHub.Core.DistributedLock do
         lock_handle = %{
           key: lock_key,
           lock_id: lock_id,
-          acquired_at: DateTime.utc_now(),
+          acquired_at: DateTime.utc_now() |> DateTime.truncate(:second),
           session: session
         }
 

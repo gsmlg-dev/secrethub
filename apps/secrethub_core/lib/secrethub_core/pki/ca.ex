@@ -77,7 +77,10 @@ defmodule SecretHub.Core.PKI.CA do
 
     Logger.info("Generating Root CA: #{common_name}")
 
-    with {:ok, private_key} <- generate_private_key(key_type, key_size),
+    with :ok <- validate_cn(common_name),
+         :ok <- validate_org(organization),
+         :ok <- validate_key_opts(key_type, key_size),
+         {:ok, private_key} <- generate_private_key(key_type, key_size),
          {:ok, public_key} <- extract_public_key(private_key, key_type),
          {:ok, cert_der} <-
            create_self_signed_certificate(
@@ -89,7 +92,7 @@ defmodule SecretHub.Core.PKI.CA do
              opts
            ),
          {:ok, cert_pem} <- der_to_pem(cert_der, :certificate),
-         {:ok, key_pem} <- der_to_pem(private_key_to_der(private_key, key_type), :private_key),
+         {:ok, key_pem} <- der_to_pem(private_key_to_der(private_key, key_type), private_key_pem_type(key_type)),
          {:ok, cert_record} <-
            store_certificate(
              cert_pem,
@@ -134,7 +137,10 @@ defmodule SecretHub.Core.PKI.CA do
 
     Logger.info("Generating Intermediate CA: #{common_name}")
 
-    with {:ok, root_ca} <- fetch_ca_certificate(root_ca_cert_id),
+    with :ok <- validate_cn(common_name),
+         :ok <- validate_org(organization),
+         :ok <- validate_key_opts(key_type, key_size),
+         {:ok, root_ca} <- fetch_ca_certificate(root_ca_cert_id),
          {:ok, root_ca_key} <- decrypt_private_key(root_ca.private_key_encrypted),
          {:ok, private_key} <- generate_private_key(key_type, key_size),
          {:ok, public_key} <- extract_public_key(private_key, key_type),
@@ -151,7 +157,7 @@ defmodule SecretHub.Core.PKI.CA do
              opts
            ),
          {:ok, cert_pem} <- der_to_pem(cert_der, :certificate),
-         {:ok, key_pem} <- der_to_pem(private_key_to_der(private_key, key_type), :private_key),
+         {:ok, key_pem} <- der_to_pem(private_key_to_der(private_key, key_type), private_key_pem_type(key_type)),
          {:ok, cert_record} <-
            store_certificate(
              cert_pem,
@@ -159,7 +165,8 @@ defmodule SecretHub.Core.PKI.CA do
              :intermediate_ca,
              common_name,
              organization,
-             validity_days
+             validity_days,
+             root_ca_cert_id
            ) do
       Logger.info("Intermediate CA generated successfully: #{common_name}")
       {:ok, %{certificate: cert_pem, private_key: key_pem, cert_record: cert_record}}
@@ -205,7 +212,9 @@ defmodule SecretHub.Core.PKI.CA do
              cert_type,
              subject_cn,
              ca_cert.organization,
-             validity_days
+             validity_days,
+             ca_cert.id,
+             ca_cert.subject
            ) do
       Logger.info("CSR signed successfully for: #{subject_cn}")
       {:ok, %{certificate: cert_pem, cert_record: cert_record}}
@@ -218,6 +227,34 @@ defmodule SecretHub.Core.PKI.CA do
 
   # Private helper functions
 
+  defp validate_cn(cn) when is_binary(cn) and byte_size(cn) > 0, do: :ok
+  defp validate_cn(_), do: {:error, "Common name cannot be empty"}
+
+  defp validate_org(org) when is_binary(org) and byte_size(org) > 0, do: :ok
+  defp validate_org(_), do: {:error, "Organization cannot be empty"}
+
+  defp validate_key_opts(:rsa, key_size) when key_size in [2048, 4096], do: :ok
+  defp validate_key_opts(:ecdsa, _), do: :ok
+  defp validate_key_opts(:rsa, _), do: {:error, "Invalid RSA key size (must be 2048 or 4096)"}
+  defp validate_key_opts(type, _), do: {:error, "Invalid key type: #{inspect(type)}"}
+
+  defp private_key_pem_type(:ecdsa), do: {:private_key, :ecdsa}
+  defp private_key_pem_type(_), do: :private_key
+
+  defp detect_key_type(key) when elem(key, 0) == :RSAPrivateKey, do: :rsa
+  defp detect_key_type(key) when elem(key, 0) == :ECPrivateKey, do: :ecdsa
+  defp detect_key_type(_), do: :rsa
+
+  # sha256WithRSAEncryption
+  defp signature_algorithm(:rsa) do
+    {:SignatureAlgorithm, {1, 2, 840, 113_549, 1, 1, 11}, {:asn1_OPENTYPE, <<5, 0>>}}
+  end
+
+  # ecdsa-with-SHA256
+  defp signature_algorithm(:ecdsa) do
+    {:SignatureAlgorithm, {1, 2, 840, 10_045, 4, 3, 2}, :asn1_NOVALUE}
+  end
+
   defp generate_private_key(:rsa, key_size) do
     # Generate RSA private key
     private_key = :public_key.generate_key({:rsa, key_size, 65_537})
@@ -228,8 +265,8 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp generate_private_key(:ecdsa, _key_size) do
-    # Generate ECDSA private key using P-384 curve
-    private_key = :public_key.generate_key({:namedCurve, :secp384r1})
+    # Generate ECDSA private key using P-384 curve (OID: 1.3.132.0.34)
+    private_key = :public_key.generate_key({:namedCurve, {1, 3, 132, 0, 34}})
     {:ok, private_key}
   rescue
     e ->
@@ -241,15 +278,11 @@ defmodule SecretHub.Core.PKI.CA do
     {:ok, public_key}
   end
 
-  defp extract_public_key(
-         {:ECPrivateKey, _version, _priv_key, params, pub_key, _asn1_novalue},
-         :ecdsa
-       ) do
-    {:ok, {pub_key, params}}
-  end
-
-  defp extract_public_key({:ECPrivateKey, _version, _priv_key, params, pub_key}, :ecdsa) do
-    {:ok, {pub_key, params}}
+  defp extract_public_key(ec_key, :ecdsa) when elem(ec_key, 0) == :ECPrivateKey do
+    # ECPrivateKey has parameters at index 3 and public key point at index 4
+    params = elem(ec_key, 3)
+    public_key_point = elem(ec_key, 4)
+    {:ok, {public_key_point, params}}
   end
 
   defp create_self_signed_certificate(
@@ -262,6 +295,9 @@ defmodule SecretHub.Core.PKI.CA do
        ) do
     # Create certificate subject/issuer (same for self-signed)
     subject = build_subject(common_name, organization, opts)
+
+    # Determine key type from private key
+    key_type = detect_key_type(private_key)
 
     # Calculate validity period
     not_before = :calendar.universal_time()
@@ -281,7 +317,8 @@ defmodule SecretHub.Core.PKI.CA do
         not_before,
         not_after,
         # is_ca = true for CA certificates
-        true
+        true,
+        key_type
       )
 
     # Sign the certificate
@@ -322,6 +359,7 @@ defmodule SecretHub.Core.PKI.CA do
 
     # Create TBS certificate
     is_ca = cert_type in [:root_ca, :intermediate_ca]
+    ca_key_type = detect_key_type(ca_private_key)
 
     tbs_cert =
       create_tbs_certificate(
@@ -331,7 +369,8 @@ defmodule SecretHub.Core.PKI.CA do
         public_key,
         not_before,
         not_after,
-        is_ca
+        is_ca,
+        ca_key_type
       )
 
     # Sign with CA's private key
@@ -370,7 +409,7 @@ defmodule SecretHub.Core.PKI.CA do
     {:rdnSequence, Enum.map(rdns, fn rdn -> [rdn] end)}
   end
 
-  defp create_tbs_certificate(serial, issuer, subject, public_key, not_before, not_after, is_ca) do
+  defp create_tbs_certificate(serial, issuer, subject, public_key, not_before, not_after, is_ca, key_type \\ :rsa) do
     # This is a simplified version - in production, use proper OTP record construction
     # For now, we'll use :public_key.pkix_sign/2 which handles TBS creation
 
@@ -387,9 +426,7 @@ defmodule SecretHub.Core.PKI.CA do
       # version
       :v3,
       serial,
-      # signature algorithm - use AlgorithmIdentifier record
-      # sha256WithRSAEncryption with NULL params
-      {:SignatureAlgorithm, {1, 2, 840, 113_549, 1, 1, 11}, {:asn1_OPENTYPE, <<5, 0>>}},
+      signature_algorithm(key_type),
       issuer,
       validity,
       subject,
@@ -413,12 +450,12 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp encode_public_key_info({pub_key_bin, params}) when is_binary(pub_key_bin) do
-    # ECDSA public key
+    # ECDSA public key - must be wrapped in {:ECPoint, binary} for OTP
     {
       :OTPSubjectPublicKeyInfo,
       # ecPublicKey
       {:PublicKeyAlgorithm, {1, 2, 840, 10_045, 2, 1}, params},
-      pub_key_bin
+      {:ECPoint, pub_key_bin}
     }
   end
 
@@ -516,7 +553,7 @@ defmodule SecretHub.Core.PKI.CA do
     :public_key.der_encode(:RSAPrivateKey, key)
   end
 
-  defp private_key_to_der({:ECPrivateKey, _, _, _} = key, :ecdsa) do
+  defp private_key_to_der(key, :ecdsa) when elem(key, 0) == :ECPrivateKey do
     :public_key.der_encode(:ECPrivateKey, key)
   end
 
@@ -526,8 +563,13 @@ defmodule SecretHub.Core.PKI.CA do
     {:ok, pem}
   end
 
+  defp der_to_pem(der, {:private_key, :ecdsa}) do
+    pem_entry = {:ECPrivateKey, der, :not_encrypted}
+    pem = :public_key.pem_encode([pem_entry])
+    {:ok, pem}
+  end
+
   defp der_to_pem(der, :private_key) do
-    # Assuming RSA for now - would need to detect key type
     pem_entry = {:RSAPrivateKey, der, :not_encrypted}
     pem = :public_key.pem_encode([pem_entry])
     {:ok, pem}
@@ -541,7 +583,7 @@ defmodule SecretHub.Core.PKI.CA do
     e -> {:error, "Failed to decode PEM: #{inspect(e)}"}
   end
 
-  defp store_certificate(cert_pem, key_pem, cert_type, common_name, organization, _validity_days) do
+  defp store_certificate(cert_pem, key_pem, cert_type, common_name, organization, _validity_days, issuer_id \\ nil) do
     # Encrypt the private key before storing
     {:ok, encrypted_key} = encrypt_private_key(key_pem)
 
@@ -560,7 +602,6 @@ defmodule SecretHub.Core.PKI.CA do
       certificate_pem: cert_pem,
       private_key_encrypted: encrypted_key,
       subject: build_subject_string(common_name, organization),
-      # Self-signed
       issuer: build_subject_string(common_name, organization),
       common_name: common_name,
       organization: organization,
@@ -568,13 +609,14 @@ defmodule SecretHub.Core.PKI.CA do
       valid_until: not_after,
       cert_type: cert_type,
       key_usage: get_key_usage(cert_type),
+      issuer_id: issuer_id,
       entity_type: "ca"
     }
 
     Repo.insert(cert_record)
   end
 
-  defp store_signed_certificate(cert_pem, cert_type, common_name, organization, _validity_days) do
+  defp store_signed_certificate(cert_pem, cert_type, common_name, organization, _validity_days, issuer_cert_id \\ nil, issuer_subject \\ nil) do
     # For signed certificates, we don't store the private key (it stays with the client)
     {:ok, cert_der} = pem_to_der(cert_pem, :certificate)
     cert = :public_key.pkix_decode_cert(cert_der, :otp)
@@ -588,12 +630,14 @@ defmodule SecretHub.Core.PKI.CA do
       fingerprint: fingerprint,
       certificate_pem: cert_pem,
       subject: build_subject_string(common_name, organization),
+      issuer: issuer_subject || build_subject_string(common_name, organization),
       common_name: common_name,
       organization: organization,
       valid_from: not_before,
       valid_until: not_after,
       cert_type: cert_type,
       key_usage: get_key_usage(cert_type),
+      issuer_id: issuer_cert_id,
       entity_type: to_string(cert_type)
     }
 
@@ -696,6 +740,8 @@ defmodule SecretHub.Core.PKI.CA do
     # Create TBS certificate
     is_ca = cert_type in [:root_ca, :intermediate_ca]
 
+    ca_key_type = detect_key_type(ca_key)
+
     tbs_cert =
       create_tbs_certificate(
         serial_number,
@@ -704,7 +750,8 @@ defmodule SecretHub.Core.PKI.CA do
         public_key,
         not_before,
         not_after,
-        is_ca
+        is_ca,
+        ca_key_type
       )
 
     # Sign with CA key
@@ -766,30 +813,108 @@ defmodule SecretHub.Core.PKI.CA do
   defp extract_subject_from_csr(
          {:CertificationRequest, {:CertificationRequestInfo, _, subject, _, _}, _, _}
        ) do
-    subject
+    # Convert CSR subject from raw DER to OTP-compatible format
+    # CSR subjects may have raw binary values that need to be wrapped in tagged tuples
+    convert_subject_for_otp(subject)
+  end
+
+  defp convert_subject_for_otp({:rdnSequence, rdn_sets}) do
+    converted =
+      Enum.map(rdn_sets, fn rdn_set ->
+        Enum.map(rdn_set, fn {:AttributeTypeAndValue, oid, value} ->
+          {:AttributeTypeAndValue, oid, convert_attribute_value(oid, value)}
+        end)
+      end)
+
+    {:rdnSequence, converted}
+  end
+
+  # If value is already a tagged tuple, pass through
+  defp convert_attribute_value(_oid, {:utf8String, _} = v), do: v
+  defp convert_attribute_value(_oid, {:printableString, _} = v), do: v
+  defp convert_attribute_value(_oid, {:ia5String, _} = v), do: v
+  defp convert_attribute_value(_oid, {:teletexString, _} = v), do: v
+
+  # If value is raw DER binary, decode the ASN.1 tag and wrap appropriately
+  defp convert_attribute_value(_oid, value) when is_binary(value) do
+    case value do
+      # UTF8String (tag 0x0C)
+      <<0x0C, rest::binary>> ->
+        # Extract length and value
+        {str_bytes, _} = decode_asn1_length_and_value(rest)
+        {:utf8String, str_bytes}
+
+      # PrintableString (tag 0x13)
+      <<0x13, rest::binary>> ->
+        {str_bytes, _} = decode_asn1_length_and_value(rest)
+        {:printableString, str_bytes}
+
+      # IA5String (tag 0x16)
+      <<0x16, rest::binary>> ->
+        {str_bytes, _} = decode_asn1_length_and_value(rest)
+        {:ia5String, str_bytes}
+
+      # Fallback: wrap as utf8String
+      _ ->
+        {:utf8String, value}
+    end
+  end
+
+  defp convert_attribute_value(_oid, value), do: value
+
+  defp decode_asn1_length_and_value(<<length, rest::binary>>) when length < 128 do
+    <<value::binary-size(length), remaining::binary>> = rest
+    {value, remaining}
+  end
+
+  defp decode_asn1_length_and_value(<<0x81, length, rest::binary>>) do
+    <<value::binary-size(length), remaining::binary>> = rest
+    {value, remaining}
+  end
+
+  defp decode_asn1_length_and_value(<<0x82, length::16, rest::binary>>) do
+    <<value::binary-size(length), remaining::binary>> = rest
+    {value, remaining}
   end
 
   defp extract_public_key_from_csr(
          {:CertificationRequest, {:CertificationRequestInfo, _, _, spki, _}, _, _}
        ) do
     # Extract public key from SubjectPublicKeyInfo
-    {:SubjectPublicKeyInfo, _, public_key} = spki
-    public_key
+    case spki do
+      {:CertificationRequestInfo_subjectPKInfo, algo_info, pub_key_der} ->
+        case algo_info do
+          {:CertificationRequestInfo_subjectPKInfo_algorithm, {1, 2, 840, 113_549, 1, 1, 1}, _} ->
+            # RSA public key - decode from DER
+            :public_key.der_decode(:RSAPublicKey, pub_key_der)
+
+          {:CertificationRequestInfo_subjectPKInfo_algorithm, {1, 2, 840, 10_045, 2, 1}, params} ->
+            # ECDSA public key
+            {pub_key_der, params}
+
+          _ ->
+            pub_key_der
+        end
+
+      {:SubjectPublicKeyInfo, _, public_key} ->
+        public_key
+    end
   end
 
   defp extract_cn_from_csr(csr) do
+    # Get the converted subject (already OTP-compatible)
     subject = extract_subject_from_csr(csr)
     {:rdnSequence, rdns} = subject
 
-    # Find CN attribute
+    # Find CN attribute (OID 2.5.4.3)
     cn =
       Enum.find_value(rdns, fn rdn_set ->
         Enum.find_value(rdn_set, fn
-          {:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, cn_charlist}} ->
-            to_string(cn_charlist)
+          {:AttributeTypeAndValue, {2, 5, 4, 3}, {:utf8String, cn_value}} ->
+            to_string(cn_value)
 
-          {:AttributeTypeAndValue, {2, 5, 4, 3}, {:printableString, cn_charlist}} ->
-            to_string(cn_charlist)
+          {:AttributeTypeAndValue, {2, 5, 4, 3}, {:printableString, cn_value}} ->
+            to_string(cn_value)
 
           _ ->
             nil
@@ -800,8 +925,14 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp calculate_fingerprint(cert_pem) do
-    :crypto.hash(:sha256, cert_pem)
-    |> Base.encode16(case: :lower)
+    hash =
+      :crypto.hash(:sha256, cert_pem)
+      |> Base.encode16(case: :lower)
+      |> String.graphemes()
+      |> Enum.chunk_every(2)
+      |> Enum.map_join(":", &Enum.join/1)
+
+    "sha256:#{hash}"
   end
 
   defp build_subject_string(common_name, organization) do
@@ -867,7 +998,7 @@ defmodule SecretHub.Core.PKI.CA do
         changeset =
           Ecto.Changeset.change(cert, %{
             revoked: true,
-            revoked_at: DateTime.utc_now(),
+            revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
             revocation_reason: "manual_revocation"
           })
 

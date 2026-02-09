@@ -240,8 +240,8 @@ defmodule SecretHub.Core.Rotation.DatabasePassword do
       {:ok,
        %{
          old_version:
-           "rotated_at_#{DateTime.to_unix(schedule.last_rotation_at || DateTime.utc_now())}",
-         new_version: "rotated_at_#{DateTime.to_unix(DateTime.utc_now())}",
+           "rotated_at_#{DateTime.to_unix(schedule.last_rotation_at || DateTime.utc_now() |> DateTime.truncate(:second))}",
+         new_version: "rotated_at_#{DateTime.to_unix(DateTime.utc_now() |> DateTime.truncate(:second))}",
          metadata: %{
            duration_ms: duration_ms,
            username: username

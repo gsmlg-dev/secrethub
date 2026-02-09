@@ -49,6 +49,9 @@ defmodule SecretHub.Shared.Schemas.Certificate do
     field(:revoked_at, :utc_datetime)
     field(:revocation_reason, :string)
 
+    # Issuer reference (for chain building)
+    field(:issuer_id, :binary_id)
+
     # Entity binding (who owns this certificate)
     field(:entity_id, :string)
     field(:entity_type, :string)
@@ -81,6 +84,7 @@ defmodule SecretHub.Shared.Schemas.Certificate do
       :revoked,
       :revoked_at,
       :revocation_reason,
+      :issuer_id,
       :entity_id,
       :entity_type,
       :metadata
@@ -106,7 +110,7 @@ defmodule SecretHub.Shared.Schemas.Certificate do
   """
   def revoke_changeset(certificate, reason) do
     certificate
-    |> cast(%{revoked: true, revoked_at: DateTime.utc_now(), revocation_reason: reason}, [
+    |> cast(%{revoked: true, revoked_at: DateTime.utc_now() |> DateTime.truncate(:second), revocation_reason: reason}, [
       :revoked,
       :revoked_at,
       :revocation_reason

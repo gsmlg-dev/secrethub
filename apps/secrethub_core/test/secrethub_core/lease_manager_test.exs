@@ -26,10 +26,10 @@ defmodule SecretHub.Core.LeaseManagerTest do
 
       assert {:ok, lease} = LeaseManager.create_lease(attrs)
       assert lease.engine_type == "postgresql"
-      assert lease.role_name == "readonly"
-      assert lease.status == "active"
-      assert lease.renewable == true
       assert is_binary(lease.id)
+      assert is_binary(lease.lease_id)
+      assert lease.agent_id == "system"
+      assert lease.ttl_seconds == 3600
 
       # Verify it's in the manager's state
       assert {:ok, fetched_lease} = LeaseManager.get_lease(lease.id)

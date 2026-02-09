@@ -70,7 +70,7 @@ defmodule SecretHub.Core.Shutdown do
     Logger.warning("Graceful shutdown initiated (timeout: #{timeout_ms}ms)")
 
     state = %{
-      start_time: DateTime.utc_now(),
+      start_time: DateTime.utc_now() |> DateTime.truncate(:second),
       timeout_ms: timeout_ms,
       shutdown_initiated: true
     }
@@ -251,7 +251,7 @@ defmodule SecretHub.Core.Shutdown do
   end
 
   defp time_remaining(state) do
-    elapsed_ms = DateTime.diff(DateTime.utc_now(), state.start_time, :millisecond)
+    elapsed_ms = DateTime.diff(DateTime.utc_now() |> DateTime.truncate(:second), state.start_time, :millisecond)
     max(0, state.timeout_ms - elapsed_ms)
   end
 

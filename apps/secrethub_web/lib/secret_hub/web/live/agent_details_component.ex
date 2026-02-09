@@ -229,17 +229,17 @@ defmodule SecretHub.Web.AgentDetailsComponent do
       %{
         type: "secret_access",
         description: "Accessed secret: prod.db.postgres.password",
-        timestamp: DateTime.utc_now() |> DateTime.add(-300, :second)
+        timestamp: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-300, :second)
       },
       %{
         type: "policy_check",
         description: "Policy validation passed",
-        timestamp: DateTime.utc_now() |> DateTime.add(-600, :second)
+        timestamp: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-600, :second)
       },
       %{
         type: "connection",
         description: "WebSocket connection established",
-        timestamp: DateTime.utc_now() |> DateTime.add(-1800, :second)
+        timestamp: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1800, :second)
       }
     ]
   end

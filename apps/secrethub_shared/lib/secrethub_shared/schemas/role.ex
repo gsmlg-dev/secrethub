@@ -50,6 +50,9 @@ defmodule SecretHub.Shared.Schemas.Role do
     field(:metadata, :map, default: %{})
     field(:description, :string)
 
+    # Auth type (approle, etc.)
+    field(:auth_type, :string, default: "approle")
+
     # Enable/disable role
     field(:enabled, :boolean, default: true)
 
@@ -76,6 +79,7 @@ defmodule SecretHub.Shared.Schemas.Role do
       :bound_cidr_list,
       :metadata,
       :description,
+      :auth_type,
       :enabled
     ])
     |> validate_required([:role_id, :role_name, :policies])

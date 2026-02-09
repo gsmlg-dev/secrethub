@@ -245,7 +245,7 @@ defmodule SecretHub.Web.VaultInitLive do
     content = """
     SecretHub Vault Unseal Shares
     =============================
-    Generated: #{DateTime.utc_now() |> DateTime.to_string()}
+    Generated: #{DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_string()}
     Threshold: #{socket.assigns.threshold}
     Total Shares: #{socket.assigns.total_shares}
 

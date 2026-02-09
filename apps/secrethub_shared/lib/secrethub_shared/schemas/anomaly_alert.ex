@@ -59,7 +59,7 @@ defmodule SecretHub.Shared.Schemas.AnomalyAlert do
     alert
     |> change(
       status: status,
-      resolved_at: DateTime.utc_now(),
+      resolved_at: DateTime.utc_now() |> DateTime.truncate(:second),
       resolved_by: resolved_by,
       resolution_notes: notes
     )
@@ -97,7 +97,7 @@ defmodule SecretHub.Shared.Schemas.AnomalyAlert do
   Gets the time since alert was triggered.
   """
   def time_since_triggered(alert) do
-    DateTime.diff(DateTime.utc_now(), alert.triggered_at, :second)
+    DateTime.diff(DateTime.utc_now() |> DateTime.truncate(:second), alert.triggered_at, :second)
   end
 
   @doc """

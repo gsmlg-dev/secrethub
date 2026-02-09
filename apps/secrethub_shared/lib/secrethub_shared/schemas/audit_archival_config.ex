@@ -71,7 +71,7 @@ defmodule SecretHub.Shared.Schemas.AuditArchivalConfig do
 
     archival_config
     |> change(
-      last_archival_at: DateTime.utc_now(),
+      last_archival_at: DateTime.utc_now() |> DateTime.truncate(:second),
       last_archival_status: status,
       last_archival_error: error
     )

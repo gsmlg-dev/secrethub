@@ -33,7 +33,7 @@ defmodule SecretHub.Core.Health do
     {:ok,
      %{
        status: "alive",
-       timestamp: DateTime.utc_now()
+       timestamp: DateTime.utc_now() |> DateTime.truncate(:second)
      }}
   end
 
@@ -66,7 +66,7 @@ defmodule SecretHub.Core.Health do
       ready: ready,
       shutting_down: shutting_down,
       checks: format_check_results(checks),
-      timestamp: DateTime.utc_now()
+      timestamp: DateTime.utc_now() |> DateTime.truncate(:second)
     }
 
     if ready do
@@ -118,7 +118,7 @@ defmodule SecretHub.Core.Health do
       shutting_down: SecretHub.Core.Shutdown.shutting_down?(),
       active_connections: SecretHub.Core.Shutdown.active_connections(),
       checks: format_check_results(checks),
-      timestamp: DateTime.utc_now(),
+      timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
       version: Application.spec(:secrethub_core, :vsn) |> to_string()
     }
 

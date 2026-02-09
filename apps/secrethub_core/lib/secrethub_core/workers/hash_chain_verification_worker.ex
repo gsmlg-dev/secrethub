@@ -73,7 +73,7 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
 
   defp fetch_logs_for_verification(batch_size, start_offset_days) do
     # Fetch logs older than start_offset_days (allow time for logs to stabilize)
-    cutoff_date = DateTime.add(DateTime.utc_now(), -start_offset_days * 86400, :second)
+    cutoff_date = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -start_offset_days * 86400, :second)
 
     logs = Audit.list_logs_for_verification(cutoff_date, limit: batch_size)
 
@@ -169,7 +169,7 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
     # Create anomaly alert for tampered logs
     Alerting.create_anomaly_alert(%{
       rule_id: nil,
-      triggered_at: DateTime.utc_now(),
+      triggered_at: DateTime.utc_now() |> DateTime.truncate(:second),
       severity: :critical,
       description: """
       Hash chain integrity violation detected!
@@ -180,7 +180,7 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
       context: %{
         invalid_count: results.invalid_count,
         invalid_logs: results.invalid_logs,
-        verification_time: DateTime.utc_now()
+        verification_time: DateTime.utc_now() |> DateTime.truncate(:second)
       }
     })
   end
@@ -188,7 +188,7 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
   defp store_verification_results(results) do
     # Store in metadata table for historical tracking
     metadata = %{
-      timestamp: DateTime.utc_now(),
+      timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
       total_verified: results.valid_count + results.invalid_count,
       valid_count: results.valid_count,
       invalid_count: results.invalid_count,

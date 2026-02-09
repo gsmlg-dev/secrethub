@@ -60,7 +60,7 @@ defmodule SecretHub.Shared.Schemas.AuditArchivalJob do
     records = Keyword.get(opts, :records, 0)
     checksum = Keyword.get(opts, :checksum)
 
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
     duration = DateTime.diff(now, job.started_at, :millisecond)
 
     job
@@ -86,7 +86,7 @@ defmodule SecretHub.Shared.Schemas.AuditArchivalJob do
   Marks a job as failed with error message.
   """
   def mark_failed(job, error_message) do
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
     duration = DateTime.diff(now, job.started_at, :millisecond)
 
     change(job, status: :failed, error_message: error_message, duration_ms: duration)

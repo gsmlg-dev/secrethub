@@ -96,7 +96,7 @@ defmodule SecretHub.Web.Plugs.AppRoleAuth do
   defp session_expired?(login_at_str) when is_binary(login_at_str) do
     case DateTime.from_iso8601(login_at_str) do
       {:ok, login_at, _offset} ->
-        now = DateTime.utc_now()
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
         # 30 minutes
         timeout_seconds = 30 * 60
 

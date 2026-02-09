@@ -150,7 +150,7 @@ defmodule SecretHub.Core.Agents do
         agent
         |> Ecto.Changeset.change(%{
           status: :disconnected,
-          last_seen_at: DateTime.utc_now()
+          last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second)
         })
         |> Repo.update()
 
@@ -355,7 +355,7 @@ defmodule SecretHub.Core.Agents do
   Cleanup stale agents (no heartbeat for extended period).
   """
   def cleanup_stale_agents(timeout_hours \\ 24) do
-    cutoff = DateTime.add(DateTime.utc_now(), -timeout_hours * 3600, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -timeout_hours * 3600, :second)
 
     from(a in Agent,
       where: a.last_heartbeat_at < ^cutoff and a.status in [:active, :disconnected]
@@ -397,9 +397,9 @@ defmodule SecretHub.Core.Agents do
       subject: "CN=#{agent.agent_id}",
       common_name: agent.agent_id,
       organization: "SecretHub Agents",
-      valid_from: DateTime.utc_now(),
+      valid_from: DateTime.utc_now() |> DateTime.truncate(:second),
       # 90 days
-      valid_until: DateTime.add(DateTime.utc_now(), 90 * 24 * 3600, :second),
+      valid_until: DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 90 * 24 * 3600, :second),
       cert_type: :agent_client,
       entity_id: agent.id,
       entity_type: "agent"
@@ -411,7 +411,12 @@ defmodule SecretHub.Core.Agents do
 
     # Add certificate_pem and other required fields
     cert_attrs = Map.put(cert_data, :certificate_pem, certificate_pem)
-    cert_attrs = Map.put(cert_attrs, :fingerprint, Certificate.fingerprint(nil))
+    cert_attrs =
+      Map.put(
+        cert_attrs,
+        :fingerprint,
+        "SHA256:" <> (:crypto.hash(:sha256, certificate_pem) |> Base.encode16(case: :lower))
+      )
     cert_attrs = Map.put(cert_attrs, :issuer, "CN=SecretHub CA")
 
     certificate_changeset =
@@ -435,7 +440,7 @@ defmodule SecretHub.Core.Agents do
     expires_soon? =
       DateTime.compare(
         certificate.valid_until,
-        DateTime.add(DateTime.utc_now(), 7 * 24 * 3600, :second)
+        DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 7 * 24 * 3600, :second)
       ) != :gt
 
     revoked? = certificate.revoked
@@ -443,8 +448,8 @@ defmodule SecretHub.Core.Agents do
   end
 
   defp cancel_agent_leases(agent_id) do
-    from(l in Lease, where: l.agent_id == ^agent_id and l.expires_at > ^DateTime.utc_now())
-    |> Repo.update_all(set: [expires_at: DateTime.utc_now()])
+    from(l in Lease, where: l.agent_id == ^agent_id and l.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second)))
+    |> Repo.update_all(set: [expires_at: DateTime.utc_now() |> DateTime.truncate(:second)])
   end
 
   defp evaluate_agent_policies(agent, secret) do
@@ -484,8 +489,8 @@ defmodule SecretHub.Core.Agents do
       response_time_ms: 0,
       correlation_id: Ecto.UUID.generate(),
       event_data: event_data,
-      timestamp: DateTime.utc_now(),
-      created_at: DateTime.utc_now()
+      timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
+      created_at: DateTime.utc_now() |> DateTime.truncate(:second)
     }
 
     Repo.insert(audit_log)

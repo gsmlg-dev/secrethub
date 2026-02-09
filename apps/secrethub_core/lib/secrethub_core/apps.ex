@@ -216,7 +216,7 @@ defmodule SecretHub.Core.Apps do
     token_hash = hash_token(token_string)
 
     # Create token record
-    expires_at = DateTime.add(DateTime.utc_now(), @bootstrap_token_ttl, :second)
+    expires_at = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), @bootstrap_token_ttl, :second)
 
     token_attrs = %{
       app_id: app_id,
@@ -254,7 +254,7 @@ defmodule SecretHub.Core.Apps do
         from(t in AppBootstrapToken,
           where: t.token_hash == ^token_hash,
           where: t.used == false,
-          where: t.expires_at > ^DateTime.utc_now(),
+          where: t.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second)),
           lock: "FOR UPDATE"
         )
 
@@ -266,7 +266,7 @@ defmodule SecretHub.Core.Apps do
         token ->
           # Mark token as used
           changeset =
-            AppBootstrapToken.changeset(token, %{used: true, used_at: DateTime.utc_now()})
+            AppBootstrapToken.changeset(token, %{used: true, used_at: DateTime.utc_now() |> DateTime.truncate(:second)})
 
           case Repo.update(changeset) do
             {:ok, updated_token} ->
@@ -287,7 +287,7 @@ defmodule SecretHub.Core.Apps do
   Cleanup expired bootstrap tokens (older than 24 hours).
   """
   def cleanup_expired_tokens do
-    cutoff = DateTime.add(DateTime.utc_now(), -86400, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -86400, :second)
 
     query =
       from(t in AppBootstrapToken,
@@ -314,7 +314,7 @@ defmodule SecretHub.Core.Apps do
     attrs = %{
       app_id: app_id,
       certificate_id: certificate_id,
-      issued_at: DateTime.utc_now(),
+      issued_at: DateTime.utc_now() |> DateTime.truncate(:second),
       expires_at: expires_at
     }
 
@@ -368,7 +368,7 @@ defmodule SecretHub.Core.Apps do
       app_cert ->
         changeset =
           AppCertificate.changeset(app_cert, %{
-            revoked_at: DateTime.utc_now(),
+            revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
             revocation_reason: reason
           })
 

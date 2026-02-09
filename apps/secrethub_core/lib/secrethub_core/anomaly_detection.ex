@@ -88,7 +88,7 @@ defmodule SecretHub.Core.AnomalyDetection do
     {:ok, alert} =
       Alerting.create_anomaly_alert(%{
         rule_id: rule.id,
-        triggered_at: DateTime.utc_now(),
+        triggered_at: DateTime.utc_now() |> DateTime.truncate(:second),
         severity: rule.severity,
         description: description,
         context: context
@@ -169,7 +169,7 @@ defmodule SecretHub.Core.AnomalyDetection do
     allowed_start_hour = get_threshold(rule, "start_hour", 6)
     allowed_end_hour = get_threshold(rule, "end_hour", 22)
 
-    current_hour = DateTime.utc_now().hour
+    current_hour = (DateTime.utc_now() |> DateTime.truncate(:second)).hour
 
     if current_hour < allowed_start_hour or current_hour >= allowed_end_hour do
       trigger_alert(
@@ -328,7 +328,7 @@ defmodule SecretHub.Core.AnomalyDetection do
   defp count_recent_events(action, result, actor_id, window_minutes, resource_type \\ nil) do
     # This would query the audit logs
     # Placeholder implementation
-    cutoff = DateTime.add(DateTime.utc_now(), -window_minutes * 60, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -window_minutes * 60, :second)
 
     query =
       from(a in "audit_logs",
@@ -349,7 +349,7 @@ defmodule SecretHub.Core.AnomalyDetection do
   end
 
   defp count_rotation_results(window_minutes) do
-    cutoff = DateTime.add(DateTime.utc_now(), -window_minutes * 60, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -window_minutes * 60, :second)
 
     success_count =
       from(a in "audit_logs",

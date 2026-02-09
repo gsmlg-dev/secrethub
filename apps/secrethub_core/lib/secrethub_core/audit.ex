@@ -95,6 +95,11 @@ defmodule SecretHub.Core.Audit do
   """
   @spec log_event(map()) :: {:ok, AuditLog.t()} | {:error, Ecto.Changeset.t()}
   def log_event(event_attrs) do
+    do_log_event(event_attrs, 0)
+  end
+
+  @max_retries 3
+  defp do_log_event(event_attrs, retry_count) do
     # Get the last log entry to build the chain
     last_entry = get_last_audit_entry()
 
@@ -107,10 +112,10 @@ defmodule SecretHub.Core.Audit do
       event_attrs
       |> Map.put(:event_id, Ecto.UUID.generate())
       |> Map.put(:sequence_number, sequence_number)
-      |> Map.put(:timestamp, DateTime.utc_now())
+      |> Map.put(:timestamp, DateTime.utc_now() |> DateTime.truncate(:second))
       |> Map.put(:previous_hash, previous_hash)
       |> Map.put(:correlation_id, Map.get(event_attrs, :correlation_id, Ecto.UUID.generate()))
-      |> Map.put(:created_at, DateTime.utc_now())
+      |> Map.put(:created_at, DateTime.utc_now() |> DateTime.truncate(:second))
 
     # Calculate current hash
     current_hash = calculate_entry_hash(attrs)
@@ -141,6 +146,18 @@ defmodule SecretHub.Core.Audit do
 
         error
     end
+  rescue
+    Ecto.ConstraintError ->
+      if retry_count < @max_retries do
+        # Sequence number collision from concurrent inserts; retry with fresh sequence
+        do_log_event(event_attrs, retry_count + 1)
+      else
+        Logger.error("Failed to log audit event after #{@max_retries} retries",
+          event_type: event_attrs[:event_type]
+        )
+
+        {:error, :constraint_conflict}
+      end
   end
 
   @doc """
@@ -303,7 +320,7 @@ defmodule SecretHub.Core.Audit do
       |> Enum.into(%{})
 
     # Get recent activity (last 24 hours)
-    yesterday = DateTime.add(DateTime.utc_now(), -86_400, :second)
+    yesterday = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -86_400, :second)
 
     recent_count =
       Repo.aggregate(
@@ -424,7 +441,7 @@ defmodule SecretHub.Core.Audit do
   def mark_as_archived(log_ids) when is_list(log_ids) do
     query = from(a in AuditLog, where: a.id in ^log_ids)
 
-    Repo.update_all(query, set: [archived: true, archived_at: DateTime.utc_now()])
+    Repo.update_all(query, set: [archived: true, archived_at: DateTime.utc_now() |> DateTime.truncate(:second)])
   end
 
   ## Private Functions

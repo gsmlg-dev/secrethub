@@ -89,7 +89,7 @@ defmodule SecretHub.Core.RotationManager do
   Gets schedules that are due for rotation.
   """
   def get_due_schedules do
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     query =
       from(s in RotationSchedule,
@@ -223,7 +223,7 @@ defmodule SecretHub.Core.RotationManager do
     {:ok, history} =
       create_history(%{
         rotation_schedule_id: schedule.id,
-        started_at: DateTime.utc_now(),
+        started_at: DateTime.utc_now() |> DateTime.truncate(:second),
         status: :in_progress,
         metadata: %{}
       })
@@ -249,7 +249,7 @@ defmodule SecretHub.Core.RotationManager do
       {:ok, rotation_result} ->
         {:ok, history} =
           update_history(history, %{
-            completed_at: DateTime.utc_now(),
+            completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
             status: :success,
             old_version: rotation_result.old_version,
             new_version: rotation_result.new_version,
@@ -260,7 +260,7 @@ defmodule SecretHub.Core.RotationManager do
         # Update schedule
         {:ok, schedule} =
           update_schedule(schedule, %{
-            last_rotation_at: DateTime.utc_now(),
+            last_rotation_at: DateTime.utc_now() |> DateTime.truncate(:second),
             last_rotation_status: :success,
             last_rotation_error: nil,
             rotation_count: schedule.rotation_count + 1
@@ -274,7 +274,7 @@ defmodule SecretHub.Core.RotationManager do
       {:error, reason} ->
         {:ok, history} =
           update_history(history, %{
-            completed_at: DateTime.utc_now(),
+            completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
             status: :failed,
             error_message: to_string(reason),
             duration_ms: duration_ms
@@ -282,7 +282,7 @@ defmodule SecretHub.Core.RotationManager do
 
         # Update schedule
         update_schedule(schedule, %{
-          last_rotation_at: DateTime.utc_now(),
+          last_rotation_at: DateTime.utc_now() |> DateTime.truncate(:second),
           last_rotation_status: :failed,
           last_rotation_error: to_string(reason)
         })

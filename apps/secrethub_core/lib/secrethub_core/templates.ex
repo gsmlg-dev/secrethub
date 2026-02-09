@@ -161,7 +161,7 @@ defmodule SecretHub.Core.Templates do
   """
   def update_sink_write_status(%Sink{} = sink, status, error \\ nil) do
     attrs = %{
-      last_write_at: DateTime.utc_now(),
+      last_write_at: DateTime.utc_now() |> DateTime.truncate(:second),
       last_write_status: status,
       last_write_error: error
     }

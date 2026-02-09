@@ -64,7 +64,7 @@ defmodule SecretHub.Shared.Schemas.SecretVersion do
       description: secret.description,
       created_by: created_by,
       change_description: change_description,
-      archived_at: DateTime.utc_now()
+      archived_at: DateTime.utc_now() |> DateTime.truncate(:second)
     }
   end
 

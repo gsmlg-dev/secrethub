@@ -175,7 +175,7 @@ defmodule SecretHub.Core.ClusterState do
       node_id: node_id,
       status: :starting,
       leader?: false,
-      last_heartbeat: DateTime.utc_now(),
+      last_heartbeat: DateTime.utc_now() |> DateTime.truncate(:second),
       leader_lock: nil
     }
 
@@ -314,7 +314,7 @@ defmodule SecretHub.Core.ClusterState do
     # Schedule next heartbeat
     schedule_heartbeat()
 
-    {:noreply, %{state | last_heartbeat: DateTime.utc_now()}}
+    {:noreply, %{state | last_heartbeat: DateTime.utc_now() |> DateTime.truncate(:second)}}
   end
 
   @impl true
@@ -364,7 +364,7 @@ defmodule SecretHub.Core.ClusterState do
   defp register_node(node_id) do
     hostname = :inet.gethostname() |> elem(1) |> to_string()
     version = Application.spec(:secrethub_core, :vsn) |> to_string()
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     case Repo.get_by(ClusterNode, node_id: node_id) do
       nil ->
@@ -425,7 +425,7 @@ defmodule SecretHub.Core.ClusterState do
           status: to_string(status),
           sealed: sealed,
           initialized: initialized,
-          last_seen_at: DateTime.utc_now()
+          last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second)
         })
         |> Repo.update()
 
@@ -443,7 +443,7 @@ defmodule SecretHub.Core.ClusterState do
 
       node ->
         node
-        |> ClusterNode.changeset(%{last_seen_at: DateTime.utc_now()})
+        |> ClusterNode.changeset(%{last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second)})
         |> Repo.update()
 
         :ok
@@ -452,7 +452,7 @@ defmodule SecretHub.Core.ClusterState do
 
   defp cleanup_stale_nodes do
     # Remove nodes that haven't sent heartbeat in @node_timeout (30 seconds)
-    timeout_cutoff = DateTime.add(DateTime.utc_now(), -@node_timeout, :millisecond)
+    timeout_cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -@node_timeout, :millisecond)
 
     {count, _} =
       from(n in ClusterNode,
@@ -543,7 +543,7 @@ defmodule SecretHub.Core.ClusterState do
 
   defp cleanup_old_health_metrics do
     # Delete metrics older than 7 days
-    cutoff = DateTime.add(DateTime.utc_now(), -7 * 24 * 3600, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -7 * 24 * 3600, :second)
 
     from(m in NodeHealthMetric, where: m.timestamp < ^cutoff)
     |> Repo.delete_all()
@@ -554,7 +554,7 @@ defmodule SecretHub.Core.ClusterState do
   end
 
   defp get_health_history(node_id, hours) do
-    cutoff = DateTime.add(DateTime.utc_now(), -hours * 3600, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -hours * 3600, :second)
 
     metrics =
       from(m in NodeHealthMetric,

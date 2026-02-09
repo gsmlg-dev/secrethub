@@ -61,7 +61,7 @@ defmodule SecretHub.Shared.Schemas.AlertRoutingConfig do
   Records that this routing was used to send an alert.
   """
   def record_usage(routing_config) do
-    change(routing_config, last_used_at: DateTime.utc_now())
+    change(routing_config, last_used_at: DateTime.utc_now() |> DateTime.truncate(:second))
   end
 
   @doc """

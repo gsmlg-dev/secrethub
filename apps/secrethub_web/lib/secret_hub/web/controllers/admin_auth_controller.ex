@@ -131,7 +131,7 @@ defmodule SecretHub.Web.AdminAuthController do
   def health_check(conn, _params) do
     conn
     |> put_resp_content_type("application/json")
-    |> json(%{status: "ok", timestamp: DateTime.utc_now()})
+    |> json(%{status: "ok", timestamp: DateTime.utc_now() |> DateTime.truncate(:second)})
   end
 
   # Private functions

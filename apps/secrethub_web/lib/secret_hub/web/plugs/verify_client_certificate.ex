@@ -98,8 +98,13 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
         end
 
       {:error, reason} ->
-        Logger.error("Failed to extract client certificate: #{inspect(reason)}")
-        send_unauthorized(conn, "Invalid client certificate")
+        if opts.required do
+          Logger.error("Failed to extract client certificate: #{inspect(reason)}")
+          send_unauthorized(conn, "Invalid client certificate")
+        else
+          Logger.debug("Client certificate not available: #{inspect(reason)} (optional)")
+          conn
+        end
     end
   end
 
@@ -231,7 +236,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
 
     not_before_dt = parse_asn1_time(not_before)
     not_after_dt = parse_asn1_time(not_after)
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     cond do
       DateTime.compare(now, not_before_dt) == :lt ->

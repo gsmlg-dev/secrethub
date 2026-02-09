@@ -85,7 +85,7 @@ defmodule SecretHub.Core.PolicyEvaluator do
       reason: reason,
       steps: format_simulation_steps(steps),
       policy_name: policy.name,
-      evaluated_at: DateTime.utc_now()
+      evaluated_at: DateTime.utc_now() |> DateTime.truncate(:second)
     }
   end
 
@@ -132,7 +132,7 @@ defmodule SecretHub.Core.PolicyEvaluator do
 
   defp check_time_restrictions(policy, context) do
     conditions = get_in(policy.policy_document, ["conditions"]) || %{}
-    timestamp = Map.get(context, :timestamp, DateTime.utc_now())
+    timestamp = Map.get(context, :timestamp, DateTime.utc_now() |> DateTime.truncate(:second))
 
     cond do
       # Check time of day restriction

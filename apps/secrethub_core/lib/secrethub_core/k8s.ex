@@ -70,8 +70,8 @@ defmodule SecretHub.Core.K8s do
         %{type: "Available", status: "True", reason: "MinimumReplicasAvailable"},
         %{type: "Progressing", status: "True", reason: "NewReplicaSetAvailable"}
       ],
-      created_at: DateTime.utc_now() |> DateTime.add(-7, :day),
-      updated_at: DateTime.utc_now() |> DateTime.add(-2, :hour),
+      created_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-7, :day),
+      updated_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-2, :hour),
       labels: %{
         "app.kubernetes.io/name" => "secrethub",
         "app.kubernetes.io/component" => "core"
@@ -109,7 +109,7 @@ defmodule SecretHub.Core.K8s do
   def list_pods do
     # TODO: Replace with actual k8s API call
     # For now, return mock data
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     pods = [
       %{
@@ -226,7 +226,7 @@ defmodule SecretHub.Core.K8s do
         memory_usage: "512Mi",
         memory_bytes: 536_870_912,
         memory_percent: 25.6,
-        timestamp: DateTime.utc_now()
+        timestamp: DateTime.utc_now() |> DateTime.truncate(:second)
       },
       %{
         pod_name: "#{@deployment_name}-1",
@@ -235,7 +235,7 @@ defmodule SecretHub.Core.K8s do
         memory_usage: "548Mi",
         memory_bytes: 574_619_648,
         memory_percent: 27.4,
-        timestamp: DateTime.utc_now()
+        timestamp: DateTime.utc_now() |> DateTime.truncate(:second)
       },
       %{
         pod_name: "#{@deployment_name}-2",
@@ -244,7 +244,7 @@ defmodule SecretHub.Core.K8s do
         memory_usage: "490Mi",
         memory_bytes: 513_802_240,
         memory_percent: 24.5,
-        timestamp: DateTime.utc_now()
+        timestamp: DateTime.utc_now() |> DateTime.truncate(:second)
       }
     ]
 
@@ -303,7 +303,7 @@ defmodule SecretHub.Core.K8s do
   """
   def get_events do
     # TODO: Replace with actual k8s API call
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     events = [
       %{

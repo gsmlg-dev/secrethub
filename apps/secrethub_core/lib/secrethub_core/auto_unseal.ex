@@ -256,7 +256,7 @@ defmodule SecretHub.Core.AutoUnseal do
           Logger.info("Auto-unseal successful")
 
           {:noreply,
-           %{new_state | unseal_in_progress: false, last_unseal_attempt: DateTime.utc_now()}}
+           %{new_state | unseal_in_progress: false, last_unseal_attempt: DateTime.utc_now() |> DateTime.truncate(:second)}}
 
         {:error, reason} ->
           Logger.error("Auto-unseal failed: #{inspect(reason)}")
@@ -264,7 +264,7 @@ defmodule SecretHub.Core.AutoUnseal do
           Process.send_after(self(), :attempt_auto_unseal, state.config.retry_delay_ms)
 
           {:noreply,
-           %{new_state | unseal_in_progress: false, last_unseal_attempt: DateTime.utc_now()}}
+           %{new_state | unseal_in_progress: false, last_unseal_attempt: DateTime.utc_now() |> DateTime.truncate(:second)}}
       end
     else
       {:noreply, state}

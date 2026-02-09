@@ -433,7 +433,7 @@ defmodule SecretHub.Web.AdminDashboardLive do
       end
 
     # Get rotation stats for last 24 hours
-    yesterday = DateTime.add(DateTime.utc_now(), -86_400, :second)
+    yesterday = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -86_400, :second)
 
     rotated_24h =
       try do
@@ -449,13 +449,13 @@ defmodule SecretHub.Web.AdminDashboardLive do
       end
 
     # Get leases expiring in next 7 days
-    next_week = DateTime.add(DateTime.utc_now(), 7 * 86_400, :second)
+    next_week = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 7 * 86_400, :second)
 
     expiring_7d =
       try do
         Repo.aggregate(
           from(l in Lease,
-            where: l.expires_at <= ^next_week and l.expires_at > ^DateTime.utc_now()
+            where: l.expires_at <= ^next_week and l.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second))
           ),
           :count,
           :id
@@ -587,7 +587,7 @@ defmodule SecretHub.Web.AdminDashboardLive do
   defp format_timestamp(nil), do: "Never"
 
   defp format_timestamp(datetime) do
-    DateTime.diff(DateTime.utc_now(), datetime, :second)
+    DateTime.diff(DateTime.utc_now() |> DateTime.truncate(:second), datetime, :second)
     |> format_relative_time()
   end
 

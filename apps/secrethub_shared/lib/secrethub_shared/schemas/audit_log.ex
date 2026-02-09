@@ -106,8 +106,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     ])
     |> validate_required([:event_id, :sequence_number, :timestamp, :event_type])
     |> validate_inclusion(:event_type, valid_event_types())
-    |> unique_constraint(:event_id)
-    |> unique_constraint(:sequence_number)
+    |> unique_constraint(:event_id, name: :unique_event_id_timestamp)
+    |> unique_constraint([:sequence_number, :timestamp], name: :unique_sequence_number_timestamp)
   end
 
   @doc """

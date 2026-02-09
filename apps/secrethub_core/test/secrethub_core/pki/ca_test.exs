@@ -104,11 +104,11 @@ defmodule SecretHub.Core.PKI.CATest do
       cert = Repo.get(Certificate, result.cert_record.id)
 
       # Verify encrypted_private_key is stored
-      assert cert.encrypted_private_key != nil
-      assert is_binary(cert.encrypted_private_key)
+      assert cert.private_key_encrypted != nil
+      assert is_binary(cert.private_key_encrypted)
 
       # Verify it's different from the plaintext key
-      refute cert.encrypted_private_key == result.private_key
+      refute cert.private_key_encrypted == result.private_key
     end
 
     test "generates unique serial numbers" do
@@ -221,7 +221,7 @@ defmodule SecretHub.Core.PKI.CATest do
     test "rejects non-existent root CA" do
       fake_uuid = Ecto.UUID.generate()
 
-      assert {:error, "Root CA not found"} =
+      assert {:error, "CA certificate not found"} =
                CA.generate_intermediate_ca(
                  "Test Intermediate CA",
                  "SecretHub Test Inc",
@@ -372,11 +372,11 @@ defmodule SecretHub.Core.PKI.CATest do
       cert = Repo.get(Certificate, result.cert_record.id)
 
       # Verify encrypted_private_key exists
-      assert cert.encrypted_private_key != nil
+      assert cert.private_key_encrypted != nil
 
       # Verify it's not the plaintext PEM
-      refute cert.encrypted_private_key == result.private_key
-      refute String.contains?(cert.encrypted_private_key, "-----BEGIN")
+      refute cert.private_key_encrypted == result.private_key
+      refute is_binary(cert.private_key_encrypted) and String.valid?(cert.private_key_encrypted) and String.contains?(cert.private_key_encrypted, "-----BEGIN")
     end
 
     test "private keys are not exposed in certificate_pem field" do

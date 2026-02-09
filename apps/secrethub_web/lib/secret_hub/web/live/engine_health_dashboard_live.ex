@@ -145,7 +145,7 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
     config = socket.assigns.config
     time_range = socket.assigns[:time_range] || @default_history_days
 
-    since = DateTime.add(DateTime.utc_now(), -time_range * 24 * 3600, :second)
+    since = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -time_range * 24 * 3600, :second)
 
     # Reload config for latest health status
     {:ok, fresh_config} = EngineConfigurations.get_configuration(config.id)
@@ -198,7 +198,7 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
   end
 
   defp format_relative_time(timestamp) do
-    diff = DateTime.diff(DateTime.utc_now(), timestamp, :second)
+    diff = DateTime.diff(DateTime.utc_now() |> DateTime.truncate(:second), timestamp, :second)
 
     cond do
       diff < 60 -> "#{diff}s ago"

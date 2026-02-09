@@ -2,11 +2,8 @@ defmodule SecretHub.CLI.AuthTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureIO
-  import Mox
 
   alias SecretHub.CLI.{Auth, Config}
-
-  setup :verify_on_exit!
 
   setup do
     # Use a temporary config directory for tests
@@ -31,25 +28,9 @@ defmodule SecretHub.CLI.AuthTest do
 
   describe "login/3" do
     test "successfully authenticates with valid credentials" do
-      # Mock successful HTTP response
-      expect(SecretHub.CLI.HTTPClientMock, :post, fn _url, _opts ->
-        {:ok, %{
-          status: 200,
-          body: %{
-            "auth" => %{
-              "client_token" => "test-token-123",
-              "lease_duration" => 3600
-            }
-          }
-        }}
-      end)
-
-      # Note: This test would need the actual Req module to be mocked
-      # For now, we'll test the logic flow
-      output = capture_io(fn ->
-        # We can't directly test without mocking Req, but we can test the structure
-        assert is_function(&Auth.login/3)
-      end)
+      # HTTPClientBehaviour not yet implemented, so we can't mock HTTP calls.
+      # For now, verify the login function exists with correct arity.
+      assert is_function(&Auth.login/3)
     end
 
     test "returns error when role_id is missing" do

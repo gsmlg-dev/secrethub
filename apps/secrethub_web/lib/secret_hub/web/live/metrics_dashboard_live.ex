@@ -29,7 +29,7 @@ defmodule SecretHubWeb.MetricsDashboardLive do
       socket
       |> assign(:page_title, "Metrics Dashboard")
       |> assign(:metrics, PrometheusExporter.collect_metrics())
-      |> assign(:last_updated, DateTime.utc_now())
+      |> assign(:last_updated, DateTime.utc_now() |> DateTime.truncate(:second))
 
     {:ok, socket}
   end
@@ -41,7 +41,7 @@ defmodule SecretHubWeb.MetricsDashboardLive do
     socket =
       socket
       |> assign(:metrics, PrometheusExporter.collect_metrics())
-      |> assign(:last_updated, DateTime.utc_now())
+      |> assign(:last_updated, DateTime.utc_now() |> DateTime.truncate(:second))
 
     {:noreply, socket}
   end

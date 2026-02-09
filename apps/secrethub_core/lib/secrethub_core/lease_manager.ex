@@ -184,15 +184,19 @@ defmodule SecretHub.Core.LeaseManager do
 
   @impl true
   def handle_call({:create_lease, attrs}, _from, state) do
-    ttl = attrs[:ttl] || 3600
-    expires_at = DateTime.add(DateTime.utc_now(), ttl, :second)
+    ttl = attrs[:ttl] || attrs[:ttl_seconds] || 3600
+    now = DateTime.truncate(DateTime.utc_now() |> DateTime.truncate(:second), :second)
+    expires_at = DateTime.add(now, ttl, :second)
 
     lease_attrs =
       attrs
       |> Map.new()
+      |> Map.put_new(:lease_id, Ecto.UUID.generate())
+      |> Map.put_new(:secret_id, attrs[:secret_id] || "secret/#{attrs[:engine_type] || "unknown"}/#{attrs[:role_name] || "default"}")
+      |> Map.put_new(:agent_id, attrs[:agent_id] || "system")
+      |> Map.put_new(:issued_at, now)
       |> Map.put(:expires_at, expires_at)
-      |> Map.put(:renewable, true)
-      |> Map.put(:status, "active")
+      |> Map.put(:ttl_seconds, ttl)
 
     case create_lease_in_db(lease_attrs) do
       {:ok, lease} ->
@@ -201,7 +205,6 @@ defmodule SecretHub.Core.LeaseManager do
         Logger.info("Created lease",
           lease_id: lease.id,
           engine_type: lease.engine_type,
-          role: lease.role_name,
           ttl: ttl
         )
 
@@ -220,7 +223,7 @@ defmodule SecretHub.Core.LeaseManager do
         {:reply, {:error, :not_found}, state}
 
       lease ->
-        if DateTime.compare(lease.expires_at, DateTime.utc_now()) == :lt do
+        if DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) == :lt do
           {:reply, {:error, :expired}, state}
         else
           case perform_renewal(lease, increment) do
@@ -284,7 +287,7 @@ defmodule SecretHub.Core.LeaseManager do
 
   @impl true
   def handle_call(:get_stats, _from, state) do
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
     five_minutes_from_now = DateTime.add(now, 300, :second)
 
     stats = %{
@@ -310,7 +313,7 @@ defmodule SecretHub.Core.LeaseManager do
     # Find and revoke expired leases
     {expired, active} =
       Enum.split_with(state.leases, fn {_id, lease} ->
-        DateTime.compare(lease.expires_at, DateTime.utc_now()) == :lt
+        DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) == :lt
       end)
 
     if length(expired) > 0 do
@@ -333,7 +336,7 @@ defmodule SecretHub.Core.LeaseManager do
   @impl true
   def handle_info(:check_revocations, state) do
     # Check for leases that need immediate revocation
-    now = DateTime.utc_now()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     Enum.each(state.leases, fn {_id, lease} ->
       if DateTime.compare(lease.expires_at, now) == :lt do
@@ -378,7 +381,7 @@ defmodule SecretHub.Core.LeaseManager do
     leases =
       Lease
       |> where([l], l.revoked == false)
-      |> where([l], l.expires_at > ^DateTime.utc_now())
+      |> where([l], l.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second)))
       |> Repo.all()
       |> Map.new(fn lease -> {lease.id, lease} end)
 
@@ -397,19 +400,19 @@ defmodule SecretHub.Core.LeaseManager do
 
     opts = [
       increment: increment || 3600,
-      current_ttl: DateTime.diff(lease.expires_at, DateTime.utc_now()),
+      current_ttl: DateTime.diff(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)),
       credentials: lease.credentials,
       config: lease.metadata["config"] || %{}
     ]
 
     case engine_module.renew_lease(lease.id, opts) do
       {:ok, %{ttl: new_ttl}} ->
-        new_expires_at = DateTime.add(DateTime.utc_now(), new_ttl, :second)
+        new_expires_at = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), new_ttl, :second)
 
         lease
         |> Lease.changeset(%{
           expires_at: new_expires_at,
-          last_renewal_time: DateTime.utc_now()
+          last_renewal_time: DateTime.utc_now() |> DateTime.truncate(:second)
         })
         |> Repo.update()
 
@@ -428,7 +431,7 @@ defmodule SecretHub.Core.LeaseManager do
         lease
         |> Lease.changeset(%{
           status: "revoked",
-          revoked_at: DateTime.utc_now()
+          revoked_at: DateTime.utc_now() |> DateTime.truncate(:second)
         })
         |> Repo.update()
 

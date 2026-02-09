@@ -187,7 +187,7 @@ defmodule SecretHub.Core.Vault.SealState do
                 encrypted_master_key: encrypted_master_key,
                 threshold: threshold,
                 total_shares: total_shares,
-                initialized_at: DateTime.utc_now()
+                initialized_at: DateTime.utc_now() |> DateTime.truncate(:second)
             }
 
             Logger.info("Vault initialized with #{total_shares} shares (threshold: #{threshold})")
@@ -238,7 +238,7 @@ defmodule SecretHub.Core.Vault.SealState do
                     master_key: reconstructed_key,
                     unseal_shares: [],
                     unseal_progress: 0,
-                    unsealed_at: DateTime.utc_now(),
+                    unsealed_at: DateTime.utc_now() |> DateTime.truncate(:second),
                     auto_seal_timer: timer
                 }
 

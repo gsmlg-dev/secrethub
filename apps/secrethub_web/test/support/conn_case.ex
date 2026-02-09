@@ -1,4 +1,4 @@
-defmodule SecretHub.WebWeb.ConnCase do
+defmodule SecretHub.Web.ConnCase do
   @moduledoc """
   This module defines the test case to be used by
   tests that require setting up a connection.
@@ -11,7 +11,7 @@ defmodule SecretHub.WebWeb.ConnCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use SecretHub.WebWeb.ConnCase, async: true`, although
+  by setting `use SecretHub.Web.ConnCase, async: true`, although
   this option is not recommended for other databases.
   """
 
@@ -20,9 +20,9 @@ defmodule SecretHub.WebWeb.ConnCase do
   using do
     quote do
       # The default endpoint for testing
-      @endpoint SecretHub.WebWeb.Endpoint
+      @endpoint SecretHub.Web.Endpoint
 
-      use SecretHub.WebWeb, :verified_routes
+      use SecretHub.Web, :verified_routes
 
       # Import conveniences for testing with connections
       import Plug.Conn
@@ -30,7 +30,16 @@ defmodule SecretHub.WebWeb.ConnCase do
     end
   end
 
-  setup _tags do
+  setup tags do
+    SecretHub.Web.ConnCase.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
+  end
+
+  @doc """
+  Sets up the sandbox based on the test tags.
+  """
+  def setup_sandbox(tags) do
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(SecretHub.Core.Repo, shared: not tags[:async])
+    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
   end
 end

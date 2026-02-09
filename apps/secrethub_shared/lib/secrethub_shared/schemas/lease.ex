@@ -104,7 +104,7 @@ defmodule SecretHub.Shared.Schemas.Lease do
       %{
         expires_at: new_expires_at,
         renewed_count: (lease.renewed_count || 0) + 1,
-        last_renewed_at: DateTime.utc_now()
+        last_renewed_at: DateTime.utc_now() |> DateTime.truncate(:second)
       },
       [:expires_at, :renewed_count, :last_renewed_at]
     )
@@ -120,7 +120,7 @@ defmodule SecretHub.Shared.Schemas.Lease do
     |> cast(
       %{
         revoked: true,
-        revoked_at: DateTime.utc_now(),
+        revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
         revocation_reason: reason
       },
       [:revoked, :revoked_at, :revocation_reason]

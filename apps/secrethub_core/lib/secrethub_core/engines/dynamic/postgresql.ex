@@ -298,7 +298,7 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
 
   defp create_user(conn, config, username, password, ttl) do
     statements = config["creation_statements"] || default_creation_statements()
-    expiration = DateTime.add(DateTime.utc_now(), ttl, :second)
+    expiration = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), ttl, :second)
 
     variables = %{
       "username" => username,

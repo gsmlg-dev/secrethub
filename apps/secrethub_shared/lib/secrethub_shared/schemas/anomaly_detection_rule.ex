@@ -93,7 +93,7 @@ defmodule SecretHub.Shared.Schemas.AnomalyDetectionRule do
   def record_trigger(rule) do
     rule
     |> change(
-      last_triggered_at: DateTime.utc_now(),
+      last_triggered_at: DateTime.utc_now() |> DateTime.truncate(:second),
       trigger_count: (rule.trigger_count || 0) + 1
     )
   end
@@ -104,7 +104,7 @@ defmodule SecretHub.Shared.Schemas.AnomalyDetectionRule do
   def on_cooldown?(rule) do
     if rule.last_triggered_at && rule.cooldown_minutes && rule.cooldown_minutes > 0 do
       cooldown_until = DateTime.add(rule.last_triggered_at, rule.cooldown_minutes * 60, :second)
-      DateTime.compare(DateTime.utc_now(), cooldown_until) == :lt
+      DateTime.compare(DateTime.utc_now() |> DateTime.truncate(:second), cooldown_until) == :lt
     else
       false
     end

@@ -144,7 +144,7 @@ defmodule SecretHub.Web.DynamicSecretsController do
 
     case LeaseManager.renew_lease(lease_id, increment) do
       {:ok, lease} ->
-        ttl = DateTime.diff(lease.expires_at, DateTime.utc_now())
+        ttl = DateTime.diff(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second))
 
         Logger.info("Renewed lease", lease_id: lease_id, new_ttl: ttl)
 

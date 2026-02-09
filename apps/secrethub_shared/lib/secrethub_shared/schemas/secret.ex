@@ -105,7 +105,7 @@ defmodule SecretHub.Shared.Schemas.Secret do
           rotation_period_hours: get_field(changeset, :rotation_period_hours, 168),
           ttl_hours: get_field(changeset, :ttl_hours, 24),
           status: "active",
-          last_rotated_at: DateTime.utc_now(),
+          last_rotated_at: DateTime.utc_now() |> DateTime.truncate(:second),
           next_rotation_at:
             calculate_next_rotation(get_field(changeset, :rotation_period_hours, 168))
         }
@@ -134,7 +134,7 @@ defmodule SecretHub.Shared.Schemas.Secret do
       rotation_period_hours: String.to_integer(Map.get(attrs, "rotation_period_hours", "168")),
       ttl_hours: String.to_integer(Map.get(attrs, "ttl_hours", "24")),
       status: "active",
-      updated_at: DateTime.utc_now()
+      updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
     }
 
     {:ok, secret}
@@ -151,7 +151,7 @@ defmodule SecretHub.Shared.Schemas.Secret do
   end
 
   defp calculate_next_rotation(rotation_hours) do
-    DateTime.add(DateTime.utc_now(), rotation_hours * 3600, :second)
+    DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), rotation_hours * 3600, :second)
   end
 
   defp validate_secret_path(changeset) do
