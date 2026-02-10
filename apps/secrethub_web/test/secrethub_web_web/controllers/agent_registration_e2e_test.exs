@@ -11,10 +11,8 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
 
   use SecretHub.Web.ConnCase, async: false
 
-  # These E2E tests require Agents.register_agent/1 and
-  # Agents.generate_approle_credentials/1 which are not yet implemented.
-  # Skip until the agent registration API is complete.
-  @moduletag :skip
+  # Agent registration E2E tests — require register_agent, generate_approle_credentials,
+  # and the /v1/auth/approle/login route.
 
   alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Core.Repo
@@ -83,7 +81,7 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
         })
 
       assert agent.agent_id == agent_id
-      assert agent.status == :pending_certificate
+      assert agent.status == :pending_bootstrap
 
       # Step 3: Generate AppRole credentials for the agent
       {:ok, role_id, secret_id} = Agents.generate_approle_credentials(agent.id)
@@ -116,7 +114,8 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
       # Step 5: Verify agent status changed to active
       updated_agent = Agents.get_agent!(agent.id)
       assert updated_agent.status == :active
-      assert updated_agent.current_certificate_pem != nil
+      assert updated_agent.certificate != nil
+      assert updated_agent.certificate.certificate_pem != nil
 
       # Step 6: Use token to access secrets (within policy)
       conn = build_conn()
@@ -163,18 +162,20 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
       {:ok, role_id, secret_id} = Agents.generate_approle_credentials(agent.id)
 
       # Initial login to get certificate
-      conn =
+      login_conn =
         post(conn, "/v1/auth/approle/login", %{
           "role_id" => role_id,
           "secret_id" => secret_id
         })
 
-      initial_cert = json_response(conn, 200)["certificate"]
+      login_response = json_response(login_conn, 200)
+      initial_cert = login_response["certificate"]
+      token = login_response["token"]
 
       # Step 2: Request certificate renewal
       # In production, agent would renew before expiry
       conn = build_conn()
-      conn = put_req_header(conn, "x-vault-token", json_response(conn, 200)["token"])
+      conn = put_req_header(conn, "x-vault-token", token)
 
       conn = post(conn, "/v1/agent/certificate/renew", %{})
 

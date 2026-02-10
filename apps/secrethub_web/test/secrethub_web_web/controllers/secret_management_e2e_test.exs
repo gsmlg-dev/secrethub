@@ -13,11 +13,8 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
 
   use SecretHub.Web.ConnCase, async: false
 
-  # These E2E tests require Agents.register_agent/1,
-  # Agents.generate_approle_credentials/1, and Vault API routes
-  # which are not yet implemented. Skip until the secret management
-  # API is complete.
-  @moduletag :skip
+  # Secret management E2E tests — require register_agent, generate_approle_credentials,
+  # and the /v1/secret/* and /v1/auth/approle/login routes.
 
   alias SecretHub.Core.{Agents, Policies, Secrets}
   alias SecretHub.Core.Repo

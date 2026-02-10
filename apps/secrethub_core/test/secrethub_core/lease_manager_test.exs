@@ -158,10 +158,9 @@ defmodule SecretHub.Core.LeaseManagerTest do
   end
 
   describe "renew_lease/2" do
-    @tag :skip
-    # Skipped because it requires mocking the engine module
     test "renews lease and updates expiry time" do
-      {:ok, lease} = create_test_lease(%{ttl: 60})
+      # Use "test" engine type so renewal doesn't call real PostgreSQL
+      {:ok, lease} = create_test_lease(%{engine_type: "test", ttl: 60, engine_metadata: %{"config" => %{"max_ttl" => 86_400}}})
 
       # Sleep to let some time pass
       Process.sleep(100)
@@ -176,23 +175,21 @@ defmodule SecretHub.Core.LeaseManagerTest do
       assert {:error, :not_found} = LeaseManager.renew_lease("non_existent", 60)
     end
 
-    @tag :skip
     test "returns error for expired lease" do
-      # Create a lease that expires immediately
-      {:ok, lease} = create_test_lease(%{ttl: 1})
+      # Create a lease that expires in 1 second using test engine
+      {:ok, lease} = create_test_lease(%{engine_type: "test", ttl: 1, engine_metadata: %{"config" => %{"max_ttl" => 86_400}}})
 
-      # Wait for expiry
-      Process.sleep(1100)
+      # Wait for expiry (2s to account for truncation to seconds)
+      Process.sleep(2000)
 
       assert {:error, :expired} = LeaseManager.renew_lease(lease.id, 60)
     end
   end
 
   describe "revoke_lease/1" do
-    @tag :skip
-    # Skipped because it requires mocking the engine module
     test "revokes lease successfully" do
-      {:ok, lease} = create_test_lease()
+      # Use "test" engine type so revocation doesn't call real PostgreSQL
+      {:ok, lease} = create_test_lease(%{engine_type: "test"})
 
       assert :ok = LeaseManager.revoke_lease(lease.id)
 
@@ -217,7 +214,7 @@ defmodule SecretHub.Core.LeaseManagerTest do
         metadata: %{host: "localhost"}
       },
       ttl: 3600,
-      metadata: %{config: %{}}
+      engine_metadata: %{"config" => %{}}
     }
 
     merged_attrs = Map.merge(default_attrs, attrs)

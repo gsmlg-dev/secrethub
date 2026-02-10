@@ -86,17 +86,26 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
         ttl: ttl
       )
 
+      metadata = %{
+        host: connection_config.host,
+        port: connection_config.port,
+        database: connection_config.database,
+        role: role_name
+      }
+
+      metadata =
+        if connection_config[:socket_dir] do
+          Map.put(metadata, :socket_dir, connection_config.socket_dir)
+        else
+          metadata
+        end
+
       {:ok,
        %{
          username: username,
          password: password,
          ttl: ttl,
-         metadata: %{
-           host: connection_config.host,
-           port: connection_config.port,
-           database: connection_config.database,
-           role: role_name
-         }
+         metadata: metadata
        }}
     else
       {:error, reason} = error ->
@@ -113,15 +122,24 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
   def revoke_credentials(lease_id, credentials) do
     %{username: username, metadata: metadata} = credentials
 
+    connection = %{
+      "host" => metadata.host,
+      "port" => metadata.port,
+      "database" => metadata.database,
+      # FIXME: Need to store admin credentials securely
+      "username" => System.get_env("PG_ADMIN_USER", "postgres"),
+      "password" => System.get_env("PG_ADMIN_PASSWORD", "")
+    }
+
+    connection =
+      if Map.get(metadata, :socket_dir) do
+        Map.put(connection, "socket_dir", metadata.socket_dir)
+      else
+        connection
+      end
+
     config = %{
-      "connection" => %{
-        "host" => metadata.host,
-        "port" => metadata.port,
-        "database" => metadata.database,
-        # FIXME: Need to store admin credentials securely
-        "username" => System.get_env("PG_ADMIN_USER", "postgres"),
-        "password" => System.get_env("PG_ADMIN_PASSWORD", "")
-      },
+      "connection" => connection,
       "revocation_statements" => default_revocation_statements()
     }
 
@@ -229,14 +247,22 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
   defp validate_connection_config(config) do
     connection = config["connection"]
 
-    {:ok,
-     %{
-       host: connection["host"],
-       port: connection["port"] || @default_port,
-       database: connection["database"],
-       username: connection["username"],
-       password: connection["password"]
-     }}
+    result = %{
+      host: connection["host"],
+      port: connection["port"] || @default_port,
+      database: connection["database"],
+      username: connection["username"],
+      password: connection["password"]
+    }
+
+    result =
+      if connection["socket_dir"] do
+        Map.put(result, :socket_dir, connection["socket_dir"])
+      else
+        result
+      end
+
+    {:ok, result}
   end
 
   defp determine_ttl(requested_ttl, config) do
@@ -287,13 +313,22 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
   end
 
   defp connect(config) do
-    Postgrex.start_link(
-      hostname: config.host,
-      port: config.port,
+    base_opts = [
       database: config.database,
       username: config.username,
       password: config.password
-    )
+    ]
+
+    conn_opts =
+      if config[:socket_dir] do
+        Keyword.put(base_opts, :socket_dir, config.socket_dir)
+      else
+        base_opts
+        |> Keyword.put(:hostname, config.host)
+        |> Keyword.put(:port, config.port)
+      end
+
+    Postgrex.start_link(conn_opts)
   end
 
   defp create_user(conn, config, username, password, ttl) do

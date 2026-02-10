@@ -161,10 +161,36 @@ defmodule SecretHub.Web.Router do
   scope "/v1/auth/approle", SecretHub.Web do
     pipe_through :auth_api
 
+    # AppRole login (public, rate-limited)
+    post "/login", AuthController, :login
+
     # Public endpoints for AppRole authentication (rate limited)
     get "/role/:role_name", AuthController, :get_role
     post "/role/:role_name/secret-id", AuthController, :rotate_secret_id
     get "/role/:role_name/role-id", AuthController, :get_role_id
+  end
+
+  # Token-authenticated pipeline for Vault-style API
+  pipeline :vault_token do
+    plug :api
+    plug SecretHub.Web.Plugs.VaultTokenAuth
+  end
+
+  # Secret CRUD API (token-authenticated via X-Vault-Token)
+  scope "/v1/secret", SecretHub.Web do
+    pipe_through :vault_token
+
+    post "/data/*path", SecretApiController, :create_or_update
+    get "/data/*path", SecretApiController, :read
+    delete "/data/*path", SecretApiController, :delete
+    get "/metadata/*path", SecretApiController, :metadata
+  end
+
+  # Agent certificate operations (token-authenticated)
+  scope "/v1/agent", SecretHub.Web do
+    pipe_through :vault_token
+
+    post "/certificate/renew", AgentCertController, :renew
   end
 
   # Dynamic Secrets API routes

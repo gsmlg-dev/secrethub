@@ -79,39 +79,36 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQLTest do
   end
 
   describe "generate_credentials/2" do
-    @tag :skip
-    # This test requires a running PostgreSQL instance
-    # Run with: PG_TEST=true mix test
     test "generates valid PostgreSQL credentials" do
-      if System.get_env("PG_TEST") do
-        config = %{
-          "connection" => %{
-            "host" => "localhost",
-            "port" => 5432,
-            "database" => "secrethub_test",
-            "username" => "secrethub",
-            "password" => "secrethub_test_password"
-          },
-          "creation_statements" => [
-            "CREATE USER {{username}} WITH PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';"
-          ],
-          "default_ttl" => 60
-        }
+      socket_dir = System.get_env("DEVENV_STATE", "/tmp") <> "/postgres"
 
-        opts = [config: config, ttl: 120]
+      config = %{
+        "connection" => %{
+          "socket_dir" => socket_dir,
+          "host" => "localhost",
+          "port" => 5432,
+          "database" => "secrethub_test",
+          "username" => "secrethub",
+          "password" => "secrethub_dev_password"
+        },
+        "creation_statements" => [
+          "CREATE USER {{username}} WITH PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';"
+        ],
+        "default_ttl" => 60
+      }
 
-        assert {:ok, credentials} = PostgreSQL.generate_credentials("test_role", opts)
-        assert is_binary(credentials.username)
-        assert String.starts_with?(credentials.username, "v_test_role_")
-        assert is_binary(credentials.password)
-        assert byte_size(credentials.password) == 32
-        assert credentials.ttl == 120
-        assert credentials.metadata.host == "localhost"
-        assert credentials.metadata.database == "secrethub_test"
+      opts = [config: config, ttl: 120]
 
-        # Clean up: revoke the created user
-        PostgreSQL.revoke_credentials("test_lease", credentials)
-      end
+      assert {:ok, credentials} = PostgreSQL.generate_credentials("test_role", opts)
+      assert is_binary(credentials.username)
+      assert String.starts_with?(credentials.username, "v_test_role_")
+      assert is_binary(credentials.password)
+      assert byte_size(credentials.password) == 32
+      assert credentials.ttl == 120
+      assert credentials.metadata.database == "secrethub_test"
+
+      # Clean up: revoke the created user
+      PostgreSQL.revoke_credentials("test_lease", credentials)
     end
 
     test "uses default TTL when not specified" do

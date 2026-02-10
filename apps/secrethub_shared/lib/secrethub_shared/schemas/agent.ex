@@ -99,6 +99,23 @@ defmodule SecretHub.Shared.Schemas.Agent do
   end
 
   @doc """
+  Changeset for agent registration (creates agent in pending_bootstrap state).
+  Unlike bootstrap_changeset, does not require role_id/secret_id upfront.
+  """
+  def registration_changeset(agent, attrs) do
+    agent
+    |> cast(attrs, [:agent_id, :name, :description, :metadata])
+    |> validate_required([:agent_id, :name])
+    |> validate_format(:agent_id, ~r/^[a-z0-9\-]+$/,
+      message: "must contain only lowercase letters, numbers, and hyphens"
+    )
+    |> validate_length(:name, min: 1, max: 100)
+    |> validate_length(:description, max: 500)
+    |> put_change(:status, :pending_bootstrap)
+    |> unique_constraint(:agent_id)
+  end
+
+  @doc """
   Changeset for agent bootstrap (initial registration).
   """
   def bootstrap_changeset(agent, attrs) do

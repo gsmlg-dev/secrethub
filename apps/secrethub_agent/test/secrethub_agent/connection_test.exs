@@ -3,87 +3,70 @@ defmodule SecretHub.Agent.ConnectionTest do
 
   alias SecretHub.Agent.Connection
 
-  @moduletag :skip
+  # Unit tests that verify Connection behavior without requiring a running Core.
+  # Connection starts async and will fail to connect to invalid URLs gracefully.
+  # Note: Connection registers with name: Connection, so we stop between tests.
 
-  # Note: These tests are skipped by default because they require
-  # the Core service to be running. Enable them for integration testing.
+  setup do
+    # Stop any existing Connection process to avoid name conflicts
+    case Process.whereis(Connection) do
+      nil -> :ok
+      pid -> GenServer.stop(pid, :normal, 1000)
+    end
+
+    :ok
+  end
 
   describe "connection lifecycle" do
-    @tag :integration
-    test "starts and connects to Core service" do
-      opts = [
-        agent_id: "agent-test-01",
-        core_url: "ws://localhost:4000"
-      ]
+    test "starts and enters connecting state with invalid URL" do
+      {:ok, pid} = Connection.start_link(agent_id: "agent-test-01", core_url: "ws://localhost:19999")
 
-      {:ok, pid} = Connection.start_link(opts)
+      # Allow async init to fire
+      Process.sleep(300)
 
-      # Wait for connection to establish
-      Process.sleep(1000)
-
-      assert Connection.status(pid) == :connected
+      # With an invalid URL, status should be :connecting (reconnect scheduled) or :disconnected
+      assert Connection.status(pid) in [:disconnected, :connecting]
 
       GenServer.stop(pid)
     end
   end
 
-  describe "secret requests" do
-    setup do
-      opts = [
-        agent_id: "agent-test-01",
-        core_url: "ws://localhost:4000"
-      ]
+  describe "secret requests when disconnected" do
+    test "returns error for static secret when not connected" do
+      {:ok, pid} = Connection.start_link(agent_id: "agent-test-02", core_url: "ws://localhost:19998")
+      Process.sleep(300)
 
-      {:ok, pid} = Connection.start_link(opts)
-      Process.sleep(1000)
+      assert {:error, :not_connected} = Connection.get_static_secret(pid, "test.secret.path")
 
-      on_exit(fn -> GenServer.stop(pid) end)
-
-      {:ok, %{conn: pid}}
+      GenServer.stop(pid)
     end
 
-    @tag :integration
-    test "can request static secret", %{conn: conn} do
-      {:ok, secret} = Connection.get_static_secret(conn, "test.secret.path")
+    test "returns error for dynamic credentials when not connected" do
+      {:ok, pid} = Connection.start_link(agent_id: "agent-test-03", core_url: "ws://localhost:19997")
+      Process.sleep(300)
 
-      assert secret["value"] == "mock_secret_test.secret.path"
-      assert secret["version"] == 1
+      assert {:error, :not_connected} = Connection.get_dynamic_secret(pid, "test.db.readonly", 3600)
+
+      GenServer.stop(pid)
     end
 
-    @tag :integration
-    test "can request dynamic credentials", %{conn: conn} do
-      {:ok, creds} = Connection.get_dynamic_secret(conn, "test.db.readonly", 3600)
+    test "returns error for lease renewal when not connected" do
+      {:ok, pid} = Connection.start_link(agent_id: "agent-test-04", core_url: "ws://localhost:19996")
+      Process.sleep(300)
 
-      assert creds["username"] =~ ~r/^v-agent-test-01-readonly-/
-      assert is_binary(creds["password"])
-      assert is_binary(creds["lease_id"])
-      assert creds["lease_duration"] == 3600
-    end
+      lease_id = :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
+      assert {:error, :not_connected} = Connection.renew_lease(pid, lease_id)
 
-    @tag :integration
-    test "can renew lease", %{conn: conn} do
-      lease_id = Ecto.UUID.generate()
-
-      {:ok, renewal} = Connection.renew_lease(conn, lease_id)
-
-      assert renewal["lease_id"] == lease_id
-      assert renewal["renewed_ttl"] == 3600
-      assert is_binary(renewal["new_expires_at"])
+      GenServer.stop(pid)
     end
   end
 
   describe "error handling" do
     test "returns error when not connected" do
-      opts = [
-        agent_id: "agent-test-01",
-        # Invalid port
-        core_url: "ws://localhost:9999"
-      ]
+      {:ok, pid} = Connection.start_link(agent_id: "agent-test-05", core_url: "ws://localhost:19995")
+      Process.sleep(300)
 
-      {:ok, pid} = Connection.start_link(opts)
-
-      assert Connection.status(pid) == :disconnected
-
+      assert Connection.status(pid) in [:disconnected, :connecting]
       {:error, :not_connected} = Connection.get_static_secret(pid, "test.secret")
 
       GenServer.stop(pid)

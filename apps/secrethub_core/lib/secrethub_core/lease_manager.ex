@@ -402,7 +402,7 @@ defmodule SecretHub.Core.LeaseManager do
       increment: increment || 3600,
       current_ttl: DateTime.diff(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)),
       credentials: lease.credentials,
-      config: lease.metadata["config"] || %{}
+      config: (lease.engine_metadata || %{})["config"] || %{}
     ]
 
     case engine_module.renew_lease(lease.id, opts) do
@@ -410,10 +410,7 @@ defmodule SecretHub.Core.LeaseManager do
         new_expires_at = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), new_ttl, :second)
 
         lease
-        |> Lease.changeset(%{
-          expires_at: new_expires_at,
-          last_renewal_time: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
+        |> Lease.renew_changeset(new_expires_at)
         |> Repo.update()
 
       {:error, reason} ->
@@ -429,10 +426,7 @@ defmodule SecretHub.Core.LeaseManager do
       :ok ->
         # Mark lease as revoked in database
         lease
-        |> Lease.changeset(%{
-          status: "revoked",
-          revoked_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
+        |> Lease.revoke_changeset("manual")
         |> Repo.update()
 
         Logger.info("Revoked lease", lease_id: lease.id)
@@ -447,6 +441,7 @@ defmodule SecretHub.Core.LeaseManager do
   defp engine_module_for_type("redis"), do: SecretHub.Core.Engines.Dynamic.Redis
   defp engine_module_for_type("aws_sts"), do: SecretHub.Core.Engines.Dynamic.AWSSTS
   defp engine_module_for_type("aws"), do: SecretHub.Core.Engines.Dynamic.AWSSTS
+  defp engine_module_for_type("test"), do: SecretHub.Core.Engines.Dynamic.TestEngine
   defp engine_module_for_type(type), do: raise("Unknown engine type: #{type}")
 
   defp filter_leases(leases, opts) do

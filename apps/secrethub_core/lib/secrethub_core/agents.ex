@@ -363,6 +363,153 @@ defmodule SecretHub.Core.Agents do
     |> Repo.update_all(set: [status: :disconnected])
   end
 
+  @doc """
+  Register a new agent with the given attributes.
+
+  Creates the agent in `:pending_bootstrap` status. Policies are assigned
+  via the join table if `policy_ids` are provided.
+
+  ## Parameters
+
+  - `attrs` - Map with:
+    - `:agent_id` - Unique agent identifier (required)
+    - `:name` - Human-readable name (required)
+    - `:description` - Optional description
+    - `:policy_ids` - List of policy UUIDs to assign
+    - `:auth_method` - Authentication method (e.g., "approle")
+    - `:metadata` - Additional metadata map
+  """
+  def register_agent(attrs) do
+    agent_attrs = %{
+      agent_id: attrs[:agent_id],
+      name: attrs[:name],
+      description: attrs[:description],
+      metadata: Map.merge(attrs[:metadata] || %{}, %{
+        "auth_method" => attrs[:auth_method] || "approle"
+      })
+    }
+
+    changeset = Agent.registration_changeset(%Agent{}, agent_attrs)
+
+    case Repo.insert(changeset) do
+      {:ok, agent} ->
+        # Assign policies if provided
+        if policy_ids = attrs[:policy_ids] do
+          policies = Repo.all(from(p in Policy, where: p.id in ^policy_ids))
+
+          agent
+          |> Repo.preload(:policies)
+          |> Ecto.Changeset.change()
+          |> Ecto.Changeset.put_assoc(:policies, policies)
+          |> Repo.update()
+        else
+          {:ok, Repo.preload(agent, [:policies, :certificate])}
+        end
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  @doc """
+  Generate AppRole credentials (role_id/secret_id) for a registered agent.
+
+  Returns `{:ok, role_id, secret_id}` on success.
+  """
+  def generate_approle_credentials(agent_db_id) do
+    case Repo.get(Agent, agent_db_id) do
+      nil ->
+        {:error, "Agent not found"}
+
+      agent ->
+        role_id = Ecto.UUID.generate()
+        secret_id = Ecto.UUID.generate()
+
+        agent
+        |> Ecto.Changeset.change(%{role_id: role_id, secret_id: secret_id})
+        |> Repo.update()
+        |> case do
+          {:ok, _updated} -> {:ok, role_id, secret_id}
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  @doc """
+  Revoke an agent's certificate by database ID.
+
+  Sets agent status to `:revoked` and revokes any associated certificate.
+  """
+  def revoke_agent_certificate(agent_db_id, reason \\ nil) do
+    case Repo.get(Agent, agent_db_id) do
+      nil ->
+        {:error, "Agent not found"}
+
+      agent ->
+        # Revoke agent
+        result =
+          Agent.revoke_changeset(agent, reason)
+          |> Repo.update()
+
+        # Revoke certificate if exists
+        if agent.certificate_id do
+          certificate = Repo.get(Certificate, agent.certificate_id)
+
+          if certificate do
+            Certificate.revoke_changeset(certificate, reason || "Agent certificate revoked")
+            |> Repo.update()
+          end
+        end
+
+        result
+    end
+  end
+
+  @doc """
+  Get an agent by database ID (bang version). Preloads certificate and policies.
+
+  Raises Ecto.NoResultsError if not found.
+  """
+  def get_agent!(agent_db_id) do
+    Repo.get!(Agent, agent_db_id)
+    |> Repo.preload([:certificate, :policies])
+  end
+
+  @doc """
+  Authenticate an agent using AppRole credentials (role_id/secret_id).
+
+  Validates the credentials, issues a certificate, and activates the agent.
+  Returns the updated agent and certificate. Token generation is left to the web layer.
+  """
+  def authenticate_with_approle(role_id, secret_id) do
+    case Repo.get_by(Agent, role_id: role_id, secret_id: secret_id) do
+      nil ->
+        {:error, "Invalid credentials"}
+
+      %Agent{status: :revoked} ->
+        {:error, "Agent has been revoked"}
+
+      %Agent{} = agent ->
+        # Issue certificate for the agent
+        case issue_agent_certificate(agent) do
+          {:ok, certificate} ->
+            # Update agent to active status
+            {:ok, updated_agent} =
+              Agent.authenticate_changeset(agent, certificate)
+              |> Repo.update()
+
+            {:ok,
+             %{
+               certificate: certificate,
+               agent: updated_agent
+             }}
+
+          {:error, reason} ->
+            {:error, "Failed to issue certificate: #{inspect(reason)}"}
+        end
+    end
+  end
+
   # Private helper functions
 
   defp validate_bootstrap_credentials(role_id, secret_id) do

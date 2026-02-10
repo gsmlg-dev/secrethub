@@ -14,6 +14,53 @@ defmodule SecretHub.Web.AuthController do
   alias SecretHub.Core.Auth.AppRole
 
   @doc """
+  POST /v1/auth/approle/login
+
+  Authenticate using AppRole credentials (role_id/secret_id).
+  Returns a token and certificate on success.
+
+  Request body:
+  ```json
+  {
+    "role_id": "uuid",
+    "secret_id": "uuid"
+  }
+  ```
+  """
+  def login(conn, %{"role_id" => role_id, "secret_id" => secret_id}) do
+    alias SecretHub.Core.Agents
+
+    case Agents.authenticate_with_approle(role_id, secret_id) do
+      {:ok, %{certificate: certificate, agent: agent}} ->
+        # Generate a signed token for API access
+        payload = %{
+          agent_id: agent.agent_id,
+          agent_db_id: agent.id,
+          issued_at: DateTime.utc_now() |> DateTime.to_iso8601()
+        }
+
+        token = Phoenix.Token.sign(SecretHub.Web.Endpoint, "agent_auth", payload)
+
+        conn
+        |> put_status(:ok)
+        |> json(%{token: token, certificate: certificate.certificate_pem})
+
+      {:error, reason} ->
+        status = if String.contains?(reason, "revoked"), do: :forbidden, else: :unauthorized
+
+        conn
+        |> put_status(status)
+        |> json(%{error: reason})
+    end
+  end
+
+  def login(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "Missing role_id or secret_id"})
+  end
+
+  @doc """
   POST /v1/auth/approle/role/:role_name
 
   Creates a new AppRole.

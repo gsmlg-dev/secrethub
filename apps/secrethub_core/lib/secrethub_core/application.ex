@@ -44,7 +44,9 @@ defmodule SecretHub.Core.Application do
   end
 
   # Conditionally start Repo based on environment
-  # In test mode, Repo is started manually after Sandbox configuration
+  # In test mode, Repo is started manually after Sandbox configuration.
+  # Note: Application.get_env may return nil when started from umbrella root;
+  # the test_helper.exs handles that case by restarting Repo with sandbox pool.
   defp repo_children do
     if Application.get_env(:secrethub_core, :env) == :test do
       []
@@ -55,19 +57,15 @@ defmodule SecretHub.Core.Application do
 
   # Only start SealState in non-test environments (it tries to write to DB on init)
   defp seal_state_children do
-    # Check if SealState should start (disabled in test to avoid DB writes during init)
-    start_seal_state = Application.get_env(:secrethub_core, :start_seal_state, true)
-
-    if start_seal_state do
-      [SecretHub.Core.Vault.SealState]
-    else
+    if Application.get_env(:secrethub_core, :env) == :test do
       []
+    else
+      [SecretHub.Core.Vault.SealState]
     end
   end
 
   # Start LeaseManager for dynamic secret lease tracking
   defp lease_manager_children do
-    # Only start LeaseManager when Repo is available (not in test mode)
     if Application.get_env(:secrethub_core, :env) == :test do
       []
     else

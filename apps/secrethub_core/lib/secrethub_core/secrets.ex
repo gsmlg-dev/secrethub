@@ -100,6 +100,23 @@ defmodule SecretHub.Core.Secrets do
         {:error, "Secret not found"}
 
       secret ->
+        # Encrypt new secret_data if provided
+        encrypted_attrs =
+          if secret_data = attrs["secret_data"] do
+            case SealState.get_master_key() do
+              {:ok, master_key} ->
+                case encrypt_secret_data(secret_data, master_key) do
+                  {:ok, encrypted} -> Map.put(attrs, "encrypted_data", encrypted)
+                  {:error, _} -> attrs
+                end
+
+              _ ->
+                attrs
+            end
+          else
+            attrs
+          end
+
         Multi.new()
         |> Multi.run(:archive_version, fn repo, _changes ->
           archive_current_version(repo, secret, created_by, change_description)
@@ -107,7 +124,7 @@ defmodule SecretHub.Core.Secrets do
         |> Multi.update(:secret, fn %{archive_version: _version} ->
           # Increment version and update timestamps
           attrs_with_version =
-            attrs
+            encrypted_attrs
             |> Map.put("version", secret.version + 1)
             |> Map.put("version_count", secret.version_count + 1)
             |> Map.put("last_version_at", DateTime.utc_now() |> DateTime.truncate(:second))
@@ -203,6 +220,21 @@ defmodule SecretHub.Core.Secrets do
     case Repo.get_by(Secret, secret_path: secret_path) do
       nil -> {:error, "Secret not found"}
       secret -> {:ok, secret}
+    end
+  end
+
+  @doc """
+  Read a secret by path and return decrypted data.
+
+  Unlike `get_secret_for_entity/3`, this does not evaluate policies.
+  Use when policy has already been checked (e.g., in controllers).
+  """
+  @spec read_decrypted(String.t()) :: {:ok, map(), Secret.t()} | {:error, term()}
+  def read_decrypted(secret_path) do
+    with {:ok, secret} <- get_secret_by_path(secret_path),
+         {:ok, master_key} <- SealState.get_master_key(),
+         {:ok, decrypted_data} <- decrypt_secret_data(secret.encrypted_data, master_key) do
+      {:ok, decrypted_data, secret}
     end
   end
 
@@ -317,8 +349,8 @@ defmodule SecretHub.Core.Secrets do
     # Serialize the secret data to JSON
     json_data = Jason.encode!(data)
 
-    # Encrypt using the master key
-    Encryption.encrypt(json_data, master_key)
+    # Encrypt using the master key (use encrypt_to_blob for compatibility with decrypt_from_blob)
+    Encryption.encrypt_to_blob(json_data, master_key)
   rescue
     e ->
       {:error, "Encryption failed: #{inspect(e)}"}
