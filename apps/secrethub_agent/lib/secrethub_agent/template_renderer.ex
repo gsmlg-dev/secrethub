@@ -56,7 +56,7 @@ defmodule SecretHub.Agent.TemplateRenderer do
 
   require Logger
 
-  alias SecretHub.Agent.{Template, Cache}
+  alias SecretHub.Agent.{Cache, Template}
 
   @type template_string :: String.t()
   @type secret_path :: String.t()

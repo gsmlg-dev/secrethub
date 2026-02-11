@@ -146,81 +146,73 @@ defmodule SecretHub.Agent.CertVerifier do
   The app ID is stored in the Common Name (CN) field of the certificate subject.
   """
   def extract_app_id(cert) do
-    try do
-      # Extract subject from certificate
-      subject = extract_subject(cert)
+    # Extract subject from certificate
+    subject = extract_subject(cert)
 
-      # Find CN attribute
-      case find_attribute(subject, {2, 5, 4, 3}) do
-        {:ok, cn} ->
-          # CN should be a valid UUID (app_id)
-          cn_str = to_string(cn)
+    # Find CN attribute
+    case find_attribute(subject, {2, 5, 4, 3}) do
+      {:ok, cn} ->
+        # CN should be a valid UUID (app_id)
+        cn_str = to_string(cn)
 
-          if valid_uuid?(cn_str) do
-            {:ok, cn_str}
-          else
-            {:error, "Common Name is not a valid UUID: #{cn_str}"}
-          end
+        if valid_uuid?(cn_str) do
+          {:ok, cn_str}
+        else
+          {:error, "Common Name is not a valid UUID: #{cn_str}"}
+        end
 
-        :not_found ->
-          {:error, "Common Name (CN) not found in certificate subject"}
-      end
-    rescue
-      e ->
-        {:error, "Failed to extract app ID: #{inspect(e)}"}
+      :not_found ->
+        {:error, "Common Name (CN) not found in certificate subject"}
     end
+  rescue
+    e ->
+      {:error, "Failed to extract app ID: #{inspect(e)}"}
   end
 
   ## Private Functions
 
   defp parse_pem_cert(pem_data) do
-    try do
-      case :public_key.pem_decode(pem_data) do
-        [{:Certificate, der, _}] ->
-          parse_der_cert(der)
+    case :public_key.pem_decode(pem_data) do
+      [{:Certificate, der, _}] ->
+        parse_der_cert(der)
 
-        [] ->
-          {:error, "No certificate found in PEM data"}
+      [] ->
+        {:error, "No certificate found in PEM data"}
 
-        _ ->
-          {:error, "Invalid PEM format"}
-      end
-    rescue
-      e ->
-        {:error, "Failed to parse PEM: #{inspect(e)}"}
+      _ ->
+        {:error, "Invalid PEM format"}
     end
+  rescue
+    e ->
+      {:error, "Failed to parse PEM: #{inspect(e)}"}
   end
 
   defp parse_der_cert(der) do
-    try do
-      cert = :public_key.der_decode(:Certificate, der)
-      {:ok, cert}
-    rescue
-      e ->
-        {:error, "Failed to parse DER certificate: #{inspect(e)}"}
-    end
+    cert = :public_key.der_decode(:Certificate, der)
+    {:ok, cert}
+  rescue
+    e ->
+      {:error, "Failed to parse DER certificate: #{inspect(e)}"}
   end
 
   defp verify_cert_validity(cert) do
-    try do
-      # Extract validity period
-      validity = extract_validity(cert)
-      now = :calendar.universal_time()
+    # Extract validity period
+    validity = extract_validity(cert)
+    now = :calendar.universal_time()
 
-      cond do
-        time_before?(now, validity.not_before) ->
-          {:error, "Certificate not yet valid"}
+    cond do
+      time_before?(now, validity.not_before) ->
+        {:error, "Certificate not yet valid"}
 
-        time_after?(now, validity.not_after) ->
-          {:error, "Certificate expired"}
+      time_after?(now, validity.not_after) ->
+        {:error, "Certificate expired"}
 
-        true ->
-          :ok
-      end
-    rescue
-      e ->
-        {:error, "Failed to verify certificate validity: #{inspect(e)}"}
+      true ->
+        :ok
     end
+  rescue
+    e ->
+      {:error, "Failed to verify certificate validity: #{inspect(e)}"}
   end
 
   defp verify_cert_chain(_cert) do

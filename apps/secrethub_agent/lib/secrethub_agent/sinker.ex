@@ -229,9 +229,8 @@ defmodule SecretHub.Agent.Sinker do
   @spec validate(sink_config()) :: :ok | {:error, term()}
   def validate(sink) when is_map(sink) do
     with :ok <- validate_required_fields(sink),
-         :ok <- validate_path(Map.fetch!(sink, :path)),
-         :ok <- validate_permissions(Map.get(sink, :permissions)) do
-      :ok
+         :ok <- validate_path(Map.fetch!(sink, :path)) do
+      validate_permissions(Map.get(sink, :permissions))
     end
   end
 
@@ -287,9 +286,8 @@ defmodule SecretHub.Agent.Sinker do
 
   defp set_permissions(path, permissions) do
     with :ok <- set_mode(path, Map.get(permissions, :mode)),
-         :ok <- set_owner(path, Map.get(permissions, :owner)),
-         :ok <- set_group(path, Map.get(permissions, :group)) do
-      :ok
+         :ok <- set_owner(path, Map.get(permissions, :owner)) do
+      set_group(path, Map.get(permissions, :group))
     end
   end
 

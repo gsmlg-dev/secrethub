@@ -460,9 +460,7 @@ defmodule SecretHub.Agent.UDSServer do
   defp handle_authenticate(socket, params, state, connection) do
     cert_pem = Map.get(params, "certificate")
 
-    if !cert_pem do
-      {:error, "missing_parameter", "Parameter 'certificate' is required", state}
-    else
+    if cert_pem do
       # Decode base64 if needed
       cert_data =
         case Base.decode64(cert_pem) do
@@ -489,6 +487,8 @@ defmodule SecretHub.Agent.UDSServer do
           {:error, "auth_failed", "Certificate verification failed: #{inspect(reason)}",
            update_stats(state, :auth_failure)}
       end
+    else
+      {:error, "missing_parameter", "Parameter 'certificate' is required", state}
     end
   end
 
