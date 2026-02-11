@@ -155,27 +155,23 @@ defmodule SecretHub.Core.HealthAlerts do
   # Private Functions
 
   defp evaluate_alert_against_metrics(alert, metrics) do
-    # Check if alert is in cooldown
     if in_cooldown?(alert) do
       []
     else
-      triggered =
-        Enum.filter(metrics, fn metric ->
-          evaluate_condition(alert, metric)
-        end)
-
-      if Enum.any?(triggered) do
-        # Update last_triggered_at
-        update_alert(alert, %{last_triggered_at: DateTime.utc_now() |> DateTime.truncate(:second)})
-
-        # Return triggered alerts
-        Enum.map(triggered, fn metric ->
-          %{alert: alert, metric: metric}
-        end)
-      else
-        []
-      end
+      metrics
+      |> Enum.filter(&evaluate_condition(alert, &1))
+      |> build_triggered_results(alert)
     end
+  end
+
+  defp build_triggered_results([], _alert), do: []
+
+  defp build_triggered_results(triggered, alert) do
+    update_alert(alert, %{last_triggered_at: DateTime.utc_now() |> DateTime.truncate(:second)})
+
+    Enum.map(triggered, fn metric ->
+      %{alert: alert, metric: metric}
+    end)
   end
 
   defp in_cooldown?(%HealthAlert{last_triggered_at: nil}), do: false

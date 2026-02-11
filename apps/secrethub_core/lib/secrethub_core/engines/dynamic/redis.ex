@@ -112,16 +112,8 @@ defmodule SecretHub.Core.Engines.Dynamic.Redis do
 
   @impl Dynamic
   def revoke_credentials(lease_id, credentials) do
-    username = credentials["username"] || credentials[:username]
-    metadata = credentials["metadata"] || credentials[:metadata] || %{}
-
-    connection_config = %{
-      host: metadata["host"] || metadata[:host] || "localhost",
-      port: metadata["port"] || metadata[:port] || @default_port,
-      password: metadata["admin_password"] || metadata[:admin_password],
-      database: metadata["database"] || metadata[:database] || 0,
-      tls: metadata["tls"] || metadata[:tls] || false
-    }
+    username = flex_get(credentials, "username")
+    connection_config = build_revoke_connection_config(credentials)
 
     with {:ok, conn} <- connect(connection_config),
          :ok <- delete_user(conn, username),
@@ -187,6 +179,25 @@ defmodule SecretHub.Core.Engines.Dynamic.Redis do
   end
 
   # Private functions
+
+  defp build_revoke_connection_config(credentials) do
+    metadata = flex_get(credentials, "metadata") || %{}
+
+    %{
+      host: flex_get(metadata, "host") || "localhost",
+      port: flex_get(metadata, "port") || @default_port,
+      password: flex_get(metadata, "admin_password"),
+      database: flex_get(metadata, "database") || 0,
+      tls: flex_get(metadata, "tls") || false
+    }
+  end
+
+  defp flex_get(map, string_key) do
+    atom_key = String.to_existing_atom(string_key)
+    map[string_key] || map[atom_key]
+  rescue
+    ArgumentError -> map[string_key]
+  end
 
   defp validate_connection_config(config) do
     connection = config["connection"] || %{}

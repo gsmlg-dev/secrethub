@@ -528,19 +528,30 @@ defmodule SecretHub.Web.SecretManagementLive do
   end
 
   defp changeset_for_secret(secret) do
-    # Handle both display-formatted maps (with :path) and schema structs (with :secret_path)
-    secret_path = Map.get(secret, :secret_path) || Map.get(secret, :path) || ""
-    secret_type = Map.get(secret, :secret_type) || Map.get(secret, :type) || :static
+    Secret.changeset(%Secret{}, extract_secret_attrs(secret))
+  end
 
-    Secret.changeset(%Secret{}, %{
-      name: secret.name || "",
-      description: secret.description || "",
-      secret_path: secret_path,
-      engine_type: secret.engine_type || "static",
-      secret_type: secret_type,
-      ttl_hours: Map.get(secret, :ttl_hours) || 24,
-      rotation_period_hours: Map.get(secret, :rotation_period_hours) || 168
-    })
+  # Handle both display-formatted maps (with :path) and schema structs (with :secret_path)
+  defp extract_secret_attrs(secret) do
+    %{
+      name: get_field(secret, :name, ""),
+      description: get_field(secret, :description, ""),
+      secret_path: extract_secret_path(secret),
+      engine_type: get_field(secret, :engine_type, "static"),
+      secret_type: extract_secret_type(secret),
+      ttl_hours: get_field(secret, :ttl_hours, 24),
+      rotation_period_hours: get_field(secret, :rotation_period_hours, 168)
+    }
+  end
+
+  defp get_field(map, key, default), do: Map.get(map, key) || default
+
+  defp extract_secret_path(secret) do
+    get_field(secret, :secret_path, nil) || get_field(secret, :path, "")
+  end
+
+  defp extract_secret_type(secret) do
+    get_field(secret, :secret_type, nil) || get_field(secret, :type, :static)
   end
 
   defp secret_type_badge_color(:static), do: "bg-blue-100 text-blue-800"

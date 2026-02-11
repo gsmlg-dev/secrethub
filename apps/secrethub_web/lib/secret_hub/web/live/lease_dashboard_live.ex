@@ -393,30 +393,23 @@ defmodule SecretHub.Web.LeaseDashboardLive do
 
   defp load_engine_breakdown do
     case LeaseManager.list_active_leases() do
-      {:ok, leases} ->
-        total = length(leases)
-
-        if total == 0 do
-          []
-        else
-          leases
-          |> Enum.group_by(& &1.engine_type)
-          |> Enum.map(fn {type, group_leases} ->
-            count = length(group_leases)
-            percentage = count / total * 100
-
-            %{
-              type: type,
-              count: count,
-              percentage: percentage
-            }
-          end)
-          |> Enum.sort_by(& &1.count, :desc)
-        end
-
-      _ ->
-        []
+      {:ok, leases} -> compute_engine_breakdown(leases)
+      _ -> []
     end
+  end
+
+  defp compute_engine_breakdown([]), do: []
+
+  defp compute_engine_breakdown(leases) do
+    total = length(leases)
+
+    leases
+    |> Enum.group_by(& &1.engine_type)
+    |> Enum.map(fn {type, group_leases} ->
+      count = length(group_leases)
+      %{type: type, count: count, percentage: count / total * 100}
+    end)
+    |> Enum.sort_by(& &1.count, :desc)
   end
 
   defp format_percentage(value) when is_float(value) do

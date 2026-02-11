@@ -33,69 +33,17 @@ defmodule SecretHub.Web.SecretApiController do
     vault_path = "secret/data/" <> path
 
     # Check policy allows write/create
-    case check_policy(agent, vault_path, "create") do
-      :ok ->
-        data = params["data"]
-
-        if is_map(data) and map_size(data) > 0 do
-          case Secrets.get_secret_by_path(secret_path) do
-            {:ok, existing} ->
-              # Update existing secret
-              case Secrets.update_secret(existing.id, %{"secret_data" => data},
-                     created_by: agent.agent_id,
-                     change_description: "Updated via API"
-                   ) do
-                {:ok, updated} ->
-                  json(conn, %{version: updated.version})
-
-                {:error, reason} ->
-                  conn
-                  |> put_status(:unprocessable_entity)
-                  |> json(%{error: inspect(reason)})
-              end
-
-            {:error, _} ->
-              # Create new secret — derive name from last path segment
-              name =
-                path
-                |> String.split("/")
-                |> List.last()
-                |> String.replace(~r/[^a-zA-Z0-9\s\-_]/, "_")
-
-              attrs = %{
-                "name" => name,
-                "secret_path" => secret_path,
-                "secret_data" => data,
-                "secret_type" => "static",
-                "engine_type" => "static",
-                "description" => "Created via API"
-              }
-
-              case Secrets.create_secret(attrs) do
-                {:ok, secret} ->
-                  json(conn, %{version: secret.version || 1})
-
-                {:error, reason} ->
-                  Logger.error("Secret creation failed",
-                    reason: inspect(reason),
-                    path: secret_path
-                  )
-
-                  conn
-                  |> put_status(:unprocessable_entity)
-                  |> json(%{error: inspect(reason)})
-              end
-          end
-        else
-          conn
-          |> put_status(:bad_request)
-          |> json(%{error: "Missing or empty 'data' field"})
-        end
+    with :ok <- check_policy(agent, vault_path, "create"),
+         {:ok, data} <- validate_data_param(params["data"]) do
+      do_create_or_update(conn, path, secret_path, data, agent)
+    else
+      {:error, :invalid_data} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: "Missing or empty 'data' field"})
 
       {:error, _reason} ->
-        conn
-        |> put_status(:forbidden)
-        |> json(%{error: "permission denied"})
+        forbidden_response(conn)
     end
   end
 
@@ -112,33 +60,10 @@ defmodule SecretHub.Web.SecretApiController do
 
     case check_policy(agent, vault_path, "read") do
       :ok ->
-        version = params["version"]
-
-        if version do
-          read_specific_version(conn, secret_path, version)
-        else
-          case Secrets.read_decrypted(secret_path) do
-            {:ok, decrypted_data, secret} ->
-              json(conn, %{
-                data: decrypted_data,
-                metadata: %{
-                  version: secret.version || 1,
-                  created_time: secret.inserted_at,
-                  updated_time: secret.updated_at
-                }
-              })
-
-            {:error, _} ->
-              conn
-              |> put_status(:not_found)
-              |> json(%{error: "Secret not found"})
-          end
-        end
+        read_secret(conn, secret_path, params["version"])
 
       {:error, _reason} ->
-        conn
-        |> put_status(:forbidden)
-        |> json(%{error: "permission denied"})
+        forbidden_response(conn)
     end
   end
 
@@ -155,28 +80,10 @@ defmodule SecretHub.Web.SecretApiController do
 
     case check_policy(agent, vault_path, "delete") do
       :ok ->
-        case Secrets.get_secret_by_path(secret_path) do
-          {:ok, secret} ->
-            case Secrets.delete_secret(secret.id) do
-              {:ok, _} ->
-                send_resp(conn, :no_content, "")
-
-              {:error, reason} ->
-                conn
-                |> put_status(:unprocessable_entity)
-                |> json(%{error: inspect(reason)})
-            end
-
-          {:error, _} ->
-            conn
-            |> put_status(:not_found)
-            |> json(%{error: "Secret not found"})
-        end
+        delete_secret_at_path(conn, secret_path)
 
       {:error, _reason} ->
-        conn
-        |> put_status(:forbidden)
-        |> json(%{error: "permission denied"})
+        forbidden_response(conn)
     end
   end
 
@@ -193,40 +100,163 @@ defmodule SecretHub.Web.SecretApiController do
 
     case check_policy(agent, vault_path, "read") do
       :ok ->
-        if params["list"] == "true" do
-          # List secrets with a matching prefix
-          list_secrets_at_path(conn, secret_path)
-        else
-          # Get metadata for a specific secret
-          case Secrets.get_secret_by_path(secret_path) do
-            {:ok, secret} ->
-              json(conn, %{
-                versions: %{
-                  "#{secret.version || 1}" => %{
-                    created_time: secret.inserted_at,
-                    version: secret.version || 1
-                  }
-                },
-                created_time: secret.inserted_at,
-                updated_time: secret.updated_at,
-                current_version: secret.version || 1
-              })
-
-            {:error, _} ->
-              conn
-              |> put_status(:not_found)
-              |> json(%{error: "Secret not found"})
-          end
-        end
+        fetch_metadata(conn, secret_path, params["list"] == "true")
 
       {:error, _reason} ->
-        conn
-        |> put_status(:forbidden)
-        |> json(%{error: "permission denied"})
+        forbidden_response(conn)
     end
   end
 
-  # Private helpers
+  # Private helpers — create_or_update
+
+  defp validate_data_param(data) when is_map(data) and map_size(data) > 0, do: {:ok, data}
+  defp validate_data_param(_data), do: {:error, :invalid_data}
+
+  defp do_create_or_update(conn, path, secret_path, data, agent) do
+    case Secrets.get_secret_by_path(secret_path) do
+      {:ok, existing} ->
+        update_existing_secret(conn, existing, data, agent)
+
+      {:error, _} ->
+        create_new_secret(conn, path, secret_path, data)
+    end
+  end
+
+  defp update_existing_secret(conn, existing, data, agent) do
+    case Secrets.update_secret(existing.id, %{"secret_data" => data},
+           created_by: agent.agent_id,
+           change_description: "Updated via API"
+         ) do
+      {:ok, updated} ->
+        json(conn, %{version: updated.version})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: inspect(reason)})
+    end
+  end
+
+  defp create_new_secret(conn, path, secret_path, data) do
+    name =
+      path
+      |> String.split("/")
+      |> List.last()
+      |> String.replace(~r/[^a-zA-Z0-9\s\-_]/, "_")
+
+    attrs = %{
+      "name" => name,
+      "secret_path" => secret_path,
+      "secret_data" => data,
+      "secret_type" => "static",
+      "engine_type" => "static",
+      "description" => "Created via API"
+    }
+
+    case Secrets.create_secret(attrs) do
+      {:ok, secret} ->
+        json(conn, %{version: secret.version || 1})
+
+      {:error, reason} ->
+        Logger.error("Secret creation failed",
+          reason: inspect(reason),
+          path: secret_path
+        )
+
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: inspect(reason)})
+    end
+  end
+
+  # Private helpers — read
+
+  defp read_secret(conn, secret_path, version) when is_binary(version) do
+    read_specific_version(conn, secret_path, version)
+  end
+
+  defp read_secret(conn, secret_path, _version) do
+    case Secrets.read_decrypted(secret_path) do
+      {:ok, decrypted_data, secret} ->
+        json(conn, %{
+          data: decrypted_data,
+          metadata: %{
+            version: secret.version || 1,
+            created_time: secret.inserted_at,
+            updated_time: secret.updated_at
+          }
+        })
+
+      {:error, _} ->
+        not_found_response(conn, "Secret not found")
+    end
+  end
+
+  # Private helpers — delete
+
+  defp delete_secret_at_path(conn, secret_path) do
+    case Secrets.get_secret_by_path(secret_path) do
+      {:ok, secret} ->
+        perform_delete(conn, secret)
+
+      {:error, _} ->
+        not_found_response(conn, "Secret not found")
+    end
+  end
+
+  defp perform_delete(conn, secret) do
+    case Secrets.delete_secret(secret.id) do
+      {:ok, _} ->
+        send_resp(conn, :no_content, "")
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: inspect(reason)})
+    end
+  end
+
+  # Private helpers — metadata
+
+  defp fetch_metadata(conn, secret_path, true = _list) do
+    list_secrets_at_path(conn, secret_path)
+  end
+
+  defp fetch_metadata(conn, secret_path, _list) do
+    case Secrets.get_secret_by_path(secret_path) do
+      {:ok, secret} ->
+        json(conn, %{
+          versions: %{
+            "#{secret.version || 1}" => %{
+              created_time: secret.inserted_at,
+              version: secret.version || 1
+            }
+          },
+          created_time: secret.inserted_at,
+          updated_time: secret.updated_at,
+          current_version: secret.version || 1
+        })
+
+      {:error, _} ->
+        not_found_response(conn, "Secret not found")
+    end
+  end
+
+  # Shared response helpers
+
+  defp forbidden_response(conn) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{error: "permission denied"})
+  end
+
+  defp not_found_response(conn, message) do
+    conn
+    |> put_status(:not_found)
+    |> json(%{error: message})
+  end
+
+  # Private helpers — path and policy
 
   defp extract_path(%{"path" => path_parts}) when is_list(path_parts) do
     Enum.join(path_parts, "/")

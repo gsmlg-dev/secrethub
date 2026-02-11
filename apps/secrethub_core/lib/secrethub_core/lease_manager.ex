@@ -227,24 +227,7 @@ defmodule SecretHub.Core.LeaseManager do
         {:reply, {:error, :not_found}, state}
 
       lease ->
-        if DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) ==
-             :lt do
-          {:reply, {:error, :expired}, state}
-        else
-          case perform_renewal(lease, increment) do
-            {:ok, updated_lease} ->
-              new_leases = Map.put(state.leases, lease_id, updated_lease)
-              {:reply, {:ok, updated_lease}, %{state | leases: new_leases}}
-
-            {:error, reason} = error ->
-              Logger.error("Failed to renew lease",
-                lease_id: lease_id,
-                reason: inspect(reason)
-              )
-
-              {:reply, error, state}
-          end
-        end
+        do_renew_lease(lease, lease_id, increment, state)
     end
   end
 
@@ -322,16 +305,7 @@ defmodule SecretHub.Core.LeaseManager do
           :lt
       end)
 
-    if length(expired) > 0 do
-      Logger.info("Found #{length(expired)} expired leases, revoking...")
-
-      Enum.each(expired, fn {_id, lease} ->
-        case perform_revocation(lease) do
-          :ok -> :ok
-          {:error, reason} -> Logger.error("Failed to revoke expired lease: #{inspect(reason)}")
-        end
-      end)
-    end
+    revoke_expired_leases(expired)
 
     # Schedule next cleanup
     cleanup_timer = Process.send_after(self(), :cleanup_expired, @cleanup_interval)
@@ -364,24 +338,66 @@ defmodule SecretHub.Core.LeaseManager do
         {:noreply, state}
 
       lease ->
-        case perform_revocation(lease) do
-          :ok ->
-            new_leases = Map.delete(state.leases, lease_id)
-            {:noreply, %{state | leases: new_leases}}
-
-          {:error, reason} ->
-            Logger.error("Failed to revoke lease",
-              lease_id: lease_id,
-              reason: inspect(reason)
-            )
-
-            # Keep in state for retry
-            {:noreply, state}
-        end
+        do_revoke_now(lease, lease_id, state)
     end
   end
 
   # Private Functions
+
+  defp revoke_expired_leases([]), do: :ok
+
+  defp revoke_expired_leases(expired) do
+    Logger.info("Found #{length(expired)} expired leases, revoking...")
+
+    Enum.each(expired, fn {_id, lease} ->
+      revoke_expired_lease(lease)
+    end)
+  end
+
+  defp revoke_expired_lease(lease) do
+    case perform_revocation(lease) do
+      :ok -> :ok
+      {:error, reason} -> Logger.error("Failed to revoke expired lease: #{inspect(reason)}")
+    end
+  end
+
+  defp do_renew_lease(lease, lease_id, increment, state) do
+    if DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) ==
+         :lt do
+      {:reply, {:error, :expired}, state}
+    else
+      case perform_renewal(lease, increment) do
+        {:ok, updated_lease} ->
+          new_leases = Map.put(state.leases, lease_id, updated_lease)
+          {:reply, {:ok, updated_lease}, %{state | leases: new_leases}}
+
+        {:error, reason} = error ->
+          Logger.error("Failed to renew lease",
+            lease_id: lease_id,
+            reason: inspect(reason)
+          )
+
+          {:reply, error, state}
+      end
+    end
+  end
+
+  defp do_revoke_now(lease, lease_id, state) do
+    case perform_revocation(lease) do
+      :ok ->
+        new_leases = Map.delete(state.leases, lease_id)
+        {:noreply, %{state | leases: new_leases}}
+
+      {:error, reason} ->
+        Logger.error("Failed to revoke lease",
+          lease_id: lease_id,
+          reason: inspect(reason)
+        )
+
+        # Keep in state for retry
+        {:noreply, state}
+    end
+  end
 
   defp load_active_leases do
     leases =

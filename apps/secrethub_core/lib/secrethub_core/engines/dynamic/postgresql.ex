@@ -194,35 +194,12 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
 
   @impl Dynamic
   def validate_config(config) do
-    errors = []
-
     errors =
-      if is_nil(config["connection"]) do
-        ["connection configuration is required" | errors]
-      else
-        validate_connection_fields(config["connection"], errors)
-      end
-
-    errors =
-      if is_nil(config["creation_statements"]) or config["creation_statements"] == [] do
-        ["creation_statements are required" | errors]
-      else
-        errors
-      end
-
-    errors =
-      if config["default_ttl"] && !is_integer(config["default_ttl"]) do
-        ["default_ttl must be an integer" | errors]
-      else
-        errors
-      end
-
-    errors =
-      if config["max_ttl"] && !is_integer(config["max_ttl"]) do
-        ["max_ttl must be an integer" | errors]
-      else
-        errors
-      end
+      []
+      |> validate_connection(config)
+      |> validate_creation_statements(config)
+      |> validate_optional_ttl(config, "default_ttl")
+      |> validate_optional_ttl(config, "max_ttl")
 
     case errors do
       [] -> :ok
@@ -231,6 +208,30 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQL do
   end
 
   # Private Functions
+
+  defp validate_connection(errors, config) do
+    if is_nil(config["connection"]) do
+      ["connection configuration is required" | errors]
+    else
+      validate_connection_fields(config["connection"], errors)
+    end
+  end
+
+  defp validate_creation_statements(errors, config) do
+    if is_nil(config["creation_statements"]) or config["creation_statements"] == [] do
+      ["creation_statements are required" | errors]
+    else
+      errors
+    end
+  end
+
+  defp validate_optional_ttl(errors, config, field) do
+    if config[field] && !is_integer(config[field]) do
+      ["#{field} must be an integer" | errors]
+    else
+      errors
+    end
+  end
 
   defp validate_connection_fields(connection, errors) do
     required_fields = ["host", "database", "username", "password"]

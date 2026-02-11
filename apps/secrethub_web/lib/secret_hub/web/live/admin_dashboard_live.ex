@@ -424,57 +424,49 @@ defmodule SecretHub.Web.AdminDashboardLive do
   end
 
   defp load_secret_stats do
-    # Get basic secret stats with fallback
-    secret_stats =
-      try do
-        Secrets.get_secret_stats()
-      rescue
-        _ -> %{total: 0, static: 0, dynamic: 0}
-      end
-
-    # Get rotation stats for last 24 hours
-    yesterday = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -86_400, :second)
-
-    rotated_24h =
-      try do
-        Repo.aggregate(
-          from(r in RotationSchedule,
-            where: r.last_rotated_at >= ^yesterday
-          ),
-          :count,
-          :id
-        ) || 0
-      rescue
-        _ -> 0
-      end
-
-    # Get leases expiring in next 7 days
-    next_week =
-      DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 7 * 86_400, :second)
-
-    expiring_7d =
-      try do
-        Repo.aggregate(
-          from(l in Lease,
-            where:
-              l.expires_at <= ^next_week and
-                l.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second))
-          ),
-          :count,
-          :id
-        ) || 0
-      rescue
-        _ -> 0
-      end
+    secret_stats = safe_get_secret_stats()
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     %{
       total_secrets: secret_stats.total || 0,
       static_secrets: secret_stats.static || 0,
       dynamic_secrets: secret_stats.dynamic || 0,
-      secrets_rotated_24h: rotated_24h,
-      secrets_expiring_7d: expiring_7d,
+      secrets_rotated_24h: count_rotated_last_24h(now),
+      secrets_expiring_7d: count_expiring_next_7d(now),
       most_accessed_secret: get_most_accessed_secret()
     }
+  end
+
+  defp safe_get_secret_stats do
+    Secrets.get_secret_stats()
+  rescue
+    _ -> %{total: 0, static: 0, dynamic: 0}
+  end
+
+  defp count_rotated_last_24h(now) do
+    yesterday = DateTime.add(now, -86_400, :second)
+
+    Repo.aggregate(
+      from(r in RotationSchedule, where: r.last_rotated_at >= ^yesterday),
+      :count,
+      :id
+    ) || 0
+  rescue
+    _ -> 0
+  end
+
+  defp count_expiring_next_7d(now) do
+    next_week = DateTime.add(now, 7 * 86_400, :second)
+
+    Repo.aggregate(
+      from(l in Lease,
+        where: l.expires_at <= ^next_week and l.expires_at > ^now
+      ),
+      :count,
+      :id
+    ) || 0
+  rescue
+    _ -> 0
   end
 
   defp load_audit_stats do
@@ -533,7 +525,7 @@ defmodule SecretHub.Web.AdminDashboardLive do
     audit_count = Repo.aggregate(SecretHub.Shared.Schemas.AuditLog, :count, :id) || 0
 
     # Rough estimate: ~10KB per secret, ~1KB per audit log
-    gb = (secret_count * 10 + audit_count * 1) / 1_000_000
+    gb = (secret_count * 10 + audit_count) / 1_000_000
     Float.round(max(gb, 0.01), 2)
   rescue
     _ -> 0.0

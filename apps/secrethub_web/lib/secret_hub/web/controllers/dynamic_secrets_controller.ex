@@ -42,82 +42,83 @@ defmodule SecretHub.Web.DynamicSecretsController do
   }
   """
   def generate(conn, %{"role" => role_name} = params) do
-    ttl = params["ttl"]
-    metadata = params["metadata"] || %{}
-    agent_id = get_session(conn, :agent_id)
-
     # FIXME: Load role configuration from database
     # For now, using a hardcoded config for development
-    config = get_role_config(role_name)
-
-    case config do
+    case get_role_config(role_name) do
       nil ->
         conn
         |> put_status(:not_found)
         |> json(%{error: "Role not found: #{role_name}"})
 
       config ->
-        opts = [
-          config: config,
-          ttl: ttl
-        ]
+        generate_with_config(conn, role_name, config, params)
+    end
+  end
 
-        case PostgreSQL.generate_credentials(role_name, opts) do
-          {:ok, credentials} ->
-            # Create lease
-            lease_attrs = %{
-              engine_type: "postgresql",
-              role_name: role_name,
-              credentials: credentials,
-              ttl: credentials.ttl,
-              agent_id: agent_id,
-              metadata: Map.merge(metadata, %{"config" => config})
-            }
+  defp generate_with_config(conn, role_name, config, params) do
+    opts = [config: config, ttl: params["ttl"]]
 
-            case LeaseManager.create_lease(lease_attrs) do
-              {:ok, lease} ->
-                Logger.info("Generated dynamic credentials",
-                  role: role_name,
-                  lease_id: lease.id,
-                  agent_id: agent_id
-                )
+    case PostgreSQL.generate_credentials(role_name, opts) do
+      {:ok, credentials} ->
+        create_lease_for_credentials(conn, role_name, config, credentials, params)
 
-                conn
-                |> put_status(:ok)
-                |> json(%{
-                  lease_id: lease.id,
-                  credentials: %{
-                    username: credentials.username,
-                    password: credentials.password,
-                    host: credentials.metadata.host,
-                    port: credentials.metadata.port,
-                    database: credentials.metadata.database
-                  },
-                  lease_duration: credentials.ttl,
-                  renewable: true
-                })
+      {:error, reason} ->
+        Logger.error("Failed to generate credentials",
+          role: role_name,
+          error: inspect(reason)
+        )
 
-              {:error, changeset} ->
-                Logger.error("Failed to create lease",
-                  role: role_name,
-                  errors: inspect(changeset.errors)
-                )
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Failed to generate credentials: #{inspect(reason)}"})
+    end
+  end
 
-                conn
-                |> put_status(:internal_server_error)
-                |> json(%{error: "Failed to create lease"})
-            end
+  defp create_lease_for_credentials(conn, role_name, config, credentials, params) do
+    metadata = params["metadata"] || %{}
+    agent_id = get_session(conn, :agent_id)
 
-          {:error, reason} ->
-            Logger.error("Failed to generate credentials",
-              role: role_name,
-              error: inspect(reason)
-            )
+    lease_attrs = %{
+      engine_type: "postgresql",
+      role_name: role_name,
+      credentials: credentials,
+      ttl: credentials.ttl,
+      agent_id: agent_id,
+      metadata: Map.merge(metadata, %{"config" => config})
+    }
 
-            conn
-            |> put_status(:internal_server_error)
-            |> json(%{error: "Failed to generate credentials: #{inspect(reason)}"})
-        end
+    case LeaseManager.create_lease(lease_attrs) do
+      {:ok, lease} ->
+        Logger.info("Generated dynamic credentials",
+          role: role_name,
+          lease_id: lease.id,
+          agent_id: agent_id
+        )
+
+        conn
+        |> put_status(:ok)
+        |> json(%{
+          lease_id: lease.id,
+          credentials: %{
+            username: credentials.username,
+            password: credentials.password,
+            host: credentials.metadata.host,
+            port: credentials.metadata.port,
+            database: credentials.metadata.database
+          },
+          lease_duration: credentials.ttl,
+          renewable: true
+        })
+
+      {:error, changeset} ->
+        Logger.error("Failed to create lease",
+          role: role_name,
+          errors: inspect(changeset.errors)
+        )
+
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{error: "Failed to create lease"})
     end
   end
 

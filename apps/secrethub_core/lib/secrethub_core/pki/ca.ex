@@ -148,15 +148,14 @@ defmodule SecretHub.Core.PKI.CA do
          {:ok, public_key} <- extract_public_key(private_key, key_type),
          {:ok, cert_der} <-
            create_ca_signed_certificate(
-             private_key,
              public_key,
              root_ca_key,
              root_ca.certificate_pem,
              common_name,
              organization,
-             validity_days,
-             :intermediate_ca,
-             opts
+             validity_days: validity_days,
+             cert_type: :intermediate_ca,
+             opts: opts
            ),
          {:ok, cert_pem} <- der_to_pem(cert_der, :certificate),
          {:ok, key_pem} <-
@@ -333,16 +332,16 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp create_ca_signed_certificate(
-         _private_key,
          public_key,
          ca_private_key,
          ca_cert_pem,
          common_name,
          organization,
-         validity_days,
-         cert_type,
-         opts
+         sign_opts
        ) do
+    validity_days = Keyword.fetch!(sign_opts, :validity_days)
+    cert_type = Keyword.fetch!(sign_opts, :cert_type)
+    opts = Keyword.get(sign_opts, :opts, [])
     # Parse CA certificate to get issuer
     {:ok, ca_cert_der} = pem_to_der(ca_cert_pem, :certificate)
     ca_cert = :public_key.pkix_decode_cert(ca_cert_der, :otp)

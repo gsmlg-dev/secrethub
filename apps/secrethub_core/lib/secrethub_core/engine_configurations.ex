@@ -292,6 +292,20 @@ defmodule SecretHub.Core.EngineConfigurations do
   end
 
   defp check_redis_health(config) do
+    opts = build_redis_opts(config)
+
+    with {:ok, conn} <- connect_redis(opts) do
+      result = ping_redis(conn)
+      Redix.stop(conn)
+      result
+    end
+  rescue
+    e ->
+      Logger.error("Redis health check failed: #{Exception.message(e)}")
+      {:error, Exception.message(e)}
+  end
+
+  defp build_redis_opts(config) do
     connection = config["connection"] || %{}
 
     opts = [
@@ -307,37 +321,26 @@ defmodule SecretHub.Core.EngineConfigurations do
         opts
       end
 
-    opts =
-      if connection["tls"] do
-        Keyword.put(opts, :ssl, true)
-      else
-        opts
-      end
-
-    case Redix.start_link(opts) do
-      {:ok, conn} ->
-        result =
-          case Redix.command(conn, ["PING"]) do
-            {:ok, "PONG"} ->
-              {:ok, :healthy}
-
-            {:ok, response} ->
-              {:error, "Unexpected PING response: #{inspect(response)}"}
-
-            {:error, reason} ->
-              {:error, inspect(reason)}
-          end
-
-        Redix.stop(conn)
-        result
-
-      {:error, reason} ->
-        {:error, "Connection failed: #{inspect(reason)}"}
+    if connection["tls"] do
+      Keyword.put(opts, :ssl, true)
+    else
+      opts
     end
-  rescue
-    e ->
-      Logger.error("Redis health check failed: #{Exception.message(e)}")
-      {:error, Exception.message(e)}
+  end
+
+  defp connect_redis(opts) do
+    case Redix.start_link(opts) do
+      {:ok, conn} -> {:ok, conn}
+      {:error, reason} -> {:error, "Connection failed: #{inspect(reason)}"}
+    end
+  end
+
+  defp ping_redis(conn) do
+    case Redix.command(conn, ["PING"]) do
+      {:ok, "PONG"} -> {:ok, :healthy}
+      {:ok, response} -> {:error, "Unexpected PING response: #{inspect(response)}"}
+      {:error, reason} -> {:error, inspect(reason)}
+    end
   end
 
   defp check_aws_sts_health(config) do

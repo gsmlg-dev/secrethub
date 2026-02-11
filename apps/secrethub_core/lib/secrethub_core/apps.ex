@@ -177,22 +177,7 @@ defmodule SecretHub.Core.Apps do
     Repo.transaction(fn ->
       case get_app(id) do
         {:ok, app} ->
-          # Revoke all app certificates
-          revoke_all_app_certificates(id)
-
-          # Delete app (cascade deletes tokens and cert associations)
-          case Repo.delete(app) do
-            {:ok, deleted_app} ->
-              Logger.info("Application deleted",
-                app_id: deleted_app.id,
-                app_name: deleted_app.name
-              )
-
-              deleted_app
-
-            {:error, changeset} ->
-              Repo.rollback(changeset)
-          end
+          perform_app_deletion(app, id)
 
         {:error, :not_found} ->
           Repo.rollback(:not_found)
@@ -269,24 +254,7 @@ defmodule SecretHub.Core.Apps do
           Repo.rollback(:invalid_token)
 
         token ->
-          # Mark token as used
-          changeset =
-            AppBootstrapToken.changeset(token, %{
-              used: true,
-              used_at: DateTime.utc_now() |> DateTime.truncate(:second)
-            })
-
-          case Repo.update(changeset) do
-            {:ok, updated_token} ->
-              Logger.info("Bootstrap token validated and consumed",
-                app_id: updated_token.app_id
-              )
-
-              updated_token.app_id
-
-            {:error, changeset} ->
-              Repo.rollback(changeset)
-          end
+          consume_bootstrap_token(token)
       end
     end)
   end
@@ -589,6 +557,43 @@ defmodule SecretHub.Core.Apps do
   end
 
   ## Private Helpers
+
+  defp perform_app_deletion(app, id) do
+    revoke_all_app_certificates(id)
+
+    case Repo.delete(app) do
+      {:ok, deleted_app} ->
+        Logger.info("Application deleted",
+          app_id: deleted_app.id,
+          app_name: deleted_app.name
+        )
+
+        deleted_app
+
+      {:error, changeset} ->
+        Repo.rollback(changeset)
+    end
+  end
+
+  defp consume_bootstrap_token(token) do
+    changeset =
+      AppBootstrapToken.changeset(token, %{
+        used: true,
+        used_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+
+    case Repo.update(changeset) do
+      {:ok, updated_token} ->
+        Logger.info("Bootstrap token validated and consumed",
+          app_id: updated_token.app_id
+        )
+
+        updated_token.app_id
+
+      {:error, changeset} ->
+        Repo.rollback(changeset)
+    end
+  end
 
   defp hash_token(token) do
     :crypto.hash(:sha256, token)

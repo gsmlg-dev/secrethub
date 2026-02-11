@@ -195,40 +195,10 @@ defmodule SecretHub.Core.ClusterState do
   def handle_call({:coordinated_init, threshold, shares}, _from, state) do
     result =
       DistributedLock.with_lock(:init, [timeout: 5000], fn ->
-        # Check if already initialized
-        if SealState.initialized?() do
-          Logger.info("Vault already initialized by another node")
-          {:ok, :already_initialized}
-        else
-          # This node will perform initialization
-          Logger.info("This node is performing cluster initialization")
-
-          case SealState.initialize(threshold, shares) do
-            {:ok, unseal_keys} ->
-              # Mark cluster as initialized in DB
-              mark_cluster_initialized()
-              {:ok, :initialized, unseal_keys}
-
-            {:error, reason} ->
-              {:error, reason}
-          end
-        end
+        perform_coordinated_init(threshold, shares)
       end)
 
-    case result do
-      {:ok, {:ok, :already_initialized}} ->
-        {:reply, {:ok, :already_initialized}, state}
-
-      {:ok, {:ok, :initialized, _keys}} ->
-        new_state = %{state | status: :sealed}
-        {:reply, {:ok, :initialized}, new_state}
-
-      {:ok, {:error, reason}} ->
-        {:reply, {:error, reason}, state}
-
-      {:error, :timeout} ->
-        {:reply, {:error, :init_lock_timeout}, state}
-    end
+    handle_coordinated_init_result(result, state)
   end
 
   @impl true
@@ -353,6 +323,41 @@ defmodule SecretHub.Core.ClusterState do
   end
 
   # Private Functions
+
+  defp perform_coordinated_init(threshold, shares) do
+    if SealState.initialized?() do
+      Logger.info("Vault already initialized by another node")
+      {:ok, :already_initialized}
+    else
+      Logger.info("This node is performing cluster initialization")
+
+      case SealState.initialize(threshold, shares) do
+        {:ok, unseal_keys} ->
+          mark_cluster_initialized()
+          {:ok, :initialized, unseal_keys}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  defp handle_coordinated_init_result({:ok, {:ok, :already_initialized}}, state) do
+    {:reply, {:ok, :already_initialized}, state}
+  end
+
+  defp handle_coordinated_init_result({:ok, {:ok, :initialized, _keys}}, state) do
+    new_state = %{state | status: :sealed}
+    {:reply, {:ok, :initialized}, new_state}
+  end
+
+  defp handle_coordinated_init_result({:ok, {:error, reason}}, state) do
+    {:reply, {:error, reason}, state}
+  end
+
+  defp handle_coordinated_init_result({:error, :timeout}, state) do
+    {:reply, {:error, :init_lock_timeout}, state}
+  end
 
   defp generate_node_id do
     # Use hostname + random suffix for node ID

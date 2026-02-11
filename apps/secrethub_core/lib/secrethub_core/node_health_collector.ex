@@ -89,30 +89,27 @@ defmodule SecretHub.Core.NodeHealthCollector do
     _ -> 0.0
   end
 
+  @default_memory_bytes 4 * 1024 * 1024 * 1024
+
   # Get total system memory (fallback approximation)
   defp get_system_total_memory do
-    # This is a simple approximation
-    # In production, consider using :recon or reading /proc/meminfo
     case :os.type() do
-      {:unix, :linux} ->
-        # Try to read from /proc/meminfo
-        case File.read("/proc/meminfo") do
-          {:ok, content} ->
-            case Regex.run(~r/MemTotal:\s+(\d+)\s+kB/, content) do
-              [_, total_kb] ->
-                String.to_integer(total_kb) * 1024
+      {:unix, :linux} -> read_linux_total_memory()
+      _ -> @default_memory_bytes
+    end
+  end
 
-              _ ->
-                4 * 1024 * 1024 * 1024
-            end
+  defp read_linux_total_memory do
+    case File.read("/proc/meminfo") do
+      {:ok, content} -> parse_meminfo_total(content)
+      _ -> @default_memory_bytes
+    end
+  end
 
-          _ ->
-            4 * 1024 * 1024 * 1024
-        end
-
-      _ ->
-        # Default to 4GB for non-Linux systems
-        4 * 1024 * 1024 * 1024
+  defp parse_meminfo_total(content) do
+    case Regex.run(~r/MemTotal:\s+(\d+)\s+kB/, content) do
+      [_, total_kb] -> String.to_integer(total_kb) * 1024
+      _ -> @default_memory_bytes
     end
   end
 

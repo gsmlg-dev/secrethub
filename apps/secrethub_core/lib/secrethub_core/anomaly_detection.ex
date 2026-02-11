@@ -61,18 +61,19 @@ defmodule SecretHub.Core.AnomalyDetection do
   Evaluates a specific rule against the provided context.
   """
   def evaluate_rule(rule, context) do
-    case rule.rule_type do
-      :failed_login_threshold -> check_failed_login_threshold(rule, context)
-      :bulk_deletion -> check_bulk_deletion(rule, context)
-      :unusual_access_time -> check_unusual_access_time(rule, context)
-      :mass_secret_access -> check_mass_secret_access(rule, context)
-      :credential_export_spike -> check_credential_export_spike(rule, context)
-      :rotation_failure_rate -> check_rotation_failure_rate(rule, context)
-      :policy_violation -> check_policy_violation(rule, context)
-      :custom -> check_custom_rule(rule, context)
-      _ -> []
-    end
+    rule_checker = rule_checker_for(rule.rule_type)
+    rule_checker.(rule, context)
   end
+
+  defp rule_checker_for(:failed_login_threshold), do: &check_failed_login_threshold/2
+  defp rule_checker_for(:bulk_deletion), do: &check_bulk_deletion/2
+  defp rule_checker_for(:unusual_access_time), do: &check_unusual_access_time/2
+  defp rule_checker_for(:mass_secret_access), do: &check_mass_secret_access/2
+  defp rule_checker_for(:credential_export_spike), do: &check_credential_export_spike/2
+  defp rule_checker_for(:rotation_failure_rate), do: &check_rotation_failure_rate/2
+  defp rule_checker_for(:policy_violation), do: &check_policy_violation/2
+  defp rule_checker_for(:custom), do: &check_custom_rule/2
+  defp rule_checker_for(_), do: fn _rule, _context -> [] end
 
   @doc """
   Creates an anomaly alert and triggers notifications.
@@ -246,29 +247,51 @@ defmodule SecretHub.Core.AnomalyDetection do
     window_minutes = get_threshold(rule, "window_minutes", 60)
 
     if context.action == "rotate_secret" do
-      {success_count, failure_count} = count_rotation_results(window_minutes)
-      total = success_count + failure_count
+      evaluate_rotation_failure_rate(rule, threshold_percent, window_minutes)
+    else
+      []
+    end
+  end
 
-      if total > 0 do
-        failure_percent = failure_count * 100 / total
+  defp evaluate_rotation_failure_rate(rule, threshold_percent, window_minutes) do
+    {success_count, failure_count} = count_rotation_results(window_minutes)
+    total = success_count + failure_count
 
-        if failure_percent >= threshold_percent do
-          trigger_alert(
-            rule,
-            %{
-              success_count: success_count,
-              failure_count: failure_count,
-              failure_percent: failure_percent,
-              window_minutes: window_minutes
-            },
-            "High rotation failure rate: #{Float.round(failure_percent, 1)}% failures (#{failure_count}/#{total})"
-          )
-        else
-          []
-        end
-      else
-        []
-      end
+    if total > 0 do
+      failure_percent = failure_count * 100 / total
+
+      maybe_trigger_rotation_alert(
+        rule,
+        failure_percent,
+        threshold_percent,
+        failure_count,
+        total,
+        window_minutes
+      )
+    else
+      []
+    end
+  end
+
+  defp maybe_trigger_rotation_alert(
+         rule,
+         failure_percent,
+         threshold_percent,
+         failure_count,
+         total,
+         window_minutes
+       ) do
+    if failure_percent >= threshold_percent do
+      trigger_alert(
+        rule,
+        %{
+          success_count: total - failure_count,
+          failure_count: failure_count,
+          failure_percent: failure_percent,
+          window_minutes: window_minutes
+        },
+        "High rotation failure rate: #{Float.round(failure_percent, 1)}% failures (#{failure_count}/#{total})"
+      )
     else
       []
     end

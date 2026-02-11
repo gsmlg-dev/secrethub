@@ -23,72 +23,16 @@ defmodule SecretHub.Core.Agents do
   Bootstrap a new agent using RoleID/SecretID authentication.
   """
   def bootstrap_agent(role_id, secret_id, metadata \\ %{}) do
-    # Validate bootstrap credentials
-    case validate_bootstrap_credentials(role_id, secret_id) do
-      :ok ->
-        # Check if agent already exists
-        agent_id = generate_agent_id(metadata)
+    with :ok <- validate_bootstrap_credentials(role_id, secret_id) do
+      agent_id = generate_agent_id(metadata)
 
-        case Repo.get_by(Agent, agent_id: agent_id) do
-          nil ->
-            # Create new agent
-            agent_attrs = %{
-              agent_id: agent_id,
-              name: Map.get(metadata, "name", agent_id),
-              description: Map.get(metadata, "description", ""),
-              role_id: role_id,
-              secret_id: secret_id,
-              ip_address: Map.get(metadata, "ip_address"),
-              hostname: Map.get(metadata, "hostname"),
-              user_agent: Map.get(metadata, "user_agent"),
-              metadata: metadata
-            }
+      case Repo.get_by(Agent, agent_id: agent_id) do
+        nil ->
+          bootstrap_new_agent(agent_id, role_id, secret_id, metadata)
 
-            agent_changeset = Agent.bootstrap_changeset(%Agent{}, agent_attrs)
-
-            case Repo.insert(agent_changeset) do
-              {:ok, agent} ->
-                # Issue client certificate
-                case issue_agent_certificate(agent) do
-                  {:ok, certificate} ->
-                    # Update agent with certificate
-                    Agent.authenticate_changeset(agent, certificate)
-                    |> Repo.update()
-
-                  {:error, cert_error} ->
-                    Logger.error(
-                      "Failed to issue certificate for agent #{agent_id}: #{inspect(cert_error)}"
-                    )
-
-                    {:error, "Failed to issue certificate"}
-                end
-
-              {:error, changeset_error} ->
-                {:error, "Failed to create agent: #{inspect(changeset_error)}"}
-            end
-
-          %Agent{} = existing_agent ->
-            # Existing agent - re-issue certificate if needed
-            if should_reissue_certificate?(existing_agent) do
-              case issue_agent_certificate(existing_agent) do
-                {:ok, certificate} ->
-                  Agent.authenticate_changeset(existing_agent, certificate)
-                  |> Repo.update()
-
-                {:error, cert_error} ->
-                  Logger.error(
-                    "Failed to re-issue certificate for agent #{agent_id}: #{inspect(cert_error)}"
-                  )
-
-                  {:error, "Failed to re-issue certificate"}
-              end
-            else
-              {:ok, existing_agent}
-            end
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+        %Agent{} = existing_agent ->
+          bootstrap_existing_agent(existing_agent, agent_id)
+      end
     end
   end
 
@@ -96,34 +40,14 @@ defmodule SecretHub.Core.Agents do
   Authenticate an agent using its client certificate.
   """
   def authenticate_agent(client_cert_pem) do
-    case Certificate.from_pem(client_cert_pem) do
-      {:ok, cert} ->
-        fingerprint = Certificate.fingerprint(cert)
+    with {:ok, cert} <- parse_certificate(client_cert_pem),
+         {:ok, certificate} <- find_valid_certificate(cert),
+         {:ok, agent} <- find_agent_for_certificate(certificate),
+         :ok <- verify_agent_active(agent) do
+      Agent.heartbeat_changeset(agent)
+      |> Repo.update()
 
-        case Repo.get_by(Certificate, fingerprint: fingerprint, revoked: false) do
-          %Certificate{} = certificate ->
-            case Repo.get_by(Agent, certificate_id: certificate.id) do
-              %Agent{} = agent ->
-                if Agent.active?(agent) do
-                  # Update last seen/heartbeat
-                  Agent.heartbeat_changeset(agent)
-                  |> Repo.update()
-
-                  {:ok, agent}
-                else
-                  {:error, "Agent is not active"}
-                end
-
-              nil ->
-                {:error, "No agent found for certificate"}
-            end
-
-          nil ->
-            {:error, "Certificate not found or revoked"}
-        end
-
-      {:error, cert_error} ->
-        {:error, "Invalid certificate: #{inspect(cert_error)}"}
+      {:ok, agent}
     end
   end
 
@@ -165,24 +89,11 @@ defmodule SecretHub.Core.Agents do
   def suspend_agent(agent_id, reason \\ nil) do
     case Repo.get_by(Agent, agent_id: agent_id) do
       %Agent{} = agent ->
-        # Suspend agent
         Agent.suspend_changeset(agent, reason)
         |> Repo.update()
 
-        # Revoke certificate if exists
-        if agent.certificate_id do
-          certificate = Repo.get(Certificate, agent.certificate_id)
-
-          if certificate do
-            Certificate.revoke_changeset(certificate, "Agent suspended")
-            |> Repo.update()
-          end
-        end
-
-        # Cancel active leases
+        revoke_agent_cert_if_exists(agent.certificate_id, "Agent suspended")
         cancel_agent_leases(agent_id)
-
-        # Log suspension
         audit_agent_action(agent_id, "agent_suspended", false, %{reason: reason})
 
         Logger.info("Suspended agent: #{agent_id}")
@@ -200,24 +111,11 @@ defmodule SecretHub.Core.Agents do
   def revoke_agent(agent_id, reason \\ nil) do
     case Repo.get_by(Agent, agent_id: agent_id) do
       %Agent{} = agent ->
-        # Revoke agent
         Agent.revoke_changeset(agent, reason)
         |> Repo.update()
 
-        # Revoke certificate if exists
-        if agent.certificate_id do
-          certificate = Repo.get(Certificate, agent.certificate_id)
-
-          if certificate do
-            Certificate.revoke_changeset(certificate, "Agent revoked")
-            |> Repo.update()
-          end
-        end
-
-        # Cancel all leases
+        revoke_agent_cert_if_exists(agent.certificate_id, "Agent revoked")
         cancel_agent_leases(agent_id)
-
-        # Log revocation
         audit_agent_action(agent_id, "agent_revoked", false, %{reason: reason})
 
         Logger.info("Revoked agent: #{agent_id}")
@@ -302,32 +200,23 @@ defmodule SecretHub.Core.Agents do
   Check if agent has access to a specific secret.
   """
   def check_secret_access(agent_id, secret) do
-    case get_agent(agent_id) do
-      %Agent{} = agent ->
-        if Agent.active?(agent) do
-          # Check policy-based access
-          case evaluate_agent_policies(agent, secret) do
-            :ok ->
-              audit_agent_action(agent_id, "secret_access_granted", true, %{
-                secret_path: secret.secret_path
-              })
+    with {:ok, agent} <- fetch_active_agent(agent_id) do
+      case evaluate_agent_policies(agent, secret) do
+        :ok ->
+          audit_agent_action(agent_id, "secret_access_granted", true, %{
+            secret_path: secret.secret_path
+          })
 
-              :ok
+          :ok
 
-            {:error, reason} ->
-              audit_agent_action(agent_id, "secret_access_denied", false, %{
-                secret_path: secret.secret_path,
-                reason: reason
-              })
+        {:error, reason} ->
+          audit_agent_action(agent_id, "secret_access_denied", false, %{
+            secret_path: secret.secret_path,
+            reason: reason
+          })
 
-              {:error, reason}
-          end
-        else
-          {:error, "Agent is not active"}
-        end
-
-      nil ->
-        {:error, "Agent not found"}
+          {:error, reason}
+      end
     end
   end
 
@@ -452,20 +341,11 @@ defmodule SecretHub.Core.Agents do
         {:error, "Agent not found"}
 
       agent ->
-        # Revoke agent
         result =
           Agent.revoke_changeset(agent, reason)
           |> Repo.update()
 
-        # Revoke certificate if exists
-        if agent.certificate_id do
-          certificate = Repo.get(Certificate, agent.certificate_id)
-
-          if certificate do
-            Certificate.revoke_changeset(certificate, reason || "Agent certificate revoked")
-            |> Repo.update()
-          end
-        end
+        revoke_agent_cert_if_exists(agent.certificate_id, reason || "Agent certificate revoked")
 
         result
     end
@@ -517,6 +397,103 @@ defmodule SecretHub.Core.Agents do
   end
 
   # Private helper functions
+
+  defp bootstrap_new_agent(agent_id, role_id, secret_id, metadata) do
+    agent_attrs = %{
+      agent_id: agent_id,
+      name: Map.get(metadata, "name", agent_id),
+      description: Map.get(metadata, "description", ""),
+      role_id: role_id,
+      secret_id: secret_id,
+      ip_address: Map.get(metadata, "ip_address"),
+      hostname: Map.get(metadata, "hostname"),
+      user_agent: Map.get(metadata, "user_agent"),
+      metadata: metadata
+    }
+
+    agent_changeset = Agent.bootstrap_changeset(%Agent{}, agent_attrs)
+
+    case Repo.insert(agent_changeset) do
+      {:ok, agent} ->
+        issue_and_authenticate(agent, agent_id, "issue")
+
+      {:error, changeset_error} ->
+        {:error, "Failed to create agent: #{inspect(changeset_error)}"}
+    end
+  end
+
+  defp bootstrap_existing_agent(existing_agent, agent_id) do
+    if should_reissue_certificate?(existing_agent) do
+      issue_and_authenticate(existing_agent, agent_id, "re-issue")
+    else
+      {:ok, existing_agent}
+    end
+  end
+
+  defp issue_and_authenticate(agent, agent_id, action) do
+    case issue_agent_certificate(agent) do
+      {:ok, certificate} ->
+        Agent.authenticate_changeset(agent, certificate)
+        |> Repo.update()
+
+      {:error, cert_error} ->
+        Logger.error(
+          "Failed to #{action} certificate for agent #{agent_id}: #{inspect(cert_error)}"
+        )
+
+        {:error, "Failed to #{action} certificate"}
+    end
+  end
+
+  defp parse_certificate(client_cert_pem) do
+    case Certificate.from_pem(client_cert_pem) do
+      {:ok, _cert} = result -> result
+      {:error, cert_error} -> {:error, "Invalid certificate: #{inspect(cert_error)}"}
+    end
+  end
+
+  defp find_valid_certificate(cert) do
+    fingerprint = Certificate.fingerprint(cert)
+
+    case Repo.get_by(Certificate, fingerprint: fingerprint, revoked: false) do
+      %Certificate{} = certificate -> {:ok, certificate}
+      nil -> {:error, "Certificate not found or revoked"}
+    end
+  end
+
+  defp find_agent_for_certificate(certificate) do
+    case Repo.get_by(Agent, certificate_id: certificate.id) do
+      %Agent{} = agent -> {:ok, agent}
+      nil -> {:error, "No agent found for certificate"}
+    end
+  end
+
+  defp verify_agent_active(agent) do
+    if Agent.active?(agent), do: :ok, else: {:error, "Agent is not active"}
+  end
+
+  defp fetch_active_agent(agent_id) do
+    case get_agent(agent_id) do
+      %Agent{} = agent ->
+        if Agent.active?(agent), do: {:ok, agent}, else: {:error, "Agent is not active"}
+
+      nil ->
+        {:error, "Agent not found"}
+    end
+  end
+
+  defp revoke_agent_cert_if_exists(nil, _reason), do: :ok
+
+  defp revoke_agent_cert_if_exists(certificate_id, reason) do
+    case Repo.get(Certificate, certificate_id) do
+      nil ->
+        :ok
+
+      certificate ->
+        Certificate.revoke_changeset(certificate, reason)
+        |> Repo.update()
+    end
+  end
 
   defp validate_bootstrap_credentials(role_id, secret_id) do
     # TODO: Implement actual RoleID/SecretID validation

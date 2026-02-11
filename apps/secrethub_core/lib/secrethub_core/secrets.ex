@@ -100,22 +100,7 @@ defmodule SecretHub.Core.Secrets do
         {:error, "Secret not found"}
 
       secret ->
-        # Encrypt new secret_data if provided
-        encrypted_attrs =
-          if secret_data = attrs["secret_data"] do
-            case SealState.get_master_key() do
-              {:ok, master_key} ->
-                case encrypt_secret_data(secret_data, master_key) do
-                  {:ok, encrypted} -> Map.put(attrs, "encrypted_data", encrypted)
-                  {:error, _} -> attrs
-                end
-
-              _ ->
-                attrs
-            end
-          else
-            attrs
-          end
+        encrypted_attrs = maybe_encrypt_secret_data(attrs)
 
         Multi.new()
         |> Multi.run(:archive_version, fn repo, _changes ->
@@ -344,6 +329,21 @@ defmodule SecretHub.Core.Secrets do
   end
 
   ## Private Functions
+
+  defp maybe_encrypt_secret_data(attrs) do
+    case attrs["secret_data"] do
+      nil ->
+        attrs
+
+      secret_data ->
+        with {:ok, master_key} <- SealState.get_master_key(),
+             {:ok, encrypted} <- encrypt_secret_data(secret_data, master_key) do
+          Map.put(attrs, "encrypted_data", encrypted)
+        else
+          _ -> attrs
+        end
+    end
+  end
 
   defp encrypt_secret_data(data, master_key) when is_map(data) do
     # Serialize the secret data to JSON

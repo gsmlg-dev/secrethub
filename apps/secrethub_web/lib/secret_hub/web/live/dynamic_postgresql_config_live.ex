@@ -536,129 +536,133 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
     }
   end
 
+  @config_defaults %{
+    role_name: "",
+    host: "localhost",
+    port: 5432,
+    database: "postgres",
+    username: "",
+    password: "",
+    ssl: false,
+    default_ttl: 3600,
+    max_ttl: 86_400,
+    creation_statements: "",
+    renewal_statements: "",
+    revocation_statements: ""
+  }
+
+  @string_fields [
+    :role_name,
+    :host,
+    :database,
+    :username,
+    :password,
+    :creation_statements,
+    :renewal_statements,
+    :revocation_statements
+  ]
+  @to_string_fields [:port, :default_ttl, :max_ttl, :ssl]
+
   defp config_to_form_data(config) do
-    %{
-      role_name: config.role_name || "",
-      host: config.host || "localhost",
-      port: to_string(config.port || 5432),
-      database: config.database || "postgres",
-      username: config.username || "",
-      password: config.password || "",
-      ssl: to_string(config.ssl || false),
-      default_ttl: to_string(config.default_ttl || 3600),
-      max_ttl: to_string(config.max_ttl || 86_400),
-      creation_statements: config.creation_statements || "",
-      renewal_statements: config.renewal_statements || "",
-      revocation_statements: config.revocation_statements || ""
-    }
+    Enum.reduce(@config_defaults, %{}, fn {key, default}, acc ->
+      value = Map.get(config, key) || default
+
+      converted =
+        cond do
+          key in @to_string_fields -> to_string(value)
+          key in @string_fields -> value
+          true -> value
+        end
+
+      Map.put(acc, key, converted)
+    end)
   end
 
   defp validate_form(form_data) do
-    errors = %{}
-
     errors =
-      if String.trim(form_data.role_name) == "" do
-        Map.put(errors, :role_name, "Role name is required")
-      else
-        errors
-      end
-
-    errors =
-      if String.trim(form_data.host) == "" do
-        Map.put(errors, :host, "Host is required")
-      else
-        errors
-      end
-
-    errors =
-      case Integer.parse(form_data.port) do
-        {port, ""} when port > 0 and port < 65_536 -> errors
-        _ -> Map.put(errors, :port, "Port must be a valid number between 1 and 65535")
-      end
-
-    errors =
-      if String.trim(form_data.database) == "" do
-        Map.put(errors, :database, "Database name is required")
-      else
-        errors
-      end
-
-    errors =
-      if String.trim(form_data.username) == "" do
-        Map.put(errors, :username, "Username is required")
-      else
-        errors
-      end
-
-    errors =
-      if String.trim(form_data.password) == "" do
-        Map.put(errors, :password, "Password is required")
-      else
-        errors
-      end
-
-    errors =
-      case Integer.parse(form_data.default_ttl) do
-        {ttl, ""} when ttl > 0 -> errors
-        _ -> Map.put(errors, :default_ttl, "Default TTL must be a positive number")
-      end
-
-    errors =
-      case Integer.parse(form_data.max_ttl) do
-        {ttl, ""} when ttl > 0 -> errors
-        _ -> Map.put(errors, :max_ttl, "Max TTL must be a positive number")
-      end
-
-    errors =
-      with {default_ttl, ""} <- Integer.parse(form_data.default_ttl),
-           {max_ttl, ""} <- Integer.parse(form_data.max_ttl) do
-        if default_ttl > max_ttl do
-          Map.put(errors, :max_ttl, "Max TTL must be greater than or equal to default TTL")
-        else
-          errors
-        end
-      else
-        _ -> errors
-      end
-
-    errors =
-      if String.trim(form_data.creation_statements) == "" do
-        Map.put(errors, :creation_statements, "Creation statements are required")
-      else
-        errors
-      end
-
-    errors =
-      if String.trim(form_data.revocation_statements) == "" do
-        Map.put(errors, :revocation_statements, "Revocation statements are required")
-      else
-        errors
-      end
+      %{}
+      |> validate_required_string(form_data, :role_name, "Role name is required")
+      |> validate_required_string(form_data, :host, "Host is required")
+      |> validate_port(form_data)
+      |> validate_required_string(form_data, :database, "Database name is required")
+      |> validate_required_string(form_data, :username, "Username is required")
+      |> validate_required_string(form_data, :password, "Password is required")
+      |> validate_positive_integer(
+        form_data,
+        :default_ttl,
+        "Default TTL must be a positive number"
+      )
+      |> validate_positive_integer(form_data, :max_ttl, "Max TTL must be a positive number")
+      |> validate_ttl_range(form_data)
+      |> validate_required_string(
+        form_data,
+        :creation_statements,
+        "Creation statements are required"
+      )
+      |> validate_required_string(
+        form_data,
+        :revocation_statements,
+        "Revocation statements are required"
+      )
 
     if errors == %{} do
-      {port, _} = Integer.parse(form_data.port)
-      {default_ttl, _} = Integer.parse(form_data.default_ttl)
-      {max_ttl, _} = Integer.parse(form_data.max_ttl)
-
-      config = %{
-        role_name: String.trim(form_data.role_name),
-        host: String.trim(form_data.host),
-        port: port,
-        database: String.trim(form_data.database),
-        username: String.trim(form_data.username),
-        password: form_data.password,
-        ssl: form_data.ssl == "true",
-        default_ttl: default_ttl,
-        max_ttl: max_ttl,
-        creation_statements: String.trim(form_data.creation_statements),
-        renewal_statements: String.trim(form_data.renewal_statements),
-        revocation_statements: String.trim(form_data.revocation_statements)
-      }
-
-      {:ok, config}
+      {:ok, build_valid_config(form_data)}
     else
       {:error, errors}
     end
+  end
+
+  defp validate_required_string(errors, form_data, field, message) do
+    if String.trim(Map.get(form_data, field, "")) == "" do
+      Map.put(errors, field, message)
+    else
+      errors
+    end
+  end
+
+  defp validate_port(errors, form_data) do
+    case Integer.parse(form_data.port) do
+      {port, ""} when port > 0 and port < 65_536 -> errors
+      _ -> Map.put(errors, :port, "Port must be a valid number between 1 and 65535")
+    end
+  end
+
+  defp validate_positive_integer(errors, form_data, field, message) do
+    case Integer.parse(Map.get(form_data, field, "")) do
+      {val, ""} when val > 0 -> errors
+      _ -> Map.put(errors, field, message)
+    end
+  end
+
+  defp validate_ttl_range(errors, form_data) do
+    with {default_ttl, ""} <- Integer.parse(form_data.default_ttl),
+         {max_ttl, ""} <- Integer.parse(form_data.max_ttl),
+         true <- default_ttl > max_ttl do
+      Map.put(errors, :max_ttl, "Max TTL must be greater than or equal to default TTL")
+    else
+      _ -> errors
+    end
+  end
+
+  defp build_valid_config(form_data) do
+    {port, _} = Integer.parse(form_data.port)
+    {default_ttl, _} = Integer.parse(form_data.default_ttl)
+    {max_ttl, _} = Integer.parse(form_data.max_ttl)
+
+    %{
+      role_name: String.trim(form_data.role_name),
+      host: String.trim(form_data.host),
+      port: port,
+      database: String.trim(form_data.database),
+      username: String.trim(form_data.username),
+      password: form_data.password,
+      ssl: form_data.ssl == "true",
+      default_ttl: default_ttl,
+      max_ttl: max_ttl,
+      creation_statements: String.trim(form_data.creation_statements),
+      renewal_statements: String.trim(form_data.renewal_statements),
+      revocation_statements: String.trim(form_data.revocation_statements)
+    }
   end
 
   # Stub functions for configuration storage
@@ -680,24 +684,22 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
     # TODO: Implement role config persistence
     # For now, store in application environment (not persistent across restarts)
     roles = list_roles()
+    named_config = Map.put(config, :name, role_name)
 
-    updated_roles =
-      case mode do
-        :create ->
-          [Map.put(config, :name, role_name) | roles]
-
-        :edit ->
-          Enum.map(roles, fn role ->
-            if role.name == role_name do
-              Map.put(config, :name, role_name)
-            else
-              role
-            end
-          end)
-      end
+    updated_roles = apply_role_change(roles, role_name, named_config, mode)
 
     Application.put_env(:secrethub_core, :dynamic_postgresql_roles, updated_roles)
     :ok
+  end
+
+  defp apply_role_change(roles, _role_name, config, :create) do
+    [config | roles]
+  end
+
+  defp apply_role_change(roles, role_name, config, :edit) do
+    Enum.map(roles, fn role ->
+      if role.name == role_name, do: config, else: role
+    end)
   end
 
   defp delete_role_config(role_name) do

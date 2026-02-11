@@ -299,29 +299,29 @@ defmodule SecretHub.Core.DistributedLock do
       Logger.debug("Lock acquisition timed out after #{elapsed}ms")
       {:ok, false}
     else
-      # Try to acquire the lock (non-blocking)
-      lock_acquired? =
-        if session do
-          # Session-level advisory lock
-          case Repo.query("SELECT pg_try_advisory_lock($1)", [lock_id]) do
-            {:ok, %{rows: [[acquired]]}} -> acquired
-            {:error, _} -> false
-          end
-        else
-          # Transaction-level advisory lock (must be in a transaction)
-          case Repo.query("SELECT pg_try_advisory_xact_lock($1)", [lock_id]) do
-            {:ok, %{rows: [[acquired]]}} -> acquired
-            {:error, _} -> false
-          end
-        end
-
-      if lock_acquired? do
+      if attempt_advisory_lock(lock_id, session) do
         {:ok, true}
       else
         # Wait a bit and retry
         Process.sleep(100)
         try_acquire_lock(lock_id, session, timeout, start_time)
       end
+    end
+  end
+
+  defp attempt_advisory_lock(lock_id, true) do
+    # Session-level advisory lock
+    case Repo.query("SELECT pg_try_advisory_lock($1)", [lock_id]) do
+      {:ok, %{rows: [[acquired]]}} -> acquired
+      {:error, _} -> false
+    end
+  end
+
+  defp attempt_advisory_lock(lock_id, false) do
+    # Transaction-level advisory lock (must be in a transaction)
+    case Repo.query("SELECT pg_try_advisory_xact_lock($1)", [lock_id]) do
+      {:ok, %{rows: [[acquired]]}} -> acquired
+      {:error, _} -> false
     end
   end
 

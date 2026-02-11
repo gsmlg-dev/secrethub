@@ -217,53 +217,7 @@ defmodule SecretHub.Core.Vault.SealState do
          state}
 
       :sealed ->
-        # Validate share
-        if Shamir.valid_share?(share) do
-          # Add share to collection
-          new_shares = [share | state.unseal_shares] |> Enum.uniq_by(& &1.id)
-          new_progress = length(new_shares)
-
-          if new_progress >= state.threshold do
-            # We have enough shares - reconstruct master key
-            case Shamir.combine(Enum.take(new_shares, state.threshold)) do
-              {:ok, reconstructed_key} ->
-                # Cancel any existing auto-seal timer
-                if state.auto_seal_timer, do: Process.cancel_timer(state.auto_seal_timer)
-
-                # Set auto-seal timer
-                timer = Process.send_after(self(), :auto_seal, @unseal_timeout_ms)
-
-                new_state = %{
-                  state
-                  | status: :unsealed,
-                    master_key: reconstructed_key,
-                    unseal_shares: [],
-                    unseal_progress: 0,
-                    unsealed_at: DateTime.utc_now() |> DateTime.truncate(:second),
-                    auto_seal_timer: timer
-                }
-
-                Logger.info("Vault unsealed successfully")
-                audit_event("vault_unsealed", :unsealed)
-
-                {:reply,
-                 {:ok, %{sealed: false, progress: state.threshold, threshold: state.threshold}},
-                 new_state}
-
-              {:error, reason} ->
-                Logger.error("Failed to reconstruct master key: #{reason}")
-                {:reply, {:error, "Failed to reconstruct key"}, state}
-            end
-          else
-            # Not enough shares yet
-            new_state = %{state | unseal_shares: new_shares, unseal_progress: new_progress}
-
-            {:reply, {:ok, %{sealed: true, progress: new_progress, threshold: state.threshold}},
-             new_state}
-          end
-        else
-          {:reply, {:error, "Invalid share format"}, state}
-        end
+        process_unseal_share(share, state)
 
       :not_initialized ->
         {:reply, {:error, "Vault not initialized"}, state}
@@ -351,6 +305,53 @@ defmodule SecretHub.Core.Vault.SealState do
   end
 
   # Private helper functions
+
+  defp process_unseal_share(share, state) do
+    if Shamir.valid_share?(share) do
+      new_shares = [share | state.unseal_shares] |> Enum.uniq_by(& &1.id)
+      new_progress = length(new_shares)
+
+      if new_progress >= state.threshold do
+        attempt_reconstruct_master_key(new_shares, state)
+      else
+        new_state = %{state | unseal_shares: new_shares, unseal_progress: new_progress}
+
+        {:reply, {:ok, %{sealed: true, progress: new_progress, threshold: state.threshold}},
+         new_state}
+      end
+    else
+      {:reply, {:error, "Invalid share format"}, state}
+    end
+  end
+
+  defp attempt_reconstruct_master_key(new_shares, state) do
+    case Shamir.combine(Enum.take(new_shares, state.threshold)) do
+      {:ok, reconstructed_key} ->
+        if state.auto_seal_timer, do: Process.cancel_timer(state.auto_seal_timer)
+
+        timer = Process.send_after(self(), :auto_seal, @unseal_timeout_ms)
+
+        new_state = %{
+          state
+          | status: :unsealed,
+            master_key: reconstructed_key,
+            unseal_shares: [],
+            unseal_progress: 0,
+            unsealed_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            auto_seal_timer: timer
+        }
+
+        Logger.info("Vault unsealed successfully")
+        audit_event("vault_unsealed", :unsealed)
+
+        {:reply, {:ok, %{sealed: false, progress: state.threshold, threshold: state.threshold}},
+         new_state}
+
+      {:error, reason} ->
+        Logger.error("Failed to reconstruct master key: #{reason}")
+        {:reply, {:error, "Failed to reconstruct key"}, state}
+    end
+  end
 
   defp load_vault_state do
     # TODO: Load from database vault_config table

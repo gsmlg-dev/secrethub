@@ -68,44 +68,54 @@ defmodule SecretHub.Web.AdminAuthController do
   Handle admin login with certificate validation or dev password.
   """
   def login(conn, params) do
-    cond do
-      # Development mode: allow password-based login
-      Mix.env() == :dev and params["dev_password"] == dev_password() ->
-        conn
-        |> put_session(:admin_id, "dev-admin")
-        |> configure_session_timeout()
-        |> put_flash(:info, "Development login successful")
-        |> redirect(to: "/admin/dashboard")
+    if Mix.env() == :dev do
+      handle_dev_login(conn, params)
+    else
+      handle_cert_login(conn)
+    end
+  end
 
-      # Development mode: wrong password
-      Mix.env() == :dev and params["dev_password"] != nil ->
+  defp handle_dev_login(conn, %{"dev_password" => password}) do
+    if password == dev_password() do
+      conn
+      |> put_session(:admin_id, "dev-admin")
+      |> configure_session_timeout()
+      |> put_flash(:info, "Development login successful")
+      |> redirect(to: "/admin/dashboard")
+    else
+      conn
+      |> put_flash(:error, "Invalid development password")
+      |> redirect(to: "/admin/auth/login")
+    end
+  end
+
+  defp handle_dev_login(conn, _params), do: handle_cert_login(conn)
+
+  defp handle_cert_login(conn) do
+    case get_client_certificate(conn) do
+      nil ->
         conn
-        |> put_flash(:error, "Invalid development password")
+        |> put_flash(:error, "No client certificate provided")
         |> redirect(to: "/admin/auth/login")
 
-      # Production/certificate mode
-      true ->
-        case get_client_certificate(conn) do
-          nil ->
-            conn
-            |> put_flash(:error, "No client certificate provided")
-            |> redirect(to: "/admin/auth/login")
+      cert ->
+        authenticate_cert_and_redirect(conn, cert)
+    end
+  end
 
-          cert ->
-            case verify_admin_certificate(cert) do
-              {:ok, admin_id} ->
-                conn
-                |> put_session(:admin_id, admin_id)
-                |> configure_session_timeout()
-                |> put_flash(:info, "Successfully logged in")
-                |> redirect(to: "/admin/dashboard")
+  defp authenticate_cert_and_redirect(conn, cert) do
+    case verify_admin_certificate(cert) do
+      {:ok, admin_id} ->
+        conn
+        |> put_session(:admin_id, admin_id)
+        |> configure_session_timeout()
+        |> put_flash(:info, "Successfully logged in")
+        |> redirect(to: "/admin/dashboard")
 
-              {:error, reason} ->
-                conn
-                |> put_flash(:error, "Authentication failed: #{reason}")
-                |> redirect(to: "/admin/auth/login")
-            end
-        end
+      {:error, reason} ->
+        conn
+        |> put_flash(:error, "Authentication failed: #{reason}")
+        |> redirect(to: "/admin/auth/login")
     end
   end
 

@@ -130,55 +130,12 @@ defmodule SecretHub.Core.Engines.Dynamic.AWSSTS do
 
   @impl Dynamic
   def validate_config(config) do
-    errors = []
-
     errors =
-      if is_nil(config["role_arn"]) or config["role_arn"] == "" do
-        ["role_arn is required" | errors]
-      else
-        if valid_arn?(config["role_arn"]) do
-          errors
-        else
-          ["role_arn must be a valid AWS ARN" | errors]
-        end
-      end
-
-    errors =
-      case config["default_ttl"] do
-        nil ->
-          errors
-
-        ttl when is_integer(ttl) and ttl > 0 and ttl <= @absolute_max_ttl ->
-          errors
-
-        _ ->
-          ["default_ttl must be between 1 and #{@absolute_max_ttl} seconds" | errors]
-      end
-
-    errors =
-      case config["max_ttl"] do
-        nil ->
-          errors
-
-        ttl when is_integer(ttl) and ttl > 0 and ttl <= @absolute_max_ttl ->
-          errors
-
-        _ ->
-          ["max_ttl must be between 1 and #{@absolute_max_ttl} seconds" | errors]
-      end
-
-    errors =
-      if config["policy"] do
-        case Jason.decode(config["policy"]) do
-          {:ok, _} ->
-            errors
-
-          {:error, _} ->
-            ["policy must be valid JSON" | errors]
-        end
-      else
-        errors
-      end
+      []
+      |> validate_role_arn(config)
+      |> validate_ttl_field(config, "default_ttl")
+      |> validate_ttl_field(config, "max_ttl")
+      |> validate_policy_json(config)
 
     if Enum.empty?(errors) do
       :ok
@@ -188,6 +145,45 @@ defmodule SecretHub.Core.Engines.Dynamic.AWSSTS do
   end
 
   # Private functions
+
+  defp validate_role_arn(errors, config) do
+    cond do
+      is_nil(config["role_arn"]) or config["role_arn"] == "" ->
+        ["role_arn is required" | errors]
+
+      not valid_arn?(config["role_arn"]) ->
+        ["role_arn must be a valid AWS ARN" | errors]
+
+      true ->
+        errors
+    end
+  end
+
+  defp validate_ttl_field(errors, config, field) do
+    case config[field] do
+      nil ->
+        errors
+
+      ttl when is_integer(ttl) and ttl > 0 and ttl <= @absolute_max_ttl ->
+        errors
+
+      _ ->
+        ["#{field} must be between 1 and #{@absolute_max_ttl} seconds" | errors]
+    end
+  end
+
+  defp validate_policy_json(errors, config) do
+    case config["policy"] do
+      nil ->
+        errors
+
+      policy ->
+        case Jason.decode(policy) do
+          {:ok, _} -> errors
+          {:error, _} -> ["policy must be valid JSON" | errors]
+        end
+    end
+  end
 
   defp build_aws_config(config) do
     connection = config["connection"] || %{}
