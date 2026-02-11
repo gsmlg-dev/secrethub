@@ -5,7 +5,7 @@ defmodule SecretHub.Web.SecretManagementLive do
 
   use SecretHub.Web, :live_view
   require Logger
-  alias SecretHub.Core.{Policies, Secrets}
+  alias SecretHub.Core.{Policies, Repo, Secrets}
   alias SecretHub.Shared.Schemas.Secret
 
   @impl true
@@ -383,7 +383,7 @@ defmodule SecretHub.Web.SecretManagementLive do
       %Secret{}
       |> Secret.changeset(secret_params)
 
-    case SecretHub.Core.Repo.insert(changeset) do
+    case Repo.insert(changeset) do
       {:ok, secret} ->
         Logger.info("Created secret: #{secret.id}")
 
@@ -417,7 +417,7 @@ defmodule SecretHub.Web.SecretManagementLive do
 
   defp update_secret(socket, secret_id, secret_params) do
     # Direct Repo update for dev/testing
-    case SecretHub.Core.Repo.get(Secret, secret_id) do
+    case Repo.get(Secret, secret_id) do
       nil ->
         socket =
           socket
@@ -428,7 +428,7 @@ defmodule SecretHub.Web.SecretManagementLive do
       secret ->
         changeset = Secret.changeset(secret, secret_params)
 
-        case SecretHub.Core.Repo.update(changeset) do
+        case Repo.update(changeset) do
           {:ok, updated_secret} ->
             Logger.info("Updated secret: #{updated_secret.id}")
 

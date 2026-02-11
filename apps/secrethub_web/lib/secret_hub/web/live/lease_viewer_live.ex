@@ -371,7 +371,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
                   </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <%= if is_expired?(lease) do %>
+                  <%= if expired?(lease) do %>
                     <span class="text-gray-400">No actions</span>
                   <% else %>
                     <button
@@ -476,15 +476,15 @@ defmodule SecretHub.Web.LeaseViewerLive do
   defp filter_by_status(leases, "all"), do: leases
 
   defp filter_by_status(leases, "active") do
-    Enum.filter(leases, fn lease -> is_active?(lease) end)
+    Enum.filter(leases, fn lease -> active?(lease) end)
   end
 
   defp filter_by_status(leases, "expiring_soon") do
-    Enum.filter(leases, fn lease -> is_expiring_soon?(lease) end)
+    Enum.filter(leases, fn lease -> expiring_soon?(lease) end)
   end
 
   defp filter_by_status(leases, "expired") do
-    Enum.filter(leases, fn lease -> is_expired?(lease) end)
+    Enum.filter(leases, fn lease -> expired?(lease) end)
   end
 
   defp filter_by_search(leases, ""), do: leases
@@ -520,9 +520,9 @@ defmodule SecretHub.Web.LeaseViewerLive do
 
   defp calculate_stats(leases) do
     total = length(leases)
-    active = Enum.count(leases, &is_active?/1)
-    expiring_soon = Enum.count(leases, &is_expiring_soon?/1)
-    expired = Enum.count(leases, &is_expired?/1)
+    active = Enum.count(leases, &active?/1)
+    expiring_soon = Enum.count(leases, &expiring_soon?/1)
+    expired = Enum.count(leases, &expired?/1)
 
     %{
       total: total,
@@ -532,20 +532,20 @@ defmodule SecretHub.Web.LeaseViewerLive do
     }
   end
 
-  defp is_expired?(lease) do
+  defp expired?(lease) do
     DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) == :lt
   end
 
-  defp is_expiring_soon?(lease) do
+  defp expiring_soon?(lease) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     remaining = DateTime.diff(lease.expires_at, now)
     threshold = lease.lease_duration * 0.2
 
-    !is_expired?(lease) && remaining < threshold
+    !expired?(lease) && remaining < threshold
   end
 
-  defp is_active?(lease) do
-    !is_expired?(lease) && !is_expiring_soon?(lease)
+  defp active?(lease) do
+    !expired?(lease) && !expiring_soon?(lease)
   end
 
   defp format_ttl(lease) do
@@ -563,32 +563,32 @@ defmodule SecretHub.Web.LeaseViewerLive do
 
   defp ttl_class(lease) do
     cond do
-      is_expired?(lease) -> "text-red-600"
-      is_expiring_soon?(lease) -> "text-yellow-600"
+      expired?(lease) -> "text-red-600"
+      expiring_soon?(lease) -> "text-yellow-600"
       true -> "text-green-600"
     end
   end
 
   defp ttl_row_class(lease) do
     cond do
-      is_expired?(lease) -> "bg-red-50"
-      is_expiring_soon?(lease) -> "bg-yellow-50"
+      expired?(lease) -> "bg-red-50"
+      expiring_soon?(lease) -> "bg-yellow-50"
       true -> ""
     end
   end
 
   defp status_text(lease) do
     cond do
-      is_expired?(lease) -> "Expired"
-      is_expiring_soon?(lease) -> "Expiring Soon"
+      expired?(lease) -> "Expired"
+      expiring_soon?(lease) -> "Expiring Soon"
       true -> "Active"
     end
   end
 
   defp status_badge_class(lease) do
     cond do
-      is_expired?(lease) -> "bg-red-100 text-red-800"
-      is_expiring_soon?(lease) -> "bg-yellow-100 text-yellow-800"
+      expired?(lease) -> "bg-red-100 text-red-800"
+      expiring_soon?(lease) -> "bg-yellow-100 text-yellow-800"
       true -> "bg-green-100 text-green-800"
     end
   end

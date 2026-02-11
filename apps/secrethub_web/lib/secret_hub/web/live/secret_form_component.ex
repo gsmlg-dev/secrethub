@@ -6,6 +6,9 @@ defmodule SecretHub.Web.SecretFormComponent do
   use SecretHub.Web, :live_component
   require Logger
 
+  alias Phoenix.HTML.Form
+  alias SecretHub.Shared.Schemas.Secret
+
   @impl true
   def update(assigns, socket) do
     # Extract values from changeset to build form
@@ -55,7 +58,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                 <input
                   type="text"
                   name="secret[name]"
-                  value={Phoenix.HTML.Form.input_value(@form, :name)}
+                  value={Form.input_value(@form, :name)}
                   class="form-input w-full"
                   placeholder="e.g., Production Database"
                 />
@@ -73,7 +76,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                   rows="2"
                   class="form-input w-full"
                   placeholder="Brief description of what this secret provides access to"
-                ><%= Phoenix.HTML.Form.input_value(@form, :description) %></textarea>
+                ><%= Form.input_value(@form, :description) %></textarea>
                 <%= if error = get_field_error(@form, :description) do %>
                   <p class="mt-1 text-sm text-red-600">{error}</p>
                 <% end %>
@@ -86,7 +89,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                 <input
                   type="text"
                   name="secret[secret_path]"
-                  value={Phoenix.HTML.Form.input_value(@form, :secret_path)}
+                  value={Form.input_value(@form, :secret_path)}
                   class="form-input w-full"
                   placeholder="e.g., prod/db/postgres"
                 />
@@ -112,9 +115,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                   <%= for engine <- @engines do %>
                     <option
                       value={engine.type}
-                      selected={
-                        to_string(Phoenix.HTML.Form.input_value(@form, :engine_type)) == engine.type
-                      }
+                      selected={to_string(Form.input_value(@form, :engine_type)) == engine.type}
                     >
                       {engine.name}
                     </option>
@@ -135,17 +136,13 @@ defmodule SecretHub.Web.SecretFormComponent do
                 >
                   <option
                     value="static"
-                    selected={
-                      to_string(Phoenix.HTML.Form.input_value(@form, :secret_type)) == "static"
-                    }
+                    selected={to_string(Form.input_value(@form, :secret_type)) == "static"}
                   >
                     Static (long-lived)
                   </option>
                   <option
                     value="dynamic"
-                    selected={
-                      to_string(Phoenix.HTML.Form.input_value(@form, :secret_type)) == "dynamic"
-                    }
+                    selected={to_string(Form.input_value(@form, :secret_type)) == "dynamic"}
                   >
                     Dynamic (temporary)
                   </option>
@@ -165,7 +162,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                 <input
                   type="number"
                   name="secret[ttl_hours]"
-                  value={Phoenix.HTML.Form.input_value(@form, :ttl_hours)}
+                  value={Form.input_value(@form, :ttl_hours)}
                   class="form-input w-full"
                   min="1"
                   placeholder="24"
@@ -185,7 +182,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                 <input
                   type="number"
                   name="secret[rotation_period_hours]"
-                  value={Phoenix.HTML.Form.input_value(@form, :rotation_period_hours)}
+                  value={Form.input_value(@form, :rotation_period_hours)}
                   class="form-input w-full"
                   min="1"
                   placeholder="168"
@@ -272,8 +269,8 @@ defmodule SecretHub.Web.SecretFormComponent do
   @impl true
   def handle_event("validate", %{"secret" => secret_params}, socket) do
     changeset =
-      %SecretHub.Shared.Schemas.Secret{}
-      |> SecretHub.Shared.Schemas.Secret.changeset(secret_params)
+      %Secret{}
+      |> Secret.changeset(secret_params)
       |> Map.put(:action, :validate)
 
     form = Phoenix.Component.to_form(secret_params, as: :secret, errors: changeset.errors)
@@ -289,7 +286,7 @@ defmodule SecretHub.Web.SecretFormComponent do
 
   # Helper functions for rendering engine-specific configuration
   defp render_engine_config(assigns) do
-    engine_type = to_string(Phoenix.HTML.Form.input_value(assigns.form, :engine_type))
+    engine_type = to_string(Form.input_value(assigns.form, :engine_type))
 
     case engine_type do
       "static" ->

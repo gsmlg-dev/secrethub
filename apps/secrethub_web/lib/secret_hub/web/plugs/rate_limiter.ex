@@ -13,6 +13,8 @@ defmodule SecretHub.Web.Plugs.RateLimiter do
   import Plug.Conn
   require Logger
 
+  alias SecretHub.Core.Audit
+
   @table_name :rate_limiter_table
 
   def init(opts) do
@@ -50,7 +52,7 @@ defmodule SecretHub.Web.Plugs.RateLimiter do
         )
 
         # Log rate limit event
-        SecretHub.Core.Audit.log_event(%{
+        Audit.log_event(%{
           event_type: "rate_limit.exceeded",
           actor_type: "unknown",
           actor_id: client_ip,

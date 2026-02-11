@@ -66,9 +66,7 @@ defmodule SecretHub.Web.RotationHistoryLive do
   def handle_event("trigger_rotation", _params, socket) do
     schedule = socket.assigns.schedule
 
-    unless schedule.enabled do
-      {:noreply, put_flash(socket, :error, "Cannot rotate disabled schedule")}
-    else
+    if schedule.enabled do
       case RotationWorker.schedule_rotation(schedule) do
         {:ok, _job} ->
           {:noreply,
@@ -79,6 +77,8 @@ defmodule SecretHub.Web.RotationHistoryLive do
         {:error, _} ->
           {:noreply, put_flash(socket, :error, "Failed to schedule rotation job")}
       end
+    else
+      {:noreply, put_flash(socket, :error, "Cannot rotate disabled schedule")}
     end
   end
 

@@ -17,6 +17,9 @@ defmodule SecretHub.Web.ConnCase do
 
   use ExUnit.CaseTemplate
 
+  alias Ecto.Adapters.SQL.Sandbox
+  alias SecretHub.Core.Repo
+
   using do
     quote do
       # The default endpoint for testing
@@ -31,7 +34,7 @@ defmodule SecretHub.Web.ConnCase do
   end
 
   setup tags do
-    SecretHub.Web.ConnCase.setup_sandbox(tags)
+    __MODULE__.setup_sandbox(tags)
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 
@@ -39,7 +42,7 @@ defmodule SecretHub.Web.ConnCase do
   Sets up the sandbox based on the test tags.
   """
   def setup_sandbox(tags) do
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(SecretHub.Core.Repo, shared: not tags[:async])
-    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    pid = Sandbox.start_owner!(Repo, shared: not tags[:async])
+    on_exit(fn -> Sandbox.stop_owner(pid) end)
   end
 end

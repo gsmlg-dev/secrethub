@@ -14,6 +14,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
   import Ecto.Query
 
   alias SecretHub.Core.Auth.AppRole
+  alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Role
 
   @impl true
@@ -408,6 +409,6 @@ defmodule SecretHub.Web.AppRoleManagementLive do
         order_by: [desc: r.inserted_at]
       )
 
-    SecretHub.Core.Repo.all(query)
+    Repo.all(query)
   end
 end

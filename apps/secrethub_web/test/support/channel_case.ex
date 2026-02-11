@@ -17,6 +17,9 @@ defmodule SecretHub.Web.ChannelCase do
 
   use ExUnit.CaseTemplate
 
+  alias Ecto.Adapters.SQL.Sandbox
+  alias SecretHub.Core.Repo
+
   using do
     quote do
       # Import conveniences for testing with channels
@@ -29,7 +32,7 @@ defmodule SecretHub.Web.ChannelCase do
   end
 
   setup tags do
-    SecretHub.Web.ChannelCase.setup_sandbox(tags)
+    __MODULE__.setup_sandbox(tags)
     :ok
   end
 
@@ -37,7 +40,7 @@ defmodule SecretHub.Web.ChannelCase do
   Sets up the sandbox based on the test tags.
   """
   def setup_sandbox(tags) do
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(SecretHub.Core.Repo, shared: not tags[:async])
-    on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    pid = Sandbox.start_owner!(Repo, shared: not tags[:async])
+    on_exit(fn -> Sandbox.stop_owner(pid) end)
   end
 end

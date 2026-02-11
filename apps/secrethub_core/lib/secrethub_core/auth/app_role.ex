@@ -23,7 +23,7 @@ defmodule SecretHub.Core.Auth.AppRole do
   require Logger
   import Ecto.Query
 
-  alias SecretHub.Core.Repo
+  alias SecretHub.Core.{Audit, Repo}
   alias SecretHub.Shared.Schemas.Role
 
   # 10 minutes in seconds
@@ -378,7 +378,7 @@ defmodule SecretHub.Core.Auth.AppRole do
   end
 
   defp audit_event(event_type, role_id, metadata) do
-    SecretHub.Core.Audit.log_event(%{
+    Audit.log_event(%{
       event_type: event_type,
       actor_type: "approle",
       actor_id: role_id,

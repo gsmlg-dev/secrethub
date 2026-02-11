@@ -26,6 +26,7 @@ defmodule SecretHub.Core.PKI.CA do
   import Ecto.Query
 
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.Certificate
 
@@ -675,13 +676,13 @@ defmodule SecretHub.Core.PKI.CA do
     # Get master encryption key from SealState
     # Use fallback key for tests when SealState isn't running
     master_key =
-      case Process.whereis(SecretHub.Core.Vault.SealState) do
+      case Process.whereis(SealState) do
         nil ->
           # SealState not running (test mode) - use a fixed test key
           :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
 
         _pid ->
-          case SecretHub.Core.Vault.SealState.get_master_key() do
+          case SealState.get_master_key() do
             {:ok, key} -> key
             {:error, _} -> nil
           end
@@ -698,13 +699,13 @@ defmodule SecretHub.Core.PKI.CA do
     # Get master encryption key from SealState
     # Use fallback key for tests when SealState isn't running
     master_key =
-      case Process.whereis(SecretHub.Core.Vault.SealState) do
+      case Process.whereis(SealState) do
         nil ->
           # SealState not running (test mode) - use same test key
           :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
 
         _pid ->
-          case SecretHub.Core.Vault.SealState.get_master_key() do
+          case SealState.get_master_key() do
             {:ok, key} -> key
             {:error, _reason} -> nil
           end

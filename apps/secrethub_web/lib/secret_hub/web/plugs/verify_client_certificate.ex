@@ -61,6 +61,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
   require Logger
 
   alias SecretHub.Core.PKI.CA
+  alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Certificate
 
   @doc """
@@ -285,7 +286,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
         select: c.revoked
       )
 
-    case SecretHub.Core.Repo.one(query) do
+    case Repo.one(query) do
       nil ->
         # Certificate not found in our database
         # This could mean it's a valid external cert

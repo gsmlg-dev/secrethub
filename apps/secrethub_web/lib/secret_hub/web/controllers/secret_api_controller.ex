@@ -37,11 +37,7 @@ defmodule SecretHub.Web.SecretApiController do
       :ok ->
         data = params["data"]
 
-        unless is_map(data) and map_size(data) > 0 do
-          conn
-          |> put_status(:bad_request)
-          |> json(%{error: "Missing or empty 'data' field"})
-        else
+        if is_map(data) and map_size(data) > 0 do
           case Secrets.get_secret_by_path(secret_path) do
             {:ok, existing} ->
               # Update existing secret
@@ -90,6 +86,10 @@ defmodule SecretHub.Web.SecretApiController do
                   |> json(%{error: inspect(reason)})
               end
           end
+        else
+          conn
+          |> put_status(:bad_request)
+          |> json(%{error: "Missing or empty 'data' field"})
         end
 
       {:error, _reason} ->

@@ -17,10 +17,7 @@ defmodule SecretHub.Web.EngineSetupWizardLive do
   def mount(%{"type" => type}, _session, socket) do
     engine_type = String.to_existing_atom(type)
 
-    if engine_type not in [:redis, :aws] do
-      socket = put_flash(socket, :error, "Unsupported engine type: #{type}")
-      {:ok, push_navigate(socket, to: ~p"/admin/engines")}
-    else
+    if engine_type in [:redis, :aws] do
       socket =
         socket
         |> assign(:engine_type, engine_type)
@@ -31,6 +28,9 @@ defmodule SecretHub.Web.EngineSetupWizardLive do
         |> assign(:errors, %{})
 
       {:ok, socket}
+    else
+      socket = put_flash(socket, :error, "Unsupported engine type: #{type}")
+      {:ok, push_navigate(socket, to: ~p"/admin/engines")}
     end
   end
 

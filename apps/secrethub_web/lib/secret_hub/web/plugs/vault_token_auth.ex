@@ -8,6 +8,9 @@ defmodule SecretHub.Web.Plugs.VaultTokenAuth do
   import Plug.Conn
   require Logger
 
+  alias SecretHub.Core.Repo
+  alias SecretHub.Shared.Schemas.Agent
+
   def init(opts), do: opts
 
   def call(conn, _opts) do
@@ -31,7 +34,7 @@ defmodule SecretHub.Web.Plugs.VaultTokenAuth do
         agent_id = payload.agent_id
 
         # Load the agent and its policies
-        case SecretHub.Core.Repo.get(SecretHub.Shared.Schemas.Agent, agent_db_id) do
+        case Repo.get(Agent, agent_db_id) do
           nil ->
             unauthorized(conn, "Agent not found")
 
@@ -42,7 +45,7 @@ defmodule SecretHub.Web.Plugs.VaultTokenAuth do
             unauthorized(conn, "Agent has been suspended")
 
           agent ->
-            agent = SecretHub.Core.Repo.preload(agent, [:policies, :certificate])
+            agent = Repo.preload(agent, [:policies, :certificate])
 
             conn
             |> assign(:current_agent, agent)

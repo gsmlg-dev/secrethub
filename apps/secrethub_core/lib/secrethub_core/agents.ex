@@ -14,7 +14,7 @@ defmodule SecretHub.Core.Agents do
   require Logger
   import Ecto.Query
 
-  alias SecretHub.Core.Repo
+  alias SecretHub.Core.{Audit, Repo}
   alias SecretHub.Shared.Schemas.{Agent, Certificate, Lease, Policy}
 
   @type result :: {:ok, term()} | {:error, term()}
@@ -637,7 +637,7 @@ defmodule SecretHub.Core.Agents do
   end
 
   defp audit_agent_action(agent_id, action, success, event_data) do
-    SecretHub.Core.Audit.log_event(%{
+    Audit.log_event(%{
       agent_id: agent_id,
       event_type: action,
       actor_type: "agent",

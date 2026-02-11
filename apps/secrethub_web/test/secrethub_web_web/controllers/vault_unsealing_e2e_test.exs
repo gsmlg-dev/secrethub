@@ -12,13 +12,14 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
 
   use SecretHub.Web.ConnCase, async: false
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 
   setup do
     # Use shared mode for the Sandbox so all processes can access the database
     # This is necessary because SealState writes to DB on init
-    Ecto.Adapters.SQL.Sandbox.mode(Repo, {:shared, self()})
+    Sandbox.mode(Repo, {:shared, self()})
 
     # Start the SealState GenServer for E2E tests
     # It's normally not started in test mode to avoid database writes
@@ -29,7 +30,7 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
 
     # Return to manual mode for cleanup
     on_exit(fn ->
-      Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
+      Sandbox.mode(Repo, :manual)
     end)
 
     :ok
@@ -324,7 +325,10 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
       conn = get(conn, "/v1/sys/seal-status")
       status = json_response(conn, 200)
 
-      if not status["initialized"] do
+      if status["initialized"] do
+        # Vault already initialized, skip this test
+        :skipped
+      else
         # Try to unseal without initializing
         conn = build_conn()
 
@@ -336,9 +340,6 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
         assert conn.status == 400
         response = json_response(conn, 400)
         assert response["error"] =~ "not initialized" or response["error"] =~ "Invalid share"
-      else
-        # Vault already initialized, skip this test
-        :skipped
       end
     end
   end

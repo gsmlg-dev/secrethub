@@ -10,6 +10,8 @@ defmodule SecretHub.Web.AdminAuthController do
   use SecretHub.Web, :controller
   require Logger
 
+  alias SecretHub.Shared.Schemas.Certificate
+
   @doc """
   Plug to require admin authentication.
   """
@@ -145,7 +147,7 @@ defmodule SecretHub.Web.AdminAuthController do
 
   defp get_cert_from_header(conn) do
     case get_req_header(conn, "x-ssl-client-cert") do
-      [pem] -> SecretHub.Shared.Schemas.Certificate.from_pem(pem)
+      [pem] -> Certificate.from_pem(pem)
       _ -> nil
     end
   end
@@ -175,7 +177,7 @@ defmodule SecretHub.Web.AdminAuthController do
         |> String.trim_leading("-----BEGIN CERTIFICATE-----")
         |> String.trim_trailing("-----END CERTIFICATE-----")
         |> String.replace("\r\n", "\n")
-        |> then(&SecretHub.Shared.Schemas.Certificate.from_pem/1)
+        |> then(&Certificate.from_pem/1)
 
       _ ->
         nil

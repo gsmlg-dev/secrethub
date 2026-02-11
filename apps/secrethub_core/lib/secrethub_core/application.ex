@@ -4,6 +4,8 @@ defmodule SecretHub.Core.Application do
   use Application
   require Logger
 
+  alias SecretHub.Core.Shutdown
+
   @impl true
   def start(_type, _args) do
     # Trap exits to enable graceful shutdown
@@ -33,7 +35,7 @@ defmodule SecretHub.Core.Application do
 
     # Trigger graceful shutdown
     # Use shorter timeout for Core since Web will handle connection draining
-    SecretHub.Core.Shutdown.graceful_shutdown(
+    Shutdown.graceful_shutdown(
       timeout_ms: 15_000,
       drain_connections: false,
       wait_for_jobs: true

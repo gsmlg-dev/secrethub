@@ -12,6 +12,9 @@ defmodule SecretHub.Web.Plugs.AppRoleAuth do
   import Plug.Conn
   require Logger
 
+  alias SecretHub.Core.Audit
+  alias SecretHub.Core.Auth.AppRole
+
   def init(opts), do: opts
 
   def call(conn, _opts) do
@@ -33,7 +36,7 @@ defmodule SecretHub.Web.Plugs.AppRoleAuth do
         )
 
         # Log unauthorized attempt
-        SecretHub.Core.Audit.log_event(%{
+        Audit.log_event(%{
           event_type: "approle.unauthorized_access",
           actor_type: "unknown",
           actor_id: "unknown",
@@ -73,7 +76,7 @@ defmodule SecretHub.Web.Plugs.AppRoleAuth do
   defp verify_admin_token(token) do
     # Verify the token is valid and has admin privileges
     # This would check against the AppRole tokens table
-    case SecretHub.Core.Auth.AppRole.verify_token(token) do
+    case AppRole.verify_token(token) do
       {:ok, role} ->
         # Check if the role has admin privileges
         role.role_name == "admin" || has_admin_policy?(role)

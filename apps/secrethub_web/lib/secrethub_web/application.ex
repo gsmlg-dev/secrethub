@@ -6,6 +6,9 @@ defmodule SecretHub.Web.Application do
   use Application
   require Logger
 
+  alias SecretHub.Core.Shutdown
+  alias SecretHub.Web.Endpoint
+
   @impl true
   def start(_type, _args) do
     # Trap exits to enable graceful shutdown
@@ -36,7 +39,7 @@ defmodule SecretHub.Web.Application do
 
     # Trigger graceful shutdown with connection draining
     # This is the primary shutdown handler for HTTP connections
-    SecretHub.Core.Shutdown.graceful_shutdown(
+    Shutdown.graceful_shutdown(
       timeout_ms: 25_000,
       drain_connections: true,
       wait_for_jobs: false
@@ -50,7 +53,7 @@ defmodule SecretHub.Web.Application do
   # whenever the application is updated.
   @impl true
   def config_change(changed, _new, removed) do
-    SecretHub.Web.Endpoint.config_change(changed, removed)
+    Endpoint.config_change(changed, removed)
     :ok
   end
 end

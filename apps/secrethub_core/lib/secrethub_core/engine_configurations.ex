@@ -220,15 +220,15 @@ defmodule SecretHub.Core.EngineConfigurations do
   Returns `{:ok, status}` where status is :healthy, :degraded, or :unhealthy.
   """
   def perform_health_check(%EngineConfiguration{} = config) do
-    if not config.health_check_enabled do
-      {:ok, :unknown}
-    else
+    if config.health_check_enabled do
       case config.engine_type do
         :postgresql -> check_postgresql_health(config)
         :redis -> check_redis_health(config)
         :aws_sts -> check_aws_sts_health(config)
         _ -> {:ok, :unknown}
       end
+    else
+      {:ok, :unknown}
     end
   end
 

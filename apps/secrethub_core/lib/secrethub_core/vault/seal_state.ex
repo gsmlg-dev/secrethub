@@ -21,6 +21,7 @@ defmodule SecretHub.Core.Vault.SealState do
   use GenServer
   require Logger
 
+  alias SecretHub.Core.Audit
   alias SecretHub.Shared.Crypto.{Encryption, Shamir}
 
   # Auto-seal after 30 seconds of no activity
@@ -382,8 +383,8 @@ defmodule SecretHub.Core.Vault.SealState do
     try do
       # Try to use the Audit module if available
       # This ensures proper hash chain management
-      if Code.ensure_loaded?(SecretHub.Core.Audit) do
-        SecretHub.Core.Audit.log_event(%{
+      if Code.ensure_loaded?(Audit) do
+        Audit.log_event(%{
           event_type: event_type,
           actor_type: "system",
           actor_id: "vault",

@@ -14,13 +14,14 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
   # Agent registration E2E tests — require register_agent, generate_approle_credentials,
   # and the /v1/auth/approle/login route.
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 
   setup do
     # Use shared mode for database access across processes
-    Ecto.Adapters.SQL.Sandbox.mode(Repo, {:shared, self()})
+    Sandbox.mode(Repo, {:shared, self()})
 
     # Start SealState for E2E tests
     {:ok, _pid} = start_supervised(SealState)
@@ -45,7 +46,7 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
     end
 
     on_exit(fn ->
-      Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
+      Sandbox.mode(Repo, :manual)
     end)
 
     :ok

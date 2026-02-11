@@ -17,7 +17,7 @@ defmodule SecretHub.Core.Health do
   """
 
   require Logger
-  alias SecretHub.Core.{Repo, Vault.SealState}
+  alias SecretHub.Core.{Repo, Shutdown, Vault.SealState}
 
   @type health_status :: :healthy | :degraded | :unhealthy
   @type check_result :: {:ok, map()} | {:error, term()}
@@ -51,7 +51,7 @@ defmodule SecretHub.Core.Health do
   @spec readiness() :: {:ok, map()} | {:error, map()}
   def readiness do
     # Check if graceful shutdown is in progress
-    shutting_down = SecretHub.Core.Shutdown.shutting_down?()
+    shutting_down = Shutdown.shutting_down?()
 
     checks = %{
       shutdown_state: if(shutting_down, do: {:error, "shutting down"}, else: {:ok, "ready"}),
@@ -115,8 +115,8 @@ defmodule SecretHub.Core.Health do
       status: status,
       initialized: vault_initialized?(),
       sealed: vault_sealed?(),
-      shutting_down: SecretHub.Core.Shutdown.shutting_down?(),
-      active_connections: SecretHub.Core.Shutdown.active_connections(),
+      shutting_down: Shutdown.shutting_down?(),
+      active_connections: Shutdown.active_connections(),
       checks: format_check_results(checks),
       timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
       version: Application.spec(:secrethub_core, :vsn) |> to_string()
