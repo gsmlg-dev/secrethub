@@ -192,7 +192,11 @@ defmodule SecretHub.Core.LeaseManager do
       attrs
       |> Map.new()
       |> Map.put_new(:lease_id, Ecto.UUID.generate())
-      |> Map.put_new(:secret_id, attrs[:secret_id] || "secret/#{attrs[:engine_type] || "unknown"}/#{attrs[:role_name] || "default"}")
+      |> Map.put_new(
+        :secret_id,
+        attrs[:secret_id] ||
+          "secret/#{attrs[:engine_type] || "unknown"}/#{attrs[:role_name] || "default"}"
+      )
       |> Map.put_new(:agent_id, attrs[:agent_id] || "system")
       |> Map.put_new(:issued_at, now)
       |> Map.put(:expires_at, expires_at)
@@ -223,7 +227,8 @@ defmodule SecretHub.Core.LeaseManager do
         {:reply, {:error, :not_found}, state}
 
       lease ->
-        if DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) == :lt do
+        if DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) ==
+             :lt do
           {:reply, {:error, :expired}, state}
         else
           case perform_renewal(lease, increment) do
@@ -313,7 +318,8 @@ defmodule SecretHub.Core.LeaseManager do
     # Find and revoke expired leases
     {expired, active} =
       Enum.split_with(state.leases, fn {_id, lease} ->
-        DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) == :lt
+        DateTime.compare(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)) ==
+          :lt
       end)
 
     if length(expired) > 0 do
@@ -400,14 +406,16 @@ defmodule SecretHub.Core.LeaseManager do
 
     opts = [
       increment: increment || 3600,
-      current_ttl: DateTime.diff(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)),
+      current_ttl:
+        DateTime.diff(lease.expires_at, DateTime.utc_now() |> DateTime.truncate(:second)),
       credentials: lease.credentials,
       config: (lease.engine_metadata || %{})["config"] || %{}
     ]
 
     case engine_module.renew_lease(lease.id, opts) do
       {:ok, %{ttl: new_ttl}} ->
-        new_expires_at = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), new_ttl, :second)
+        new_expires_at =
+          DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), new_ttl, :second)
 
         lease
         |> Lease.renew_changeset(new_expires_at)

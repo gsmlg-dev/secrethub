@@ -234,13 +234,13 @@ in
       mix phx.server
     '';
     
-    # Testing
+    # Testing (MIX_ENV must be overridden since devenv sets it to "dev")
     test-all.exec = ''
-      mix test
+      MIX_ENV=test mix test "$@"
     '';
-    
+
     test-watch.exec = ''
-      mix test.watch
+      MIX_ENV=test mix test.watch "$@"
     '';
     
     # Code quality

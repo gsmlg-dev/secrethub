@@ -84,7 +84,8 @@ defmodule SecretHub.Web.AuditLogLive do
       socket
       |> put_flash(:info, "Audit logs exported successfully")
       |> push_event("download", %{
-        filename: "audit_logs_#{DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix()}.csv",
+        filename:
+          "audit_logs_#{DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix()}.csv",
         content: csv_content
       })
 
@@ -398,7 +399,8 @@ defmodule SecretHub.Web.AuditLogLive do
     [
       %{
         id: "1",
-        timestamp: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-300, :second),
+        timestamp:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-300, :second),
         event_type: "secret_access",
         agent_id: "agent-prod-01",
         secret_path: "prod/db/postgres",
@@ -413,7 +415,8 @@ defmodule SecretHub.Web.AuditLogLive do
       },
       %{
         id: "2",
-        timestamp: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-600, :second),
+        timestamp:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-600, :second),
         event_type: "secret_access_denied",
         agent_id: "agent-prod-02",
         secret_path: "prod/api/payment",
@@ -429,7 +432,8 @@ defmodule SecretHub.Web.AuditLogLive do
       },
       %{
         id: "3",
-        timestamp: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1200, :second),
+        timestamp:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1200, :second),
         event_type: "agent_connect",
         agent_id: "agent-dev-01",
         secret_path: nil,

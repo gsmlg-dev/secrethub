@@ -249,21 +249,25 @@ defmodule SecretHub.Web.AgentMonitoringLive do
         id: "agent-prod-01",
         name: "Production Web Server",
         status: :connected,
-        last_seen: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-300, :second),
+        last_seen:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-300, :second),
         secrets_accessed: 45,
         uptime_hours: 48.5,
         os: "linux",
         ip_address: "10.0.1.42",
         version: "1.0.0",
         certificate_fingerprint: "SHA256:ABC123...",
-        connection_time: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-48, :hour),
-        last_policy_check: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-600, :second)
+        connection_time:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-48, :hour),
+        last_policy_check:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-600, :second)
       },
       %{
         id: "agent-prod-02",
         name: "Backend Worker",
         status: :disconnected,
-        last_seen: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1800, :second),
+        last_seen:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1800, :second),
         secrets_accessed: 12,
         uptime_hours: nil,
         os: "alpine-linux",
@@ -271,21 +275,25 @@ defmodule SecretHub.Web.AgentMonitoringLive do
         version: "1.0.1",
         certificate_fingerprint: "SHA256:DEF456...",
         connection_time: nil,
-        last_policy_check: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-2400, :second)
+        last_policy_check:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-2400, :second)
       },
       %{
         id: "agent-dev-01",
         name: "Development Environment",
         status: :error,
-        last_seen: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-7200, :second),
+        last_seen:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-7200, :second),
         secrets_accessed: 8,
         uptime_hours: 2.1,
         os: "macos",
         ip_address: "192.168.1.100",
         version: "0.9.0",
         certificate_fingerprint: "SHA256:GHI789...",
-        connection_time: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-2, :hour),
-        last_policy_check: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-7200, :second)
+        connection_time:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-2, :hour),
+        last_policy_check:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-7200, :second)
       }
     ]
   end

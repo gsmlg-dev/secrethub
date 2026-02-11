@@ -130,7 +130,12 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
   end
 
   defp create_job(config) do
-    cutoff_date = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -config.archive_after_days * 86400, :second)
+    cutoff_date =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        -config.archive_after_days * 86400,
+        :second
+      )
 
     attrs = %{
       archival_config_id: config.id,
@@ -146,7 +151,12 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
   end
 
   defp fetch_logs_to_archive(config) do
-    cutoff_date = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -config.archive_after_days * 86400, :second)
+    cutoff_date =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        -config.archive_after_days * 86400,
+        :second
+      )
 
     # Fetch audit logs older than cutoff_date and not yet archived
     logs = Audit.list_logs_for_archival(cutoff_date, limit: 10_000)

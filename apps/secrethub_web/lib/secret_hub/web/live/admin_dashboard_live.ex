@@ -449,13 +449,16 @@ defmodule SecretHub.Web.AdminDashboardLive do
       end
 
     # Get leases expiring in next 7 days
-    next_week = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 7 * 86_400, :second)
+    next_week =
+      DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 7 * 86_400, :second)
 
     expiring_7d =
       try do
         Repo.aggregate(
           from(l in Lease,
-            where: l.expires_at <= ^next_week and l.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second))
+            where:
+              l.expires_at <= ^next_week and
+                l.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second))
           ),
           :count,
           :id

@@ -24,7 +24,7 @@ defmodule SecretHub.Core.Auth.AppRole do
   import Ecto.Query
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{AuditLog, Role}
+  alias SecretHub.Shared.Schemas.Role
 
   # 10 minutes in seconds
   @secret_id_ttl_default 600
@@ -75,7 +75,8 @@ defmodule SecretHub.Core.Auth.AppRole do
         "bound_cidr_list" => bound_cidr_list,
         "policies" => policies,
         "secret_id" => secret_id,
-        "secret_id_created_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
+        "secret_id_created_at" =>
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
         "secret_id_uses" => 0
       }
     }
@@ -198,7 +199,10 @@ defmodule SecretHub.Core.Auth.AppRole do
         updated_metadata =
           role.metadata
           |> Map.put("secret_id", new_secret_id)
-          |> Map.put("secret_id_created_at", DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601())
+          |> Map.put(
+            "secret_id_created_at",
+            DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+          )
           |> Map.put("secret_id_uses", 0)
 
         role
@@ -361,7 +365,11 @@ defmodule SecretHub.Core.Auth.AppRole do
       role_name: role.role_name,
       policies: Map.get(role.metadata, "policies", []),
       issued_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix(),
-      expires_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(3600, :second) |> DateTime.to_unix()
+      expires_at:
+        DateTime.utc_now()
+        |> DateTime.truncate(:second)
+        |> DateTime.add(3600, :second)
+        |> DateTime.to_unix()
     }
 
     # For now, use simple base64 encoding
@@ -370,21 +378,14 @@ defmodule SecretHub.Core.Auth.AppRole do
   end
 
   defp audit_event(event_type, role_id, metadata) do
-    audit_log = %AuditLog{
-      event_id: Ecto.UUID.generate(),
-      sequence_number: :erlang.system_time(:millisecond),
+    SecretHub.Core.Audit.log_event(%{
       event_type: event_type,
       actor_type: "approle",
       actor_id: role_id,
       event_data: metadata,
-      timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
-      created_at: DateTime.utc_now() |> DateTime.truncate(:second),
       access_granted: String.contains?(event_type, "success"),
-      response_time_ms: 0,
-      correlation_id: Ecto.UUID.generate()
-    }
-
-    Repo.insert(audit_log)
+      response_time_ms: 0
+    })
   end
 
   @doc """

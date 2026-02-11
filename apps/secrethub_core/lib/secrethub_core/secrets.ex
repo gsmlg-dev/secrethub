@@ -483,7 +483,13 @@ defmodule SecretHub.Core.Secrets do
   def prune_old_versions(secret_id, opts \\ []) do
     keep_versions = Keyword.get(opts, :keep_versions, 10)
     keep_days = Keyword.get(opts, :keep_days, 90)
-    cutoff_date = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -keep_days * 24 * 3600, :second)
+
+    cutoff_date =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        -keep_days * 24 * 3600,
+        :second
+      )
 
     # Get all versions for this secret
     versions = list_secret_versions(secret_id, limit: 1000)

@@ -171,7 +171,9 @@ defmodule SecretHub.Core.EngineConfigurations do
   - `avg_response_time`: Average response time in ms
   """
   def get_health_stats(config_id, opts \\ []) do
-    since = opts[:since] || DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -7 * 24 * 3600, :second)
+    since =
+      opts[:since] ||
+        DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -7 * 24 * 3600, :second)
 
     query =
       from(h in EngineHealthCheck,

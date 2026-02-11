@@ -47,7 +47,8 @@ defmodule SecretHub.Web.SecretApiController do
               # Update existing secret
               case Secrets.update_secret(existing.id, %{"secret_data" => data},
                      created_by: agent.agent_id,
-                     change_description: "Updated via API") do
+                     change_description: "Updated via API"
+                   ) do
                 {:ok, updated} ->
                   json(conn, %{version: updated.version})
 
@@ -59,7 +60,12 @@ defmodule SecretHub.Web.SecretApiController do
 
             {:error, _} ->
               # Create new secret — derive name from last path segment
-              name = path |> String.split("/") |> List.last() |> String.replace(~r/[^a-zA-Z0-9\s\-_]/, "_")
+              name =
+                path
+                |> String.split("/")
+                |> List.last()
+                |> String.replace(~r/[^a-zA-Z0-9\s\-_]/, "_")
+
               attrs = %{
                 "name" => name,
                 "secret_path" => secret_path,
@@ -74,7 +80,11 @@ defmodule SecretHub.Web.SecretApiController do
                   json(conn, %{version: secret.version || 1})
 
                 {:error, reason} ->
-                  Logger.error("Secret creation failed", reason: inspect(reason), path: secret_path)
+                  Logger.error("Secret creation failed",
+                    reason: inspect(reason),
+                    path: secret_path
+                  )
+
                   conn
                   |> put_status(:unprocessable_entity)
                   |> json(%{error: inspect(reason)})
@@ -148,7 +158,9 @@ defmodule SecretHub.Web.SecretApiController do
         case Secrets.get_secret_by_path(secret_path) do
           {:ok, secret} ->
             case Secrets.delete_secret(secret.id) do
-              {:ok, _} -> send_resp(conn, :no_content, "")
+              {:ok, _} ->
+                send_resp(conn, :no_content, "")
+
               {:error, reason} ->
                 conn
                 |> put_status(:unprocessable_entity)

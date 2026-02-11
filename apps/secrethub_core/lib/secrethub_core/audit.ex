@@ -441,7 +441,9 @@ defmodule SecretHub.Core.Audit do
   def mark_as_archived(log_ids) when is_list(log_ids) do
     query = from(a in AuditLog, where: a.id in ^log_ids)
 
-    Repo.update_all(query, set: [archived: true, archived_at: DateTime.utc_now() |> DateTime.truncate(:second)])
+    Repo.update_all(query,
+      set: [archived: true, archived_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+    )
   end
 
   ## Private Functions

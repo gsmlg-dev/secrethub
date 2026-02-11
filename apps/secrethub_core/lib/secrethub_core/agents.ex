@@ -15,7 +15,7 @@ defmodule SecretHub.Core.Agents do
   import Ecto.Query
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{Agent, AuditLog, Certificate, Lease, Policy}
+  alias SecretHub.Shared.Schemas.{Agent, Certificate, Lease, Policy}
 
   @type result :: {:ok, term()} | {:error, term()}
 
@@ -355,7 +355,12 @@ defmodule SecretHub.Core.Agents do
   Cleanup stale agents (no heartbeat for extended period).
   """
   def cleanup_stale_agents(timeout_hours \\ 24) do
-    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -timeout_hours * 3600, :second)
+    cutoff =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        -timeout_hours * 3600,
+        :second
+      )
 
     from(a in Agent,
       where: a.last_heartbeat_at < ^cutoff and a.status in [:active, :disconnected]
@@ -384,9 +389,10 @@ defmodule SecretHub.Core.Agents do
       agent_id: attrs[:agent_id],
       name: attrs[:name],
       description: attrs[:description],
-      metadata: Map.merge(attrs[:metadata] || %{}, %{
-        "auth_method" => attrs[:auth_method] || "approle"
-      })
+      metadata:
+        Map.merge(attrs[:metadata] || %{}, %{
+          "auth_method" => attrs[:auth_method] || "approle"
+        })
     }
 
     changeset = Agent.registration_changeset(%Agent{}, agent_attrs)
@@ -546,7 +552,8 @@ defmodule SecretHub.Core.Agents do
       organization: "SecretHub Agents",
       valid_from: DateTime.utc_now() |> DateTime.truncate(:second),
       # 90 days
-      valid_until: DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 90 * 24 * 3600, :second),
+      valid_until:
+        DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 90 * 24 * 3600, :second),
       cert_type: :agent_client,
       entity_id: agent.id,
       entity_type: "agent"
@@ -558,12 +565,14 @@ defmodule SecretHub.Core.Agents do
 
     # Add certificate_pem and other required fields
     cert_attrs = Map.put(cert_data, :certificate_pem, certificate_pem)
+
     cert_attrs =
       Map.put(
         cert_attrs,
         :fingerprint,
         "SHA256:" <> (:crypto.hash(:sha256, certificate_pem) |> Base.encode16(case: :lower))
       )
+
     cert_attrs = Map.put(cert_attrs, :issuer, "CN=SecretHub CA")
 
     certificate_changeset =
@@ -595,7 +604,11 @@ defmodule SecretHub.Core.Agents do
   end
 
   defp cancel_agent_leases(agent_id) do
-    from(l in Lease, where: l.agent_id == ^agent_id and l.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second)))
+    from(l in Lease,
+      where:
+        l.agent_id == ^agent_id and
+          l.expires_at > ^(DateTime.utc_now() |> DateTime.truncate(:second))
+    )
     |> Repo.update_all(set: [expires_at: DateTime.utc_now() |> DateTime.truncate(:second)])
   end
 
@@ -624,23 +637,16 @@ defmodule SecretHub.Core.Agents do
   end
 
   defp audit_agent_action(agent_id, action, success, event_data) do
-    # Get next sequence number (simplified - in production use database sequence)
-    sequence_num = :erlang.system_time(:millisecond)
-
-    audit_log = %AuditLog{
-      event_id: Ecto.UUID.generate(),
-      sequence_number: sequence_num,
+    SecretHub.Core.Audit.log_event(%{
       agent_id: agent_id,
       event_type: action,
+      actor_type: "agent",
+      actor_id: agent_id,
       access_granted: success,
       response_time_ms: 0,
-      correlation_id: Ecto.UUID.generate(),
-      event_data: event_data,
-      timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
-      created_at: DateTime.utc_now() |> DateTime.truncate(:second)
-    }
+      event_data: event_data
+    })
 
-    Repo.insert(audit_log)
     status = if success, do: "SUCCESS", else: "FAILED"
     Logger.info("Agent #{agent_id} #{action}: #{status}")
   end

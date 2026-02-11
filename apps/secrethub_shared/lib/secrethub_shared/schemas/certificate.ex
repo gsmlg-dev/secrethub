@@ -110,11 +110,18 @@ defmodule SecretHub.Shared.Schemas.Certificate do
   """
   def revoke_changeset(certificate, reason) do
     certificate
-    |> cast(%{revoked: true, revoked_at: DateTime.utc_now() |> DateTime.truncate(:second), revocation_reason: reason}, [
-      :revoked,
-      :revoked_at,
-      :revocation_reason
-    ])
+    |> cast(
+      %{
+        revoked: true,
+        revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        revocation_reason: reason
+      },
+      [
+        :revoked,
+        :revoked_at,
+        :revocation_reason
+      ]
+    )
     |> validate_required([:revoked, :revoked_at, :revocation_reason])
   end
 

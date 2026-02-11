@@ -73,7 +73,12 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
 
   defp fetch_logs_for_verification(batch_size, start_offset_days) do
     # Fetch logs older than start_offset_days (allow time for logs to stabilize)
-    cutoff_date = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -start_offset_days * 86400, :second)
+    cutoff_date =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        -start_offset_days * 86400,
+        :second
+      )
 
     logs = Audit.list_logs_for_verification(cutoff_date, limit: batch_size)
 

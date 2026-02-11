@@ -376,7 +376,9 @@ defmodule SecretHub.Core.PKI.CATest do
 
       # Verify it's not the plaintext PEM
       refute cert.private_key_encrypted == result.private_key
-      refute is_binary(cert.private_key_encrypted) and String.valid?(cert.private_key_encrypted) and String.contains?(cert.private_key_encrypted, "-----BEGIN")
+
+      refute is_binary(cert.private_key_encrypted) and String.valid?(cert.private_key_encrypted) and
+               String.contains?(cert.private_key_encrypted, "-----BEGIN")
     end
 
     test "private keys are not exposed in certificate_pem field" do

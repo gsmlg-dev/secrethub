@@ -182,7 +182,10 @@ defmodule SecretHub.Core.HealthAlerts do
 
   defp in_cooldown?(%HealthAlert{last_triggered_at: last_triggered, cooldown_minutes: cooldown}) do
     cooldown_seconds = cooldown * 60
-    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -cooldown_seconds, :second)
+
+    cutoff =
+      DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -cooldown_seconds, :second)
+
     DateTime.compare(last_triggered, cutoff) == :gt
   end
 

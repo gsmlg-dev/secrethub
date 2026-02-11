@@ -328,7 +328,12 @@ defmodule SecretHub.Core.AnomalyDetection do
   defp count_recent_events(action, result, actor_id, window_minutes, resource_type \\ nil) do
     # This would query the audit logs
     # Placeholder implementation
-    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -window_minutes * 60, :second)
+    cutoff =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        -window_minutes * 60,
+        :second
+      )
 
     query =
       from(a in "audit_logs",
@@ -349,7 +354,12 @@ defmodule SecretHub.Core.AnomalyDetection do
   end
 
   defp count_rotation_results(window_minutes) do
-    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -window_minutes * 60, :second)
+    cutoff =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        -window_minutes * 60,
+        :second
+      )
 
     success_count =
       from(a in "audit_logs",

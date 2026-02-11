@@ -403,7 +403,8 @@ defmodule SecretHub.Web.AdminCertificateLive do
           entity_type: "admin",
           metadata: %{
             "registered_by" => admin_email,
-            "registered_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_string()
+            "registered_at" =>
+              DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_string()
           }
         })
         |> Repo.insert()
@@ -458,7 +459,8 @@ defmodule SecretHub.Web.AdminCertificateLive do
   end
 
   defp extract_valid_until(_cert) do
-    DateTime.utc_now() |> DateTime.truncate(:second)
+    DateTime.utc_now()
+    |> DateTime.truncate(:second)
     |> DateTime.add(365 * 24 * 3600, :second)
     |> DateTime.truncate(:second)
   end

@@ -60,7 +60,7 @@ echo ""
 
 # 5. Tests (optional - can be slow)
 if [ "$SKIP_TESTS" != "1" ]; then
-    run_check "Tests" mix test
+    run_check "Tests" env MIX_ENV=test mix test
 else
     echo -e "${YELLOW}⊘ Tests skipped (set SKIP_TESTS=0 to run)${NC}"
     echo ""

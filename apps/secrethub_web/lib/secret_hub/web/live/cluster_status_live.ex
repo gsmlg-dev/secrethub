@@ -104,7 +104,10 @@ defmodule SecretHub.Web.ClusterStatusLive do
         |> assign(:loading, false)
         |> assign(:cluster_info, nil)
         |> assign(:health_status, nil)
-        |> assign(:error, "Cluster state service not available. Please check if the vault is initialized.")
+        |> assign(
+          :error,
+          "Cluster state service not available. Please check if the vault is initialized."
+        )
     end
   end
 

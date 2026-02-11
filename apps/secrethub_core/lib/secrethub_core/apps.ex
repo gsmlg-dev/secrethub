@@ -216,7 +216,12 @@ defmodule SecretHub.Core.Apps do
     token_hash = hash_token(token_string)
 
     # Create token record
-    expires_at = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), @bootstrap_token_ttl, :second)
+    expires_at =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        @bootstrap_token_ttl,
+        :second
+      )
 
     token_attrs = %{
       app_id: app_id,
@@ -266,7 +271,10 @@ defmodule SecretHub.Core.Apps do
         token ->
           # Mark token as used
           changeset =
-            AppBootstrapToken.changeset(token, %{used: true, used_at: DateTime.utc_now() |> DateTime.truncate(:second)})
+            AppBootstrapToken.changeset(token, %{
+              used: true,
+              used_at: DateTime.utc_now() |> DateTime.truncate(:second)
+            })
 
           case Repo.update(changeset) do
             {:ok, updated_token} ->

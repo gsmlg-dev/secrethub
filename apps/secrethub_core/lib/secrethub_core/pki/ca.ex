@@ -92,7 +92,8 @@ defmodule SecretHub.Core.PKI.CA do
              opts
            ),
          {:ok, cert_pem} <- der_to_pem(cert_der, :certificate),
-         {:ok, key_pem} <- der_to_pem(private_key_to_der(private_key, key_type), private_key_pem_type(key_type)),
+         {:ok, key_pem} <-
+           der_to_pem(private_key_to_der(private_key, key_type), private_key_pem_type(key_type)),
          {:ok, cert_record} <-
            store_certificate(
              cert_pem,
@@ -157,7 +158,8 @@ defmodule SecretHub.Core.PKI.CA do
              opts
            ),
          {:ok, cert_pem} <- der_to_pem(cert_der, :certificate),
-         {:ok, key_pem} <- der_to_pem(private_key_to_der(private_key, key_type), private_key_pem_type(key_type)),
+         {:ok, key_pem} <-
+           der_to_pem(private_key_to_der(private_key, key_type), private_key_pem_type(key_type)),
          {:ok, cert_record} <-
            store_certificate(
              cert_pem,
@@ -409,7 +411,16 @@ defmodule SecretHub.Core.PKI.CA do
     {:rdnSequence, Enum.map(rdns, fn rdn -> [rdn] end)}
   end
 
-  defp create_tbs_certificate(serial, issuer, subject, public_key, not_before, not_after, is_ca, key_type \\ :rsa) do
+  defp create_tbs_certificate(
+         serial,
+         issuer,
+         subject,
+         public_key,
+         not_before,
+         not_after,
+         is_ca,
+         key_type
+       ) do
     # This is a simplified version - in production, use proper OTP record construction
     # For now, we'll use :public_key.pkix_sign/2 which handles TBS creation
 
@@ -583,7 +594,15 @@ defmodule SecretHub.Core.PKI.CA do
     e -> {:error, "Failed to decode PEM: #{inspect(e)}"}
   end
 
-  defp store_certificate(cert_pem, key_pem, cert_type, common_name, organization, _validity_days, issuer_id \\ nil) do
+  defp store_certificate(
+         cert_pem,
+         key_pem,
+         cert_type,
+         common_name,
+         organization,
+         _validity_days,
+         issuer_id \\ nil
+       ) do
     # Encrypt the private key before storing
     {:ok, encrypted_key} = encrypt_private_key(key_pem)
 
@@ -616,7 +635,15 @@ defmodule SecretHub.Core.PKI.CA do
     Repo.insert(cert_record)
   end
 
-  defp store_signed_certificate(cert_pem, cert_type, common_name, organization, _validity_days, issuer_cert_id \\ nil, issuer_subject \\ nil) do
+  defp store_signed_certificate(
+         cert_pem,
+         cert_type,
+         common_name,
+         organization,
+         _validity_days,
+         issuer_cert_id,
+         issuer_subject
+       ) do
     # For signed certificates, we don't store the private key (it stays with the client)
     {:ok, cert_der} = pem_to_der(cert_pem, :certificate)
     cert = :public_key.pkix_decode_cert(cert_der, :otp)

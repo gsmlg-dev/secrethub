@@ -129,7 +129,10 @@ defmodule SecretHub.Web.AgentChannel do
       agent_id = socket.assigns.agent_id
       Agents.update_heartbeat(agent_id)
       socket = assign(socket, :last_heartbeat, DateTime.utc_now() |> DateTime.truncate(:second))
-      {:reply, {:ok, %{status: "alive", timestamp: DateTime.utc_now() |> DateTime.truncate(:second)}}, socket}
+
+      {:reply,
+       {:ok, %{status: "alive", timestamp: DateTime.utc_now() |> DateTime.truncate(:second)}},
+       socket}
     else
       {:reply, {:error, %{reason: "not_authenticated"}}, socket}
     end
@@ -250,7 +253,13 @@ defmodule SecretHub.Web.AgentChannel do
   def handle_info(:check_heartbeat, socket) do
     if socket.assigns.authenticated do
       last_heartbeat = socket.assigns.last_heartbeat
-      cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -@heartbeat_timeout, :millisecond)
+
+      cutoff =
+        DateTime.add(
+          DateTime.utc_now() |> DateTime.truncate(:second),
+          -@heartbeat_timeout,
+          :millisecond
+        )
 
       if DateTime.compare(last_heartbeat, cutoff) == :lt do
         # No heartbeat received in timeout period
@@ -335,7 +344,8 @@ defmodule SecretHub.Web.AgentChannel do
     # Parse certificate and extract expiration date
     # FIXME: Implement actual certificate parsing
     # For now, return 90 days from now
-    DateTime.utc_now() |> DateTime.truncate(:second)
+    DateTime.utc_now()
+    |> DateTime.truncate(:second)
     |> DateTime.add(90 * 24 * 3600, :second)
     |> DateTime.to_iso8601()
   end

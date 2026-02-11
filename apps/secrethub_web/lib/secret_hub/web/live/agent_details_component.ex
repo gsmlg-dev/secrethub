@@ -239,7 +239,8 @@ defmodule SecretHub.Web.AgentDetailsComponent do
       %{
         type: "connection",
         description: "WebSocket connection established",
-        timestamp: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1800, :second)
+        timestamp:
+          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1800, :second)
       }
     ]
   end
