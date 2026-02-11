@@ -4,7 +4,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
   import ExUnit.CaptureIO
   import Mox
 
-  alias SecretHub.CLI.{Config, Auth}
+  alias SecretHub.CLI.Config
   alias SecretHub.CLI.Commands.SecretCommands
 
   setup :verify_on_exit!
@@ -99,7 +99,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
 
   describe "execute/4 - create secret" do
     test "creates secret with value" do
-      opts = [value: "secret123"]
+      _opts = [value: "secret123"]
 
       # Would mock Req.post
       # Test structure is correct
@@ -107,11 +107,12 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     end
 
     test "requires --value option" do
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:create, "test.secret", [], [])
-        assert {:error, reason} = result
-        assert reason =~ "Missing required option: --value"
-      end)
+      _output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:create, "test.secret", [], [])
+          assert {:error, reason} = result
+          assert reason =~ "Missing required option: --value"
+        end)
     end
 
     test "requires authentication" do
@@ -134,7 +135,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
 
   describe "execute/4 - update secret" do
     test "updates existing secret" do
-      opts = [value: "newsecret"]
+      _opts = [value: "newsecret"]
 
       # Would mock Req.put
       assert is_function(&SecretCommands.execute/4)
@@ -242,7 +243,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
   describe "output formatting" do
     test "respects --format option" do
       # Would test that format option is passed through
-      opts = [format: "json"]
+      _opts = [format: "json"]
       # Verify format is used when calling Output.format
       assert true
     end

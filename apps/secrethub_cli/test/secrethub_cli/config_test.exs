@@ -103,7 +103,7 @@ defmodule SecretHub.CLI.ConfigTest do
       assert stat.type == :directory
     end
 
-    test "overwrites existing config file", %{config_file: config_file} do
+    test "overwrites existing config file", %{config_file: _config_file} do
       # Create initial config
       config1 = %{"server_url" => "http://localhost:4000"}
       assert :ok = Config.save(config1)

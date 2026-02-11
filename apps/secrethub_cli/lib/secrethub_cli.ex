@@ -99,7 +99,8 @@ defmodule SecretHub.CLI do
     |> handle_result()
   end
 
-  defp parse_args(args) do
+  @doc false
+  def parse_args(args) do
     {opts, remaining, invalid} =
       OptionParser.parse(args,
         strict: [

@@ -39,9 +39,10 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
 
   describe "list/1" do
     test "lists all configuration values" do
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.list([])
-      end)
+      _output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.list([])
+        end)
 
       # Should not contain output directly, but format is called
       assert true

@@ -4,7 +4,7 @@ defmodule SecretHub.CLI.Commands.AgentCommandsTest do
   import ExUnit.CaptureIO
   import Mox
 
-  alias SecretHub.CLI.{Config, Auth}
+  alias SecretHub.CLI.Config
   alias SecretHub.CLI.Commands.AgentCommands
 
   setup :verify_on_exit!
@@ -118,12 +118,6 @@ defmodule SecretHub.CLI.Commands.AgentCommandsTest do
     test "shows WebSocket information message" do
       # Since WebSocket streaming is not fully implemented
       # Should show informative message
-      output = capture_io(fn ->
-        # Would capture the info messages
-        # assert output =~ "Streaming logs"
-        # assert output =~ "WebSocket"
-      end)
-
       assert true
     end
 
@@ -159,13 +153,13 @@ defmodule SecretHub.CLI.Commands.AgentCommandsTest do
 
   describe "output formatting" do
     test "respects --format option for list" do
-      opts = [format: "json"]
+      _opts = [format: "json"]
       # Would verify JSON output
       assert true
     end
 
     test "respects --format option for status" do
-      opts = [format: "yaml"]
+      _opts = [format: "yaml"]
       # Would verify YAML output
       assert true
     end

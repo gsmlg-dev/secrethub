@@ -4,7 +4,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
   import ExUnit.CaptureIO
   import Mox
 
-  alias SecretHub.CLI.{Config, Auth}
+  alias SecretHub.CLI.Config
   alias SecretHub.CLI.Commands.PolicyCommands
 
   setup :verify_on_exit!
@@ -94,7 +94,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
   describe "execute/3 - create policy from template" do
     test "creates policy from template successfully" do
-      opts = [from_template: "business_hours", name: "Dev Access"]
+      _opts = [from_template: "business_hours", name: "Dev Access"]
 
       # Would mock Req.post with template data
       assert is_function(&PolicyCommands.execute/3)
@@ -145,11 +145,12 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = PolicyCommands.execute(:update, "test-policy", [], [])
-        # Even though not implemented, auth check happens first
-        assert {:error, :not_authenticated} = result
-      end)
+      _output =
+        capture_io(:stderr, fn ->
+          result = PolicyCommands.execute(:update, "test-policy", [], [])
+          # Even though not implemented, auth check happens first
+          assert {:error, :not_authenticated} = result
+        end)
     end
   end
 
@@ -199,7 +200,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     end
 
     test "builds simulation context from options" do
-      opts = [
+      _opts = [
         entity_id: "test-entity",
         secret_path: "prod.db.password",
         operation: "read",
@@ -238,13 +239,13 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
   describe "output formatting" do
     test "respects --format option for list" do
-      opts = [format: "json"]
+      _opts = [format: "json"]
       # Would verify JSON output
       assert true
     end
 
     test "respects --format option for get" do
-      opts = [format: "yaml"]
+      _opts = [format: "yaml"]
       # Would verify YAML output
       assert true
     end
@@ -293,7 +294,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     end
 
     test "builds full context with all options" do
-      opts = [
+      _opts = [
         entity_id: "custom-entity",
         secret_path: "custom.secret",
         operation: "write",
@@ -306,10 +307,10 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     end
 
     test "filters out nil values" do
-      opts = [
+      _opts = [
         entity_id: "test",
-        secret_path: nil,  # Should use default or omit
-        ip_address: nil    # Should be omitted
+        secret_path: nil,
+        ip_address: nil
       ]
 
       # Would verify nil values don't appear in context
