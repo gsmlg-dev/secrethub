@@ -227,36 +227,35 @@ defmodule SecretHub.Agent.TemplateRenderer do
   end
 
   defp fetch_variables(bindings, use_fallback, allow_missing) do
-    result =
-      bindings
-      |> Enum.reduce_while({:ok, %{}}, fn {var_name, secret_path}, {:ok, variables} ->
-        case fetch_secret(secret_path, use_fallback) do
-          {:ok, data} ->
-            # Store the secret data with the variable name as key
-            {:cont, {:ok, Map.put(variables, var_name, data)}}
+    Enum.reduce_while(bindings, {:ok, %{}}, fn {var_name, secret_path}, {:ok, variables} ->
+      case fetch_secret(secret_path, use_fallback) do
+        {:ok, data} ->
+          {:cont, {:ok, Map.put(variables, var_name, data)}}
 
-          {:error, reason} ->
-            if allow_missing do
-              Logger.warning("Secret missing, using empty value",
-                variable: var_name,
-                secret_path: secret_path
-              )
+        {:error, reason} ->
+          handle_missing_variable(var_name, secret_path, reason, variables, allow_missing)
+      end
+    end)
+  end
 
-              {:cont, {:ok, Map.put(variables, var_name, "")}}
-            else
-              {:halt,
-               {:error,
-                %{
-                  type: :missing_secret,
-                  variable: var_name,
-                  secret_path: secret_path,
-                  message: format_error_message(reason)
-                }}}
-            end
-        end
-      end)
+  defp handle_missing_variable(var_name, secret_path, _reason, variables, true) do
+    Logger.warning("Secret missing, using empty value",
+      variable: var_name,
+      secret_path: secret_path
+    )
 
-    result
+    {:cont, {:ok, Map.put(variables, var_name, "")}}
+  end
+
+  defp handle_missing_variable(var_name, secret_path, reason, _variables, false) do
+    {:halt,
+     {:error,
+      %{
+        type: :missing_secret,
+        variable: var_name,
+        secret_path: secret_path,
+        message: format_error_message(reason)
+      }}}
   end
 
   defp fetch_secret(secret_path, use_fallback) do

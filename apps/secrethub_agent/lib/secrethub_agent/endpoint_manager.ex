@@ -353,29 +353,25 @@ defmodule SecretHub.Agent.EndpointManager do
   end
 
   defp perform_health_checks(state) do
-    # Update backoff status for endpoints
     new_status =
       Enum.reduce(state.endpoint_status, state.endpoint_status, fn {endpoint, status}, acc ->
-        # Check if backoff period has expired
-        if status.backoff_until do
-          if DateTime.compare(DateTime.utc_now(), status.backoff_until) == :gt do
-            Logger.info("Endpoint #{endpoint} backoff expired, ready for retry")
-
-            Map.put(acc, endpoint, %{
-              status
-              | backoff_until: nil,
-                status: :degraded
-            })
-          else
-            acc
-          end
-        else
-          acc
-        end
+        maybe_clear_backoff(acc, endpoint, status)
       end)
 
     %{state | endpoint_status: new_status}
   end
+
+  defp maybe_clear_backoff(acc, endpoint, %{backoff_until: backoff_until} = status)
+       when not is_nil(backoff_until) do
+    if DateTime.compare(DateTime.utc_now(), backoff_until) == :gt do
+      Logger.info("Endpoint #{endpoint} backoff expired, ready for retry")
+      Map.put(acc, endpoint, %{status | backoff_until: nil, status: :degraded})
+    else
+      acc
+    end
+  end
+
+  defp maybe_clear_backoff(acc, _endpoint, _status), do: acc
 
   defp schedule_health_check(interval) do
     Process.send_after(self(), :health_check, interval)

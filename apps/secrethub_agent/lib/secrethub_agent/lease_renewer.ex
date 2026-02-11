@@ -350,43 +350,7 @@ defmodule SecretHub.Agent.LeaseRenewer do
             {:noreply, %{state | leases: new_leases}}
 
           {:error, reason} ->
-            # Renewal failed
-            retry_count = lease.retry_count + 1
-
-            if retry_count >= @max_retries do
-              Logger.error("Lease renewal failed permanently",
-                lease_id: lease_id,
-                retries: retry_count,
-                error: inspect(reason)
-              )
-
-              invoke_callback(state.callbacks, :on_failed, lease)
-
-              # Remove from tracking
-              new_leases = Map.delete(state.leases, lease_id)
-              {:noreply, %{state | leases: new_leases}}
-            else
-              # Schedule retry with exponential backoff
-              backoff = calculate_backoff(retry_count)
-              next_retry_at = DateTime.add(DateTime.utc_now(), backoff, :millisecond)
-
-              updated_lease = %{
-                lease
-                | status: :failed,
-                  retry_count: retry_count,
-                  next_retry_at: next_retry_at
-              }
-
-              Logger.warning("Lease renewal failed, will retry",
-                lease_id: lease_id,
-                retry: retry_count,
-                backoff_ms: backoff,
-                error: inspect(reason)
-              )
-
-              new_leases = Map.put(state.leases, lease_id, updated_lease)
-              {:noreply, %{state | leases: new_leases}}
-            end
+            handle_renewal_failure(state, lease_id, lease, reason)
         end
     end
   end
@@ -395,6 +359,51 @@ defmodule SecretHub.Agent.LeaseRenewer do
 
   defp schedule_check do
     Process.send_after(self(), :check_renewals, @check_interval)
+  end
+
+  defp handle_renewal_failure(state, lease_id, lease, reason) do
+    retry_count = lease.retry_count + 1
+
+    if retry_count >= @max_retries do
+      handle_permanent_failure(state, lease_id, lease, retry_count, reason)
+    else
+      handle_retriable_failure(state, lease_id, lease, retry_count, reason)
+    end
+  end
+
+  defp handle_permanent_failure(state, lease_id, lease, retry_count, reason) do
+    Logger.error("Lease renewal failed permanently",
+      lease_id: lease_id,
+      retries: retry_count,
+      error: inspect(reason)
+    )
+
+    invoke_callback(state.callbacks, :on_failed, lease)
+
+    new_leases = Map.delete(state.leases, lease_id)
+    {:noreply, %{state | leases: new_leases}}
+  end
+
+  defp handle_retriable_failure(state, lease_id, lease, retry_count, reason) do
+    backoff = calculate_backoff(retry_count)
+    next_retry_at = DateTime.add(DateTime.utc_now(), backoff, :millisecond)
+
+    updated_lease = %{
+      lease
+      | status: :failed,
+        retry_count: retry_count,
+        next_retry_at: next_retry_at
+    }
+
+    Logger.warning("Lease renewal failed, will retry",
+      lease_id: lease_id,
+      retry: retry_count,
+      backoff_ms: backoff,
+      error: inspect(reason)
+    )
+
+    new_leases = Map.put(state.leases, lease_id, updated_lease)
+    {:noreply, %{state | leases: new_leases}}
   end
 
   defp should_renew?(lease, now) do

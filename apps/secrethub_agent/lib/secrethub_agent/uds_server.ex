@@ -405,56 +405,61 @@ defmodule SecretHub.Agent.UDSServer do
 
     Logger.debug("Processing request", action: action, request_id: request_id)
 
-    # Find connection state
     connection = find_connection(state, socket)
+    result = dispatch_action(action, socket, params, state, connection)
+    finalize_request(result, socket, request_id, state)
+  end
 
-    result =
-      case action do
-        "authenticate" ->
-          handle_authenticate(socket, params, state, connection)
+  defp dispatch_action("authenticate", socket, params, state, connection) do
+    handle_authenticate(socket, params, state, connection)
+  end
 
-        "ping" ->
-          # Ping doesn't require authentication
-          {:ok, %{message: "pong"}}
+  defp dispatch_action("ping", _socket, _params, _state, _connection) do
+    {:ok, %{message: "pong"}}
+  end
 
-        _ ->
-          # All other actions require authentication
-          if connection && connection.authenticated do
-            case action do
-              "get_secret" ->
-                handle_get_secret(params, connection)
-
-              "list_secrets" ->
-                handle_list_secrets(params, connection)
-
-              nil ->
-                {:error, "missing_action", "Request must include 'action' field"}
-
-              unknown ->
-                {:error, "unknown_action", "Unknown action: #{unknown}"}
-            end
-          else
-            {:error, "not_authenticated", "Please authenticate first using 'authenticate' action"}
-          end
-      end
-
-    case result do
-      {:ok, data} ->
-        send_response(socket, request_id, "ok", data)
-        {:ok, update_stats(state, :successful_request)}
-
-      {:ok, data, new_state} ->
-        send_response(socket, request_id, "ok", data)
-        {:ok, update_stats(new_state, :successful_request)}
-
-      {:error, code, message} ->
-        send_error(socket, code, message, request_id)
-        {:ok, update_stats(state, :failed_request)}
-
-      {:error, code, message, new_state} ->
-        send_error(socket, code, message, request_id)
-        {:ok, update_stats(new_state, :failed_request)}
+  defp dispatch_action(action, _socket, params, _state, connection) do
+    if connection && connection.authenticated do
+      dispatch_authenticated_action(action, params, connection)
+    else
+      {:error, "not_authenticated", "Please authenticate first using 'authenticate' action"}
     end
+  end
+
+  defp dispatch_authenticated_action("get_secret", params, connection) do
+    handle_get_secret(params, connection)
+  end
+
+  defp dispatch_authenticated_action("list_secrets", params, connection) do
+    handle_list_secrets(params, connection)
+  end
+
+  defp dispatch_authenticated_action(nil, _params, _connection) do
+    {:error, "missing_action", "Request must include 'action' field"}
+  end
+
+  defp dispatch_authenticated_action(unknown, _params, _connection) do
+    {:error, "unknown_action", "Unknown action: #{unknown}"}
+  end
+
+  defp finalize_request({:ok, data}, socket, request_id, state) do
+    send_response(socket, request_id, "ok", data)
+    {:ok, update_stats(state, :successful_request)}
+  end
+
+  defp finalize_request({:ok, data, new_state}, socket, request_id, _state) do
+    send_response(socket, request_id, "ok", data)
+    {:ok, update_stats(new_state, :successful_request)}
+  end
+
+  defp finalize_request({:error, code, message}, socket, request_id, state) do
+    send_error(socket, code, message, request_id)
+    {:ok, update_stats(state, :failed_request)}
+  end
+
+  defp finalize_request({:error, code, message, new_state}, socket, request_id, _state) do
+    send_error(socket, code, message, request_id)
+    {:ok, update_stats(new_state, :failed_request)}
   end
 
   defp handle_authenticate(socket, params, state, connection) do
