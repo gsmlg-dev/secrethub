@@ -31,8 +31,9 @@ defmodule SecretHub.CLI.Commands.LoginCommand do
   def whoami(_opts) do
     case Auth.get_token() do
       {:ok, _token} ->
-        with {:ok, config} <- Config.load(),
-             auth_config = Map.get(config, "auth", %{}) do
+        with {:ok, config} <- Config.load() do
+          auth_config = Map.get(config, "auth", %{})
+
           info = %{
             "authenticated" => true,
             "server" => Config.get_server_url(),

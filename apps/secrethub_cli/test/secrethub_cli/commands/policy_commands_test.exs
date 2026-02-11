@@ -4,8 +4,8 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
   import ExUnit.CaptureIO
   import Mox
 
-  alias SecretHub.CLI.Config
   alias SecretHub.CLI.Commands.PolicyCommands
+  alias SecretHub.CLI.Config
 
   setup :verify_on_exit!
 

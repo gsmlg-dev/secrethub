@@ -215,7 +215,7 @@ defmodule SecretHub.Core.Engines.Dynamic.Redis do
         nil ->
           errors
 
-        port when is_integer(port) and port > 0 and port < 65536 ->
+        port when is_integer(port) and port > 0 and port < 65_536 ->
           errors
 
         _ ->

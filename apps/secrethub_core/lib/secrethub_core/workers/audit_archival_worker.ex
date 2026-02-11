@@ -36,9 +36,9 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
 
   require Logger
 
+  alias SecretHub.Core.Audit
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.{AuditArchivalConfig, AuditArchivalJob}
-  alias SecretHub.Core.Audit
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"config_id" => config_id}}) do
@@ -133,7 +133,7 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
     cutoff_date =
       DateTime.add(
         DateTime.utc_now() |> DateTime.truncate(:second),
-        -config.archive_after_days * 86400,
+        -config.archive_after_days * 86_400,
         :second
       )
 
@@ -141,7 +141,7 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
       archival_config_id: config.id,
       started_at: DateTime.utc_now() |> DateTime.truncate(:second),
       status: :in_progress,
-      from_date: DateTime.add(cutoff_date, -86400, :second),
+      from_date: DateTime.add(cutoff_date, -86_400, :second),
       to_date: cutoff_date
     }
 
@@ -154,7 +154,7 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
     cutoff_date =
       DateTime.add(
         DateTime.utc_now() |> DateTime.truncate(:second),
-        -config.archive_after_days * 86400,
+        -config.archive_after_days * 86_400,
         :second
       )
 

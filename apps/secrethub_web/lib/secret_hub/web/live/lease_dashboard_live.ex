@@ -449,10 +449,10 @@ defmodule SecretHub.Web.LeaseDashboardLive do
   defp format_duration(seconds) when seconds < 60, do: "#{seconds}s"
   defp format_duration(seconds) when seconds < 3600, do: "#{div(seconds, 60)}m"
 
-  defp format_duration(seconds) when seconds < 86400,
+  defp format_duration(seconds) when seconds < 86_400,
     do: "#{div(seconds, 3600)}h #{div(rem(seconds, 3600), 60)}m"
 
-  defp format_duration(seconds), do: "#{div(seconds, 86400)}d"
+  defp format_duration(seconds), do: "#{div(seconds, 86_400)}d"
 
   defp time_until_class(seconds) when seconds < 300, do: "text-red-600"
   defp time_until_class(seconds) when seconds < 1800, do: "text-yellow-600"
@@ -472,8 +472,8 @@ defmodule SecretHub.Web.LeaseDashboardLive do
     cond do
       seconds < 60 -> "#{seconds}s ago"
       seconds < 3600 -> "#{div(seconds, 60)}m ago"
-      seconds < 86400 -> "#{div(seconds, 3600)}h ago"
-      true -> "#{div(seconds, 86400)}d ago"
+      seconds < 86_400 -> "#{div(seconds, 3600)}h ago"
+      true -> "#{div(seconds, 86_400)}d ago"
     end
   end
 

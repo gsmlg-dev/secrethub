@@ -160,38 +160,32 @@ defmodule SecretHub.CLI.Output do
 
   defp build_separator(col_widths) do
     "+" <>
-      (col_widths
-       |> Enum.map(&String.duplicate("-", &1 + 2))
-       |> Enum.join("+")) <>
+      Enum.map_join(col_widths, "+", &String.duplicate("-", &1 + 2)) <>
       "+"
   end
 
   defp build_row(values, col_widths) do
     "| " <>
-      (Enum.zip(values, col_widths)
-       |> Enum.map(fn {value, width} -> String.pad_trailing(value, width) end)
-       |> Enum.join(" | ")) <>
+      Enum.map_join(Enum.zip(values, col_widths), " | ", fn {value, width} ->
+        String.pad_trailing(value, width)
+      end) <>
       " |"
   end
 
   defp to_yaml(data, indent) when is_map(data) do
     spacing = String.duplicate("  ", indent)
 
-    data
-    |> Enum.map(fn {key, value} ->
+    Enum.map_join(data, "\n", fn {key, value} ->
       "#{spacing}#{key}:\n#{to_yaml(value, indent + 1)}"
     end)
-    |> Enum.join("\n")
   end
 
   defp to_yaml(data, indent) when is_list(data) do
     spacing = String.duplicate("  ", indent)
 
-    data
-    |> Enum.map(fn item ->
+    Enum.map_join(data, "\n", fn item ->
       "#{spacing}- #{to_yaml(item, indent + 1)}"
     end)
-    |> Enum.join("\n")
   end
 
   defp to_yaml(data, indent) do

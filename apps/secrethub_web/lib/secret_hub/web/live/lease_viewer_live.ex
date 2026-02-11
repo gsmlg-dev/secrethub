@@ -556,8 +556,8 @@ defmodule SecretHub.Web.LeaseViewerLive do
       remaining < 0 -> "Expired"
       remaining < 60 -> "#{remaining}s"
       remaining < 3600 -> "#{div(remaining, 60)}m #{rem(remaining, 60)}s"
-      remaining < 86400 -> "#{div(remaining, 3600)}h #{div(rem(remaining, 3600), 60)}m"
-      true -> "#{div(remaining, 86400)}d #{div(rem(remaining, 86400), 3600)}h"
+      remaining < 86_400 -> "#{div(remaining, 3600)}h #{div(rem(remaining, 3600), 60)}m"
+      true -> "#{div(remaining, 86_400)}d #{div(rem(remaining, 86_400), 3600)}h"
     end
   end
 

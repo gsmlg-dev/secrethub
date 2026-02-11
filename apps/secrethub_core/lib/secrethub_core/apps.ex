@@ -12,7 +12,7 @@ defmodule SecretHub.Core.Apps do
 
   import Ecto.Query
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{Application, AppBootstrapToken, AppCertificate}
+  alias SecretHub.Shared.Schemas.{AppBootstrapToken, AppCertificate, Application}
   require Logger
 
   @bootstrap_token_ttl 3600
@@ -295,7 +295,7 @@ defmodule SecretHub.Core.Apps do
   Cleanup expired bootstrap tokens (older than 24 hours).
   """
   def cleanup_expired_tokens do
-    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -86400, :second)
+    cutoff = DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -86_400, :second)
 
     query =
       from(t in AppBootstrapToken,

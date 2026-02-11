@@ -13,8 +13,8 @@ defmodule SecretHub.Web.DynamicSecretsController do
 
   require Logger
 
-  alias SecretHub.Core.LeaseManager
   alias SecretHub.Core.Engines.Dynamic.PostgreSQL
+  alias SecretHub.Core.LeaseManager
 
   @doc """
   Generate dynamic credentials for a role.

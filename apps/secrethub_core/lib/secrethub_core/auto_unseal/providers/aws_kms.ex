@@ -190,7 +190,7 @@ defmodule SecretHub.Core.AutoUnseal.Providers.AWSKMS do
         end
 
       {:error, reason} = error ->
-        if is_retryable_error?(reason) && retry_count < @max_retries do
+        if retryable_error?(reason) && retry_count < @max_retries do
           retry_operation(operation, params, region, config, retry_count)
         else
           error
@@ -230,7 +230,7 @@ defmodule SecretHub.Core.AutoUnseal.Providers.AWSKMS do
       (status_code == 429 || (status_code >= 500 && status_code < 600))
   end
 
-  defp is_retryable_error?(reason) do
+  defp retryable_error?(reason) do
     # Retry on network errors and throttling
     case reason do
       {:http_error, _, _} -> true

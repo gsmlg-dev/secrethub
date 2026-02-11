@@ -245,25 +245,23 @@ defmodule SecretHub.Web.TemplateManagementLive do
         %{"template_content" => content, "mock_data" => mock_data_json},
         socket
       ) do
-    try do
-      _mock_data = Jason.decode!(mock_data_json)
+    _mock_data = Jason.decode!(mock_data_json)
 
-      # TODO: Call Agent's template preview API (will use _mock_data)
+    # TODO: Call Agent's template preview API (will use _mock_data)
+    socket =
+      socket
+      |> assign(:preview_content, "Preview: #{content}")
+      |> assign(:preview_error, nil)
+
+    {:noreply, socket}
+  rescue
+    e ->
       socket =
         socket
-        |> assign(:preview_content, "Preview: #{content}")
-        |> assign(:preview_error, nil)
+        |> assign(:preview_content, nil)
+        |> assign(:preview_error, Exception.message(e))
 
       {:noreply, socket}
-    rescue
-      e ->
-        socket =
-          socket
-          |> assign(:preview_content, nil)
-          |> assign(:preview_error, Exception.message(e))
-
-        {:noreply, socket}
-    end
   end
 
   @impl true
@@ -768,7 +766,6 @@ defmodule SecretHub.Web.TemplateManagementLive do
         String.replace(acc, "%{#{key}}", to_string(value))
       end)
     end)
-    |> Enum.map(fn {field, errors} -> "#{field}: #{Enum.join(errors, ", ")}" end)
-    |> Enum.join("; ")
+    |> Enum.map_join("; ", fn {field, errors} -> "#{field}: #{Enum.join(errors, ", ")}" end)
   end
 end

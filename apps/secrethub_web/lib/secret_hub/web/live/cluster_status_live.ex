@@ -75,40 +75,38 @@ defmodule SecretHub.Web.ClusterStatusLive do
   end
 
   defp load_cluster_data(socket) do
-    try do
-      case ClusterState.cluster_info() do
-        {:ok, cluster_info} ->
-          # Get health status for overall cluster
-          health_status = Health.health(details: true)
+    case ClusterState.cluster_info() do
+      {:ok, cluster_info} ->
+        # Get health status for overall cluster
+        health_status = Health.health(details: true)
 
-          socket
-          |> assign(:loading, false)
-          |> assign(:cluster_info, cluster_info)
-          |> assign(:health_status, health_status)
-          |> assign(:error, nil)
+        socket
+        |> assign(:loading, false)
+        |> assign(:cluster_info, cluster_info)
+        |> assign(:health_status, health_status)
+        |> assign(:error, nil)
 
-        {:error, reason} ->
-          Logger.error("Failed to load cluster info: #{inspect(reason)}")
-
-          socket
-          |> assign(:loading, false)
-          |> assign(:cluster_info, nil)
-          |> assign(:health_status, nil)
-          |> assign(:error, "Failed to load cluster data: #{inspect(reason)}")
-      end
-    catch
-      :exit, {:noproc, _} ->
-        Logger.warning("ClusterState GenServer not running")
+      {:error, reason} ->
+        Logger.error("Failed to load cluster info: #{inspect(reason)}")
 
         socket
         |> assign(:loading, false)
         |> assign(:cluster_info, nil)
         |> assign(:health_status, nil)
-        |> assign(
-          :error,
-          "Cluster state service not available. Please check if the vault is initialized."
-        )
+        |> assign(:error, "Failed to load cluster data: #{inspect(reason)}")
     end
+  catch
+    :exit, {:noproc, _} ->
+      Logger.warning("ClusterState GenServer not running")
+
+      socket
+      |> assign(:loading, false)
+      |> assign(:cluster_info, nil)
+      |> assign(:health_status, nil)
+      |> assign(
+        :error,
+        "Cluster state service not available. Please check if the vault is initialized."
+      )
   end
 
   defp node_status_badge(status) do
@@ -135,8 +133,8 @@ defmodule SecretHub.Web.ClusterStatusLive do
     cond do
       diff < 60 -> "#{diff}s ago"
       diff < 3600 -> "#{div(diff, 60)}m ago"
-      diff < 86400 -> "#{div(diff, 3600)}h ago"
-      true -> "#{div(diff, 86400)}d ago"
+      diff < 86_400 -> "#{div(diff, 3600)}h ago"
+      true -> "#{div(diff, 86_400)}d ago"
     end
   end
 

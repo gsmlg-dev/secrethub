@@ -13,7 +13,7 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
 
   alias SecretHub.Core.Alerting
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{AnomalyDetectionRule, AnomalyAlert}
+  alias SecretHub.Shared.Schemas.{AnomalyAlert, AnomalyDetectionRule}
 
   import Ecto.Query
 
@@ -424,7 +424,6 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
     type
     |> to_string()
     |> String.split("_")
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 end

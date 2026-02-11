@@ -272,19 +272,17 @@ defmodule SecretHub.Core.Shutdown do
   defp get_oban_status do
     # Try to get Oban job status
     # This requires Oban to be running and accessible
-    try do
-      # Query for executing jobs
-      # This is a simplified check - in production you might want more detailed status
-      if Code.ensure_loaded?(Oban) do
-        # Oban doesn't provide a simple "active jobs" count API
-        # We'll assume if Oban is loaded and running, we give it time
-        # The supervisor will handle the actual graceful shutdown
-        {:ok, 0}
-      else
-        {:ok, 0}
-      end
-    rescue
-      _ -> {:error, :unavailable}
+    # Query for executing jobs
+    # This is a simplified check - in production you might want more detailed status
+    if Code.ensure_loaded?(Oban) do
+      # Oban doesn't provide a simple "active jobs" count API
+      # We'll assume if Oban is loaded and running, we give it time
+      # The supervisor will handle the actual graceful shutdown
+      {:ok, 0}
+    else
+      {:ok, 0}
     end
+  rescue
+    _ -> {:error, :unavailable}
   end
 end

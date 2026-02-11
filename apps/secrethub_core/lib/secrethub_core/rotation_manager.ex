@@ -9,7 +9,7 @@ defmodule SecretHub.Core.RotationManager do
   require Logger
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{RotationSchedule, RotationHistory}
+  alias SecretHub.Shared.Schemas.{RotationHistory, RotationSchedule}
 
   ## Rotation Schedule Management
 
@@ -105,17 +105,15 @@ defmodule SecretHub.Core.RotationManager do
   Calculates the next rotation time for a schedule based on its cron expression.
   """
   def calculate_next_rotation(schedule) do
-    try do
-      case Crontab.Scheduler.get_next_run_date(schedule.schedule_cron) do
-        {:ok, next_run} ->
-          {:ok, DateTime.from_naive!(next_run, "Etc/UTC")}
+    case Crontab.Scheduler.get_next_run_date(schedule.schedule_cron) do
+      {:ok, next_run} ->
+        {:ok, DateTime.from_naive!(next_run, "Etc/UTC")}
 
-        {:error, reason} ->
-          {:error, reason}
-      end
-    rescue
-      _ -> {:error, "Failed to calculate next rotation time"}
+      {:error, reason} ->
+        {:error, reason}
     end
+  rescue
+    _ -> {:error, "Failed to calculate next rotation time"}
   end
 
   @doc """

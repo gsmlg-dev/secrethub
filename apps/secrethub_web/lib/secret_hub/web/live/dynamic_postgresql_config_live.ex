@@ -546,7 +546,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
       password: config.password || "",
       ssl: to_string(config.ssl || false),
       default_ttl: to_string(config.default_ttl || 3600),
-      max_ttl: to_string(config.max_ttl || 86400),
+      max_ttl: to_string(config.max_ttl || 86_400),
       creation_statements: config.creation_statements || "",
       renewal_statements: config.renewal_statements || "",
       revocation_statements: config.revocation_statements || ""
@@ -572,7 +572,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
 
     errors =
       case Integer.parse(form_data.port) do
-        {port, ""} when port > 0 and port < 65536 -> errors
+        {port, ""} when port > 0 and port < 65_536 -> errors
         _ -> Map.put(errors, :port, "Port must be a valid number between 1 and 65535")
       end
 

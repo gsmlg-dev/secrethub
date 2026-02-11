@@ -111,33 +111,36 @@ defmodule SecretHub.CLI.Config do
   def get_auth_token do
     case get("auth.token") do
       {:ok, token} when is_binary(token) ->
-        # Check if token is expired
-        case get("auth.expires_at") do
-          {:ok, expires_str} when is_binary(expires_str) ->
-            case DateTime.from_iso8601(expires_str) do
-              {:ok, expires, _} ->
-                if DateTime.compare(expires, DateTime.utc_now()) == :gt do
-                  {:ok, token}
-                else
-                  {:error, :expired}
-                end
-
-              _ ->
-                # Invalid date format, assume token is valid
-                {:ok, token}
-            end
-
-          {:ok, nil} ->
-            # No expires_at field, assume token is valid
-            {:ok, token}
-
-          _ ->
-            # No expires_at field, assume token is valid
-            {:ok, token}
-        end
+        check_token_expiration(token)
 
       _ ->
         {:error, :not_found}
+    end
+  end
+
+  defp check_token_expiration(token) do
+    case get("auth.expires_at") do
+      {:ok, expires_str} when is_binary(expires_str) ->
+        validate_expiration(token, expires_str)
+
+      _ ->
+        # No expires_at field, assume token is valid
+        {:ok, token}
+    end
+  end
+
+  defp validate_expiration(token, expires_str) do
+    case DateTime.from_iso8601(expires_str) do
+      {:ok, expires, _} ->
+        if DateTime.compare(expires, DateTime.utc_now()) == :gt do
+          {:ok, token}
+        else
+          {:error, :expired}
+        end
+
+      _ ->
+        # Invalid date format, assume token is valid
+        {:ok, token}
     end
   end
 
@@ -209,18 +212,18 @@ defmodule SecretHub.CLI.Config do
 
     # Encode top-level values
     top_level =
-      values
-      |> Enum.map(fn {key, value} -> "#{key} = #{encode_toml_value(value)}" end)
-      |> Enum.join("\n")
+      Enum.map_join(values, "\n", fn {key, value} ->
+        "#{key} = #{encode_toml_value(value)}"
+      end)
 
     # Encode sections
     section_strings =
       sections
       |> Enum.map(fn {section_name, section_map} ->
         section_values =
-          section_map
-          |> Enum.map(fn {key, value} -> "#{key} = #{encode_toml_value(value)}" end)
-          |> Enum.join("\n")
+          Enum.map_join(section_map, "\n", fn {key, value} ->
+            "#{key} = #{encode_toml_value(value)}"
+          end)
 
         "[#{section_name}]\n#{section_values}"
       end)
@@ -236,17 +239,14 @@ defmodule SecretHub.CLI.Config do
   defp encode_toml_value(value) when is_boolean(value), do: to_string(value)
   defp encode_toml_value(value) when is_number(value), do: to_string(value)
   defp encode_toml_value(value) when is_list(value) do
-    items = Enum.map(value, &encode_toml_value/1)
-    "[" <> Enum.join(items, ", ") <> "]"
+    "[" <> Enum.map_join(value, ", ", &encode_toml_value/1) <> "]"
   end
   defp encode_toml_value(value) when is_map(value) do
     # Encode as TOML inline table: {key = "value", key2 = "value2"}
-    items =
-      value
-      |> Enum.map(fn {k, v} -> "#{k} = #{encode_toml_value(v)}" end)
-      |> Enum.join(", ")
-
-    "{" <> items <> "}"
+    "{" <>
+      Enum.map_join(value, ", ", fn {k, v} ->
+        "#{k} = #{encode_toml_value(v)}"
+      end) <> "}"
   end
   defp encode_toml_value(value), do: inspect(value)
 end

@@ -137,7 +137,7 @@ defmodule SecretHub.CLI.Auth do
 
       %{"token" => token} ->
         # Default to 24 hour expiration if not specified
-        expires_at = DateTime.add(DateTime.utc_now(), 86400, :second)
+        expires_at = DateTime.add(DateTime.utc_now(), 86_400, :second)
         {:ok, %{token: token, expires_at: expires_at}}
 
       _ ->

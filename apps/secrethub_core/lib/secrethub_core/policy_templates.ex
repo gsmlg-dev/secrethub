@@ -237,7 +237,7 @@ defmodule SecretHub.Core.PolicyTemplates do
             "10.2.0.0/16",
             "10.3.0.0/16"
           ],
-          "max_ttl_seconds" => 86400
+          "max_ttl_seconds" => 86_400
         }
       },
       example_usage: """

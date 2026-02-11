@@ -28,8 +28,8 @@ defmodule SecretHub.Core.LeaseManager do
 
   require Logger
 
-  alias SecretHub.Shared.Schemas.Lease
   alias SecretHub.Core.Repo
+  alias SecretHub.Shared.Schemas.Lease
 
   import Ecto.Query
 

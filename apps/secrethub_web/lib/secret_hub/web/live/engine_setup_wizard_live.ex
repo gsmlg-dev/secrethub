@@ -164,7 +164,7 @@ defmodule SecretHub.Web.EngineSetupWizardLive do
 
     errors =
       case Integer.parse(form_data["port"] || "") do
-        {port, ""} when port > 0 and port < 65536 -> errors
+        {port, ""} when port > 0 and port < 65_536 -> errors
         _ -> Map.put(errors, :port, "Invalid port number")
       end
 

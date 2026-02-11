@@ -510,64 +510,58 @@ defmodule SecretHub.Web.AdminDashboardLive do
   # Helper functions for data fetching
 
   defp get_last_rotation_time do
-    try do
-      query =
-        from(r in RotationSchedule,
-          where: not is_nil(r.last_rotated_at),
-          order_by: [desc: r.last_rotated_at],
-          limit: 1,
-          select: r.last_rotated_at
-        )
+    query =
+      from(r in RotationSchedule,
+        where: not is_nil(r.last_rotated_at),
+        order_by: [desc: r.last_rotated_at],
+        limit: 1,
+        select: r.last_rotated_at
+      )
 
-      case Repo.one(query) do
-        nil -> "Never"
-        datetime -> DateTime.to_iso8601(datetime)
-      end
-    rescue
-      _ -> "N/A"
+    case Repo.one(query) do
+      nil -> "Never"
+      datetime -> DateTime.to_iso8601(datetime)
     end
+  rescue
+    _ -> "N/A"
   end
 
   defp estimate_storage_usage do
     # Simple estimate based on table counts
     # In production, you could query pg_database_size() or similar
-    try do
-      secret_count = Repo.aggregate(SecretHub.Shared.Schemas.Secret, :count, :id) || 0
-      audit_count = Repo.aggregate(SecretHub.Shared.Schemas.AuditLog, :count, :id) || 0
+    secret_count = Repo.aggregate(SecretHub.Shared.Schemas.Secret, :count, :id) || 0
+    audit_count = Repo.aggregate(SecretHub.Shared.Schemas.AuditLog, :count, :id) || 0
 
-      # Rough estimate: ~10KB per secret, ~1KB per audit log
-      gb = (secret_count * 10 + audit_count * 1) / 1_000_000
-      Float.round(max(gb, 0.01), 2)
-    rescue
-      _ -> 0.0
-    end
+    # Rough estimate: ~10KB per secret, ~1KB per audit log
+    gb = (secret_count * 10 + audit_count * 1) / 1_000_000
+    Float.round(max(gb, 0.01), 2)
+  rescue
+    _ -> 0.0
   end
 
   defp get_most_accessed_secret do
     # Get the most accessed secret from audit logs
-    try do
-      query =
-        from(a in SecretHub.Shared.Schemas.AuditLog,
-          where: a.event_type == "secret.accessed" and not is_nil(a.secret_id),
-          group_by: a.secret_id,
-          order_by: [desc: count(a.id)],
-          limit: 1,
-          select: a.secret_id
-        )
+    query =
+      from(a in SecretHub.Shared.Schemas.AuditLog,
+        where: a.event_type == "secret.accessed" and not is_nil(a.secret_id),
+        group_by: a.secret_id,
+        order_by: [desc: count(a.id)],
+        limit: 1,
+        select: a.secret_id
+      )
 
-      case Repo.one(query) do
-        nil ->
-          "N/A"
+    case Repo.one(query) do
+      nil ->
+        "N/A"
 
-        secret_id ->
-          case Repo.get(SecretHub.Shared.Schemas.Secret, secret_id) do
-            nil -> "Unknown"
-            secret -> secret.secret_path || secret.name || "Unknown"
-          end
-      end
-    rescue
-      _ -> "N/A"
+      secret_id ->
+        case Repo.get(SecretHub.Shared.Schemas.Secret, secret_id) do
+          nil -> "Unknown"
+          secret -> secret.secret_path || secret.name || "Unknown"
+        end
     end
+  rescue
+    _ -> "N/A"
   end
 
   defp map_agent_status(:active), do: :connected

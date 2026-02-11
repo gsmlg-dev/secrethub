@@ -341,19 +341,17 @@ defmodule SecretHub.Core.AutoUnseal do
 
   defp encrypt_unseal_keys(provider_module, config, unseal_keys) do
     # Encrypt each unseal key individually
-    try do
-      encrypted_keys =
-        Enum.map(unseal_keys, fn key ->
-          case provider_module.encrypt(config, key) do
-            {:ok, encrypted} -> encrypted
-            {:error, reason} -> throw({:encryption_error, reason})
-          end
-        end)
+    encrypted_keys =
+      Enum.map(unseal_keys, fn key ->
+        case provider_module.encrypt(config, key) do
+          {:ok, encrypted} -> encrypted
+          {:error, reason} -> throw({:encryption_error, reason})
+        end
+      end)
 
-      {:ok, encrypted_keys}
-    catch
-      {:encryption_error, reason} -> {:error, reason}
-    end
+    {:ok, encrypted_keys}
+  catch
+    {:encryption_error, reason} -> {:error, reason}
   end
 
   defp perform_auto_unseal(state) do
@@ -383,19 +381,17 @@ defmodule SecretHub.Core.AutoUnseal do
 
   defp decrypt_unseal_keys(provider_module, config, encrypted_keys) do
     # Decrypt each key
-    try do
-      decrypted_keys =
-        Enum.map(encrypted_keys, fn encrypted_key ->
-          case provider_module.decrypt(config, encrypted_key) do
-            {:ok, decrypted} -> decrypted
-            {:error, reason} -> throw({:decryption_error, reason})
-          end
-        end)
+    decrypted_keys =
+      Enum.map(encrypted_keys, fn encrypted_key ->
+        case provider_module.decrypt(config, encrypted_key) do
+          {:ok, decrypted} -> decrypted
+          {:error, reason} -> throw({:decryption_error, reason})
+        end
+      end)
 
-      {:ok, decrypted_keys}
-    catch
-      {:decryption_error, reason} -> {:error, reason}
-    end
+    {:ok, decrypted_keys}
+  catch
+    {:decryption_error, reason} -> {:error, reason}
   end
 
   defp submit_unseal_keys(unseal_keys) do

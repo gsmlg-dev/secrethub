@@ -30,7 +30,7 @@ defmodule SecretHub.Core.Alerting do
   require Logger
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{AnomalyAlert, AlertRoutingConfig}
+  alias SecretHub.Shared.Schemas.{AlertRoutingConfig, AnomalyAlert}
 
   import Ecto.Query
 

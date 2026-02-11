@@ -27,8 +27,8 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
 
   require Logger
 
-  alias SecretHub.Core.Audit
   alias SecretHub.Core.Alerting
+  alias SecretHub.Core.Audit
 
   @batch_size 1000
   @verification_start_offset_days 1
@@ -76,7 +76,7 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
     cutoff_date =
       DateTime.add(
         DateTime.utc_now() |> DateTime.truncate(:second),
-        -start_offset_days * 86400,
+        -start_offset_days * 86_400,
         :second
       )
 

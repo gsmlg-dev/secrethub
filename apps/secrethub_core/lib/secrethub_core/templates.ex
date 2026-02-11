@@ -10,7 +10,7 @@ defmodule SecretHub.Core.Templates do
 
   import Ecto.Query, warn: false
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{Template, Sink, SinkWriteHistory}
+  alias SecretHub.Shared.Schemas.{Sink, SinkWriteHistory, Template}
 
   ## Template Functions
 

@@ -3,8 +3,8 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
 
   import ExUnit.CaptureIO
 
-  alias SecretHub.CLI.{Config}
   alias SecretHub.CLI.Commands.ConfigCommands
+  alias SecretHub.CLI.Config
 
   setup do
     # Use a temporary config directory for tests

@@ -4,8 +4,8 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
   import ExUnit.CaptureIO
   import Mox
 
-  alias SecretHub.CLI.Config
   alias SecretHub.CLI.Commands.SecretCommands
+  alias SecretHub.CLI.Config
 
   setup :verify_on_exit!
 

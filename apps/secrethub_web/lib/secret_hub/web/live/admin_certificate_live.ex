@@ -418,29 +418,27 @@ defmodule SecretHub.Web.AdminCertificateLive do
     # Basic PEM parsing - extract certificate details
     # In production, use :public_key.pem_decode/1 and :public_key.pkix_decode_cert/2
 
-    try do
-      [entry] = :public_key.pem_decode(pem_data)
-      cert = :public_key.pem_entry_decode(entry)
+    [entry] = :public_key.pem_decode(pem_data)
+    cert = :public_key.pem_entry_decode(entry)
 
-      # Extract certificate information
-      {:Certificate, _tbs_cert, _sig_alg, _signature} = cert
+    # Extract certificate information
+    {:Certificate, _tbs_cert, _sig_alg, _signature} = cert
 
-      {:ok,
-       %{
-         serial_number: extract_serial_number(cert),
-         fingerprint: calculate_fingerprint(pem_data),
-         subject: extract_subject(cert),
-         issuer: extract_issuer(cert),
-         common_name: extract_common_name(cert),
-         organization: extract_organization(cert),
-         valid_from: extract_valid_from(cert),
-         valid_until: extract_valid_until(cert)
-       }}
-    rescue
-      e ->
-        Logger.error("Failed to parse certificate: #{inspect(e)}")
-        {:error, "Invalid certificate format"}
-    end
+    {:ok,
+     %{
+       serial_number: extract_serial_number(cert),
+       fingerprint: calculate_fingerprint(pem_data),
+       subject: extract_subject(cert),
+       issuer: extract_issuer(cert),
+       common_name: extract_common_name(cert),
+       organization: extract_organization(cert),
+       valid_from: extract_valid_from(cert),
+       valid_until: extract_valid_until(cert)
+     }}
+  rescue
+    e ->
+      Logger.error("Failed to parse certificate: #{inspect(e)}")
+      {:error, "Invalid certificate format"}
   end
 
   defp calculate_fingerprint(pem_data) do

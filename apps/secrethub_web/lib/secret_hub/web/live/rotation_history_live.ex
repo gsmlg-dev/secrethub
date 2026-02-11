@@ -404,8 +404,7 @@ defmodule SecretHub.Web.RotationHistoryLive do
       assigns.status
       |> Atom.to_string()
       |> String.split("_")
-      |> Enum.map(&String.capitalize/1)
-      |> Enum.join(" ")
+      |> Enum.map_join(" ", &String.capitalize/1)
 
     assigns = assign(assigns, :color, color)
     assigns = assign(assigns, :label, label)

@@ -390,7 +390,7 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
 
       # Cache metrics
       cache_hit_rate: :rand.uniform(95),
-      cache_hits: :rand.uniform(10000),
+      cache_hits: :rand.uniform(10_000),
       cache_misses: :rand.uniform(500),
       cache_sizes: %{
         policy_cache: cache_stats[:policy_cache][:memory_kb] || 0,

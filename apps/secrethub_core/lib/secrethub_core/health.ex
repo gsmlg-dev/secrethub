@@ -130,18 +130,16 @@ defmodule SecretHub.Core.Health do
   """
   @spec check_database() :: check_result()
   def check_database do
-    try do
-      case Repo.query("SELECT 1", [], timeout: 5000) do
-        {:ok, _result} ->
-          {:ok, %{status: "connected", latency_ms: measure_db_latency()}}
+    case Repo.query("SELECT 1", [], timeout: 5000) do
+      {:ok, _result} ->
+        {:ok, %{status: "connected", latency_ms: measure_db_latency()}}
 
-        {:error, reason} ->
-          {:error, %{status: "error", reason: inspect(reason)}}
-      end
-    rescue
-      e ->
-        {:error, %{status: "error", reason: Exception.message(e)}}
+      {:error, reason} ->
+        {:error, %{status: "error", reason: inspect(reason)}}
     end
+  rescue
+    e ->
+      {:error, %{status: "error", reason: Exception.message(e)}}
   end
 
   @doc """
@@ -161,20 +159,18 @@ defmodule SecretHub.Core.Health do
   """
   @spec check_vault() :: check_result()
   def check_vault do
-    try do
-      status = SealState.status()
+    status = SealState.status()
 
-      {:ok,
-       %{
-         initialized: status.initialized,
-         sealed: status.sealed,
-         threshold: status.threshold,
-         shares: status.total_shares
-       }}
-    rescue
-      e ->
-        {:error, %{reason: Exception.message(e)}}
-    end
+    {:ok,
+     %{
+       initialized: status.initialized,
+       sealed: status.sealed,
+       threshold: status.threshold,
+       shares: status.total_shares
+     }}
+  rescue
+    e ->
+      {:error, %{reason: Exception.message(e)}}
   end
 
   @doc """
@@ -195,33 +191,27 @@ defmodule SecretHub.Core.Health do
   @spec check_background_jobs() :: check_result()
   def check_background_jobs do
     # Check if Oban is running and healthy
-    try do
-      # This is a basic check - could be enhanced with Oban.check_queue/1
-      {:ok, %{status: "running"}}
-    rescue
-      e ->
-        {:error, %{status: "error", reason: Exception.message(e)}}
-    end
+    # This is a basic check - could be enhanced with Oban.check_queue/1
+    {:ok, %{status: "running"}}
+  rescue
+    e ->
+      {:error, %{status: "error", reason: Exception.message(e)}}
   end
 
   ## Private Functions
 
   defp vault_initialized? do
-    try do
-      status = SealState.status()
-      status.initialized
-    rescue
-      _ -> false
-    end
+    status = SealState.status()
+    status.initialized
+  rescue
+    _ -> false
   end
 
   defp vault_sealed? do
-    try do
-      status = SealState.status()
-      status.sealed
-    rescue
-      _ -> true
-    end
+    status = SealState.status()
+    status.sealed
+  rescue
+    _ -> true
   end
 
   defp measure_db_latency do

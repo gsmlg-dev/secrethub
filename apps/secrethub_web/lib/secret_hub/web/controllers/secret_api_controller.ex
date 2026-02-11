@@ -16,8 +16,8 @@ defmodule SecretHub.Web.SecretApiController do
   use SecretHub.Web, :controller
   require Logger
 
-  alias SecretHub.Core.Secrets
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.Secrets
   alias SecretHub.Shared.Schemas.Secret
 
   @doc """

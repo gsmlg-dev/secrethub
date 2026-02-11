@@ -531,7 +531,7 @@ defmodule SecretHub.Web.PKIController do
          {:ok, app} <- Apps.get_app(app_id),
          {:ok, intermediate_ca} <- get_intermediate_ca(),
          ttl <- Map.get(params, "ttl", 2_592_000),
-         validity_days <- div(ttl, 86400),
+         validity_days <- div(ttl, 86_400),
          {:ok, %{certificate: cert_pem, cert_record: cert_record}} <-
            CA.sign_csr(csr_pem, intermediate_ca.id, :app_client, validity_days: validity_days),
          {:ok, _app_cert} <-
@@ -606,7 +606,7 @@ defmodule SecretHub.Web.PKIController do
          :ok <- verify_current_certificate(current_cert_pem, app_id),
          {:ok, intermediate_ca} <- get_intermediate_ca(),
          ttl <- Map.get(params, "ttl", 2_592_000),
-         validity_days <- div(ttl, 86400),
+         validity_days <- div(ttl, 86_400),
          {:ok, %{certificate: cert_pem, cert_record: cert_record}} <-
            CA.sign_csr(csr_pem, intermediate_ca.id, :app_client, validity_days: validity_days),
          {:ok, _app_cert} <-

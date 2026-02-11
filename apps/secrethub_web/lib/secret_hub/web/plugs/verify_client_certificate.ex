@@ -130,74 +130,72 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
   end
 
   defp verify_certificate(conn, cert_der, opts) do
-    try do
-      # Decode certificate
-      cert = :public_key.pkix_decode_cert(cert_der, :otp)
+    # Decode certificate
+    cert = :public_key.pkix_decode_cert(cert_der, :otp)
 
-      # Extract serial number
-      serial_number = extract_serial_number(cert)
+    # Extract serial number
+    serial_number = extract_serial_number(cert)
 
-      # Extract CN (agent ID)
-      {:ok, agent_id} = extract_common_name(cert)
+    # Extract CN (agent ID)
+    {:ok, agent_id} = extract_common_name(cert)
 
-      # Check if certificate is expired
-      case check_validity(cert) do
-        :valid ->
+    # Check if certificate is expired
+    case check_validity(cert) do
+      :valid ->
+        :ok
+
+      {:expired, reason} ->
+        Logger.warning("Client certificate expired",
+          agent_id: agent_id,
+          serial: serial_number,
+          reason: reason
+        )
+
+        send_unauthorized(conn, "Certificate expired")
+        return(conn)
+    end
+
+    # Check revocation status if enabled
+    if opts.check_revocation do
+      case check_revocation_status(serial_number) do
+        :not_revoked ->
           :ok
 
-        {:expired, reason} ->
-          Logger.warning("Client certificate expired",
+        :revoked ->
+          Logger.warning("Client certificate revoked",
             agent_id: agent_id,
-            serial: serial_number,
-            reason: reason
+            serial: serial_number
           )
 
-          send_unauthorized(conn, "Certificate expired")
+          send_unauthorized(conn, "Certificate revoked")
           return(conn)
       end
-
-      # Check revocation status if enabled
-      if opts.check_revocation do
-        case check_revocation_status(serial_number) do
-          :not_revoked ->
-            :ok
-
-          :revoked ->
-            Logger.warning("Client certificate revoked",
-              agent_id: agent_id,
-              serial: serial_number
-            )
-
-            send_unauthorized(conn, "Certificate revoked")
-            return(conn)
-        end
-      end
-
-      # Verify certificate against CA chain
-      case verify_against_ca_chain(cert_der) do
-        :valid ->
-          Logger.info("Client certificate verified", agent_id: agent_id, serial: serial_number)
-
-          # Set assigns
-          conn
-          |> assign(:mtls_authenticated, true)
-          |> assign(:agent_id, agent_id)
-          |> assign(:certificate_serial, serial_number)
-          |> assign(:client_certificate, parse_cert_info(cert))
-
-        {:invalid, reason} ->
-          Logger.warning("Client certificate validation failed",
-            agent_id: agent_id,
-            reason: reason
-          )
-
-          send_unauthorized(conn, "Certificate validation failed")
-      end
-    rescue
-      e ->
-        Logger.error("Exception during certificate verification: #{inspect(e)}")
-        send_unauthorized(conn, "Certificate verification error")
     end
+
+    # Verify certificate against CA chain
+    case verify_against_ca_chain(cert_der) do
+      :valid ->
+        Logger.info("Client certificate verified", agent_id: agent_id, serial: serial_number)
+
+        # Set assigns
+        conn
+        |> assign(:mtls_authenticated, true)
+        |> assign(:agent_id, agent_id)
+        |> assign(:certificate_serial, serial_number)
+        |> assign(:client_certificate, parse_cert_info(cert))
+
+      {:invalid, reason} ->
+        Logger.warning("Client certificate validation failed",
+          agent_id: agent_id,
+          reason: reason
+        )
+
+        send_unauthorized(conn, "Certificate validation failed")
+    end
+  rescue
+    e ->
+      Logger.error("Exception during certificate verification: #{inspect(e)}")
+      send_unauthorized(conn, "Certificate verification error")
   end
 
   defp extract_serial_number(

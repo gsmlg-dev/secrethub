@@ -25,74 +25,68 @@ defmodule SecretHub.Core.NodeHealthCollector do
   """
   @spec collect() :: {:ok, map()} | {:error, term()}
   def collect do
-    try do
-      metrics = %{
-        timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
-        health_status: determine_health_status(),
-        cpu_percent: collect_cpu_usage(),
-        memory_percent: collect_memory_usage(),
-        database_latency_ms: collect_database_latency(),
-        active_connections: collect_active_connections(),
-        vault_sealed: vault_sealed?(),
-        vault_initialized: vault_initialized?(),
-        last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
-        metadata: collect_metadata()
-      }
+    metrics = %{
+      timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
+      health_status: determine_health_status(),
+      cpu_percent: collect_cpu_usage(),
+      memory_percent: collect_memory_usage(),
+      database_latency_ms: collect_database_latency(),
+      active_connections: collect_active_connections(),
+      vault_sealed: vault_sealed?(),
+      vault_initialized: vault_initialized?(),
+      last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      metadata: collect_metadata()
+    }
 
-      {:ok, metrics}
-    rescue
-      e ->
-        Logger.error("Failed to collect health metrics: #{Exception.message(e)}")
-        {:error, Exception.message(e)}
-    end
+    {:ok, metrics}
+  rescue
+    e ->
+      Logger.error("Failed to collect health metrics: #{Exception.message(e)}")
+      {:error, Exception.message(e)}
   end
 
   ## Private Functions
 
   # Collect CPU usage percentage
   defp collect_cpu_usage do
-    try do
-      # Get scheduler wall time before and after a small delay
-      :erlang.statistics(:scheduler_wall_time)
-      Process.sleep(100)
-      scheduler_usage = :erlang.statistics(:scheduler_wall_time)
+    # Get scheduler wall time before and after a small delay
+    :erlang.statistics(:scheduler_wall_time)
+    Process.sleep(100)
+    scheduler_usage = :erlang.statistics(:scheduler_wall_time)
 
-      total_time =
-        Enum.reduce(scheduler_usage, {0, 0}, fn {_, active, total}, {acc_active, acc_total} ->
-          {acc_active + active, acc_total + total}
-        end)
+    total_time =
+      Enum.reduce(scheduler_usage, {0, 0}, fn {_, active, total}, {acc_active, acc_total} ->
+        {acc_active + active, acc_total + total}
+      end)
 
-      case total_time do
-        {active, total} when total > 0 ->
-          Float.round(active / total * 100, 2)
+    case total_time do
+      {active, total} when total > 0 ->
+        Float.round(active / total * 100, 2)
 
-        _ ->
-          0.0
-      end
-    rescue
-      _ -> 0.0
+      _ ->
+        0.0
     end
+  rescue
+    _ -> 0.0
   end
 
   # Collect memory usage percentage
   defp collect_memory_usage do
-    try do
-      memory_data = :erlang.memory()
-      total = Keyword.get(memory_data, :total, 0)
-      _system = Keyword.get(memory_data, :system, 0)
+    memory_data = :erlang.memory()
+    total = Keyword.get(memory_data, :total, 0)
+    _system = Keyword.get(memory_data, :system, 0)
 
-      # Get system total memory (this is approximate)
-      # In production, you might want to use :recon or OS-specific commands
-      system_total = get_system_total_memory()
+    # Get system total memory (this is approximate)
+    # In production, you might want to use :recon or OS-specific commands
+    system_total = get_system_total_memory()
 
-      if system_total > 0 do
-        Float.round(total / system_total * 100, 2)
-      else
-        Float.round(total / (1024 * 1024 * 1024), 2)
-      end
-    rescue
-      _ -> 0.0
+    if system_total > 0 do
+      Float.round(total / system_total * 100, 2)
+    else
+      Float.round(total / (1024 * 1024 * 1024), 2)
     end
+  rescue
+    _ -> 0.0
   end
 
   # Get total system memory (fallback approximation)
@@ -137,20 +131,16 @@ defmodule SecretHub.Core.NodeHealthCollector do
 
   # Check if vault is sealed
   defp vault_sealed? do
-    try do
-      SealState.sealed?()
-    rescue
-      _ -> true
-    end
+    SealState.sealed?()
+  rescue
+    _ -> true
   end
 
   # Check if vault is initialized
   defp vault_initialized? do
-    try do
-      SealState.initialized?()
-    rescue
-      _ -> false
-    end
+    SealState.initialized?()
+  rescue
+    _ -> false
   end
 
   # Determine overall health status
