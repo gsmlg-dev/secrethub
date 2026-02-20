@@ -325,9 +325,29 @@ defmodule SecretHub.Agent.LeaseRenewer do
         {:noreply, state}
 
       lease ->
-        case perform_renewal(state.core_url, lease) do
+        # Perform renewal asynchronously to avoid blocking the GenServer
+        # mailbox during the HTTP request (up to 5s timeout).
+        core_url = state.core_url
+        parent = self()
+
+        Task.start(fn ->
+          result = perform_renewal(core_url, lease)
+          send(parent, {:renewal_result, lease_id, result})
+        end)
+
+        {:noreply, state}
+    end
+  end
+
+  @impl true
+  def handle_info({:renewal_result, lease_id, result}, state) do
+    case Map.get(state.leases, lease_id) do
+      nil ->
+        {:noreply, state}
+
+      lease ->
+        case result do
           {:ok, new_lease_duration} ->
-            # Renewal successful
             new_expires_at = DateTime.add(DateTime.utc_now(), new_lease_duration, :second)
 
             updated_lease = %{
