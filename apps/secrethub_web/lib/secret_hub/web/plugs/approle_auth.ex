@@ -74,12 +74,11 @@ defmodule SecretHub.Web.Plugs.AppRoleAuth do
   end
 
   defp verify_admin_token(token) do
-    # Verify the token is valid and has admin privileges
-    # This would check against the AppRole tokens table
     case AppRole.verify_token(token) do
-      {:ok, role} ->
-        # Check if the role has admin privileges
-        role.role_name == "admin" || has_admin_policy?(role)
+      {:ok, payload} ->
+        role_name = Map.get(payload, :role_name, "")
+        policies = Map.get(payload, :policies, [])
+        role_name == "admin" || has_admin_policy?(policies)
 
       {:error, _} ->
         false
@@ -88,11 +87,14 @@ defmodule SecretHub.Web.Plugs.AppRoleAuth do
     _ -> false
   end
 
-  defp has_admin_policy?(_role) do
-    # TODO: Implement policy-based admin check
-    # For now, only allow "admin" role name
-    false
+  defp has_admin_policy?(policies) when is_list(policies) do
+    Enum.any?(policies, fn policy ->
+      policy in ["admin", "root", "super-admin"] ||
+        String.starts_with?(to_string(policy), "admin")
+    end)
   end
+
+  defp has_admin_policy?(_), do: false
 
   defp session_expired?(nil), do: true
 
