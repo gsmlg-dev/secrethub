@@ -34,12 +34,12 @@ config :secrethub_web, SecretHub.Web.Endpoint,
     layout: false
   ],
   pubsub_server: SecretHub.Web.PubSub,
-  live_view: [signing_salt: "0PScoGoh"],
+  live_view: [signing_salt: "V8xDL3qRkJhNm5wZ"],
   # Secure session configuration
   session_options: [
     store: :cookie,
     key: "_secrethub_session",
-    signing_salt: "secrethub_signing_salt",
+    signing_salt: "W9yFM4rSkKiOn6xA",
     # Security hardening
     # Prevent JavaScript access (XSS protection)
     http_only: true,
@@ -49,7 +49,7 @@ config :secrethub_web, SecretHub.Web.Endpoint,
     same_site: "Lax",
     # 30 minutes session timeout
     max_age: 1800,
-    encryption_salt: "secrethub_encryption_salt"
+    encryption_salt: "X0zGN5sTlLjPo7yB"
   ]
 
 # Configures the mailer
