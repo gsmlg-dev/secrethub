@@ -355,7 +355,9 @@ defmodule SecretHub.Agent.EndpointManager do
   defp perform_health_checks(state) do
     new_status =
       Enum.reduce(state.endpoint_status, state.endpoint_status, fn {endpoint, status}, acc ->
-        maybe_clear_backoff(acc, endpoint, status)
+        acc
+        |> maybe_clear_backoff(endpoint, status)
+        |> maybe_ping_endpoint(endpoint)
       end)
 
     %{state | endpoint_status: new_status}
@@ -372,6 +374,61 @@ defmodule SecretHub.Agent.EndpointManager do
   end
 
   defp maybe_clear_backoff(acc, _endpoint, _status), do: acc
+
+  defp maybe_ping_endpoint(acc, endpoint) do
+    status = Map.get(acc, endpoint)
+
+    # Only ping endpoints not in active backoff
+    if status.status != :unhealthy or status.backoff_until == nil do
+      apply_ping_result(acc, endpoint, status, ping_endpoint(endpoint))
+    else
+      acc
+    end
+  end
+
+  defp apply_ping_result(acc, endpoint, status, :ok) do
+    consecutive = status.consecutive_successes + 1
+    new_status = if consecutive >= 3, do: :healthy, else: status.status
+
+    Map.put(acc, endpoint, %{
+      status
+      | last_success: DateTime.utc_now(),
+        consecutive_successes: consecutive,
+        consecutive_failures: 0,
+        status: new_status
+    })
+  end
+
+  defp apply_ping_result(acc, endpoint, status, {:error, _reason}) do
+    Map.put(acc, endpoint, %{
+      status
+      | last_failure: DateTime.utc_now(),
+        consecutive_successes: 0
+    })
+  end
+
+  defp ping_endpoint(endpoint) do
+    # Derive HTTP health URL from WebSocket endpoint
+    health_url =
+      endpoint
+      |> String.replace_prefix("wss://", "https://")
+      |> String.replace_prefix("ws://", "http://")
+      |> URI.merge("/v1/sys/health")
+      |> URI.to_string()
+
+    case HTTPoison.get(health_url, [], recv_timeout: 3000, connect_timeout: 3000) do
+      {:ok, %{status_code: code}} when code in 200..299 ->
+        :ok
+
+      {:ok, %{status_code: code}} ->
+        {:error, {:unhealthy_status, code}}
+
+      {:error, %HTTPoison.Error{reason: reason}} ->
+        {:error, reason}
+    end
+  rescue
+    e -> {:error, {:exception, e}}
+  end
 
   defp schedule_health_check(interval) do
     Process.send_after(self(), :health_check, interval)
