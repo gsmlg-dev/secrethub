@@ -242,10 +242,14 @@ defmodule SecretHub.Agent.ConnectionManager do
   ## Private Functions
 
   defp schedule_reconnect(state) do
-    # Exponential backoff: 1s, 2s, 4s, 8s, max 60s
-    delay = min(:math.pow(2, state.reconnect_attempts) * 1000, 60_000) |> round()
+    # Exponential backoff with jitter to prevent thundering herd.
+    # Base delay: 1s, 2s, 4s, 8s... capped at 60s
+    # Jitter: +/- 25% randomization
+    base_delay = min(:math.pow(2, state.reconnect_attempts) * 1000, 60_000) |> round()
+    jitter = :rand.uniform(max(div(base_delay, 2), 1))
+    delay = base_delay + jitter - div(base_delay, 4)
 
-    Logger.debug("Scheduling reconnect in #{delay}ms")
+    Logger.debug("Scheduling reconnect in #{delay}ms (attempt #{state.reconnect_attempts})")
     Process.send_after(self(), :reconnect, delay)
   end
 end
