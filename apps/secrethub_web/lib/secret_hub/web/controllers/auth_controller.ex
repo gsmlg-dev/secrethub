@@ -131,19 +131,16 @@ defmodule SecretHub.Web.AuthController do
   ```
   """
   def get_role(conn, %{"role_name" => role_name}) do
-    # Find role by name
-    roles = AppRole.list_roles()
-
-    case Enum.find(roles, fn r -> r.role_name == role_name end) do
-      nil ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Role not found"})
-
-      role ->
+    case AppRole.get_role_by_name(role_name) do
+      {:ok, role} ->
         conn
         |> put_status(:ok)
         |> json(role)
+
+      {:error, _} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Role not found"})
     end
   end
 
@@ -186,16 +183,8 @@ defmodule SecretHub.Web.AuthController do
   ```
   """
   def delete_role(conn, %{"role_name" => role_name}) do
-    # Find role by name to get role_id
-    roles = AppRole.list_roles()
-
-    case Enum.find(roles, fn r -> r.role_name == role_name end) do
-      nil ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Role not found"})
-
-      role ->
+    case AppRole.get_role_by_name(role_name) do
+      {:ok, role} ->
         case AppRole.delete_role(role.role_id) do
           :ok ->
             Logger.info("Deleted AppRole: #{role_name}")
@@ -209,6 +198,11 @@ defmodule SecretHub.Web.AuthController do
             |> put_status(:bad_request)
             |> json(%{error: reason})
         end
+
+      {:error, _} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Role not found"})
     end
   end
 
@@ -225,16 +219,8 @@ defmodule SecretHub.Web.AuthController do
   ```
   """
   def rotate_secret_id(conn, %{"role_name" => role_name}) do
-    # Find role by name to get role_id
-    roles = AppRole.list_roles()
-
-    case Enum.find(roles, fn r -> r.role_name == role_name end) do
-      nil ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Role not found"})
-
-      role ->
+    case AppRole.get_role_by_name(role_name) do
+      {:ok, role} ->
         case AppRole.rotate_secret_id(role.role_id) do
           {:ok, result} ->
             Logger.info("Rotated SecretID for AppRole: #{role_name}")
@@ -248,6 +234,11 @@ defmodule SecretHub.Web.AuthController do
             |> put_status(:bad_request)
             |> json(%{error: reason})
         end
+
+      {:error, _} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Role not found"})
     end
   end
 
@@ -264,18 +255,16 @@ defmodule SecretHub.Web.AuthController do
   ```
   """
   def get_role_id(conn, %{"role_name" => role_name}) do
-    roles = AppRole.list_roles()
-
-    case Enum.find(roles, fn r -> r.role_name == role_name end) do
-      nil ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Role not found"})
-
-      role ->
+    case AppRole.get_role_by_name(role_name) do
+      {:ok, role} ->
         conn
         |> put_status(:ok)
         |> json(%{role_id: role.role_id})
+
+      {:error, _} ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Role not found"})
     end
   end
 end

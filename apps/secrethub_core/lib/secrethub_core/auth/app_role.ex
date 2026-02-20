@@ -252,17 +252,23 @@ defmodule SecretHub.Core.Auth.AppRole do
   def list_roles do
     from(r in Role, where: r.auth_type == "approle")
     |> Repo.all()
-    |> Enum.map(fn role ->
-      %{
-        role_id: role.role_id,
-        role_name: role.role_name,
-        policies: Map.get(role.metadata, "policies", []),
-        secret_id_ttl: Map.get(role.metadata, "secret_id_ttl"),
-        secret_id_num_uses: Map.get(role.metadata, "secret_id_num_uses"),
-        secret_id_uses: Map.get(role.metadata, "secret_id_uses", 0),
-        created_at: role.inserted_at
-      }
-    end)
+    |> Enum.map(&format_role/1)
+  end
+
+  @doc """
+  Gets AppRole details by role name.
+
+  Uses a database query instead of loading all roles and filtering in memory.
+  """
+  @spec get_role_by_name(String.t()) :: {:ok, map()} | {:error, String.t()}
+  def get_role_by_name(role_name) do
+    case Repo.get_by(Role, role_name: role_name, auth_type: "approle") do
+      nil ->
+        {:error, "Role not found"}
+
+      role ->
+        {:ok, format_role(role)}
+    end
   end
 
   @doc """
@@ -280,29 +286,32 @@ defmodule SecretHub.Core.Auth.AppRole do
         {:error, "Role not found"}
 
       role ->
-        {:ok,
-         %{
-           role_id: role.role_id,
-           role_name: role.role_name,
-           policies: Map.get(role.metadata, "policies", []),
-           secret_id_ttl: Map.get(role.metadata, "secret_id_ttl"),
-           secret_id_num_uses: Map.get(role.metadata, "secret_id_num_uses"),
-           secret_id_uses: Map.get(role.metadata, "secret_id_uses", 0),
-           bound_cidr_list: Map.get(role.metadata, "bound_cidr_list", []),
-           created_at: role.inserted_at
-         }}
+        {:ok, format_role(role)}
     end
   end
 
   # Private helper functions
+
+  defp format_role(role) do
+    %{
+      role_id: role.role_id,
+      role_name: role.role_name,
+      policies: Map.get(role.metadata, "policies", []),
+      secret_id_ttl: Map.get(role.metadata, "secret_id_ttl"),
+      secret_id_num_uses: Map.get(role.metadata, "secret_id_num_uses"),
+      secret_id_uses: Map.get(role.metadata, "secret_id_uses", 0),
+      bound_cidr_list: Map.get(role.metadata, "bound_cidr_list", []),
+      created_at: role.inserted_at
+    }
+  end
 
   defp validate_secret_id(role, secret_id, source_ip) do
     stored_secret_id = Map.get(role.metadata, "secret_id")
     bind_secret_id = Map.get(role.metadata, "bind_secret_id", true)
 
     cond do
-      # Check if SecretID is required
-      bind_secret_id and secret_id != stored_secret_id ->
+      # Use constant-time comparison to prevent timing attacks
+      bind_secret_id and not Plug.Crypto.secure_compare(secret_id, stored_secret_id) ->
         {:error, "invalid_secret_id"}
 
       # Check TTL
@@ -351,30 +360,78 @@ defmodule SecretHub.Core.Auth.AppRole do
     if Enum.empty?(bound_cidr_list) do
       true
     else
-      # TODO: Implement CIDR matching
-      # For now, just check exact match
-      Enum.member?(bound_cidr_list, source_ip)
+      ip_in_any_cidr?(source_ip, bound_cidr_list)
     end
   end
 
+  defp ip_in_any_cidr?(ip_string, cidr_list) do
+    case :inet.parse_address(String.to_charlist(ip_string)) do
+      {:ok, ip} ->
+        Enum.any?(cidr_list, fn cidr -> ip_matches_cidr?(ip, cidr) end)
+
+      {:error, _} ->
+        false
+    end
+  end
+
+  defp ip_matches_cidr?(ip, cidr) do
+    case parse_cidr(cidr) do
+      {:ok, network, prefix_len} ->
+        ip_to_integer(ip) |> mask(prefix_len) ==
+          ip_to_integer(network) |> mask(prefix_len)
+
+      :error ->
+        # Fall back to exact match for bare IP addresses
+        to_string(:inet.ntoa(ip)) == cidr
+    end
+  end
+
+  defp parse_cidr(cidr) do
+    case String.split(cidr, "/") do
+      [ip_str, prefix_str] ->
+        with {:ok, ip} <- :inet.parse_address(String.to_charlist(ip_str)),
+             {prefix_len, ""} <- Integer.parse(prefix_str),
+             true <- valid_prefix_length?(ip, prefix_len) do
+          {:ok, ip, prefix_len}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
+  end
+
+  defp valid_prefix_length?(ip, len) when tuple_size(ip) == 4, do: len >= 0 and len <= 32
+  defp valid_prefix_length?(ip, len) when tuple_size(ip) == 8, do: len >= 0 and len <= 128
+
+  defp ip_to_integer({a, b, c, d}) do
+    Bitwise.bsl(a, 24) + Bitwise.bsl(b, 16) + Bitwise.bsl(c, 8) + d
+  end
+
+  defp ip_to_integer({a, b, c, d, e, f, g, h}) do
+    Enum.reduce([a, b, c, d, e, f, g, h], 0, fn segment, acc ->
+      Bitwise.bsl(acc, 16) + segment
+    end)
+  end
+
+  defp mask(ip_int, prefix_len) do
+    shift = max(0, bit_size_for(ip_int) - prefix_len)
+    Bitwise.bsr(ip_int, shift)
+  end
+
+  defp bit_size_for(n) when n <= 0xFFFFFFFF, do: 32
+  defp bit_size_for(_), do: 128
+
   defp generate_auth_token(role) do
-    # Generate JWT-like token
-    # In production, this would be a proper JWT with signature
     payload = %{
       role_id: role.role_id,
       role_name: role.role_name,
       policies: Map.get(role.metadata, "policies", []),
-      issued_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix(),
-      expires_at:
-        DateTime.utc_now()
-        |> DateTime.truncate(:second)
-        |> DateTime.add(3600, :second)
-        |> DateTime.to_unix()
+      issued_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix()
     }
 
-    # For now, use simple base64 encoding
-    # TODO: Implement proper JWT signing
-    Jason.encode!(payload) |> Base.url_encode64(padding: false)
+    Phoenix.Token.sign(SecretHub.Web.Endpoint, "approle_auth", payload)
   end
 
   defp audit_event(event_type, role_id, metadata) do
@@ -390,29 +447,31 @@ defmodule SecretHub.Core.Auth.AppRole do
 
   @doc """
   Generate a new secret ID for a role.
-  TODO: Implement proper secret ID generation.
+
+  Rotates the secret ID and returns the new value.
   """
   @spec generate_secret_id(String.t()) :: {:ok, String.t()} | {:error, String.t()}
-  def generate_secret_id(_role_id) do
-    # Placeholder implementation - satisfies type system
-    if false do
-      {:ok, Ecto.UUID.generate()}
-    else
-      {:error, "Not implemented"}
+  def generate_secret_id(role_id) do
+    case rotate_secret_id(role_id) do
+      {:ok, %{secret_id: new_id}} -> {:ok, new_id}
+      {:error, reason} -> {:error, reason}
     end
   end
 
   @doc """
-  Verify an AppRole token.
-  TODO: Implement proper token verification.
+  Verify an AppRole token and return its payload.
   """
   @spec verify_token(String.t()) :: {:ok, map()} | {:error, String.t()}
-  def verify_token(_token) do
-    # Placeholder implementation - satisfies type system
-    if false do
-      {:ok, %{role_name: "admin", policies: []}}
-    else
-      {:error, "Not implemented"}
+  def verify_token(token) do
+    case Phoenix.Token.verify(SecretHub.Web.Endpoint, "approle_auth", token, max_age: 3600) do
+      {:ok, payload} ->
+        {:ok, payload}
+
+      {:error, :expired} ->
+        {:error, "Token has expired"}
+
+      {:error, _reason} ->
+        {:error, "Invalid token"}
     end
   end
 end
