@@ -241,26 +241,49 @@ defmodule SecretHub.Core.Cache do
   end
 
   defp evict_lru(table) do
-    # Evict 10% of oldest entries (simple LRU approximation)
-    # In a real LRU, we'd track access times, but this is a reasonable approximation
+    # Evict 10% of entries using ETS traversal instead of copying the entire
+    # table into process memory (which defeats the purpose of ETS).
     entries_to_evict = div(@max_cache_entries, 10)
 
-    # Get all entries sorted by expiration (oldest first)
-    entries =
-      :ets.tab2list(table)
-      |> Enum.sort_by(fn {_key, _value, expires_at} -> expires_at end)
-      |> Enum.take(entries_to_evict)
+    # Collect N entries with earliest expiry via fold over ETS table.
+    oldest =
+      :ets.foldl(
+        &collect_oldest_entry(&1, &2, entries_to_evict),
+        [],
+        table
+      )
 
-    # Delete oldest entries
-    Enum.each(entries, fn {key, _value, _expires_at} ->
+    Enum.each(oldest, fn {_expires_at, key} ->
       :ets.delete(table, key)
     end)
 
+    evicted = length(oldest)
+
     Logger.debug("Evicted LRU cache entries",
       table: table,
-      evicted: length(entries)
+      evicted: evicted
     )
 
-    length(entries)
+    evicted
+  end
+
+  defp collect_oldest_entry({key, _value, expires_at}, acc, limit) do
+    entry = {expires_at, key}
+
+    if length(acc) < limit do
+      Enum.sort([entry | acc])
+    else
+      maybe_replace_newest(acc, entry)
+    end
+  end
+
+  defp maybe_replace_newest(acc, {expires_at, _key} = entry) do
+    case List.last(acc) do
+      {max_exp, _} when expires_at < max_exp ->
+        Enum.sort([entry | Enum.drop(acc, -1)])
+
+      _ ->
+        acc
+    end
   end
 end
