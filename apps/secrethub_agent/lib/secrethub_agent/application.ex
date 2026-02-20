@@ -73,7 +73,10 @@ defmodule SecretHub.Agent.Application do
        ]}
     ]
 
-    opts = [strategy: :one_for_one, name: SecretHub.Agent.Supervisor]
+    # :rest_for_one ensures downstream children restart when an upstream
+    # dependency crashes (e.g., if ConnectionManager dies, LeaseRenewer
+    # and UDSServer restart since they depend on the Core connection).
+    opts = [strategy: :rest_for_one, name: SecretHub.Agent.Supervisor]
     Supervisor.start_link(children, opts)
   end
 
