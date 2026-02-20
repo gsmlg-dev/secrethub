@@ -62,6 +62,16 @@ defmodule SecretHub.Core.Audit do
 
   @hmac_secret Application.compile_env(:secrethub_core, :audit_hmac_secret, "dev-audit-secret")
 
+  if @hmac_secret == "dev-audit-secret" and
+       Application.compile_env(:secrethub_core, :env) == :prod do
+    @external_resource "compile_warning"
+    IO.warn(
+      "SECURITY: :audit_hmac_secret is using the default dev value in production. " <>
+        "Set config :secrethub_core, :audit_hmac_secret to a strong random value.",
+      []
+    )
+  end
+
   @doc """
   Log an audit event with hash chain integrity.
 
