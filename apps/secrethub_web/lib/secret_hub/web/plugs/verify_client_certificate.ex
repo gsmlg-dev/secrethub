@@ -301,24 +301,41 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
     end
   end
 
-  defp verify_against_ca_chain(_cert_der) do
-    # FIXME: Implement proper certificate chain validation
-    # For now, we'll do basic validation
-
-    # In production, this should:
-    # 1. Get CA chain from database/file
-    # 2. Verify certificate signature using CA public key
-    # 3. Verify chain of trust up to root CA
-
+  defp verify_against_ca_chain(cert_der) do
     case CA.get_ca_chain() do
-      {:ok, _ca_chain_pem} ->
-        # FIXME: Actually verify the certificate against the CA chain
-        # For now, just check if we have a CA chain
-        :valid
+      {:ok, ca_chain_pem} ->
+        verify_cert_against_pem_chain(cert_der, ca_chain_pem)
 
       {:error, reason} ->
         {:invalid, "CA chain not available: #{reason}"}
     end
+  end
+
+  defp verify_cert_against_pem_chain(cert_der, ca_chain_pem) do
+    # Decode all CA certificates from the PEM chain
+    ca_entries = :public_key.pem_decode(ca_chain_pem)
+
+    trusted_certs =
+      for {:Certificate, der, :not_encrypted} <- ca_entries do
+        :public_key.pkix_decode_cert(der, :otp)
+      end
+
+    if Enum.empty?(trusted_certs) do
+      {:invalid, "No valid CA certificates in chain"}
+    else
+      otp_cert = :public_key.pkix_decode_cert(cert_der, :otp)
+
+      case :public_key.pkix_path_validation(hd(trusted_certs), [otp_cert], []) do
+        {:ok, _} ->
+          :valid
+
+        {:error, {:bad_cert, reason}} ->
+          {:invalid, "Certificate chain validation failed: #{inspect(reason)}"}
+      end
+    end
+  rescue
+    e ->
+      {:invalid, "Certificate chain verification error: #{inspect(e)}"}
   end
 
   defp parse_cert_info(cert) do
