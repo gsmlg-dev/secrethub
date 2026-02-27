@@ -251,9 +251,10 @@ defmodule SecretHub.CLI.OutputTest do
 
   describe "success/1" do
     test "prints success message in color" do
-      output = capture_io(fn ->
-        Output.success("Operation completed")
-      end)
+      output =
+        capture_io(fn ->
+          Output.success("Operation completed")
+        end)
 
       assert output =~ "Operation completed"
     end
@@ -261,9 +262,10 @@ defmodule SecretHub.CLI.OutputTest do
 
   describe "error/1" do
     test "prints error message to stderr" do
-      output = capture_io(:stderr, fn ->
-        Output.error("Something went wrong")
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          Output.error("Something went wrong")
+        end)
 
       assert output =~ "Error:"
       assert output =~ "Something went wrong"
@@ -272,9 +274,10 @@ defmodule SecretHub.CLI.OutputTest do
 
   describe "warning/1" do
     test "prints warning message in color" do
-      output = capture_io(fn ->
-        Output.warning("This is a warning")
-      end)
+      output =
+        capture_io(fn ->
+          Output.warning("This is a warning")
+        end)
 
       assert output =~ "Warning:"
       assert output =~ "This is a warning"
@@ -283,9 +286,10 @@ defmodule SecretHub.CLI.OutputTest do
 
   describe "info/1" do
     test "prints info message" do
-      output = capture_io(fn ->
-        Output.info("Information message")
-      end)
+      output =
+        capture_io(fn ->
+          Output.info("Information message")
+        end)
 
       assert output =~ "Information message"
     end
@@ -336,7 +340,8 @@ defmodule SecretHub.CLI.OutputTest do
 
       # All data lines should have the same length
       lengths = Enum.map(data_lines, &String.length/1)
-      assert Enum.uniq(lengths) |> length() <= 2  # Header and data might differ slightly
+      # Header and data might differ slightly
+      assert Enum.uniq(lengths) |> length() <= 2
     end
   end
 end
