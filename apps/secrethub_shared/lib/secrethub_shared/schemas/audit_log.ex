@@ -147,6 +147,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "system.sealed",
       "system.backup_created",
       "system.certificate_revoked",
+      # Rate limiting events
+      "rate_limit.exceeded",
       # Vault lifecycle events
       "vault_started",
       "vault_initialized",

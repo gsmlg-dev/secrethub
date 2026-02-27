@@ -1,6 +1,8 @@
 defmodule SecretHub.Web.Router do
   use SecretHub.Web, :router
 
+  @admin_auth_controller SecretHub.Web.AdminAuthController
+
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -16,7 +18,7 @@ defmodule SecretHub.Web.Router do
 
   # Admin authentication plug
   defp require_admin_auth(conn, _opts) do
-    SecretHub.Web.AdminAuthController.require_admin_auth(conn, [])
+    @admin_auth_controller.require_admin_auth(conn, [])
   end
 
   pipeline :admin_browser do

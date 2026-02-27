@@ -223,12 +223,20 @@ defmodule SecretHub.CLI do
 
   defp handle_result({:ok, output}) do
     IO.puts(output)
-    System.halt(0)
+    halt(0)
   end
 
   defp handle_result({:error, reason}) do
     IO.puts(:stderr, "Error: #{reason}")
-    System.halt(1)
+    halt(1)
+  end
+
+  defp halt(code) do
+    if Application.get_env(:secrethub_cli, :test_mode, false) do
+      exit({:shutdown, code})
+    else
+      System.halt(code)
+    end
   end
 
   defp help_text do

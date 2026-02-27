@@ -1,3 +1,6 @@
+# Ensure test support modules are loaded (needed for umbrella test runs)
+Code.ensure_loaded(SecretHub.Core.DataCase)
+
 ExUnit.start()
 
 # When running from the umbrella root, the application config may not be loaded

@@ -78,7 +78,7 @@ defmodule SecretHub.Performance.AgentLoadTest do
 
     {:ok, policy} =
       Policies.create_policy(%{
-        name: "load-test-policy-#{:rand.uniform(100000)}",
+        name: "load-test-policy-#{:rand.uniform(100_000)}",
         path_rules: [
           %{
             path: "secret/data/load-test/*",
@@ -145,12 +145,24 @@ defmodule SecretHub.Performance.AgentLoadTest do
     end_time = System.monotonic_time(:millisecond)
     duration_ms = end_time - start_time
 
-    success_count = Enum.count(agents, fn {:ok, {:success, _}} -> true; _ -> false end)
-    error_count = Enum.count(agents, fn {:ok, {:error, _}} -> true; _ -> false end)
+    success_count =
+      Enum.count(agents, fn
+        {:ok, {:success, _}} -> true
+        _ -> false
+      end)
+
+    error_count =
+      Enum.count(agents, fn
+        {:ok, {:error, _}} -> true
+        _ -> false
+      end)
 
     successful_agents =
       agents
-      |> Enum.filter(fn {:ok, {:success, _}} -> true; _ -> false end)
+      |> Enum.filter(fn
+        {:ok, {:success, _}} -> true
+        _ -> false
+      end)
       |> Enum.map(fn {:ok, {:success, agent}} -> agent end)
 
     %{
@@ -209,12 +221,24 @@ defmodule SecretHub.Performance.AgentLoadTest do
     end_time = System.monotonic_time(:millisecond)
     duration_ms = end_time - start_time
 
-    success_count = Enum.count(auth_results, fn {:ok, {:success, _}} -> true; _ -> false end)
-    error_count = Enum.count(auth_results, fn {:ok, {:error, _, _}} -> true; _ -> false end)
+    success_count =
+      Enum.count(auth_results, fn
+        {:ok, {:success, _}} -> true
+        _ -> false
+      end)
+
+    error_count =
+      Enum.count(auth_results, fn
+        {:ok, {:error, _, _}} -> true
+        _ -> false
+      end)
 
     latencies =
       auth_results
-      |> Enum.filter(fn {:ok, {:success, _}} -> true; _ -> false end)
+      |> Enum.filter(fn
+        {:ok, {:success, _}} -> true
+        _ -> false
+      end)
       |> Enum.map(fn {:ok, {:success, latency}} -> latency end)
 
     avg_latency = if length(latencies) > 0, do: Enum.sum(latencies) / length(latencies), else: 0
@@ -293,12 +317,24 @@ defmodule SecretHub.Performance.AgentLoadTest do
     end_time = System.monotonic_time(:millisecond)
     duration_ms = end_time - start_time
 
-    success_count = Enum.count(read_results, fn {:success, _} -> true; _ -> false end)
-    error_count = Enum.count(read_results, fn {:error, _, _} -> true; _ -> false end)
+    success_count =
+      Enum.count(read_results, fn
+        {:success, _} -> true
+        _ -> false
+      end)
+
+    error_count =
+      Enum.count(read_results, fn
+        {:error, _, _} -> true
+        _ -> false
+      end)
 
     latencies =
       read_results
-      |> Enum.filter(fn {:success, _} -> true; _ -> false end)
+      |> Enum.filter(fn
+        {:success, _} -> true
+        _ -> false
+      end)
       |> Enum.map(fn {:success, latency} -> latency end)
 
     avg_latency = if length(latencies) > 0, do: Enum.sum(latencies) / length(latencies), else: 0
@@ -385,12 +421,24 @@ defmodule SecretHub.Performance.AgentLoadTest do
     end_time = System.monotonic_time(:millisecond)
     duration_ms = end_time - start_time
 
-    success_count = Enum.count(results, fn {:success, _} -> true; _ -> false end)
-    error_count = Enum.count(results, fn {:error, _, _} -> true; _ -> false end)
+    success_count =
+      Enum.count(results, fn
+        {:success, _} -> true
+        _ -> false
+      end)
+
+    error_count =
+      Enum.count(results, fn
+        {:error, _, _} -> true
+        _ -> false
+      end)
 
     latencies =
       results
-      |> Enum.filter(fn {:success, _} -> true; _ -> false end)
+      |> Enum.filter(fn
+        {:success, _} -> true
+        _ -> false
+      end)
       |> Enum.map(fn {:success, latency} -> latency end)
 
     avg_latency = if length(latencies) > 0, do: Enum.sum(latencies) / length(latencies), else: 0
