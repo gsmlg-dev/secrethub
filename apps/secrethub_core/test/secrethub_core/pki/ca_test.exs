@@ -231,7 +231,7 @@ defmodule SecretHub.Core.PKI.CATest do
 
     test "rejects non-CA certificate as root" do
       # Create a client certificate
-      {:ok, root} = CA.generate_root_ca("Root", "Org")
+      {:ok, _root} = CA.generate_root_ca("Root", "Org")
 
       # Try to use it as a root for intermediate (should fail in real implementation)
       # For now, just verify the error handling exists
@@ -325,7 +325,7 @@ defmodule SecretHub.Core.PKI.CATest do
     test "certificates can be queried by type" do
       {:ok, root} = CA.generate_root_ca("Root 1", "Org")
       {:ok, _root2} = CA.generate_root_ca("Root 2", "Org")
-      {:ok, intermediate} = CA.generate_intermediate_ca("Int 1", "Org", root.cert_record.id)
+      {:ok, _intermediate} = CA.generate_intermediate_ca("Int 1", "Org", root.cert_record.id)
 
       root_certs = Repo.all(from(c in Certificate, where: c.cert_type == :root_ca))
       assert length(root_certs) >= 2

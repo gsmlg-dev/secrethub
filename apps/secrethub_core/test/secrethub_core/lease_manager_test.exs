@@ -2,7 +2,7 @@ defmodule SecretHub.Core.LeaseManagerTest do
   use SecretHub.Core.DataCase, async: false
 
   alias SecretHub.Core.LeaseManager
-  alias SecretHub.Shared.Schemas.Lease
+  # alias SecretHub.Shared.Schemas.Lease
 
   setup do
     # Start LeaseManager for testing

@@ -14,7 +14,7 @@ defmodule SecretHub.Web.AccessControlE2ETest do
   use SecretHub.Web.ConnCase, async: false
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias SecretHub.Core.{Agents, Policies, Secrets}
+  alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 

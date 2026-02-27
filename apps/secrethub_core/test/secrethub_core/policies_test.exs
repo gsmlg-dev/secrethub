@@ -223,10 +223,7 @@ defmodule SecretHub.Core.PoliciesTest do
                })
     end
 
-    # NOTE: CIDR matching in ip_in_range?/2 uses a deprecated String.slice/2 call
-    # with a negative step, which causes it to rescue to false. This test documents
-    # the current (broken) behavior. CIDR ranges effectively deny all IPs.
-    test "CIDR notation currently does not match (known limitation)" do
+    test "CIDR notation matches IPs within the subnet" do
       {_policy, entity_id} =
         create_bound_policy(%{
           "version" => "1.0",
@@ -237,11 +234,44 @@ defmodule SecretHub.Core.PoliciesTest do
           }
         })
 
-      # Even though 10.0.1.50 should be in 10.0.0.0/8, the CIDR implementation
-      # is broken and will deny access
-      assert {:error, _} =
+      # 10.0.1.50 is within 10.0.0.0/8
+      assert {:ok, _} =
                Policies.evaluate_access(entity_id, "secure.key", "read", %{
                  ip_address: "10.0.1.50"
+               })
+
+      # 10.255.255.255 is within 10.0.0.0/8
+      assert {:ok, _} =
+               Policies.evaluate_access(entity_id, "secure.key", "read", %{
+                 ip_address: "10.255.255.255"
+               })
+
+      # 11.0.0.1 is NOT within 10.0.0.0/8
+      assert {:error, _} =
+               Policies.evaluate_access(entity_id, "secure.key", "read", %{
+                 ip_address: "11.0.0.1"
+               })
+    end
+
+    test "CIDR /24 subnet matching" do
+      {_policy, entity_id} =
+        create_bound_policy(%{
+          "version" => "1.0",
+          "allowed_secrets" => ["secure.*"],
+          "allowed_operations" => ["read"],
+          "conditions" => %{
+            "ip_ranges" => ["192.168.1.0/24"]
+          }
+        })
+
+      assert {:ok, _} =
+               Policies.evaluate_access(entity_id, "secure.key", "read", %{
+                 ip_address: "192.168.1.100"
+               })
+
+      assert {:error, _} =
+               Policies.evaluate_access(entity_id, "secure.key", "read", %{
+                 ip_address: "192.168.2.1"
                })
     end
   end

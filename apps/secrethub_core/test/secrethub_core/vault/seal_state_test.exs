@@ -17,7 +17,7 @@ defmodule SecretHub.Core.Vault.SealStateTest do
   use SecretHub.Core.DataCase, async: false
 
   alias SecretHub.Core.Vault.SealState
-  alias SecretHub.Shared.Crypto.Shamir
+  # alias SecretHub.Shared.Crypto.Shamir
 
   # Start SealState for these tests (it's disabled in test mode by default)
   setup do
@@ -405,7 +405,7 @@ defmodule SecretHub.Core.Vault.SealStateTest do
 
     test "handles share from wrong vault" do
       # Initialize first vault
-      {:ok, shares1} = SealState.initialize(5, 3)
+      {:ok, _shares1} = SealState.initialize(5, 3)
 
       # Re-seal and initialize with different parameters
       # (In real scenario, would need separate GenServer instances)

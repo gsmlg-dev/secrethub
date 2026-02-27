@@ -36,7 +36,7 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
         |> Enum.take(2)
         |> Enum.each(&SealState.unseal/1)
 
-      %{sealed: true, threshold: threshold} ->
+      %{sealed: true, threshold: _threshold} ->
         # Vault is initialized but sealed - need shares from somewhere
         # For test purposes, we'll create fresh shares
         :ok
@@ -170,7 +170,7 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
         })
 
       login_response = json_response(login_conn, 200)
-      initial_cert = login_response["certificate"]
+      _initial_cert = login_response["certificate"]
       token = login_response["token"]
 
       # Step 2: Request certificate renewal

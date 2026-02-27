@@ -38,6 +38,7 @@ defmodule SecretHub.Core.Policies do
   """
 
   require Logger
+  import Bitwise
   import Ecto.Query
 
   alias SecretHub.Core.{Audit, Repo}
@@ -454,16 +455,45 @@ defmodule SecretHub.Core.Policies do
   defp evaluate_ip_condition(_, _), do: true
 
   defp ip_in_range?(ip_str, range_str) do
-    # Basic CIDR matching - can be enhanced with a proper IP library
     if String.contains?(range_str, "/") do
-      # CIDR notation
-      [network, _prefix] = String.split(range_str, "/")
-      String.starts_with?(ip_str, String.slice(network, 0..-3//-1))
+      [network_str, prefix_str] = String.split(range_str, "/")
+      prefix_len = String.to_integer(prefix_str)
+
+      with {:ok, ip_tuple} <- parse_ipv4(ip_str),
+           {:ok, network_tuple} <- parse_ipv4(network_str) do
+        mask = bsl(0xFFFFFFFF, 32 - prefix_len) |> band(0xFFFFFFFF)
+        ip_int = ip_to_integer(ip_tuple)
+        net_int = ip_to_integer(network_tuple)
+        band(ip_int, mask) == band(net_int, mask)
+      else
+        _ -> false
+      end
     else
-      # Exact IP match
       ip_str == range_str
     end
   rescue
     _ -> false
+  end
+
+  defp parse_ipv4(ip_str) do
+    case String.split(ip_str, ".") do
+      [a, b, c, d] ->
+        octets = Enum.map([a, b, c, d], &String.to_integer/1)
+
+        if Enum.all?(octets, &(&1 >= 0 and &1 <= 255)) do
+          {:ok, List.to_tuple(octets)}
+        else
+          :error
+        end
+
+      _ ->
+        :error
+    end
+  rescue
+    _ -> :error
+  end
+
+  defp ip_to_integer({a, b, c, d}) do
+    bsl(a, 24) ||| bsl(b, 16) ||| bsl(c, 8) ||| d
   end
 end

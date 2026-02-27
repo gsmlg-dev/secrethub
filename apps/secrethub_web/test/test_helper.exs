@@ -51,6 +51,11 @@ case Process.whereis(SecretHub.Core.Vault.SealState) do
   pid -> GenServer.stop(pid, :normal)
 end
 
-# Import support modules
-Code.require_file("support/conn_case.ex", __DIR__)
-Code.require_file("support/channel_case.ex", __DIR__)
+# Import support modules (only if not already loaded from elixirc_paths)
+unless Code.ensure_loaded?(SecretHub.Web.ConnCase) do
+  Code.require_file("support/conn_case.ex", __DIR__)
+end
+
+unless Code.ensure_loaded?(SecretHub.Web.ChannelCase) do
+  Code.require_file("support/channel_case.ex", __DIR__)
+end

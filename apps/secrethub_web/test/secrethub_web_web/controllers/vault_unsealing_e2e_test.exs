@@ -45,7 +45,7 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
 
       # If vault is already initialized from previous tests, we'll note it
       # but continue with the unsealing flow
-      initial_state = status["initialized"]
+      _initial_state = status["initialized"]
 
       # Step 2: Initialize vault with 5 shares, threshold of 3
       conn = build_conn()

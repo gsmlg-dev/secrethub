@@ -9,7 +9,7 @@ defmodule SecretHub.Web.AuditTrailE2ETest do
   use SecretHub.Web.ConnCase, async: false
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias SecretHub.Core.{Agents, Audit, Policies}
+  alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 
@@ -135,7 +135,7 @@ defmodule SecretHub.Web.AuditTrailE2ETest do
       assert log.access_granted == true
     end
 
-    test "denied access generates audit event with access_granted=false", %{agent: agent} do
+    test "denied access generates audit event with access_granted=false", %{agent: _agent} do
       # Create agent with restricted access
       {:ok, restricted_policy} =
         Policies.create_policy(%{

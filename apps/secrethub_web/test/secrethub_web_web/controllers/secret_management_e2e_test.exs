@@ -17,7 +17,7 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
   # and the /v1/secret/* and /v1/auth/approle/login routes.
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias SecretHub.Core.{Agents, Policies, Secrets}
+  alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 
@@ -170,7 +170,7 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
       assert conn.status == 404
     end
 
-    test "secret versioning maintains history", %{conn: conn, token: token} do
+    test "secret versioning maintains history", %{conn: _conn, token: token} do
       secret_path = "secret/data/versioning-test/config"
 
       # Create multiple versions
@@ -205,7 +205,7 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
   end
 
   describe "E2E: Secret metadata operations" do
-    test "list secrets in a path", %{conn: conn, token: token} do
+    test "list secrets in a path", %{conn: _conn, token: token} do
       # Create multiple secrets in the same path
       base_path = "test-app-#{:rand.uniform(10_000)}"
 

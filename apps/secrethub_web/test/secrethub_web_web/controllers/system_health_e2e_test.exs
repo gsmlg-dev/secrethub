@@ -37,7 +37,7 @@ defmodule SecretHub.Web.SystemHealthE2ETest do
     test "health endpoint reflects seal state transitions" do
       # Check initial state
       conn = build_conn() |> get("/v1/sys/health")
-      initial = Jason.decode!(conn.resp_body)
+      _initial = Jason.decode!(conn.resp_body)
 
       # Initialize if needed
       case SealState.status() do
