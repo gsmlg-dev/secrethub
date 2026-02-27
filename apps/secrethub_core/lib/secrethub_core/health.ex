@@ -54,7 +54,11 @@ defmodule SecretHub.Core.Health do
     shutting_down = Shutdown.shutting_down?()
 
     checks = %{
-      shutdown_state: if(shutting_down, do: {:error, "shutting down"}, else: {:ok, "ready"}),
+      shutdown_state:
+        if(shutting_down,
+          do: {:error, %{state: "shutting down"}},
+          else: {:ok, %{state: "ready"}}
+        ),
       database: check_database(),
       vault_initialized: check_vault_initialized()
     }

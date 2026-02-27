@@ -16,8 +16,9 @@ defmodule SecretHub.Web.SecretApiController do
   use SecretHub.Web, :controller
   require Logger
 
-  alias SecretHub.Core.Repo
+  alias SecretHub.Core.{Audit, Repo}
   alias SecretHub.Core.Secrets
+  alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Schemas.Secret
 
   @doc """
@@ -26,24 +27,28 @@ defmodule SecretHub.Web.SecretApiController do
   Create or update a secret at the given path.
   """
   def create_or_update(conn, params) do
-    path = extract_path(params)
-    agent = conn.assigns[:current_agent]
-    secret_path = vault_path_to_dot(path)
-    # Keep Vault-style path for policy check (policies use Vault patterns)
-    vault_path = "secret/data/" <> path
-
-    # Check policy allows write/create
-    with :ok <- check_policy(agent, vault_path, "create"),
-         {:ok, data} <- validate_data_param(params["data"]) do
-      do_create_or_update(conn, path, secret_path, data, agent)
+    if vault_sealed?() do
+      sealed_response(conn)
     else
-      {:error, :invalid_data} ->
-        conn
-        |> put_status(:bad_request)
-        |> json(%{error: "Missing or empty 'data' field"})
+      path = extract_path(params)
+      agent = conn.assigns[:current_agent]
+      secret_path = vault_path_to_dot(path)
+      # Keep Vault-style path for policy check (policies use Vault patterns)
+      vault_path = "secret/data/" <> path
 
-      {:error, _reason} ->
-        forbidden_response(conn)
+      # Check policy allows write/create
+      with :ok <- check_policy(agent, vault_path, "create"),
+           {:ok, data} <- validate_data_param(params["data"]) do
+        do_create_or_update(conn, path, secret_path, data, agent)
+      else
+        {:error, :invalid_data} ->
+          conn
+          |> put_status(:bad_request)
+          |> json(%{error: "Missing or empty 'data' field"})
+
+        {:error, _reason} ->
+          forbidden_response(conn)
+      end
     end
   end
 
@@ -53,17 +58,21 @@ defmodule SecretHub.Web.SecretApiController do
   Read a secret at the given path.
   """
   def read(conn, params) do
-    path = extract_path(params)
-    agent = conn.assigns[:current_agent]
-    secret_path = vault_path_to_dot(path)
-    vault_path = "secret/data/" <> path
+    if vault_sealed?() do
+      sealed_response(conn)
+    else
+      path = extract_path(params)
+      agent = conn.assigns[:current_agent]
+      secret_path = vault_path_to_dot(path)
+      vault_path = "secret/data/" <> path
 
-    case check_policy(agent, vault_path, "read") do
-      :ok ->
-        read_secret(conn, secret_path, params["version"])
+      case check_policy(agent, vault_path, "read") do
+        :ok ->
+          read_secret(conn, secret_path, params["version"])
 
-      {:error, _reason} ->
-        forbidden_response(conn)
+        {:error, _reason} ->
+          forbidden_response(conn)
+      end
     end
   end
 
@@ -73,17 +82,21 @@ defmodule SecretHub.Web.SecretApiController do
   Delete a secret at the given path.
   """
   def delete(conn, params) do
-    path = extract_path(params)
-    agent = conn.assigns[:current_agent]
-    secret_path = vault_path_to_dot(path)
-    vault_path = "secret/data/" <> path
+    if vault_sealed?() do
+      sealed_response(conn)
+    else
+      path = extract_path(params)
+      agent = conn.assigns[:current_agent]
+      secret_path = vault_path_to_dot(path)
+      vault_path = "secret/data/" <> path
 
-    case check_policy(agent, vault_path, "delete") do
-      :ok ->
-        delete_secret_at_path(conn, secret_path)
+      case check_policy(agent, vault_path, "delete") do
+        :ok ->
+          delete_secret_at_path(conn, secret_path)
 
-      {:error, _reason} ->
-        forbidden_response(conn)
+        {:error, _reason} ->
+          forbidden_response(conn)
+      end
     end
   end
 
@@ -138,6 +151,8 @@ defmodule SecretHub.Web.SecretApiController do
   end
 
   defp create_new_secret(conn, path, secret_path, data) do
+    agent = conn.assigns[:current_agent]
+
     name =
       path
       |> String.split("/")
@@ -150,7 +165,8 @@ defmodule SecretHub.Web.SecretApiController do
       "secret_data" => data,
       "secret_type" => "static",
       "engine_type" => "static",
-      "description" => "Created via API"
+      "description" => "Created via API",
+      "created_by" => agent && agent.id
     }
 
     case Secrets.create_secret(attrs) do
@@ -176,8 +192,21 @@ defmodule SecretHub.Web.SecretApiController do
   end
 
   defp read_secret(conn, secret_path, _version) do
+    agent = conn.assigns[:current_agent]
+
     case Secrets.read_decrypted(secret_path) do
       {:ok, decrypted_data, secret} ->
+        Audit.log_event(%{
+          event_type: "secret.accessed",
+          actor_type: "agent",
+          actor_id: agent && agent.id,
+          agent_id: agent && agent.id,
+          secret_id: secret.id,
+          secret_type: to_string(secret.secret_type),
+          access_granted: true,
+          event_data: %{secret_path: secret_path}
+        })
+
         json(conn, %{
           data: decrypted_data,
           metadata: %{
@@ -245,6 +274,17 @@ defmodule SecretHub.Web.SecretApiController do
   # Shared response helpers
 
   defp forbidden_response(conn) do
+    agent = conn.assigns[:current_agent]
+
+    Audit.log_event(%{
+      event_type: "secret.access_denied",
+      actor_type: "agent",
+      actor_id: agent && agent.id,
+      agent_id: agent && agent.id,
+      access_granted: false,
+      denial_reason: "policy_denied"
+    })
+
     conn
     |> put_status(:forbidden)
     |> json(%{error: "permission denied"})
@@ -347,5 +387,20 @@ defmodule SecretHub.Web.SecretApiController do
       end)
 
     json(conn, %{keys: keys})
+  end
+
+  defp vault_sealed? do
+    case SealState.status() do
+      %{sealed: true} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp sealed_response(conn) do
+    conn
+    |> put_status(:service_unavailable)
+    |> json(%{error: "Vault is sealed"})
   end
 end

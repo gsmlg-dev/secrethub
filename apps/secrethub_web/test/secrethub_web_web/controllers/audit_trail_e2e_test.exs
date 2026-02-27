@@ -290,7 +290,12 @@ defmodule SecretHub.Web.AuditTrailE2ETest do
       # Check for auth-related audit entries
       auth_logs =
         from(a in SecretHub.Shared.Schemas.AuditLog,
-          where: a.event_type in ["auth.agent_login", "auth.agent_bootstrap"],
+          where:
+            a.event_type in [
+              "auth.agent_login",
+              "auth.agent_bootstrap",
+              "approle_login_success"
+            ],
           where: a.timestamp >= ^before,
           order_by: [desc: a.timestamp]
         )

@@ -28,7 +28,7 @@ defmodule SecretHub.Web.AuthController do
   ```
   """
   def login(conn, %{"role_id" => role_id, "secret_id" => secret_id}) do
-    alias SecretHub.Core.Agents
+    alias SecretHub.Core.{Agents, Audit}
 
     case Agents.authenticate_with_approle(role_id, secret_id) do
       {:ok, %{certificate: certificate, agent: agent}} ->
@@ -40,6 +40,15 @@ defmodule SecretHub.Web.AuthController do
         }
 
         token = Phoenix.Token.sign(SecretHub.Web.Endpoint, "agent_auth", payload)
+
+        Audit.log_event(%{
+          event_type: "approle_login_success",
+          actor_type: "approle",
+          actor_id: agent.id,
+          agent_id: agent.id,
+          access_granted: true,
+          event_data: %{role_id: role_id, agent_id: agent.agent_id}
+        })
 
         conn
         |> put_status(:ok)

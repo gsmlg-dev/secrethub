@@ -10,6 +10,7 @@ defmodule SecretHub.Web.SystemHealthE2ETest do
   alias Ecto.Adapters.SQL.Sandbox
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Shared.Crypto.Shamir
 
   @moduletag :e2e
 
@@ -111,12 +112,13 @@ defmodule SecretHub.Web.SystemHealthE2ETest do
           assert status["sealed"] == true
           assert status["progress"] == 0
 
-          # Unseal again with different shares
+          # Unseal again with different shares (encode for API)
           shares
           |> Enum.drop(1)
           |> Enum.take(2)
           |> Enum.each(fn share ->
-            build_conn() |> post("/v1/sys/unseal", %{"share" => share})
+            encoded = Shamir.encode_share(share)
+            build_conn() |> post("/v1/sys/unseal", %{"share" => encoded})
           end)
 
           # Verify unsealed again

@@ -1017,22 +1017,18 @@ defmodule SecretHub.Core.PKI.CA do
   TODO: Implement proper certificate revocation with CRL updates.
   """
   def revoke_certificate(cert_id) do
-    case Repo.get(Certificate, cert_id) do
-      nil ->
-        {:error, :not_found}
-
-      cert ->
-        changeset =
-          Ecto.Changeset.change(cert, %{
-            revoked: true,
-            revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
-            revocation_reason: "manual_revocation"
-          })
-
-        case Repo.update(changeset) do
-          {:ok, updated_cert} -> {:ok, updated_cert}
-          {:error, changeset} -> {:error, changeset}
-        end
+    with {:ok, uuid} <- Ecto.UUID.cast(cert_id),
+         %Certificate{} = cert <- Repo.get(Certificate, uuid) do
+      cert
+      |> Ecto.Changeset.change(%{
+        revoked: true,
+        revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        revocation_reason: "manual_revocation"
+      })
+      |> Repo.update()
+    else
+      :error -> {:error, :not_found}
+      nil -> {:error, :not_found}
     end
   end
 

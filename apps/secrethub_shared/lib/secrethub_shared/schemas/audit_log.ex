@@ -131,6 +131,12 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "auth.agent_login",
       "auth.admin_login",
       "auth.failed",
+      # AppRole authentication events
+      "approle_created",
+      "approle_deleted",
+      "approle_login_failed",
+      "approle_login_success",
+      "approle_secret_rotated",
       # Policy changes
       "policy.created",
       "policy.updated",
@@ -140,7 +146,13 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "system.unsealed",
       "system.sealed",
       "system.backup_created",
-      "system.certificate_revoked"
+      "system.certificate_revoked",
+      # Vault lifecycle events
+      "vault_started",
+      "vault_initialized",
+      "vault_unsealed",
+      "vault_sealed",
+      "vault_auto_sealed"
     ]
   end
 end

@@ -59,6 +59,22 @@ defmodule SecretHub.Core.Secrets do
       |> case do
         {:ok, secret} = result ->
           Logger.info("Secret created", secret_id: secret.id, secret_path: secret.secret_path)
+
+          agent_id = Map.get(attrs, "created_by") || Map.get(attrs, :created_by)
+
+          Audit.log_event(%{
+            event_type: "secret.created",
+            actor_type: "agent",
+            actor_id: agent_id,
+            agent_id: agent_id,
+            secret_id: secret.id,
+            secret_type: to_string(secret.secret_type),
+            access_granted: true,
+            event_data: %{
+              secret_path: secret.secret_path
+            }
+          })
+
           result
 
         error ->

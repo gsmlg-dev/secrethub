@@ -50,8 +50,8 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
         })
 
       case conn.status do
-        200 ->
-          root_response = json_response(conn, 200)
+        status when status in [200, 201] ->
+          root_response = json_response(conn, status)
           assert Map.has_key?(root_response, "certificate")
           assert Map.has_key?(root_response, "serial_number")
           root_cert_pem = root_response["certificate"]
@@ -59,19 +59,21 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
           assert String.contains?(root_cert_pem, "BEGIN CERTIFICATE")
 
           # Step 2: Generate Intermediate CA signed by Root
+          root_ca_id = root_response["cert_id"]
           conn = build_conn()
 
           conn =
             post(conn, "/v1/pki/ca/intermediate/generate", %{
               "common_name" => "SecretHub Test Intermediate CA",
               "organization" => "SecretHub Test",
+              "root_ca_id" => root_ca_id,
               "key_type" => "rsa",
               "key_bits" => 2048,
               "ttl_days" => 180
             })
 
-          assert conn.status == 200
-          intermediate_response = json_response(conn, 200)
+          assert conn.status in [200, 201]
+          intermediate_response = json_response(conn, conn.status)
           assert Map.has_key?(intermediate_response, "certificate")
 
           intermediate_cert_pem = intermediate_response["certificate"]

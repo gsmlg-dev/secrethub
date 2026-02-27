@@ -407,9 +407,15 @@ defmodule SecretHub.Web.PKIController do
   end
 
   defp fetch_certificate(id) do
-    case Repo.get(Certificate, id) do
-      nil -> {:error, :not_found}
-      cert -> {:ok, cert}
+    case Ecto.UUID.cast(id) do
+      {:ok, uuid} ->
+        case Repo.get(Certificate, uuid) do
+          nil -> {:error, :not_found}
+          cert -> {:ok, cert}
+        end
+
+      :error ->
+        {:error, :not_found}
     end
   end
 

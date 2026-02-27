@@ -95,7 +95,7 @@ defmodule SecretHub.Core.Apps do
   def list_apps(opts \\ []) do
     query =
       from(a in Application,
-        order_by: [desc: a.created_at]
+        order_by: [desc: a.inserted_at]
       )
 
     query =
