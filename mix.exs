@@ -17,6 +17,7 @@ defmodule SecretHub.MixProject do
       # Testing
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [
+        test: :test,
         coveralls: :test,
         "coveralls.detail": :test,
         "coveralls.post": :test,
@@ -37,6 +38,8 @@ defmodule SecretHub.MixProject do
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:mix_test_watch, "~> 1.1", only: [:dev, :test], runtime: false},
+      # Required by Phoenix LiveView tests; must include :dev since devenv sets MIX_ENV=dev
+      {:lazy_html, ">= 0.1.0", only: [:dev, :test]},
 
       # Shared utilities
       {:jason, "~> 1.4"},
@@ -58,7 +61,6 @@ defmodule SecretHub.MixProject do
       setup: ["deps.get", "cmd cd apps/secrethub_web/assets && bun install"],
 
       # Testing
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "test.watch": ["test.watch --stale"],
 
       # Code quality

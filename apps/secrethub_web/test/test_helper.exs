@@ -1,3 +1,9 @@
+# Ensure lazy_html NIF is loaded before LiveView tests run.
+# This is needed because when running from the umbrella root, the NIF module
+# may not be auto-loaded even though the beam file exists in the code path.
+# Ensure lazy_html NIF is loaded before LiveView tests run.
+# When running from the umbrella root, `only: :test` deps of child apps are not
+# automatically added to the code path. We must add them explicitly.
 ExUnit.start()
 
 # When running from the umbrella root via the test alias, the Repo may already

@@ -1,5 +1,7 @@
 # Ensure test support modules are loaded (needed for umbrella test runs)
-Code.ensure_loaded(SecretHub.Core.DataCase)
+unless Code.ensure_loaded?(SecretHub.Core.DataCase) do
+  Code.require_file("support/data_case.ex", __DIR__)
+end
 
 ExUnit.start()
 
