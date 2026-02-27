@@ -108,7 +108,7 @@ defmodule SecretHub.Core.Audit do
     do_log_event(event_attrs, 0)
   end
 
-  @max_retries 3
+  @max_retries 10
   defp do_log_event(event_attrs, retry_count) do
     # Get the last log entry to build the chain
     last_entry = get_last_audit_entry()

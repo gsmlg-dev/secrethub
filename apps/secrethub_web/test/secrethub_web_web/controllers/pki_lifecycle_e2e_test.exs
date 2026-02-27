@@ -14,6 +14,7 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
   use SecretHub.Web.ConnCase, async: false
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 
@@ -33,15 +34,51 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
         :ok
     end
 
+    # Create agent and get auth token for API access
+    {:ok, policy} =
+      Policies.create_policy(%{
+        name: "pki-test-policy-#{:rand.uniform(100_000)}",
+        policy_document: %{
+          "version" => "1.0",
+          "allowed_secrets" => ["secret/*"],
+          "allowed_operations" => ["create", "read", "update", "delete"]
+        }
+      })
+
+    {:ok, agent} =
+      Agents.register_agent(%{
+        agent_id: "pki-test-agent-#{:rand.uniform(100_000)}",
+        name: "PKI Test Agent",
+        policy_ids: [policy.id],
+        auth_method: "approle"
+      })
+
+    {:ok, role_id, secret_id} = Agents.generate_approle_credentials(agent.id)
+
+    conn =
+      build_conn()
+      |> post("/v1/auth/approle/login", %{
+        "role_id" => role_id,
+        "secret_id" => secret_id
+      })
+
+    token = json_response(conn, 200)["token"]
+
     on_exit(fn -> Sandbox.mode(Repo, :manual) end)
-    :ok
+    %{token: token}
+  end
+
+  defp authed_conn(token) do
+    build_conn()
+    |> put_req_header("x-vault-token", token)
   end
 
   describe "E2E: Certificate Authority lifecycle" do
-    test "generate root CA and intermediate CA", %{conn: conn} do
+    test "generate root CA and intermediate CA", %{token: token} do
       # Step 1: Generate Root CA
       conn =
-        post(conn, "/v1/pki/ca/root/generate", %{
+        authed_conn(token)
+        |> post("/v1/pki/ca/root/generate", %{
           "common_name" => "SecretHub Test Root CA",
           "organization" => "SecretHub Test",
           "key_type" => "rsa",
@@ -60,10 +97,10 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
 
           # Step 2: Generate Intermediate CA signed by Root
           root_ca_id = root_response["cert_id"]
-          conn = build_conn()
 
           conn =
-            post(conn, "/v1/pki/ca/intermediate/generate", %{
+            authed_conn(token)
+            |> post("/v1/pki/ca/intermediate/generate", %{
               "common_name" => "SecretHub Test Intermediate CA",
               "organization" => "SecretHub Test",
               "root_ca_id" => root_ca_id,
@@ -80,8 +117,7 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
           assert String.contains?(intermediate_cert_pem, "BEGIN CERTIFICATE")
 
           # Step 3: List certificates — should include both
-          conn = build_conn()
-          conn = get(conn, "/v1/pki/certificates")
+          conn = authed_conn(token) |> get("/v1/pki/certificates")
 
           assert conn.status == 200
           certs = json_response(conn, 200)
@@ -101,8 +137,8 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
       end
     end
 
-    test "list and retrieve individual certificate", %{conn: conn} do
-      conn = get(conn, "/v1/pki/certificates")
+    test "list and retrieve individual certificate", %{token: token} do
+      conn = authed_conn(token) |> get("/v1/pki/certificates")
 
       case conn.status do
         200 ->
@@ -112,9 +148,7 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
           if length(certs) > 0 do
             cert_id = List.first(certs)["id"]
 
-            # Retrieve specific certificate
-            detail_conn = build_conn()
-            detail_conn = get(detail_conn, "/v1/pki/certificates/#{cert_id}")
+            detail_conn = authed_conn(token) |> get("/v1/pki/certificates/#{cert_id}")
 
             assert detail_conn.status == 200
             detail = json_response(detail_conn, 200)
@@ -128,10 +162,10 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
       end
     end
 
-    test "certificate revocation", %{conn: conn} do
-      # First, generate a Root CA to have a certificate to revoke
+    test "certificate revocation", %{token: token} do
       conn =
-        post(conn, "/v1/pki/ca/root/generate", %{
+        authed_conn(token)
+        |> post("/v1/pki/ca/root/generate", %{
           "common_name" => "Revocation Test CA #{:rand.uniform(10_000)}",
           "organization" => "SecretHub Revoke Test",
           "key_type" => "rsa",
@@ -144,11 +178,9 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
           cert_response = json_response(conn, 200)
           cert_id = cert_response["id"]
 
-          # Revoke the certificate
-          conn = build_conn()
-
           conn =
-            post(conn, "/v1/pki/certificates/#{cert_id}/revoke", %{
+            authed_conn(token)
+            |> post("/v1/pki/certificates/#{cert_id}/revoke", %{
               "reason" => "testing_revocation"
             })
 
@@ -156,9 +188,7 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
           revoke_response = json_response(conn, 200)
           assert revoke_response["revoked"] == true
 
-          # Verify revoked status
-          conn = build_conn()
-          conn = get(conn, "/v1/pki/certificates/#{cert_id}")
+          conn = authed_conn(token) |> get("/v1/pki/certificates/#{cert_id}")
 
           if conn.status == 200 do
             detail = json_response(conn, 200)
@@ -166,15 +196,13 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
           end
 
         _ ->
-          # Already exists or other error, skip
           :ok
       end
     end
   end
 
   describe "E2E: CSR signing" do
-    test "sign a valid CSR" do
-      # Generate a private key and CSR using Erlang :public_key
+    test "sign a valid CSR", %{token: token} do
       rsa_key = :public_key.generate_key({:rsa, 2048, 65_537})
 
       subject =
@@ -191,35 +219,34 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
           []
         )
 
-      # Encode CSR to PEM
       csr_der = :public_key.der_encode(:CertificationRequest, csr)
       csr_pem = :public_key.pem_encode([{:CertificationRequest, csr_der, :not_encrypted}])
 
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/pki/sign-request", %{
           "csr" => csr_pem,
           "cert_type" => "agent_client",
           "ttl_days" => 30
         })
 
-      # This may fail if no intermediate CA exists, which is expected
       assert conn.status in [200, 400, 422, 500]
     rescue
-      # CSR generation may fail with certain OTP versions
       _ -> :ok
     end
   end
 
   describe "E2E: PKI error handling" do
-    test "get non-existent certificate returns 404" do
-      conn = get(build_conn(), "/v1/pki/certificates/00000000-0000-0000-0000-000000000000")
+    test "get non-existent certificate returns 404", %{token: token} do
+      conn =
+        authed_conn(token) |> get("/v1/pki/certificates/00000000-0000-0000-0000-000000000000")
+
       assert conn.status == 404
     end
 
-    test "generate CA with invalid parameters returns error" do
+    test "generate CA with invalid parameters returns error", %{token: token} do
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/pki/ca/root/generate", %{
           "common_name" => "",
           "key_type" => "invalid"
@@ -228,9 +255,9 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
       assert conn.status in [400, 422]
     end
 
-    test "revoke non-existent certificate returns error" do
+    test "revoke non-existent certificate returns error", %{token: token} do
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/pki/certificates/00000000-0000-0000-0000-000000000000/revoke", %{
           "reason" => "test"
         })
@@ -238,9 +265,9 @@ defmodule SecretHub.Web.PKILifecycleE2ETest do
       assert conn.status in [400, 404]
     end
 
-    test "revoke with non-UUID ID returns error" do
+    test "revoke with non-UUID ID returns error", %{token: token} do
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/pki/certificates/not-a-uuid/revoke", %{
           "reason" => "test"
         })

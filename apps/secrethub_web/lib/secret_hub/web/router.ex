@@ -193,17 +193,17 @@ defmodule SecretHub.Web.Router do
     post "/certificate/renew", AgentCertController, :renew
   end
 
-  # Dynamic Secrets API routes
+  # Dynamic Secrets API routes (token-authenticated)
   scope "/v1/secrets/dynamic", SecretHub.Web do
-    pipe_through :api
+    pipe_through :vault_token
 
     # Generate dynamic credentials
     post "/:role", DynamicSecretsController, :generate
   end
 
-  # Lease management API routes
+  # Lease management API routes (token-authenticated)
   scope "/v1/sys/leases", SecretHub.Web do
-    pipe_through :api
+    pipe_through :vault_token
 
     # Lease operations
     post "/renew", DynamicSecretsController, :renew
@@ -212,9 +212,9 @@ defmodule SecretHub.Web.Router do
     get "/stats", DynamicSecretsController, :stats
   end
 
-  # PKI API routes (Certificate Authority operations)
+  # PKI API routes (token-authenticated)
   scope "/v1/pki", SecretHub.Web do
-    pipe_through :api
+    pipe_through :vault_token
 
     # CA generation
     post "/ca/root/generate", PKIController, :generate_root_ca
@@ -232,9 +232,9 @@ defmodule SecretHub.Web.Router do
     post "/app/revoke", PKIController, :revoke_app_certificate
   end
 
-  # Application management API routes
+  # Application management API routes (token-authenticated)
   scope "/v1/apps", SecretHub.Web do
-    pipe_through :api
+    pipe_through :vault_token
 
     # Application registration and management
     post "/", AppsController, :register_app

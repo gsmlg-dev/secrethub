@@ -54,18 +54,34 @@ defmodule SecretHub.Web.AppManagementE2ETest do
         auth_method: "approle"
       })
 
+    {:ok, role_id, secret_id} = Agents.generate_approle_credentials(agent.id)
+
+    conn =
+      build_conn()
+      |> post("/v1/auth/approle/login", %{
+        "role_id" => role_id,
+        "secret_id" => secret_id
+      })
+
+    token = json_response(conn, 200)["token"]
+
     on_exit(fn -> Sandbox.mode(Repo, :manual) end)
 
-    %{agent: agent, policy: policy}
+    %{agent: agent, policy: policy, token: token}
+  end
+
+  defp authed_conn(token) do
+    build_conn()
+    |> put_req_header("x-vault-token", token)
   end
 
   describe "E2E: Application registration and CRUD" do
-    test "register, get, update, and delete application", %{agent: agent} do
+    test "register, get, update, and delete application", %{agent: agent, token: token} do
       app_name = "test-app-#{:rand.uniform(100_000)}"
 
       # Step 1: Register application
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/apps", %{
           "name" => app_name,
           "description" => "E2E test application",
@@ -80,7 +96,7 @@ defmodule SecretHub.Web.AppManagementE2ETest do
       app_id = register_response["app_id"]
 
       # Step 2: Get application by ID
-      conn = build_conn() |> get("/v1/apps/#{app_id}")
+      conn = authed_conn(token) |> get("/v1/apps/#{app_id}")
 
       assert conn.status == 200
       app_detail = json_response(conn, 200)
@@ -89,7 +105,7 @@ defmodule SecretHub.Web.AppManagementE2ETest do
 
       # Step 3: Update application
       conn =
-        build_conn()
+        authed_conn(token)
         |> put("/v1/apps/#{app_id}", %{
           "description" => "Updated description",
           "metadata" => %{"team" => "platform", "env" => "staging"}
@@ -100,21 +116,21 @@ defmodule SecretHub.Web.AppManagementE2ETest do
       assert updated["description"] == "Updated description"
 
       # Step 4: Delete application
-      conn = build_conn() |> delete("/v1/apps/#{app_id}")
+      conn = authed_conn(token) |> delete("/v1/apps/#{app_id}")
 
       assert conn.status in [200, 204]
 
       # Step 5: Verify deletion
-      conn = build_conn() |> get("/v1/apps/#{app_id}")
+      conn = authed_conn(token) |> get("/v1/apps/#{app_id}")
       assert conn.status == 404
     end
 
-    test "list applications with filtering", %{agent: agent} do
+    test "list applications with filtering", %{agent: agent, token: token} do
       prefix = "list-test-#{:rand.uniform(100_000)}"
 
       # Create multiple applications
       Enum.each(1..3, fn i ->
-        build_conn()
+        authed_conn(token)
         |> post("/v1/apps", %{
           "name" => "#{prefix}-app-#{i}",
           "description" => "List test app #{i}",
@@ -123,7 +139,7 @@ defmodule SecretHub.Web.AppManagementE2ETest do
       end)
 
       # List all applications
-      conn = build_conn() |> get("/v1/apps")
+      conn = authed_conn(token) |> get("/v1/apps")
 
       assert conn.status == 200
       response = json_response(conn, 200)
@@ -133,12 +149,12 @@ defmodule SecretHub.Web.AppManagementE2ETest do
   end
 
   describe "E2E: Application lifecycle" do
-    test "suspend and reactivate application", %{agent: agent} do
+    test "suspend and reactivate application", %{agent: agent, token: token} do
       app_name = "lifecycle-app-#{:rand.uniform(100_000)}"
 
       # Register
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/apps", %{
           "name" => app_name,
           "agent_id" => agent.id
@@ -148,19 +164,19 @@ defmodule SecretHub.Web.AppManagementE2ETest do
       app_id = Jason.decode!(conn.resp_body)["app_id"]
 
       # Suspend
-      conn = build_conn() |> post("/v1/apps/#{app_id}/suspend", %{})
+      conn = authed_conn(token) |> post("/v1/apps/#{app_id}/suspend", %{})
 
       assert conn.status == 200
       suspended = json_response(conn, 200)
       assert suspended["status"] == "suspended"
 
       # Verify suspended
-      conn = build_conn() |> get("/v1/apps/#{app_id}")
+      conn = authed_conn(token) |> get("/v1/apps/#{app_id}")
       assert conn.status == 200
       assert json_response(conn, 200)["status"] == "suspended"
 
       # Reactivate
-      conn = build_conn() |> post("/v1/apps/#{app_id}/activate", %{})
+      conn = authed_conn(token) |> post("/v1/apps/#{app_id}/activate", %{})
 
       assert conn.status == 200
       activated = json_response(conn, 200)
@@ -169,12 +185,12 @@ defmodule SecretHub.Web.AppManagementE2ETest do
   end
 
   describe "E2E: Application error handling" do
-    test "register app with duplicate name returns error", %{agent: agent} do
+    test "register app with duplicate name returns error", %{agent: agent, token: token} do
       app_name = "duplicate-app-#{:rand.uniform(100_000)}"
 
       # First registration
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/apps", %{
           "name" => app_name,
           "agent_id" => agent.id
@@ -184,7 +200,7 @@ defmodule SecretHub.Web.AppManagementE2ETest do
 
       # Duplicate registration
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/apps", %{
           "name" => app_name,
           "agent_id" => agent.id
@@ -193,9 +209,9 @@ defmodule SecretHub.Web.AppManagementE2ETest do
       assert conn.status in [400, 409, 422]
     end
 
-    test "register app with invalid name format returns error", %{agent: agent} do
+    test "register app with invalid name format returns error", %{agent: agent, token: token} do
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/apps", %{
           "name" => "INVALID NAME WITH SPACES!",
           "agent_id" => agent.id
@@ -204,14 +220,14 @@ defmodule SecretHub.Web.AppManagementE2ETest do
       assert conn.status in [400, 422]
     end
 
-    test "get non-existent app returns 404" do
-      conn = build_conn() |> get("/v1/apps/00000000-0000-0000-0000-000000000000")
+    test "get non-existent app returns 404", %{token: token} do
+      conn = authed_conn(token) |> get("/v1/apps/00000000-0000-0000-0000-000000000000")
       assert conn.status == 404
     end
 
-    test "suspend non-existent app returns error" do
+    test "suspend non-existent app returns error", %{token: token} do
       conn =
-        build_conn()
+        authed_conn(token)
         |> post("/v1/apps/00000000-0000-0000-0000-000000000000/suspend", %{})
 
       assert conn.status in [400, 404]
