@@ -1,9 +1,12 @@
 # Ensure test-only dependencies are in the code path (needed for umbrella test runs)
 case Code.ensure_loaded(Mox) do
-  {:module, Mox} -> :ok
+  {:module, Mox} ->
+    :ok
+
   {:error, _reason} ->
     build_root = Mix.Project.build_path() |> Path.dirname()
     test_lib = Path.join([build_root, "test", "lib"])
+
     if File.dir?(test_lib) do
       test_lib
       |> File.ls!()
@@ -11,6 +14,7 @@ case Code.ensure_loaded(Mox) do
         ebin = Path.join([test_lib, lib, "ebin"])
         if File.dir?(ebin), do: Code.prepend_path(ebin)
       end)
+
       Code.ensure_loaded!(Mox)
     end
 end

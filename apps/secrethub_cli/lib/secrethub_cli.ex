@@ -206,7 +206,9 @@ defmodule SecretHub.CLI do
   # Config commands
   defp execute({:ok, {:config, :list, _}, opts}), do: ConfigCommands.list(opts)
   defp execute({:ok, {:config, :get, key, _}, opts}), do: ConfigCommands.get(key, opts)
-  defp execute({:ok, {:config, :set, key, value, _}, opts}), do: ConfigCommands.set(key, value, opts)
+
+  defp execute({:ok, {:config, :set, key, value, _}, opts}),
+    do: ConfigCommands.set(key, value, opts)
 
   defp execute({:ok, {:unknown, args}, _opts}) do
     {:error, "Unknown command: #{Enum.join(args, " ")}\n\nRun 'secrethub help' for usage."}

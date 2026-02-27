@@ -5,7 +5,9 @@ defmodule SecretHub.CLI.ConfigTest do
 
   setup do
     # Use a temporary config directory for tests
-    temp_dir = System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+    temp_dir =
+      System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+
     File.mkdir_p!(temp_dir)
     config_file = Path.join(temp_dir, "config.toml")
 
@@ -15,6 +17,7 @@ defmodule SecretHub.CLI.ConfigTest do
 
     on_exit(fn ->
       File.rm_rf!(temp_dir)
+
       if original_config_dir do
         Application.put_env(:secrethub_cli, :config_dir, original_config_dir)
       else
@@ -133,6 +136,7 @@ defmodule SecretHub.CLI.ConfigTest do
           "color" => true
         }
       }
+
       assert :ok = Config.save(config)
 
       assert {:ok, "json"} = Config.get("output.format")
@@ -154,6 +158,7 @@ defmodule SecretHub.CLI.ConfigTest do
           }
         }
       }
+
       assert :ok = Config.save(config)
 
       assert {:ok, "deep-value"} = Config.get("level1.level2.level3")
@@ -187,6 +192,7 @@ defmodule SecretHub.CLI.ConfigTest do
         "server_url" => "http://localhost:4000",
         "output" => %{"format" => "table"}
       }
+
       assert :ok = Config.save(config)
 
       assert :ok = Config.set("output.color", true)
@@ -223,6 +229,7 @@ defmodule SecretHub.CLI.ConfigTest do
           "color" => true
         }
       }
+
       assert :ok = Config.save(config)
 
       assert :ok = Config.delete("output.color")
@@ -272,12 +279,14 @@ defmodule SecretHub.CLI.ConfigTest do
   describe "get_auth_token/0" do
     test "returns valid token" do
       expires_at = DateTime.utc_now() |> DateTime.add(3600, :second)
+
       config = %{
         "auth" => %{
           "token" => "test-token-123",
           "expires_at" => DateTime.to_iso8601(expires_at)
         }
       }
+
       assert :ok = Config.save(config)
 
       assert {:ok, "test-token-123"} = Config.get_auth_token()
@@ -285,12 +294,14 @@ defmodule SecretHub.CLI.ConfigTest do
 
     test "returns error when token is expired" do
       expires_at = DateTime.utc_now() |> DateTime.add(-3600, :second)
+
       config = %{
         "auth" => %{
           "token" => "test-token",
           "expires_at" => DateTime.to_iso8601(expires_at)
         }
       }
+
       assert :ok = Config.save(config)
 
       assert {:error, :expired} = Config.get_auth_token()
@@ -303,6 +314,7 @@ defmodule SecretHub.CLI.ConfigTest do
           "expires_at" => "invalid-date"
         }
       }
+
       assert :ok = Config.save(config)
 
       assert {:ok, "test-token"} = Config.get_auth_token()
@@ -314,6 +326,7 @@ defmodule SecretHub.CLI.ConfigTest do
           "token" => "test-token"
         }
       }
+
       assert :ok = Config.save(config)
 
       assert {:ok, "test-token"} = Config.get_auth_token()
@@ -399,6 +412,7 @@ defmodule SecretHub.CLI.ConfigTest do
         "server_url" => "https://example.com",
         "auth" => %{"token" => "test-token"}
       }
+
       assert :ok = Config.save(config)
 
       # Clear auth

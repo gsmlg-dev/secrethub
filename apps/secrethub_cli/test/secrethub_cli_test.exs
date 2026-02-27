@@ -7,9 +7,10 @@ defmodule SecretHub.CLITest do
 
   describe "main/1 - help and version" do
     test "shows help when no arguments provided" do
-      output = capture_io(fn ->
-        catch_exit(CLI.main([]))
-      end)
+      output =
+        capture_io(fn ->
+          catch_exit(CLI.main([]))
+        end)
 
       assert output =~ "SecretHub CLI"
       assert output =~ "USAGE:"
@@ -17,34 +18,38 @@ defmodule SecretHub.CLITest do
     end
 
     test "shows help with --help flag" do
-      output = capture_io(fn ->
-        catch_exit(CLI.main(["--help"]))
-      end)
+      output =
+        capture_io(fn ->
+          catch_exit(CLI.main(["--help"]))
+        end)
 
       assert output =~ "SecretHub CLI"
       assert output =~ "USAGE:"
     end
 
     test "shows help with help command" do
-      output = capture_io(fn ->
-        catch_exit(CLI.main(["help"]))
-      end)
+      output =
+        capture_io(fn ->
+          catch_exit(CLI.main(["help"]))
+        end)
 
       assert output =~ "SecretHub CLI"
     end
 
     test "shows version with --version flag" do
-      output = capture_io(fn ->
-        catch_exit(CLI.main(["--version"]))
-      end)
+      output =
+        capture_io(fn ->
+          catch_exit(CLI.main(["--version"]))
+        end)
 
       assert output =~ "SecretHub CLI v0.1.0"
     end
 
     test "shows version with version command" do
-      output = capture_io(fn ->
-        catch_exit(CLI.main(["version"]))
-      end)
+      output =
+        capture_io(fn ->
+          catch_exit(CLI.main(["version"]))
+        end)
 
       assert output =~ "SecretHub CLI v0.1.0"
     end
@@ -52,9 +57,10 @@ defmodule SecretHub.CLITest do
 
   describe "main/1 - invalid options" do
     test "shows error for invalid options" do
-      output = capture_io(:stderr, fn ->
-        catch_exit(CLI.main(["--invalid-option"]))
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          catch_exit(CLI.main(["--invalid-option"]))
+        end)
 
       assert output =~ "Error:"
       assert output =~ "Invalid options"
@@ -63,9 +69,10 @@ defmodule SecretHub.CLITest do
 
   describe "main/1 - unknown commands" do
     test "shows error for unknown command" do
-      output = capture_io(:stderr, fn ->
-        catch_exit(CLI.main(["unknown", "command"]))
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          catch_exit(CLI.main(["unknown", "command"]))
+        end)
 
       assert output =~ "Error:"
       assert output =~ "Unknown command"
@@ -182,7 +189,9 @@ defmodule SecretHub.CLITest do
 
     test "parses config set command" do
       args = ["config", "set", "server_url", "http://localhost:4000"]
-      assert {:ok, {:config, :set, "server_url", "http://localhost:4000", []}, _opts} = CLI.parse_args(args)
+
+      assert {:ok, {:config, :set, "server_url", "http://localhost:4000", []}, _opts} =
+               CLI.parse_args(args)
     end
   end
 
@@ -219,5 +228,4 @@ defmodule SecretHub.CLITest do
       assert Keyword.get(opts, :quiet) == true
     end
   end
-
 end

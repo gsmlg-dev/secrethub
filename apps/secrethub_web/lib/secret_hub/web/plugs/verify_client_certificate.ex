@@ -112,9 +112,19 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
   ## Private Functions
 
   defp get_peer_certificate(conn) do
-    # Extract peer certificate from TLS connection
-    # This works with Cowboy/Phoenix HTTPS connections
+    # Allow certificate injection via conn.private for testing
+    case conn.private do
+      %{peer_cert_der: cert_der} when is_binary(cert_der) ->
+        {:ok, cert_der}
 
+      _ ->
+        # Extract peer certificate from TLS connection
+        # This works with Cowboy/Phoenix HTTPS connections
+        extract_tls_peer_certificate(conn)
+    end
+  end
+
+  defp extract_tls_peer_certificate(conn) do
     case :ssl.peercert(conn.adapter |> elem(0)) do
       {:ok, cert_der} ->
         {:ok, cert_der}
@@ -152,8 +162,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
           reason: reason
         )
 
-        send_unauthorized(conn, "Certificate expired")
-        return(conn)
+        throw({:unauthorized, send_unauthorized(conn, "Certificate expired")})
     end
 
     # Check revocation status if enabled
@@ -168,8 +177,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
             serial: serial_number
           )
 
-          send_unauthorized(conn, "Certificate revoked")
-          return(conn)
+          throw({:unauthorized, send_unauthorized(conn, "Certificate revoked")})
       end
     end
 
@@ -197,6 +205,9 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
     e ->
       Logger.error("Exception during certificate verification: #{inspect(e)}")
       send_unauthorized(conn, "Certificate verification error")
+  catch
+    {:unauthorized, conn} ->
+      conn
   end
 
   defp extract_serial_number(
@@ -380,7 +391,4 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
     |> send_resp(401, Jason.encode!(%{error: "Unauthorized", message: message}))
     |> halt()
   end
-
-  # Helper to return from within case statements
-  defp return(conn), do: throw({:return, conn})
 end

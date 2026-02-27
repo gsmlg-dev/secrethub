@@ -11,7 +11,9 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
 
   setup do
     # Use a temporary config directory for tests
-    temp_dir = System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+    temp_dir =
+      System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+
     File.mkdir_p!(temp_dir)
 
     # Mock the config directory
@@ -20,6 +22,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
 
     # Create valid auth token for tests
     expires_at = DateTime.utc_now() |> DateTime.add(3600, :second)
+
     config = %{
       "server_url" => "http://localhost:4000",
       "auth" => %{
@@ -27,10 +30,12 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
         "expires_at" => DateTime.to_iso8601(expires_at)
       }
     }
+
     Config.save(config)
 
     on_exit(fn ->
       File.rm_rf!(temp_dir)
+
       if original_config_dir do
         Application.put_env(:secrethub_cli, :config_dir, original_config_dir)
       else
@@ -53,10 +58,11 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
       # Clear auth
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:list, nil, [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:list, nil, [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -77,10 +83,11 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:get, "test.secret", [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:get, "test.secret", [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -118,10 +125,11 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:create, "test.secret", [], [value: "test"])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:create, "test.secret", [], value: "test")
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -150,10 +158,11 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:update, "test.secret", [], [value: "test"])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:update, "test.secret", [], value: "test")
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -174,10 +183,11 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:delete, "test.secret", [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:delete, "test.secret", [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -197,10 +207,11 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:versions, "test.secret", [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:versions, "test.secret", [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -220,10 +231,11 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:rollback, "test.secret", "2", [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:rollback, "test.secret", "2", [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -285,6 +297,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "handles expired token gracefully" do
       # Create expired token
       expires_at = DateTime.utc_now() |> DateTime.add(-3600, :second)
+
       config = %{
         "server_url" => "http://localhost:4000",
         "auth" => %{
@@ -292,12 +305,14 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
           "expires_at" => DateTime.to_iso8601(expires_at)
         }
       }
+
       Config.save(config)
 
-      output = capture_io(:stderr, fn ->
-        result = SecretCommands.execute(:list, nil, [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = SecretCommands.execute(:list, nil, [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "expired"
     end

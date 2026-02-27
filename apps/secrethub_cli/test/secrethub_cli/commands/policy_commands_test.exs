@@ -11,7 +11,9 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
   setup do
     # Use a temporary config directory for tests
-    temp_dir = System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+    temp_dir =
+      System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+
     File.mkdir_p!(temp_dir)
 
     # Mock the config directory
@@ -20,6 +22,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
     # Create valid auth token for tests
     expires_at = DateTime.utc_now() |> DateTime.add(3600, :second)
+
     config = %{
       "server_url" => "http://localhost:4000",
       "auth" => %{
@@ -27,10 +30,12 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
         "expires_at" => DateTime.to_iso8601(expires_at)
       }
     }
+
     Config.save(config)
 
     on_exit(fn ->
       File.rm_rf!(temp_dir)
+
       if original_config_dir do
         Application.put_env(:secrethub_cli, :config_dir, original_config_dir)
       else
@@ -50,10 +55,11 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = PolicyCommands.execute(:list, [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = PolicyCommands.execute(:list, [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -73,10 +79,11 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = PolicyCommands.execute(:get, "test-policy", [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = PolicyCommands.execute(:get, "test-policy", [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -107,7 +114,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     end
 
     test "requires --name option with template" do
-      result = PolicyCommands.execute(:create, [], [from_template: "business_hours"])
+      result = PolicyCommands.execute(:create, [], from_template: "business_hours")
       assert {:error, reason} = result
       assert reason =~ "Missing required option: --name"
     end
@@ -163,10 +170,11 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = PolicyCommands.execute(:delete, "test-policy", [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = PolicyCommands.execute(:delete, "test-policy", [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -191,10 +199,11 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     test "requires authentication" do
       Config.clear_auth()
 
-      output = capture_io(:stderr, fn ->
-        result = PolicyCommands.execute(:simulate, "test-policy", [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = PolicyCommands.execute(:simulate, "test-policy", [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "Not authenticated"
     end
@@ -326,6 +335,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
     test "handles expired token" do
       expires_at = DateTime.utc_now() |> DateTime.add(-3600, :second)
+
       config = %{
         "server_url" => "http://localhost:4000",
         "auth" => %{
@@ -333,12 +343,14 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
           "expires_at" => DateTime.to_iso8601(expires_at)
         }
       }
+
       Config.save(config)
 
-      output = capture_io(:stderr, fn ->
-        result = PolicyCommands.execute(:list, [], [])
-        assert {:error, :not_authenticated} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = PolicyCommands.execute(:list, [], [])
+          assert {:error, :not_authenticated} = result
+        end)
 
       assert output =~ "expired"
     end

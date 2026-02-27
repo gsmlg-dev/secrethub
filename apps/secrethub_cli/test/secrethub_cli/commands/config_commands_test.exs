@@ -8,7 +8,9 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
 
   setup do
     # Use a temporary config directory for tests
-    temp_dir = System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+    temp_dir =
+      System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+
     File.mkdir_p!(temp_dir)
 
     # Mock the config directory
@@ -23,10 +25,12 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
         "color" => true
       }
     }
+
     Config.save(config)
 
     on_exit(fn ->
       File.rm_rf!(temp_dir)
+
       if original_config_dir do
         Application.put_env(:secrethub_cli, :config_dir, original_config_dir)
       else
@@ -57,6 +61,7 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
           "expires_at" => "2025-12-31T23:59:59Z"
         }
       }
+
       Config.save(config)
 
       # List without verbose should exclude auth
@@ -76,10 +81,11 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
           "expires_at" => "2025-12-31T23:59:59Z"
         }
       }
+
       Config.save(config)
 
       # List with verbose should include auth
-      result = ConfigCommands.list([verbose: true])
+      result = ConfigCommands.list(verbose: true)
       assert {:ok, _} = result
 
       # Would verify auth is included
@@ -87,43 +93,47 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
     end
 
     test "respects format option" do
-      result = ConfigCommands.list([format: "json"])
+      result = ConfigCommands.list(format: "json")
       assert {:ok, _} = result
 
-      result = ConfigCommands.list([format: "yaml"])
+      result = ConfigCommands.list(format: "yaml")
       assert {:ok, _} = result
     end
   end
 
   describe "get/2" do
     test "retrieves top-level configuration value" do
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.get("server_url", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.get("server_url", [])
+        end)
 
       assert output =~ "http://localhost:4000"
     end
 
     test "retrieves nested configuration value" do
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.get("output.format", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.get("output.format", [])
+        end)
 
       assert output =~ "table"
     end
 
     test "shows warning for non-existent key" do
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.get("nonexistent.key", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.get("nonexistent.key", [])
+        end)
 
       assert output =~ "not found"
     end
 
     test "formats value as table by default" do
-      output = capture_io(fn ->
-        ConfigCommands.get("server_url", [])
-      end)
+      output =
+        capture_io(fn ->
+          ConfigCommands.get("server_url", [])
+        end)
 
       # Table format just prints the value directly for single values
       assert output =~ "http://localhost:4000"
@@ -134,16 +144,17 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
       Config.set("nested.object", %{"key" => "value"})
 
       # Would test JSON/YAML formatting
-      result = ConfigCommands.get("nested.object", [format: "json"])
+      result = ConfigCommands.get("nested.object", format: "json")
       assert {:ok, _} = result
     end
   end
 
   describe "set/3" do
     test "sets top-level configuration value" do
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.set("server_url", "https://new-server.com", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.set("server_url", "https://new-server.com", [])
+        end)
 
       assert output =~ "Configuration updated"
       assert output =~ "server_url"
@@ -153,9 +164,10 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
     end
 
     test "sets nested configuration value" do
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.set("output.format", "json", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.set("output.format", "json", [])
+        end)
 
       assert output =~ "Configuration updated"
 
@@ -165,25 +177,28 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
 
     test "validates server_url format" do
       # Valid HTTP URL
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.set("server_url", "http://localhost:4000", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.set("server_url", "http://localhost:4000", [])
+        end)
 
       assert output =~ "Configuration updated"
 
       # Valid HTTPS URL
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.set("server_url", "https://secrethub.com", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.set("server_url", "https://secrethub.com", [])
+        end)
 
       assert output =~ "Configuration updated"
     end
 
     test "rejects invalid server_url format" do
-      output = capture_io(:stderr, fn ->
-        result = ConfigCommands.set("server_url", "invalid-url", [])
-        assert {:error, _} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = ConfigCommands.set("server_url", "invalid-url", [])
+          assert {:error, _} = result
+        end)
 
       assert output =~ "Invalid value"
       assert output =~ "http://"
@@ -192,18 +207,20 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
     test "validates output.format values" do
       # Valid formats
       for format <- ["json", "table", "yaml"] do
-        output = capture_io(fn ->
-          assert {:ok, _} = ConfigCommands.set("output.format", format, [])
-        end)
+        output =
+          capture_io(fn ->
+            assert {:ok, _} = ConfigCommands.set("output.format", format, [])
+          end)
 
         assert output =~ "Configuration updated"
       end
 
       # Invalid format
-      output = capture_io(:stderr, fn ->
-        result = ConfigCommands.set("output.format", "invalid", [])
-        assert {:error, _} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = ConfigCommands.set("output.format", "invalid", [])
+          assert {:error, _} = result
+        end)
 
       assert output =~ "Invalid value"
       assert output =~ "json, table, yaml"
@@ -211,23 +228,26 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
 
     test "validates output.color values" do
       # Valid boolean values
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.set("output.color", "true", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.set("output.color", "true", [])
+        end)
 
       assert output =~ "Configuration updated"
 
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.set("output.color", "false", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.set("output.color", "false", [])
+        end)
 
       assert output =~ "Configuration updated"
 
       # Invalid boolean
-      output = capture_io(:stderr, fn ->
-        result = ConfigCommands.set("output.color", "maybe", [])
-        assert {:error, _} = result
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          result = ConfigCommands.set("output.color", "maybe", [])
+          assert {:error, _} = result
+        end)
 
       assert output =~ "Invalid value"
     end
@@ -256,9 +276,10 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
 
     test "allows setting arbitrary keys" do
       # Keys without validation should be allowed
-      output = capture_io(fn ->
-        assert {:ok, _} = ConfigCommands.set("custom.key", "value", [])
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = ConfigCommands.set("custom.key", "value", [])
+        end)
 
       assert output =~ "Configuration updated"
 
@@ -314,27 +335,33 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
 
     test "formats number values" do
       Config.set("test.number", 42)
-      output = capture_io(fn ->
-        ConfigCommands.get("test.number", [])
-      end)
+
+      output =
+        capture_io(fn ->
+          ConfigCommands.get("test.number", [])
+        end)
 
       assert output =~ "42"
     end
 
     test "formats boolean values" do
       Config.set("test.bool", true)
-      output = capture_io(fn ->
-        ConfigCommands.get("test.bool", [])
-      end)
+
+      output =
+        capture_io(fn ->
+          ConfigCommands.get("test.bool", [])
+        end)
 
       assert output =~ "true"
     end
 
     test "formats map values as JSON" do
       Config.set("test.map", %{"key" => "value"})
-      output = capture_io(fn ->
-        ConfigCommands.get("test.map", [])
-      end)
+
+      output =
+        capture_io(fn ->
+          ConfigCommands.get("test.map", [])
+        end)
 
       assert output =~ "key"
       assert output =~ "value"
@@ -342,9 +369,11 @@ defmodule SecretHub.CLI.Commands.ConfigCommandsTest do
 
     test "formats list values as comma-separated" do
       Config.set("test.list", ["item1", "item2", "item3"])
-      output = capture_io(fn ->
-        ConfigCommands.get("test.list", [])
-      end)
+
+      output =
+        capture_io(fn ->
+          ConfigCommands.get("test.list", [])
+        end)
 
       assert output =~ "item1, item2, item3"
     end

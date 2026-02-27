@@ -7,7 +7,9 @@ defmodule SecretHub.CLI.AuthTest do
 
   setup do
     # Use a temporary config directory for tests
-    temp_dir = System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+    temp_dir =
+      System.tmp_dir!() |> Path.join("secrethub_test_#{System.unique_integer([:positive])}")
+
     File.mkdir_p!(temp_dir)
 
     # Mock the config directory
@@ -16,6 +18,7 @@ defmodule SecretHub.CLI.AuthTest do
 
     on_exit(fn ->
       File.rm_rf!(temp_dir)
+
       if original_config_dir do
         Application.put_env(:secrethub_cli, :config_dir, original_config_dir)
       else
@@ -65,16 +68,18 @@ defmodule SecretHub.CLI.AuthTest do
         "server_url" => "http://localhost:4000",
         "auth" => %{
           "token" => "test-token",
-          "expires_at" => DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.to_iso8601()
+          "expires_at" =>
+            DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.to_iso8601()
         }
       }
 
       assert :ok = Config.save(config)
 
       # Now logout
-      output = capture_io(fn ->
-        assert {:ok, _} = Auth.logout()
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = Auth.logout()
+        end)
 
       assert output =~ "Successfully logged out"
 
@@ -85,9 +90,10 @@ defmodule SecretHub.CLI.AuthTest do
 
     test "handles logout when not authenticated" do
       # Logout when no auth exists should still succeed
-      output = capture_io(fn ->
-        assert {:ok, _} = Auth.logout()
-      end)
+      output =
+        capture_io(fn ->
+          assert {:ok, _} = Auth.logout()
+        end)
 
       assert output =~ "Successfully logged out"
     end
@@ -100,7 +106,8 @@ defmodule SecretHub.CLI.AuthTest do
         "server_url" => "http://localhost:4000",
         "auth" => %{
           "token" => "test-token",
-          "expires_at" => DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.to_iso8601()
+          "expires_at" =>
+            DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.to_iso8601()
         }
       }
 
@@ -114,7 +121,8 @@ defmodule SecretHub.CLI.AuthTest do
         "server_url" => "http://localhost:4000",
         "auth" => %{
           "token" => "test-token",
-          "expires_at" => DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.to_iso8601()
+          "expires_at" =>
+            DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.to_iso8601()
         }
       }
 
@@ -132,6 +140,7 @@ defmodule SecretHub.CLI.AuthTest do
     test "returns token when valid" do
       # Create config with valid token
       expires_at = DateTime.utc_now() |> DateTime.add(3600, :second)
+
       config = %{
         "server_url" => "http://localhost:4000",
         "auth" => %{
@@ -147,6 +156,7 @@ defmodule SecretHub.CLI.AuthTest do
     test "returns error when token is expired" do
       # Create config with expired token
       expires_at = DateTime.utc_now() |> DateTime.add(-3600, :second)
+
       config = %{
         "server_url" => "http://localhost:4000",
         "auth" => %{
@@ -168,6 +178,7 @@ defmodule SecretHub.CLI.AuthTest do
     test "returns token when authenticated" do
       # Create config with valid token
       expires_at = DateTime.utc_now() |> DateTime.add(3600, :second)
+
       config = %{
         "server_url" => "http://localhost:4000",
         "auth" => %{
@@ -183,6 +194,7 @@ defmodule SecretHub.CLI.AuthTest do
     test "returns error and shows message when token expired" do
       # Create config with expired token
       expires_at = DateTime.utc_now() |> DateTime.add(-3600, :second)
+
       config = %{
         "server_url" => "http://localhost:4000",
         "auth" => %{
@@ -193,17 +205,19 @@ defmodule SecretHub.CLI.AuthTest do
 
       assert :ok = Config.save(config)
 
-      output = capture_io(:stderr, fn ->
-        assert {:error, :not_authenticated} = Auth.ensure_authenticated()
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          assert {:error, :not_authenticated} = Auth.ensure_authenticated()
+        end)
 
       assert output =~ "expired"
     end
 
     test "returns error and shows message when not authenticated" do
-      output = capture_io(:stderr, fn ->
-        assert {:error, :not_authenticated} = Auth.ensure_authenticated()
-      end)
+      output =
+        capture_io(:stderr, fn ->
+          assert {:error, :not_authenticated} = Auth.ensure_authenticated()
+        end)
 
       assert output =~ "Not authenticated"
       assert output =~ "login"
@@ -214,6 +228,7 @@ defmodule SecretHub.CLI.AuthTest do
     test "returns authorization header when authenticated" do
       # Create config with valid token
       expires_at = DateTime.utc_now() |> DateTime.add(3600, :second)
+
       config = %{
         "server_url" => "http://localhost:4000",
         "auth" => %{
@@ -236,6 +251,7 @@ defmodule SecretHub.CLI.AuthTest do
     test "returns empty list when token is expired" do
       # Create config with expired token
       expires_at = DateTime.utc_now() |> DateTime.add(-3600, :second)
+
       config = %{
         "server_url" => "http://localhost:4000",
         "auth" => %{

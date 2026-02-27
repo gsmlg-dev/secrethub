@@ -78,12 +78,14 @@ defmodule SecretHub.CLI.Commands.ConfigCommands do
 
   defp parse_value("true"), do: true
   defp parse_value("false"), do: false
+
   defp parse_value(value) when is_binary(value) do
     case Integer.parse(value) do
       {int, ""} -> int
       _ -> value
     end
   end
+
   defp parse_value(value), do: value
 
   defp validate_config_value("server_url", value) do

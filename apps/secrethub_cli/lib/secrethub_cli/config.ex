@@ -238,9 +238,11 @@ defmodule SecretHub.CLI.Config do
   defp encode_toml_value(value) when is_binary(value), do: ~s("#{value}")
   defp encode_toml_value(value) when is_boolean(value), do: to_string(value)
   defp encode_toml_value(value) when is_number(value), do: to_string(value)
+
   defp encode_toml_value(value) when is_list(value) do
     "[" <> Enum.map_join(value, ", ", &encode_toml_value/1) <> "]"
   end
+
   defp encode_toml_value(value) when is_map(value) do
     # Encode as TOML inline table: {key = "value", key2 = "value2"}
     "{" <>
@@ -248,5 +250,6 @@ defmodule SecretHub.CLI.Config do
         "#{k} = #{encode_toml_value(v)}"
       end) <> "}"
   end
+
   defp encode_toml_value(value), do: inspect(value)
 end
