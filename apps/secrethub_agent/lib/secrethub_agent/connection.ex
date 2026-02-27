@@ -61,7 +61,8 @@ defmodule SecretHub.Agent.Connection do
           key_path: String.t() | nil,
           ca_path: String.t() | nil,
           connection_status: :disconnected | :connecting | :connected,
-          reconnect_timer: reference() | nil
+          reconnect_timer: reference() | nil,
+          retry_count: non_neg_integer()
         }
 
   ## Client API
@@ -181,7 +182,8 @@ defmodule SecretHub.Agent.Connection do
       key_path: key_path,
       ca_path: ca_path,
       connection_status: :disconnected,
-      reconnect_timer: nil
+      reconnect_timer: nil,
+      retry_count: 0
     }
 
     Logger.info("Agent Connection initializing", agent_id: agent_id, core_url: core_url)
@@ -248,7 +250,8 @@ defmodule SecretHub.Agent.Connection do
               | socket: socket,
                 channel: channel,
                 connection_status: :connected,
-                reconnect_timer: nil
+                reconnect_timer: nil,
+                retry_count: 0
             }
 
             {:noreply, new_state}
@@ -450,14 +453,31 @@ defmodule SecretHub.Agent.Connection do
   defp parse_reply(%{"status" => "error", "response" => error}), do: {:error, error}
   defp parse_reply(other), do: {:ok, other}
 
-  defp schedule_reconnect(state) do
-    # Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 60s
-    delay = min(1000 * :math.pow(2, map_size(state.pending_requests)), 60_000) |> round()
+  @doc false
+  def backoff_delay(retry_count) do
+    base_delay = min(1000 * :math.pow(2, retry_count), 60_000) |> round()
+    jitter = round(base_delay * 0.25 * (:rand.uniform() - 0.5))
+    max(100, base_delay + jitter)
+  end
 
-    Logger.info("Scheduling reconnect", delay_ms: delay, agent_id: state.agent_id)
+  defp schedule_reconnect(state) do
+    retry_count = state.retry_count
+    delay = backoff_delay(retry_count)
+
+    Logger.info("Scheduling reconnect",
+      delay_ms: delay,
+      retry_count: retry_count,
+      agent_id: state.agent_id
+    )
 
     timer = Process.send_after(self(), :reconnect, delay)
 
-    {:noreply, %{state | connection_status: :connecting, reconnect_timer: timer}}
+    {:noreply,
+     %{
+       state
+       | connection_status: :connecting,
+         reconnect_timer: timer,
+         retry_count: retry_count + 1
+     }}
   end
 end
