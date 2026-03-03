@@ -21,6 +21,7 @@ Repo.delete_all(SecretHub.Shared.Schemas.Lease)
 # Create sample secrets
 secrets = [
   %{
+    name: "postgres-auth-password",
     secret_path: "dev.db.postgres.auth.password",
     secret_type: :static,
     encrypted_data: "encrypted_pg_password_123",
@@ -29,6 +30,7 @@ secrets = [
     rotation_schedule: "0 2 * * 1"  # Every Sunday at 2 AM
   },
   %{
+    name: "payment-gateway-apikey",
     secret_path: "dev.api.payment-gateway.apikey",
     secret_type: :static,
     encrypted_data: "encrypted_payment_api_key_456",
@@ -37,8 +39,10 @@ secrets = [
     rotation_schedule: "0 3 * * 1"
   },
   %{
+    name: "redis-cache-role",
     secret_path: "dev.db.redis.cache.role",
-    secret_type: :dynamic_role,
+    secret_type: :dynamic,
+    engine_type: "redis",
     encrypted_data: "redis_cache_role_template",
     description: "Redis cache access role",
     rotation_enabled: false
