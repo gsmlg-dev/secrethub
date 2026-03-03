@@ -69,6 +69,14 @@ defmodule SecretHub.MixProject do
       credo: ["cmd mix credo --strict"],
       dialyzer: ["cmd mix dialyzer"],
 
+      # Assets
+      "assets.deploy": [
+        "phx.digest.clean",
+        "tailwind secrethub_web --minify",
+        "bun secrethub_web --minify",
+        "phx.digest"
+      ],
+
       # Database
       "ecto.setup": ["ecto.create", "ecto.migrate", "run apps/secrethub_core/priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"]

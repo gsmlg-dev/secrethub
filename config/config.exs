@@ -61,9 +61,19 @@ config :secrethub_web, SecretHub.Web.Endpoint,
 # at the `config/runtime.exs`.
 config :secrethub_web, SecretHub.Web.Mailer, adapter: Swoosh.Adapters.Local
 
-# Configure tailwind (the version is required)
+# Configure Bun (JavaScript bundler)
+config :bun,
+  version: "1.3.4",
+  secrethub_web: [
+    args:
+      ~w(build assets/js/app.js --outdir=priv/static/assets --external /fonts/* --external /images/*),
+    cd: Path.expand("../apps/secrethub_web", __DIR__),
+    env: %{}
+  ]
+
+# Configure Tailwind CSS v4
 config :tailwind,
-  version: "4.1.7",
+  version: "4.1.11",
   secrethub_web: [
     args: ~w(
       --input=assets/css/app.css

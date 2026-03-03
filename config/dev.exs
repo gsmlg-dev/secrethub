@@ -26,11 +26,7 @@ config :secrethub_web, SecretHub.Web.Endpoint,
   secret_key_base: "vAPoEmgczs3B5WPFpsHw8tV5a+VV79FjDI7umvmAt1YdlBvpz1J9sXW+/mb5Tj5A",
   watchers: [
     tailwind: {Tailwind, :install_and_run, [:secrethub_web, ~w(--watch)]},
-    bun: [
-      "run",
-      "watch",
-      cd: Path.expand("../apps/secrethub_web/assets", __DIR__)
-    ]
+    bun: {Bun, :install_and_run, [:secrethub_web, ~w(--sourcemap=inline --watch)]}
   ]
 
 # ## SSL Support

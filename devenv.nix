@@ -8,12 +8,8 @@ in
   name = "secrethub";
 
   # Development tools
-  packages = with pkgs; [
-    # Elixir & Erlang (managed by languages.elixir)
+  packages = with pkgs-stable; [
     git
-
-    # JavaScript runtime for Phoenix assets
-    bun
 
     # Database tools
     postgresql_16
@@ -29,16 +25,18 @@ in
     grafana
 
     # Frontend build tools (NixOS-compatible binaries)
-    tailwindcss
+    tailwindcss_4
+  ] ++ lib.optionals pkgs.stdenv.isLinux [
     inotify-tools
   ];
 
   # Language configuration
-  languages = {
-    elixir = {
-      enable = true;
-    };
-  };
+  languages.elixir.enable = true;
+
+  # JavaScript / Bun
+  languages.javascript.enable = true;
+  languages.javascript.bun.enable = true;
+  languages.javascript.bun.package = pkgs-stable.bun;
 
   # Development services
   services = {
@@ -115,31 +113,30 @@ in
   # Environment variables
   env = {
     # PostgreSQL environment variables for Unix socket connection
-    # These are used by both psql CLI and Elixir config
-    # Socket path is under project directory: .devenv/state/postgres
+    # Note: PGUSER/PGPASSWORD are NOT set here because they interfere with
+    # devenv's postgres service (readiness probe and initialScript both need
+    # to connect as the OS user during setup). Credentials are in DATABASE_URL.
     PGHOST = "${config.devenv.root}/.devenv/state/postgres";
-    PGUSER = "secrethub";
-    PGPASSWORD = "secrethub_dev_password";
     PGDATABASE = "secrethub_dev";
 
     # Database URLs (using Unix domain socket for security and performance)
     DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=${config.devenv.root}/.devenv/state/postgres";
     DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=${config.devenv.root}/.devenv/state/postgres";
 
+    # Asset tooling — tells Mix hex packages to use Nix-managed binaries
+    MIX_BUN_PATH = lib.getExe pkgs-stable.bun;
+    MIX_TAILWIND_PATH = lib.getExe pkgs-stable.tailwindcss_4;
+
     # Application
     MIX_ENV = "dev";
     SECRET_KEY_BASE = lib.mkDefault "dev-secret-key-base-change-in-production";
-    
+
     # Phoenix
     PHX_HOST = "localhost";
     PHX_PORT = "4664";
 
     # Development flags
     ELIXIR_ERL_OPTIONS = "+sbwt none +sbwtdcpu none +sbwtdio none";
-
-    # Bun path (NixOS compatibility)
-    BUN_PATH = "${pkgs.bun}/bin/bun";
-    # Note: TAILWIND_PATH is set in enterShell for proper $HOME expansion
   };
 
   # Scripts for common tasks
@@ -152,18 +149,16 @@ in
 
     # Database initialization (run after devenv up to ensure user/databases exist)
     db-init.exec = ''
-      # Find the actual socket location (devenv uses /tmp/devenv-*/postgres)
-      SOCKET_DIR=$(dirname $(find /tmp -name ".s.PGSQL.5432" -path "*devenv*" 2>/dev/null | head -1) 2>/dev/null)
-      if [ -z "$SOCKET_DIR" ]; then
-        echo "❌ PostgreSQL socket not found. Is devenv up running?"
+      # The socket is in PGHOST (set by devenv env block to .devenv/state/postgres)
+      SOCKET_DIR="$PGHOST"
+
+      # Check if postgres is accepting connections
+      if ! pg_isready -h "$SOCKET_DIR" -q 2>/dev/null; then
+        echo "❌ PostgreSQL is not running. Start it with: devenv up"
         exit 1
       fi
 
-      # Create symlink if needed
-      mkdir -p "$DEVENV_STATE/postgres"
-      ln -sf "$SOCKET_DIR/.s.PGSQL.5432" "$DEVENV_STATE/postgres/.s.PGSQL.5432" 2>/dev/null || true
-
-      # Check if secrethub user exists
+      # Check if secrethub user exists (connect as OS user who is the initdb superuser)
       if ! psql -h "$SOCKET_DIR" -U "$USER" -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='secrethub'" | grep -q 1; then
         echo "📦 Creating secrethub user..."
         psql -h "$SOCKET_DIR" -U "$USER" -d postgres -c "CREATE USER secrethub WITH PASSWORD 'secrethub_dev_password' SUPERUSER;"
@@ -207,19 +202,8 @@ in
       mix ecto.migrate
     '';
     
-    # Install tailwindcss v4 globally via bun (required for NixOS compatibility)
-    tailwind-install.exec = ''
-      if [ ! -f "$HOME/.bun/bin/tailwindcss" ]; then
-        echo "📦 Installing tailwindcss v4 via bun..."
-        bun add -g @tailwindcss/cli@4.1.7
-      else
-        echo "✅ tailwindcss already installed"
-      fi
-    '';
-
     # Asset management (using Bun)
     assets-install.exec = ''
-      tailwind-install
       cd apps/secrethub_web/assets
       bun install
     '';
@@ -271,11 +255,6 @@ in
 
   # Enter shell hooks
   enterShell = ''
-    # Add bun global bin to PATH (for tailwindcss)
-    export PATH="$HOME/.bun/bin:$PATH"
-    # Set TAILWIND_PATH with proper $HOME expansion (Nix env block doesn't expand shell vars)
-    export TAILWIND_PATH="$HOME/.bun/bin/tailwindcss"
-
     # Welcome message
     cat << 'EOF'
     
@@ -314,12 +293,6 @@ in
       echo ""
     fi
     
-    # Check if tailwindcss is installed
-    if [ ! -f "$HOME/.bun/bin/tailwindcss" ]; then
-      echo "📦 Tailwind CSS v4 not installed. Run: tailwind-install"
-      echo ""
-    fi
-
     # Check if assets dependencies are installed
     if [ -d "apps/secrethub_web/assets" ] && [ ! -d "apps/secrethub_web/assets/node_modules" ]; then
       echo "📦 Frontend dependencies not installed. Run: assets-install"
