@@ -10,9 +10,11 @@
    The heroicons installation itself is managed by your mix.exs */
 @plugin "../vendor/heroicons";
 
-/* daisyUI temporarily disabled for Tailwind v4 compatibility testing */
-/* @plugin "../vendor/daisyui"; */
-/* @plugin "../vendor/daisyui-theme"; */
+/* DuskMoon Design System */
+@plugin "@duskmoon-dev/core/plugin";
+@import "@duskmoon-dev/core/themes/sunshine";
+@import "@duskmoon-dev/core/themes/moonlight";
+@import "@duskmoon-dev/core/components";
 
 /* Add variants based on LiveView classes */
 @custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);

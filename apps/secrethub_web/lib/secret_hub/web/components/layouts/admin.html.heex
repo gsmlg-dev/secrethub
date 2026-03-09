@@ -1,181 +1,102 @@
-<div class="min-h-screen flex bg-gray-100">
+<div class="min-h-screen flex">
   <!-- Sidebar -->
-  <aside class="w-64 bg-gray-900 text-white flex flex-col">
-    <!-- Logo -->
-    <div class="p-4 border-b border-gray-800">
-      <a href="/admin/dashboard" class="flex items-center space-x-2">
-        <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-          />
-        </svg>
+  <.dm_left_menu size="md" active={to_string(@active_nav)}>
+    <:title>
+      <.dm_link navigate={~p"/admin/dashboard"} class="flex items-center space-x-2 p-4">
+        <.dm_mdi name="shield-lock" class="w-8 h-8" color="primary" />
         <span class="text-xl font-bold">SecretHub</span>
-      </a>
-    </div>
-    
-<!-- Navigation -->
-    <nav class="flex-1 p-4 space-y-1 overflow-y-auto">
-      <!-- Dashboard -->
-      <.admin_nav_link
-        href="/admin/dashboard"
-        icon="home"
-        label="Dashboard"
-        active={@active_nav == :dashboard}
-      />
-      
-<!-- Secrets Section -->
-      <div class="pt-4">
-        <p class="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Secrets</p>
-        <div class="mt-2 space-y-1">
-          <.admin_nav_link
-            href="/admin/secrets"
-            icon="key"
-            label="Secrets"
-            active={@active_nav == :secrets}
-          />
-          <.admin_nav_link
-            href="/admin/engines"
-            icon="cog"
-            label="Engines"
-            active={@active_nav == :engines}
-          />
-          <.admin_nav_link
-            href="/admin/rotations"
-            icon="refresh"
-            label="Rotations"
-            active={@active_nav == :rotations}
-          />
-          <.admin_nav_link
-            href="/admin/leases"
-            icon="clock"
-            label="Leases"
-            active={@active_nav == :leases}
-          />
-        </div>
-      </div>
-      
-<!-- Access Control Section -->
-      <div class="pt-4">
-        <p class="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          Access Control
-        </p>
-        <div class="mt-2 space-y-1">
-          <.admin_nav_link
-            href="/admin/policies"
-            icon="shield"
-            label="Policies"
-            active={@active_nav == :policies}
-          />
-          <.admin_nav_link
-            href="/admin/approles"
-            icon="users"
-            label="AppRoles"
-            active={@active_nav == :approles}
-          />
-          <.admin_nav_link
-            href="/admin/agents"
-            icon="server"
-            label="Agents"
-            active={@active_nav == :agents}
-          />
-        </div>
-      </div>
-      
-<!-- Security Section -->
-      <div class="pt-4">
-        <p class="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Security</p>
-        <div class="mt-2 space-y-1">
-          <.admin_nav_link
-            href="/admin/pki"
-            icon="certificate"
-            label="PKI"
-            active={@active_nav == :pki}
-          />
-          <.admin_nav_link
-            href="/admin/certificates"
-            icon="document"
-            label="Certificates"
-            active={@active_nav == :certificates}
-          />
-          <.admin_nav_link
-            href="/admin/audit"
-            icon="eye"
-            label="Audit Log"
-            active={@active_nav == :audit}
-          />
-        </div>
-      </div>
-      
-<!-- Infrastructure Section -->
-      <div class="pt-4">
-        <p class="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          Infrastructure
-        </p>
-        <div class="mt-2 space-y-1">
-          <.admin_nav_link
-            href="/admin/cluster"
-            icon="server-stack"
-            label="Cluster"
-            active={@active_nav == :cluster}
-          />
-          <.admin_nav_link
-            href="/admin/templates"
-            icon="template"
-            label="Templates"
-            active={@active_nav == :templates}
-          />
-          <.admin_nav_link
-            href="/admin/alerts"
-            icon="bell"
-            label="Alerts"
-            active={@active_nav == :alerts}
-          />
-          <.admin_nav_link
-            href="/admin/performance"
-            icon="chart"
-            label="Performance"
-            active={@active_nav == :performance}
-          />
-        </div>
-      </div>
-    </nav>
-    
-<!-- Footer -->
-    <div class="p-4 border-t border-gray-800">
-      <a
-        href="/admin/logout"
-        class="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
-        data-method="delete"
+      </.dm_link>
+    </:title>
+    <:menu>
+      <.dm_left_menu_group active={to_string(@active_nav)}>
+        <:title>Overview</:title>
+        <:menu id="dashboard" to={~p"/admin/dashboard"}>
+          <.dm_mdi name="view-dashboard" class="w-5 h-5" /> Dashboard
+        </:menu>
+      </.dm_left_menu_group>
+
+      <.dm_left_menu_group active={to_string(@active_nav)}>
+        <:title>Secrets</:title>
+        <:menu id="secrets" to={~p"/admin/secrets"}>
+          <.dm_mdi name="key-variant" class="w-5 h-5" /> Secrets
+        </:menu>
+        <:menu id="engines" to={~p"/admin/engines"}>
+          <.dm_mdi name="cog" class="w-5 h-5" /> Engines
+        </:menu>
+        <:menu id="rotations" to={~p"/admin/rotations"}>
+          <.dm_mdi name="refresh" class="w-5 h-5" /> Rotations
+        </:menu>
+        <:menu id="leases" to={~p"/admin/leases"}>
+          <.dm_mdi name="clock-outline" class="w-5 h-5" /> Leases
+        </:menu>
+      </.dm_left_menu_group>
+
+      <.dm_left_menu_group active={to_string(@active_nav)}>
+        <:title>Access Control</:title>
+        <:menu id="policies" to={~p"/admin/policies"}>
+          <.dm_mdi name="shield-check" class="w-5 h-5" /> Policies
+        </:menu>
+        <:menu id="approles" to={~p"/admin/approles"}>
+          <.dm_mdi name="account-group" class="w-5 h-5" /> AppRoles
+        </:menu>
+        <:menu id="agents" to={~p"/admin/agents"}>
+          <.dm_mdi name="server" class="w-5 h-5" /> Agents
+        </:menu>
+      </.dm_left_menu_group>
+
+      <.dm_left_menu_group active={to_string(@active_nav)}>
+        <:title>Security</:title>
+        <:menu id="pki" to={~p"/admin/pki"}>
+          <.dm_mdi name="certificate" class="w-5 h-5" /> PKI
+        </:menu>
+        <:menu id="certificates" to={~p"/admin/certificates"}>
+          <.dm_mdi name="file-certificate" class="w-5 h-5" /> Certificates
+        </:menu>
+        <:menu id="audit" to={~p"/admin/audit"}>
+          <.dm_mdi name="eye" class="w-5 h-5" /> Audit Log
+        </:menu>
+      </.dm_left_menu_group>
+
+      <.dm_left_menu_group active={to_string(@active_nav)}>
+        <:title>Infrastructure</:title>
+        <:menu id="cluster" to={~p"/admin/cluster"}>
+          <.dm_mdi name="server-network" class="w-5 h-5" /> Cluster
+        </:menu>
+        <:menu id="templates" to={~p"/admin/templates"}>
+          <.dm_mdi name="file-document-outline" class="w-5 h-5" /> Templates
+        </:menu>
+        <:menu id="alerts" to={~p"/admin/alerts"}>
+          <.dm_mdi name="bell" class="w-5 h-5" /> Alerts
+        </:menu>
+        <:menu id="performance" to={~p"/admin/performance"}>
+          <.dm_mdi name="chart-bar" class="w-5 h-5" /> Performance
+        </:menu>
+      </.dm_left_menu_group>
+
+      <.dm_divider />
+
+      <.dm_link
+        href={~p"/admin/logout"}
+        method="delete"
+        class="flex items-center space-x-2 px-3 py-2 opacity-70 hover:opacity-100 transition-opacity"
       >
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-          />
-        </svg>
+        <.dm_mdi name="logout" class="w-5 h-5" />
         <span>Logout</span>
-      </a>
-    </div>
-  </aside>
+      </.dm_link>
+    </:menu>
+  </.dm_left_menu>
   
 <!-- Main Content -->
   <main class="flex-1 flex flex-col min-h-screen">
-    <!-- Top Header -->
-    <header class="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-      <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-semibold text-gray-900">{@page_title || "Admin"}</h1>
-        <div class="flex items-center space-x-4">
-          <.theme_toggle />
-        </div>
-      </div>
-    </header>
-    
-<!-- Page Content -->
+    <.dm_actionbar>
+      <:left>
+        <h1 class="text-2xl font-semibold">{@page_title || "Admin"}</h1>
+      </:left>
+      <:right>
+        <.dm_theme_switcher id="admin-theme-toggle" />
+      </:right>
+    </.dm_actionbar>
+
     <div class="flex-1 p-6 overflow-auto">
       <.flash_group flash={@flash} />
       {@inner_content}

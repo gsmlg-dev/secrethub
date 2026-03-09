@@ -24,10 +24,15 @@ import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 
+// DuskMoon UI hooks and element registration
+import * as DuskmoonHooks from "phoenix_duskmoon/hooks"
+import "@duskmoon-dev/elements/register"
+
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
+  hooks: DuskmoonHooks,
 })
 
 // Show progress bar on live navigation and form submits

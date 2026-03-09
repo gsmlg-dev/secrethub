@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="sunshine">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -11,18 +11,14 @@
     <script>
       // Set theme before page loads to prevent flash
       (function() {
-        const theme = localStorage.getItem("phx:theme") || "system";
-        if (theme === "system") {
-          document.documentElement.removeAttribute("data-theme");
-        } else {
-          document.documentElement.setAttribute("data-theme", theme);
-        }
+        const theme = localStorage.getItem("dm-theme") || "sunshine";
+        document.documentElement.setAttribute("data-theme", theme);
       })();
     </script>
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
   </head>
-  <body>
+  <body class="dm-body">
     {@inner_content}
   </body>
 </html>

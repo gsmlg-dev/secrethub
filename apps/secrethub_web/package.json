@@ -1,0 +1,14 @@
+{
+  "name": "secrethub_web",
+  "private": true,
+  "dependencies": {
+    "phoenix": "file:../../deps/phoenix",
+    "phoenix_html": "file:../../deps/phoenix_html",
+    "phoenix_live_view": "file:../../deps/phoenix_live_view",
+    "phoenix-colocated": "file:../../deps/phoenix_live_view",
+    "phoenix_duskmoon": "file:../../deps/phoenix_duskmoon",
+    "tailwindcss": "4.1.7",
+    "@duskmoon-dev/core": "^1.11.1",
+    "@duskmoon-dev/elements": "^0.7.1"
+  }
+}

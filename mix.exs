@@ -35,7 +35,7 @@ defmodule SecretHub.MixProject do
       # Development & Testing
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+      {:ex_doc, "~> 0.31", runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:mix_test_watch, "~> 1.1", only: [:dev, :test], runtime: false},
       # Required by Phoenix LiveView tests; must include :dev since devenv sets MIX_ENV=dev
