@@ -131,8 +131,8 @@ defmodule SecretHub.Web.AppRoleManagementLive do
     ~H"""
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">AppRole Management</h1>
-        <p class="mt-2 text-sm text-gray-600">
+        <h1 class="text-3xl font-bold text-on-surface">AppRole Management</h1>
+        <p class="mt-2 text-sm text-on-surface-variant">
           Manage AppRoles for agent authentication. Each AppRole has a RoleID and one or more SecretIDs.
         </p>
       </div>
@@ -141,7 +141,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
       <div class="mb-6">
         <button
           phx-click="toggle_create_form"
-          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
         >
           <svg
             class="-ml-1 mr-2 h-5 w-5"
@@ -161,13 +161,13 @@ defmodule SecretHub.Web.AppRoleManagementLive do
       
     <!-- Create Role Form -->
       <%= if @creating_role do %>
-        <div class="bg-white shadow sm:rounded-lg mb-6">
+        <div class="bg-surface-container shadow sm:rounded-lg mb-6">
           <div class="px-4 py-5 sm:p-6">
-            <h3 class="text-lg leading-6 font-medium text-gray-900">Create New AppRole</h3>
+            <h3 class="text-lg leading-6 font-medium text-on-surface">Create New AppRole</h3>
             <div class="mt-4">
               <form phx-submit="create_role" class="space-y-4">
                 <div>
-                  <label for="role_name" class="block text-sm font-medium text-gray-700">
+                  <label for="role_name" class="block text-sm font-medium text-on-surface">
                     Role Name
                   </label>
                   <input
@@ -176,13 +176,13 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                     id="role_name"
                     required
                     value={@new_role_name}
-                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                     placeholder="e.g., production-app, staging-agent"
                   />
                 </div>
 
                 <div>
-                  <label for="policies" class="block text-sm font-medium text-gray-700">
+                  <label for="policies" class="block text-sm font-medium text-on-surface">
                     Policies (comma-separated)
                   </label>
                   <input
@@ -190,10 +190,10 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                     name="policies"
                     id="policies"
                     value={@new_role_policies}
-                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                     placeholder="e.g., secret-read, secret-write"
                   />
-                  <p class="mt-1 text-sm text-gray-500">
+                  <p class="mt-1 text-sm text-on-surface-variant">
                     Enter policy names separated by commas
                   </p>
                 </div>
@@ -202,13 +202,13 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                   <button
                     type="button"
                     phx-click="toggle_create_form"
-                    class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    class="inline-flex items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                   >
                     Create AppRole
                   </button>
@@ -228,16 +228,16 @@ defmodule SecretHub.Web.AppRoleManagementLive do
           aria-modal="true"
         >
           <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true">
+            <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 transition-opacity" aria-hidden="true">
             </div>
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">
               &#8203;
             </span>
-            <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+            <div class="inline-block align-bottom bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
               <div>
-                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-success/10">
                   <svg
-                    class="h-6 w-6 text-green-600"
+                    class="h-6 w-6 text-success"
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
                     viewBox="0 0 24 24"
@@ -252,44 +252,44 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                   </svg>
                 </div>
                 <div class="mt-3 text-center sm:mt-5">
-                  <h3 class="text-lg leading-6 font-medium text-gray-900" id="modal-title">
+                  <h3 class="text-lg leading-6 font-medium text-on-surface" id="modal-title">
                     AppRole Created Successfully
                   </h3>
                   <div class="mt-4">
-                    <p class="text-sm text-red-600 font-semibold mb-4">
+                    <p class="text-sm text-error font-semibold mb-4">
                       ⚠️ Save these credentials now! They will only be shown once.
                     </p>
 
-                    <div class="bg-gray-50 p-4 rounded-md text-left space-y-3">
+                    <div class="bg-surface-container-low p-4 rounded-md text-left space-y-3">
                       <div>
-                        <label class="block text-xs font-medium text-gray-500 uppercase">
+                        <label class="block text-xs font-medium text-on-surface-variant uppercase">
                           Role Name
                         </label>
-                        <div class="mt-1 font-mono text-sm bg-white p-2 rounded border border-gray-200">
+                        <div class="mt-1 font-mono text-sm bg-surface-container p-2 rounded border border-outline-variant">
                           {@new_role_result.role_name}
                         </div>
                       </div>
 
                       <div>
-                        <label class="block text-xs font-medium text-gray-500 uppercase">
+                        <label class="block text-xs font-medium text-on-surface-variant uppercase">
                           Role ID
                         </label>
-                        <div class="mt-1 font-mono text-sm bg-white p-2 rounded border border-gray-200 break-all">
+                        <div class="mt-1 font-mono text-sm bg-surface-container p-2 rounded border border-outline-variant break-all">
                           {@new_role_result.role_id}
                         </div>
                       </div>
 
                       <div>
-                        <label class="block text-xs font-medium text-gray-500 uppercase">
+                        <label class="block text-xs font-medium text-on-surface-variant uppercase">
                           Secret ID
                         </label>
-                        <div class="mt-1 font-mono text-sm bg-white p-2 rounded border border-gray-200 break-all">
+                        <div class="mt-1 font-mono text-sm bg-surface-container p-2 rounded border border-outline-variant break-all">
                           {@new_role_result.secret_id}
                         </div>
                       </div>
                     </div>
 
-                    <p class="mt-4 text-xs text-gray-500">
+                    <p class="mt-4 text-xs text-on-surface-variant">
                       Use these credentials to configure your agent. The RoleID is reusable, but the SecretID should be single-use.
                     </p>
                   </div>
@@ -299,7 +299,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                 <button
                   type="button"
                   phx-click="close_credentials"
-                  class="inline-flex justify-center w-full rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:text-sm"
+                  class="inline-flex justify-center w-full rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-on-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:text-sm"
                 >
                   I've Saved These Credentials
                 </button>
@@ -310,24 +310,24 @@ defmodule SecretHub.Web.AppRoleManagementLive do
       <% end %>
       
     <!-- AppRoles List -->
-      <div class="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul role="list" class="divide-y divide-gray-200">
+      <div class="bg-surface-container shadow overflow-hidden sm:rounded-md">
+        <ul role="list" class="divide-y divide-outline-variant">
           <%= if Enum.empty?(@roles) do %>
             <li class="px-6 py-12 text-center">
-              <p class="text-gray-500">
+              <p class="text-on-surface-variant">
                 No AppRoles created yet. Create your first AppRole to get started.
               </p>
             </li>
           <% else %>
             <%= for role <- @roles do %>
-              <li class="px-6 py-4 hover:bg-gray-50">
+              <li class="px-6 py-4 hover:bg-surface-container-low">
                 <div class="flex items-center justify-between">
                   <div class="flex-1">
                     <div class="flex items-center">
                       <div class="flex-shrink-0">
-                        <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                        <div class="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                           <svg
-                            class="h-6 w-6 text-blue-600"
+                            class="h-6 w-6 text-primary"
                             xmlns="http://www.w3.org/2000/svg"
                             fill="none"
                             viewBox="0 0 24 24"
@@ -343,10 +343,10 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                         </div>
                       </div>
                       <div class="ml-4">
-                        <div class="text-sm font-medium text-gray-900">
+                        <div class="text-sm font-medium text-on-surface">
                           {role.role_name}
                         </div>
-                        <div class="text-sm text-gray-500">
+                        <div class="text-sm text-on-surface-variant">
                           Role ID:
                           <span class="font-mono text-xs">{String.slice(role.role_id, 0..7)}...</span>
                         </div>
@@ -354,13 +354,13 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                           <%= if role.metadata["policies"] && length(role.metadata["policies"]) > 0 do %>
                             <div class="flex flex-wrap gap-1">
                               <%= for policy <- role.metadata["policies"] do %>
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
                                   {policy}
                                 </span>
                               <% end %>
                             </div>
                           <% else %>
-                            <span class="text-xs text-gray-400">No policies</span>
+                            <span class="text-xs text-on-surface-variant">No policies</span>
                           <% end %>
                         </div>
                       </div>
@@ -370,14 +370,14 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                     <button
                       phx-click="view_role"
                       phx-value-role_id={role.role_id}
-                      class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      class="inline-flex items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                     >
                       View Details
                     </button>
                     <button
                       phx-click="generate_secret_id"
                       phx-value-role_id={role.role_id}
-                      class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      class="inline-flex items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                     >
                       Generate SecretID
                     </button>
@@ -385,7 +385,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                       phx-click="delete_role"
                       phx-value-role_id={role.role_id}
                       data-confirm="Are you sure you want to delete this AppRole? This action cannot be undone."
-                      class="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                      class="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-error"
                     >
                       Delete
                     </button>

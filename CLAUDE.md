@@ -94,8 +94,19 @@ apps/
 ### Frontend Assets
 - **Bun** for JavaScript bundling (not npm/esbuild)
 - **Tailwind CSS v4.1.7** (installed globally via bun, path: `$HOME/.bun/bin/tailwindcss`)
-- **DaisyUI** for UI components, **Heroicons** for icons
+- **`@duskmoon-dev/core`** — TailwindCSS plugin (CSS/design tokens only)
+- **`phoenix_duskmoon`** — Phoenix component module (Elixir/HEEx components, `dm_*` prefix)
+- **Heroicons** for icons
 - Phoenix LiveView for interactive admin dashboard components
+
+#### UI Constraints
+- **Do not** vendor or copy component internals — consume via the package APIs only
+- **Do not** override `@duskmoon-dev/core` design tokens locally; propose upstream changes instead
+- **Do not** patch `phoenix_duskmoon` component logic inline; wrap or compose instead
+- Upstream bugs/gaps → file GitHub issue with label `internal request` in the correct repo:
+  - CSS/token/plugin → `duskmoon-dev/duskmoonui`
+  - Web component/element → `duskmoon-dev/duskmoon-elements`
+  - Phoenix component → `duskmoon-dev/phoenix-duskmoon-ui`
 
 ### Authentication & Security
 - mTLS between Core and Agents; PKI engine manages internal CA

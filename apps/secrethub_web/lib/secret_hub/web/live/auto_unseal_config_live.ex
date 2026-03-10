@@ -167,7 +167,7 @@ defmodule SecretHub.Web.AutoUnsealConfigLive do
       <div class="flex justify-between items-center mb-6">
         <div>
           <h1 class="text-3xl font-bold">Auto-Unseal Configuration</h1>
-          <p class="text-gray-600 mt-1">Manage automatic vault unsealing with cloud KMS providers</p>
+          <p class="text-on-surface-variant mt-1">Manage automatic vault unsealing with cloud KMS providers</p>
         </div>
 
         <div class="flex gap-2">
@@ -308,12 +308,12 @@ defmodule SecretHub.Web.AutoUnsealConfigLive do
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Unsealed</div>
-                <div class="stat-value text-green-600">{@cluster_info.unsealed_count}</div>
+                <div class="stat-value text-success">{@cluster_info.unsealed_count}</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Sealed</div>
-                <div class="stat-value text-yellow-600">{@cluster_info.sealed_count}</div>
+                <div class="stat-value text-warning">{@cluster_info.sealed_count}</div>
               </div>
 
               <div class="stat bg-base-200 rounded-lg">

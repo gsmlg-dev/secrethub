@@ -125,7 +125,7 @@ defmodule SecretHub.Web.HealthAlertsLive do
       <div class="flex justify-between items-center mb-6">
         <div>
           <h1 class="text-3xl font-bold">Health Alerts</h1>
-          <p class="text-gray-600 mt-1">Configure and manage health monitoring alerts</p>
+          <p class="text-on-surface-variant mt-1">Configure and manage health monitoring alerts</p>
         </div>
 
         <div class="flex gap-2">
@@ -253,7 +253,7 @@ defmodule SecretHub.Web.HealthAlertsLive do
       <div class="card bg-base-200 shadow-xl mt-6">
         <div class="card-body">
           <h2 class="card-title">About Health Alerts</h2>
-          <p class="text-sm text-gray-600">
+          <p class="text-sm text-on-surface-variant">
             Health alerts monitor node metrics and trigger notifications when thresholds are exceeded.
             Configure alerts to be notified of issues before they impact your system.
           </p>

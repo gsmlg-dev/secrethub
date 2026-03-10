@@ -154,21 +154,21 @@ defmodule SecretHub.Web.DeploymentStatusLive do
 
   defp pod_status_badge(status) do
     case status do
-      "Running" -> {"bg-green-100 text-green-800", "Running"}
-      "Pending" -> {"bg-yellow-100 text-yellow-800", "Pending"}
-      "Failed" -> {"bg-red-100 text-red-800", "Failed"}
-      "Succeeded" -> {"bg-blue-100 text-blue-800", "Succeeded"}
-      "Unknown" -> {"bg-gray-100 text-gray-800", "Unknown"}
-      _ -> {"bg-gray-100 text-gray-800", status}
+      "Running" -> {"bg-success/10 text-success", "Running"}
+      "Pending" -> {"bg-warning/10 text-warning", "Pending"}
+      "Failed" -> {"bg-error/10 text-error", "Failed"}
+      "Succeeded" -> {"bg-primary/10 text-primary", "Succeeded"}
+      "Unknown" -> {"bg-surface-container text-on-surface", "Unknown"}
+      _ -> {"bg-surface-container text-on-surface", status}
     end
   end
 
   defp event_type_badge(type) do
     case type do
-      "Normal" -> {"bg-blue-100 text-blue-800", "Normal"}
-      "Warning" -> {"bg-yellow-100 text-yellow-800", "Warning"}
-      "Error" -> {"bg-red-100 text-red-800", "Error"}
-      _ -> {"bg-gray-100 text-gray-800", type}
+      "Normal" -> {"bg-primary/10 text-primary", "Normal"}
+      "Warning" -> {"bg-warning/10 text-warning", "Warning"}
+      "Error" -> {"bg-error/10 text-error", "Error"}
+      _ -> {"bg-surface-container text-on-surface", type}
     end
   end
 
@@ -207,7 +207,7 @@ defmodule SecretHub.Web.DeploymentStatusLive do
       <div class="flex justify-between items-center mb-6">
         <div>
           <h1 class="text-3xl font-bold">Deployment Status</h1>
-          <p class="text-gray-600 mt-1">Monitor Kubernetes deployment and pod health</p>
+          <p class="text-on-surface-variant mt-1">Monitor Kubernetes deployment and pod health</p>
         </div>
 
         <div class="flex gap-2">
@@ -297,7 +297,7 @@ defmodule SecretHub.Web.DeploymentStatusLive do
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Available</div>
-                <div class="stat-value text-2xl text-green-600">
+                <div class="stat-value text-2xl text-success">
                   {@deployment.replicas.available}
                 </div>
                 <div class="stat-desc">Ready to serve</div>
@@ -305,7 +305,7 @@ defmodule SecretHub.Web.DeploymentStatusLive do
 
               <div class="stat bg-base-200 rounded-lg">
                 <div class="stat-title">Ready</div>
-                <div class="stat-value text-2xl text-blue-600">{@deployment.replicas.ready}</div>
+                <div class="stat-value text-2xl text-primary">{@deployment.replicas.ready}</div>
                 <div class="stat-desc">Passing health checks</div>
               </div>
 
@@ -377,24 +377,24 @@ defmodule SecretHub.Web.DeploymentStatusLive do
                         <%= if pod_metrics do %>
                           <div class="text-sm">
                             <div>{pod_metrics.cpu_usage}</div>
-                            <div class="text-xs text-gray-500">
+                            <div class="text-xs text-on-surface-variant">
                               {Float.round(pod_metrics.cpu_percent, 1)}%
                             </div>
                           </div>
                         <% else %>
-                          <span class="text-gray-400">N/A</span>
+                          <span class="text-on-surface-variant">N/A</span>
                         <% end %>
                       </td>
                       <td>
                         <%= if pod_metrics do %>
                           <div class="text-sm">
                             <div>{pod_metrics.memory_usage}</div>
-                            <div class="text-xs text-gray-500">
+                            <div class="text-xs text-on-surface-variant">
                               {Float.round(pod_metrics.memory_percent, 1)}%
                             </div>
                           </div>
                         <% else %>
-                          <span class="text-gray-400">N/A</span>
+                          <span class="text-on-surface-variant">N/A</span>
                         <% end %>
                       </td>
                     </tr>

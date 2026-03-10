@@ -231,7 +231,7 @@ defmodule SecretHub.Web.EngineSetupWizardLive do
         <h1 class="text-3xl font-bold">
           Setup {String.capitalize(to_string(@engine_type))} Engine
         </h1>
-        <p class="text-gray-600 mt-1">Configure a new dynamic secret engine</p>
+        <p class="text-on-surface-variant mt-1">Configure a new dynamic secret engine</p>
       </div>
       
     <!-- Progress Steps -->
@@ -462,7 +462,7 @@ defmodule SecretHub.Web.EngineSetupWizardLive do
             <h2 class="card-title mb-4">Test Connection & Save</h2>
 
             <div class="mb-6">
-              <p class="text-sm text-gray-600 mb-4">
+              <p class="text-sm text-on-surface-variant mb-4">
                 Test the connection to ensure everything is configured correctly before saving.
               </p>
 

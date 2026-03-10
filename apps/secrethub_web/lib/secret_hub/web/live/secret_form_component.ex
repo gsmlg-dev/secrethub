@@ -35,10 +35,10 @@ defmodule SecretHub.Web.SecretFormComponent do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4">
-        <div class="px-6 py-4 border-b border-gray-200">
-          <h3 class="text-lg font-semibold text-gray-900">
+    <div class="fixed inset-0 bg-surface-container-highest/75 bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-surface-container rounded-lg shadow-xl max-w-2xl w-full mx-4">
+        <div class="px-6 py-4 border-b border-outline-variant">
+          <h3 class="text-lg font-semibold text-on-surface">
             <%= if @mode == :create do %>
               Create New Secret
             <% else %>
@@ -52,7 +52,7 @@ defmodule SecretHub.Web.SecretFormComponent do
             <!-- Basic Information -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div class="md:col-span-2">
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-on-surface mb-1">
                   Secret Name
                 </label>
                 <input
@@ -63,12 +63,12 @@ defmodule SecretHub.Web.SecretFormComponent do
                   placeholder="e.g., Production Database"
                 />
                 <%= if error = get_field_error(@form, :name) do %>
-                  <p class="mt-1 text-sm text-red-600">{error}</p>
+                  <p class="mt-1 text-sm text-error">{error}</p>
                 <% end %>
               </div>
 
               <div class="md:col-span-2">
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-on-surface mb-1">
                   Description
                 </label>
                 <textarea
@@ -78,12 +78,12 @@ defmodule SecretHub.Web.SecretFormComponent do
                   placeholder="Brief description of what this secret provides access to"
                 ><%= Form.input_value(@form, :description) %></textarea>
                 <%= if error = get_field_error(@form, :description) do %>
-                  <p class="mt-1 text-sm text-red-600">{error}</p>
+                  <p class="mt-1 text-sm text-error">{error}</p>
                 <% end %>
               </div>
 
               <div class="md:col-span-2">
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-on-surface mb-1">
                   Secret Path
                 </label>
                 <input
@@ -93,11 +93,11 @@ defmodule SecretHub.Web.SecretFormComponent do
                   class="form-input w-full"
                   placeholder="e.g., prod/db/postgres"
                 />
-                <p class="mt-1 text-xs text-gray-500">
+                <p class="mt-1 text-xs text-on-surface-variant">
                   Hierarchical path for secret organization (e.g., environment/service/credential)
                 </p>
                 <%= if error = get_field_error(@form, :secret_path) do %>
-                  <p class="mt-1 text-sm text-red-600">{error}</p>
+                  <p class="mt-1 text-sm text-error">{error}</p>
                 <% end %>
               </div>
             </div>
@@ -105,7 +105,7 @@ defmodule SecretHub.Web.SecretFormComponent do
     <!-- Engine Configuration -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-on-surface mb-1">
                   Secret Engine
                 </label>
                 <select
@@ -122,12 +122,12 @@ defmodule SecretHub.Web.SecretFormComponent do
                   <% end %>
                 </select>
                 <%= if error = get_field_error(@form, :engine_type) do %>
-                  <p class="mt-1 text-sm text-red-600">{error}</p>
+                  <p class="mt-1 text-sm text-error">{error}</p>
                 <% end %>
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-on-surface mb-1">
                   Secret Type
                 </label>
                 <select
@@ -148,7 +148,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                   </option>
                 </select>
                 <%= if error = get_field_error(@form, :secret_type) do %>
-                  <p class="mt-1 text-sm text-red-600">{error}</p>
+                  <p class="mt-1 text-sm text-error">{error}</p>
                 <% end %>
               </div>
             </div>
@@ -156,7 +156,7 @@ defmodule SecretHub.Web.SecretFormComponent do
     <!-- Rotation Settings -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-on-surface mb-1">
                   TTL (hours)
                 </label>
                 <input
@@ -167,16 +167,16 @@ defmodule SecretHub.Web.SecretFormComponent do
                   min="1"
                   placeholder="24"
                 />
-                <p class="mt-1 text-xs text-gray-500">
+                <p class="mt-1 text-xs text-on-surface-variant">
                   Time to live for dynamic secrets (hours)
                 </p>
                 <%= if error = get_field_error(@form, :ttl_hours) do %>
-                  <p class="mt-1 text-sm text-red-600">{error}</p>
+                  <p class="mt-1 text-sm text-error">{error}</p>
                 <% end %>
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
+                <label class="block text-sm font-medium text-on-surface mb-1">
                   Rotation Period (hours)
                 </label>
                 <input
@@ -187,18 +187,18 @@ defmodule SecretHub.Web.SecretFormComponent do
                   min="1"
                   placeholder="168"
                 />
-                <p class="mt-1 text-xs text-gray-500">
+                <p class="mt-1 text-xs text-on-surface-variant">
                   How often to rotate static secrets (hours)
                 </p>
                 <%= if error = get_field_error(@form, :rotation_period_hours) do %>
-                  <p class="mt-1 text-sm text-red-600">{error}</p>
+                  <p class="mt-1 text-sm text-error">{error}</p>
                 <% end %>
               </div>
             </div>
             
     <!-- Policies -->
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">
+              <label class="block text-sm font-medium text-on-surface mb-1">
                 Access Policies
               </label>
               <div class="space-y-2">
@@ -208,13 +208,13 @@ defmodule SecretHub.Web.SecretFormComponent do
                       type="checkbox"
                       name="secret[policies][]"
                       value={policy.id}
-                      class="form-checkbox h-4 w-4 text-blue-600 rounded"
+                      class="form-checkbox h-4 w-4 text-primary rounded"
                     />
-                    <span class="ml-2 text-sm text-gray-700">{policy.name}</span>
+                    <span class="ml-2 text-sm text-on-surface">{policy.name}</span>
                   </label>
                 <% end %>
               </div>
-              <p class="mt-1 text-xs text-gray-500">
+              <p class="mt-1 text-xs text-on-surface-variant">
                 Select which policies can access this secret
               </p>
             </div>
@@ -226,7 +226,7 @@ defmodule SecretHub.Web.SecretFormComponent do
           </div>
           
     <!-- Form Actions -->
-          <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-4">
+          <div class="px-6 py-4 border-t border-outline-variant flex justify-end space-x-4">
             <button
               type="button"
               class="btn-secondary"
@@ -291,9 +291,9 @@ defmodule SecretHub.Web.SecretFormComponent do
     case engine_type do
       "static" ->
         ~H"""
-        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h4 class="text-sm font-medium text-yellow-800 mb-2">Static Secret Configuration</h4>
-          <p class="text-sm text-yellow-700">
+        <div class="bg-warning/5 border border-yellow-200 rounded-lg p-4">
+          <h4 class="text-sm font-medium text-warning mb-2">Static Secret Configuration</h4>
+          <p class="text-sm text-warning">
             Static secrets store long-lived credentials that are rotated periodically.
             After creation, you'll need to configure the actual secret values through the engine settings.
           </p>
@@ -303,10 +303,10 @@ defmodule SecretHub.Web.SecretFormComponent do
       "postgresql" ->
         ~H"""
         <div class="space-y-4">
-          <h4 class="text-sm font-medium text-gray-900">PostgreSQL Configuration</h4>
+          <h4 class="text-sm font-medium text-on-surface">PostgreSQL Configuration</h4>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Database Host</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Database Host</label>
               <input
                 type="text"
                 name="secret[engine_config][host]"
@@ -315,7 +315,7 @@ defmodule SecretHub.Web.SecretFormComponent do
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Database Port</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Database Port</label>
               <input
                 type="number"
                 name="secret[engine_config][port]"
@@ -324,7 +324,7 @@ defmodule SecretHub.Web.SecretFormComponent do
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Database Name</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Database Name</label>
               <input
                 type="text"
                 name="secret[engine_config][database]"
@@ -333,7 +333,7 @@ defmodule SecretHub.Web.SecretFormComponent do
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Username</label>
               <input
                 type="text"
                 name="secret[engine_config][username]"
@@ -348,10 +348,10 @@ defmodule SecretHub.Web.SecretFormComponent do
       "redis" ->
         ~H"""
         <div class="space-y-4">
-          <h4 class="text-sm font-medium text-gray-900">Redis Configuration</h4>
+          <h4 class="text-sm font-medium text-on-surface">Redis Configuration</h4>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Redis Host</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Redis Host</label>
               <input
                 type="text"
                 name="secret[engine_config][host]"
@@ -360,7 +360,7 @@ defmodule SecretHub.Web.SecretFormComponent do
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Redis Port</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Redis Port</label>
               <input
                 type="number"
                 name="secret[engine_config][port]"
@@ -369,7 +369,7 @@ defmodule SecretHub.Web.SecretFormComponent do
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Database</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Database</label>
               <input
                 type="number"
                 name="secret[engine_config][database]"
@@ -378,7 +378,7 @@ defmodule SecretHub.Web.SecretFormComponent do
               />
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Password</label>
               <input
                 type="password"
                 name="secret[engine_config][password]"
@@ -393,10 +393,10 @@ defmodule SecretHub.Web.SecretFormComponent do
       "aws" ->
         ~H"""
         <div class="space-y-4">
-          <h4 class="text-sm font-medium text-gray-900">AWS Configuration</h4>
+          <h4 class="text-sm font-medium text-on-surface">AWS Configuration</h4>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">AWS Region</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">AWS Region</label>
               <select name="secret[engine_config][region]" class="form-select w-full">
                 <option value="us-east-1">US East (N. Virginia)</option>
                 <option value="us-west-2">US West (Oregon)</option>
@@ -405,7 +405,7 @@ defmodule SecretHub.Web.SecretFormComponent do
               </select>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Service Type</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Service Type</label>
               <select name="secret[engine_config][service]" class="form-select w-full">
                 <option value="iam">IAM Users</option>
                 <option value="s3">S3 Access</option>
@@ -419,8 +419,8 @@ defmodule SecretHub.Web.SecretFormComponent do
 
       _ ->
         ~H"""
-        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <p class="text-sm text-gray-600">
+        <div class="bg-surface-container-low border border-outline-variant rounded-lg p-4">
+          <p class="text-sm text-on-surface-variant">
             No specific configuration needed for this engine type.
           </p>
         </div>

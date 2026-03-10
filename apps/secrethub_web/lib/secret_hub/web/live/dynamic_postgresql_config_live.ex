@@ -160,8 +160,8 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
     ~H"""
     <div class="container mx-auto px-4 py-8">
       <div class="mb-6">
-        <h1 class="text-3xl font-bold text-gray-900">PostgreSQL Dynamic Engine</h1>
-        <p class="mt-2 text-gray-600">
+        <h1 class="text-3xl font-bold text-on-surface">PostgreSQL Dynamic Engine</h1>
+        <p class="mt-2 text-on-surface-variant">
           Configure roles for PostgreSQL dynamic secret generation
         </p>
       </div>
@@ -176,60 +176,60 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
           </button>
         </div>
 
-        <div class="bg-white shadow-md rounded-lg overflow-hidden">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+        <div class="bg-surface-container shadow-md rounded-lg overflow-hidden">
+          <table class="min-w-full divide-y divide-outline-variant">
+            <thead class="bg-surface-container-low">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Role Name
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Database
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Host
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Default TTL
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Max TTL
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody class="bg-surface-container divide-y divide-outline-variant">
               <%= for role <- @roles do %>
                 <tr>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-on-surface">
                     {role.name}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {role.database}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {role.host}:{role.port}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {role.default_ttl}s
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {role.max_ttl}s
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       phx-click="edit_role"
                       phx-value-role={role.name}
-                      class="text-indigo-600 hover:text-indigo-900 mr-4"
+                      class="text-secondary hover:text-indigo-900 mr-4"
                     >
                       Edit
                     </button>
                     <button
                       phx-click="delete_role"
                       phx-value-role={role.name}
-                      class="text-red-600 hover:text-red-900"
+                      class="text-error hover:text-error"
                       data-confirm={"Are you sure you want to delete role '#{role.name}'?"}
                     >
                       Delete
@@ -241,14 +241,14 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
           </table>
 
           <%= if @roles == [] do %>
-            <div class="px-6 py-12 text-center text-gray-500">
+            <div class="px-6 py-12 text-center text-on-surface-variant">
               No roles configured. Click "New Role" to create one.
             </div>
           <% end %>
         </div>
       <% else %>
         <!-- Create/Edit Form -->
-        <div class="bg-white shadow-md rounded-lg p-6">
+        <div class="bg-surface-container shadow-md rounded-lg p-6">
           <h2 class="text-2xl font-bold mb-6">
             {if @form_mode == :create, do: "Create New Role", else: "Edit Role"}
           </h2>
@@ -256,7 +256,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
           <form phx-submit="save_role">
             <!-- Role Name -->
             <div class="mb-4">
-              <label class="block text-sm font-medium text-gray-700 mb-2">
+              <label class="block text-sm font-medium text-on-surface mb-2">
                 Role Name
               </label>
               <input
@@ -269,7 +269,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                 required
               />
               <%= if error = @validation_errors[:role_name] do %>
-                <p class="text-red-500 text-sm mt-1">{error}</p>
+                <p class="text-error text-sm mt-1">{error}</p>
               <% end %>
             </div>
             
@@ -279,7 +279,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     Host
                   </label>
                   <input
@@ -291,12 +291,12 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     required
                   />
                   <%= if error = @validation_errors[:host] do %>
-                    <p class="text-red-500 text-sm mt-1">{error}</p>
+                    <p class="text-error text-sm mt-1">{error}</p>
                   <% end %>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     Port
                   </label>
                   <input
@@ -308,12 +308,12 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     required
                   />
                   <%= if error = @validation_errors[:port] do %>
-                    <p class="text-red-500 text-sm mt-1">{error}</p>
+                    <p class="text-error text-sm mt-1">{error}</p>
                   <% end %>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     Database
                   </label>
                   <input
@@ -325,12 +325,12 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     required
                   />
                   <%= if error = @validation_errors[:database] do %>
-                    <p class="text-red-500 text-sm mt-1">{error}</p>
+                    <p class="text-error text-sm mt-1">{error}</p>
                   <% end %>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     Username
                   </label>
                   <input
@@ -342,12 +342,12 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     required
                   />
                   <%= if error = @validation_errors[:username] do %>
-                    <p class="text-red-500 text-sm mt-1">{error}</p>
+                    <p class="text-error text-sm mt-1">{error}</p>
                   <% end %>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     Password
                   </label>
                   <input
@@ -359,12 +359,12 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     required
                   />
                   <%= if error = @validation_errors[:password] do %>
-                    <p class="text-red-500 text-sm mt-1">{error}</p>
+                    <p class="text-error text-sm mt-1">{error}</p>
                   <% end %>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     SSL
                   </label>
                   <select
@@ -390,9 +390,9 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                 <%= if @connection_test_result do %>
                   <%= case @connection_test_result do %>
                     <% {:ok, message} -> %>
-                      <span class="ml-4 text-green-600">{message}</span>
+                      <span class="ml-4 text-success">{message}</span>
                     <% {:error, message} -> %>
-                      <span class="ml-4 text-red-600">{message}</span>
+                      <span class="ml-4 text-error">{message}</span>
                   <% end %>
                 <% end %>
               </div>
@@ -404,7 +404,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     Default TTL (seconds)
                   </label>
                   <input
@@ -416,12 +416,12 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     required
                   />
                   <%= if error = @validation_errors[:default_ttl] do %>
-                    <p class="text-red-500 text-sm mt-1">{error}</p>
+                    <p class="text-error text-sm mt-1">{error}</p>
                   <% end %>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     Max TTL (seconds)
                   </label>
                   <input
@@ -433,7 +433,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     required
                   />
                   <%= if error = @validation_errors[:max_ttl] do %>
-                    <p class="text-red-500 text-sm mt-1">{error}</p>
+                    <p class="text-error text-sm mt-1">{error}</p>
                   <% end %>
                 </div>
               </div>
@@ -442,12 +442,12 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
     <!-- SQL Statement Templates -->
             <div class="mb-6">
               <h3 class="text-lg font-semibold mb-3">SQL Statement Templates</h3>
-              <p class="text-sm text-gray-600 mb-3">
+              <p class="text-sm text-on-surface-variant mb-3">
                 Use template variables: {"{{username}}, {{password}}, {{expiration}}"}
               </p>
 
               <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">
+                <label class="block text-sm font-medium text-on-surface mb-2">
                   Creation Statements
                 </label>
                 <textarea
@@ -458,12 +458,12 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                   required
                 ><%= @form_data.creation_statements %></textarea>
                 <%= if error = @validation_errors[:creation_statements] do %>
-                  <p class="text-red-500 text-sm mt-1">{error}</p>
+                  <p class="text-error text-sm mt-1">{error}</p>
                 <% end %>
               </div>
 
               <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">
+                <label class="block text-sm font-medium text-on-surface mb-2">
                   Renewal Statements (optional)
                 </label>
                 <textarea
@@ -475,7 +475,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
               </div>
 
               <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">
+                <label class="block text-sm font-medium text-on-surface mb-2">
                   Revocation Statements
                 </label>
                 <textarea
@@ -486,7 +486,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                   required
                 ><%= @form_data.revocation_statements %></textarea>
                 <%= if error = @validation_errors[:revocation_statements] do %>
-                  <p class="text-red-500 text-sm mt-1">{error}</p>
+                  <p class="text-error text-sm mt-1">{error}</p>
                 <% end %>
               </div>
             </div>

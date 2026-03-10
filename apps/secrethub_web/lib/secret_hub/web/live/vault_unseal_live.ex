@@ -39,31 +39,31 @@ defmodule SecretHub.Web.VaultUnsealLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="min-h-screen bg-surface-container-low py-12 px-4 sm:px-6 lg:px-8">
       <div class="max-w-3xl mx-auto">
         <!-- Header -->
         <div class="text-center mb-8">
-          <h1 class="text-4xl font-bold text-gray-900 mb-2">SecretHub Vault</h1>
-          <p class="text-lg text-gray-600">
+          <h1 class="text-4xl font-bold text-on-surface mb-2">SecretHub Vault</h1>
+          <p class="text-lg text-on-surface-variant">
             Secure Secrets Management Platform
           </p>
         </div>
         
     <!-- Vault Status Card -->
-        <div class="bg-white shadow-lg rounded-lg overflow-hidden mb-6">
-          <div class="px-6 py-4 border-b border-gray-200">
-            <h2 class="text-xl font-semibold text-gray-800">Vault Status</h2>
+        <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden mb-6">
+          <div class="px-6 py-4 border-b border-outline-variant">
+            <h2 class="text-xl font-semibold text-on-surface">Vault Status</h2>
           </div>
 
           <div class="px-6 py-6">
             <div class="grid grid-cols-2 gap-6">
               <!-- Initialized Status -->
               <div class="flex items-center space-x-3">
-                <div class={"w-3 h-3 rounded-full #{if @vault_status.initialized, do: "bg-green-500", else: "bg-red-500"}"}>
+                <div class={"w-3 h-3 rounded-full #{if @vault_status.initialized, do: "bg-success", else: "bg-error"}"}>
                 </div>
                 <div>
-                  <p class="text-sm text-gray-500">Initialized</p>
-                  <p class="font-semibold text-gray-900">
+                  <p class="text-sm text-on-surface-variant">Initialized</p>
+                  <p class="font-semibold text-on-surface">
                     {if @vault_status.initialized, do: "Yes", else: "No"}
                   </p>
                 </div>
@@ -71,11 +71,11 @@ defmodule SecretHub.Web.VaultUnsealLive do
               
     <!-- Sealed Status -->
               <div class="flex items-center space-x-3">
-                <div class={"w-3 h-3 rounded-full #{if @vault_status.sealed, do: "bg-red-500", else: "bg-green-500"}"}>
+                <div class={"w-3 h-3 rounded-full #{if @vault_status.sealed, do: "bg-error", else: "bg-success"}"}>
                 </div>
                 <div>
-                  <p class="text-sm text-gray-500">Sealed</p>
-                  <p class="font-semibold text-gray-900">
+                  <p class="text-sm text-on-surface-variant">Sealed</p>
+                  <p class="font-semibold text-on-surface">
                     {if @vault_status.sealed, do: "Yes", else: "No"}
                   </p>
                 </div>
@@ -84,16 +84,16 @@ defmodule SecretHub.Web.VaultUnsealLive do
     <!-- Progress -->
               <%= if @vault_status.initialized and @vault_status.threshold do %>
                 <div class="col-span-2">
-                  <p class="text-sm text-gray-500 mb-2">Unseal Progress</p>
+                  <p class="text-sm text-on-surface-variant mb-2">Unseal Progress</p>
                   <div class="flex items-center space-x-4">
-                    <div class="flex-1 bg-gray-200 rounded-full h-3">
+                    <div class="flex-1 bg-surface-container-high rounded-full h-3">
                       <div
-                        class="bg-blue-600 h-3 rounded-full transition-all duration-300"
+                        class="bg-primary h-3 rounded-full transition-all duration-300"
                         style={"width: #{(@vault_status.progress / @vault_status.threshold * 100)}%"}
                       >
                       </div>
                     </div>
-                    <span class="text-sm font-semibold text-gray-700">
+                    <span class="text-sm font-semibold text-on-surface">
                       {@vault_status.progress} / {@vault_status.threshold}
                     </span>
                   </div>
@@ -105,15 +105,15 @@ defmodule SecretHub.Web.VaultUnsealLive do
         
     <!-- Unseal Form (only show if vault is sealed) -->
         <%= if @vault_status.initialized and @vault_status.sealed do %>
-          <div class="bg-white shadow-lg rounded-lg overflow-hidden mb-6">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h2 class="text-xl font-semibold text-gray-800">Unseal Vault</h2>
+          <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden mb-6">
+            <div class="px-6 py-4 border-b border-outline-variant">
+              <h2 class="text-xl font-semibold text-on-surface">Unseal Vault</h2>
             </div>
 
             <div class="px-6 py-6">
               <form phx-submit="submit_share" class="space-y-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                  <label class="block text-sm font-medium text-on-surface mb-2">
                     Enter Unseal Share
                   </label>
                   <input
@@ -122,17 +122,17 @@ defmodule SecretHub.Web.VaultUnsealLive do
                     value={@share_input}
                     phx-change="update_share"
                     placeholder="secrethub-share-xxxxxxxxxx"
-                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                    class="w-full px-4 py-2 border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-sm"
                     autocomplete="off"
                   />
-                  <p class="mt-2 text-sm text-gray-500">
+                  <p class="mt-2 text-sm text-on-surface-variant">
                     Paste one of your Shamir shares above. You need {@vault_status.threshold} shares to unseal the vault.
                   </p>
                 </div>
                 
     <!-- Error Message -->
                 <%= if @error_message do %>
-                  <div class="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
+                  <div class="bg-error/5 border border-red-200 text-error px-4 py-3 rounded-lg">
                     <p class="font-medium">Error</p>
                     <p class="text-sm">{@error_message}</p>
                   </div>
@@ -140,7 +140,7 @@ defmodule SecretHub.Web.VaultUnsealLive do
                 
     <!-- Success Message -->
                 <%= if @success_message do %>
-                  <div class="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg">
+                  <div class="bg-success/5 border border-green-200 text-success px-4 py-3 rounded-lg">
                     <p class="font-medium">Success</p>
                     <p class="text-sm">{@success_message}</p>
                   </div>
@@ -148,7 +148,7 @@ defmodule SecretHub.Web.VaultUnsealLive do
 
                 <button
                   type="submit"
-                  class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors duration-200"
+                  class="w-full bg-primary text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200"
                 >
                   Submit Share
                 </button>
@@ -157,15 +157,15 @@ defmodule SecretHub.Web.VaultUnsealLive do
     <!-- Submitted Shares -->
               <%= if length(@shares_submitted) > 0 do %>
                 <div class="mt-6">
-                  <p class="text-sm font-medium text-gray-700 mb-2">
+                  <p class="text-sm font-medium text-on-surface mb-2">
                     Shares Submitted: {length(@shares_submitted)}
                   </p>
                   <div class="flex flex-wrap gap-2">
                     <%= for i <- 1..length(@shares_submitted) do %>
-                      <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                      <div class="w-3 h-3 bg-success rounded-full"></div>
                     <% end %>
                     <%= for _i <- 1..(@vault_status.threshold - length(@shares_submitted)) do %>
-                      <div class="w-3 h-3 bg-gray-300 rounded-full"></div>
+                      <div class="w-3 h-3 bg-outline-variant rounded-full"></div>
                     <% end %>
                   </div>
                 </div>
@@ -176,13 +176,13 @@ defmodule SecretHub.Web.VaultUnsealLive do
         
     <!-- Unsealed Actions (only show if vault is unsealed) -->
         <%= if @vault_status.initialized and not @vault_status.sealed do %>
-          <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h2 class="text-xl font-semibold text-gray-800">Vault Unsealed</h2>
+          <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden">
+            <div class="px-6 py-4 border-b border-outline-variant">
+              <h2 class="text-xl font-semibold text-on-surface">Vault Unsealed</h2>
             </div>
 
             <div class="px-6 py-6">
-              <div class="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg mb-4">
+              <div class="bg-success/5 border border-green-200 text-success px-4 py-3 rounded-lg mb-4">
                 <p class="font-medium">Vault is operational</p>
                 <p class="text-sm">The vault is unsealed and ready to serve secrets.</p>
               </div>
@@ -190,7 +190,7 @@ defmodule SecretHub.Web.VaultUnsealLive do
               <div class="flex space-x-4">
                 <a
                   href="/admin/dashboard"
-                  class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors duration-200 text-center"
+                  class="flex-1 bg-primary text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200 text-center"
                 >
                   Go to Dashboard
                 </a>
@@ -198,7 +198,7 @@ defmodule SecretHub.Web.VaultUnsealLive do
                 <button
                   phx-click="seal_vault"
                   data-confirm="Are you sure you want to seal the vault? This will stop all secret operations."
-                  class="flex-1 bg-red-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors duration-200"
+                  class="flex-1 bg-error text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-error transition-colors duration-200"
                 >
                   Seal Vault
                 </button>
@@ -209,20 +209,20 @@ defmodule SecretHub.Web.VaultUnsealLive do
         
     <!-- Not Initialized Message -->
         <%= if not @vault_status.initialized do %>
-          <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+          <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden">
             <div class="px-6 py-6">
-              <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg">
+              <div class="bg-warning/5 border border-yellow-200 text-warning px-4 py-3 rounded-lg">
                 <p class="font-medium">Vault not initialized</p>
                 <p class="text-sm mt-1">
                   The vault needs to be initialized before it can be unsealed.
                   Use the API endpoint
-                  <code class="bg-yellow-100 px-2 py-1 rounded">POST /v1/sys/init</code>
+                  <code class="bg-warning/10 px-2 py-1 rounded">POST /v1/sys/init</code>
                   to initialize.
                 </p>
               </div>
 
               <div class="mt-4">
-                <p class="text-sm text-gray-600">
+                <p class="text-sm text-on-surface-variant">
                   Use the System API to initialize. See documentation for curl examples.
                 </p>
               </div>

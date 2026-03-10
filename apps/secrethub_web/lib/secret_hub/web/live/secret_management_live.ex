@@ -201,7 +201,7 @@ defmodule SecretHub.Web.SecretManagementLive do
     <div class="space-y-6">
       <!-- Header and Actions -->
       <div class="flex justify-between items-center">
-        <h2 class="text-2xl font-bold text-gray-900">Secret Management</h2>
+        <h2 class="text-2xl font-bold text-on-surface">Secret Management</h2>
         <button
           class="btn-primary"
           phx-click="new_secret"
@@ -214,10 +214,10 @@ defmodule SecretHub.Web.SecretManagementLive do
       </div>
       
     <!-- Filters and Search -->
-      <div class="bg-white p-4 rounded-lg shadow">
+      <div class="bg-surface-container p-4 rounded-lg shadow">
         <div class="flex flex-wrap gap-4 items-center">
           <div class="flex items-center space-x-2">
-            <label class="text-sm font-medium text-gray-700">Engine:</label>
+            <label class="text-sm font-medium text-on-surface">Engine:</label>
             <select
               class="form-select"
               phx-change="filter_secrets"
@@ -232,7 +232,7 @@ defmodule SecretHub.Web.SecretManagementLive do
           </div>
 
           <div class="flex items-center space-x-2 flex-1">
-            <label class="text-sm font-medium text-gray-700">Search:</label>
+            <label class="text-sm font-medium text-on-surface">Search:</label>
             <input
               type="text"
               class="form-input flex-1"
@@ -260,48 +260,48 @@ defmodule SecretHub.Web.SecretManagementLive do
       <% end %>
       
     <!-- Secret List -->
-      <div class="bg-white rounded-lg shadow">
+      <div class="bg-surface-container rounded-lg shadow">
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+          <table class="min-w-full divide-y divide-outline-variant">
+            <thead class="bg-surface-container-low">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Name
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Path
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Engine
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Type
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Status
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Last Rotation
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Next Rotation
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody class="bg-surface-container divide-y divide-outline-variant">
               <%= for secret <- filtered_secrets(@secrets, @filter_engine, @search_query) do %>
-                <tr class="hover:bg-gray-50 transition-colors">
+                <tr class="hover:bg-surface-container-low transition-colors">
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="text-sm font-medium text-gray-900">{secret.name}</div>
-                    <div class="text-sm text-gray-500">{secret.description}</div>
+                    <div class="text-sm font-medium text-on-surface">{secret.name}</div>
+                    <div class="text-sm text-on-surface-variant">{secret.description}</div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <code class="text-sm bg-gray-100 px-1 py-0.5 rounded">{secret.path}</code>
+                    <code class="text-sm bg-surface-container px-1 py-0.5 rounded">{secret.path}</code>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
                     {secret.engine_type}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
@@ -312,19 +312,19 @@ defmodule SecretHub.Web.SecretManagementLive do
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="flex items-center">
                       <div class={"w-2 h-2 rounded-full mr-2 #{status_color(secret.status)}"}></div>
-                      <span class="text-sm text-gray-900">{secret.status}</span>
+                      <span class="text-sm text-on-surface">{secret.status}</span>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {format_datetime(secret.last_rotation)}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {format_datetime(secret.next_rotation)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div class="flex space-x-2">
                       <button
-                        class="text-indigo-600 hover:text-indigo-900"
+                        class="text-secondary hover:text-indigo-900"
                         phx-click="edit_secret"
                         phx-value-id={secret.id}
                       >
@@ -332,7 +332,7 @@ defmodule SecretHub.Web.SecretManagementLive do
                       </button>
 
                       <button
-                        class="text-green-600 hover:text-green-900"
+                        class="text-success hover:text-success"
                         phx-click="rotate_secret"
                         phx-value-id={secret.id}
                         phx-disable-with="Rotating..."
@@ -341,7 +341,7 @@ defmodule SecretHub.Web.SecretManagementLive do
                       </button>
 
                       <button
-                        class="text-red-600 hover:text-red-900"
+                        class="text-error hover:text-error"
                         phx-click="delete_secret"
                         phx-value-id={secret.id}
                         phx-confirm="Are you sure you want to delete this secret?"
@@ -359,11 +359,11 @@ defmodule SecretHub.Web.SecretManagementLive do
       
     <!-- Loading State -->
       <%= if @loading do %>
-        <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div class="bg-white rounded-lg p-6 shadow-xl">
+        <div class="fixed inset-0 bg-surface-container-highest/75 bg-opacity-50 flex items-center justify-center z-50">
+          <div class="bg-surface-container rounded-lg p-6 shadow-xl">
             <div class="flex items-center">
-              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-              <span class="ml-2 text-gray-600">Processing...</span>
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <span class="ml-2 text-on-surface-variant">Processing...</span>
             </div>
           </div>
         </div>
@@ -554,14 +554,14 @@ defmodule SecretHub.Web.SecretManagementLive do
     get_field(secret, :secret_type, nil) || get_field(secret, :type, :static)
   end
 
-  defp secret_type_badge_color(:static), do: "bg-blue-100 text-blue-800"
-  defp secret_type_badge_color(:dynamic), do: "bg-green-100 text-green-800"
-  defp secret_type_badge_color(_), do: "bg-gray-100 text-gray-800"
+  defp secret_type_badge_color(:static), do: "bg-primary/10 text-primary"
+  defp secret_type_badge_color(:dynamic), do: "bg-success/10 text-success"
+  defp secret_type_badge_color(_), do: "bg-surface-container text-on-surface"
 
-  defp status_color("active"), do: "bg-green-500"
-  defp status_color("rotating"), do: "bg-yellow-500"
-  defp status_color("error"), do: "bg-red-500"
-  defp status_color(_), do: "bg-gray-500"
+  defp status_color("active"), do: "bg-success"
+  defp status_color("rotating"), do: "bg-warning"
+  defp status_color("error"), do: "bg-error"
+  defp status_color(_), do: "bg-surface-container-low0"
 
   defp format_datetime(nil), do: "Never"
 

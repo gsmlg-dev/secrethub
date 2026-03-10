@@ -90,6 +90,7 @@ defmodule SecretHub.Web do
 
       # DuskMoon UI components
       use PhoenixDuskmoon.Component
+      use PhoenixDuskmoon.CssArt
 
       # Common modules used in templates
       alias Phoenix.LiveView.JS

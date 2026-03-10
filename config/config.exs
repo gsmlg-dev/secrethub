@@ -62,18 +62,22 @@ config :secrethub_web, SecretHub.Web.Endpoint,
 config :secrethub_web, SecretHub.Web.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure Bun (JavaScript bundler)
+# MIX_BUN_PATH env var (set by devenv) overrides the downloaded binary
 config :bun,
-  version: "1.3.4",
+  version: "1.3.3",
+  path: System.get_env("MIX_BUN_PATH"),
   secrethub_web: [
     args:
-      ~w(build assets/js/app.js --outdir=priv/static/assets --external /fonts/* --external /images/*),
+      ~w(build assets/js/app.js --outdir=priv/static/assets/js --external /fonts/* --external /images/*),
     cd: Path.expand("../apps/secrethub_web", __DIR__),
-    env: %{}
+    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
   ]
 
 # Configure Tailwind CSS v4
+# MIX_TAILWIND_PATH env var (set by devenv) overrides the downloaded binary
 config :tailwind,
-  version: "4.1.11",
+  version: "4.1.18",
+  path: System.get_env("MIX_TAILWIND_PATH"),
   secrethub_web: [
     args: ~w(
       --input=assets/css/app.css

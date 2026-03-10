@@ -173,42 +173,42 @@ defmodule SecretHub.Web.LeaseViewerLive do
     ~H"""
     <div class="container mx-auto px-4 py-8">
       <div class="mb-6">
-        <h1 class="text-3xl font-bold text-gray-900">Dynamic Secret Leases</h1>
-        <p class="mt-2 text-gray-600">
+        <h1 class="text-3xl font-bold text-on-surface">Dynamic Secret Leases</h1>
+        <p class="mt-2 text-on-surface-variant">
           View and manage active dynamic secret leases
         </p>
       </div>
       
     <!-- Statistics Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white shadow rounded-lg p-6">
-          <div class="text-sm font-medium text-gray-500">Total Leases</div>
-          <div class="mt-2 text-3xl font-bold text-gray-900">{@stats[:total] || 0}</div>
+        <div class="bg-surface-container shadow rounded-lg p-6">
+          <div class="text-sm font-medium text-on-surface-variant">Total Leases</div>
+          <div class="mt-2 text-3xl font-bold text-on-surface">{@stats[:total] || 0}</div>
         </div>
 
-        <div class="bg-white shadow rounded-lg p-6">
-          <div class="text-sm font-medium text-gray-500">Active</div>
-          <div class="mt-2 text-3xl font-bold text-green-600">{@stats[:active] || 0}</div>
+        <div class="bg-surface-container shadow rounded-lg p-6">
+          <div class="text-sm font-medium text-on-surface-variant">Active</div>
+          <div class="mt-2 text-3xl font-bold text-success">{@stats[:active] || 0}</div>
         </div>
 
-        <div class="bg-white shadow rounded-lg p-6">
-          <div class="text-sm font-medium text-gray-500">Expiring Soon</div>
-          <div class="mt-2 text-3xl font-bold text-yellow-600">{@stats[:expiring_soon] || 0}</div>
+        <div class="bg-surface-container shadow rounded-lg p-6">
+          <div class="text-sm font-medium text-on-surface-variant">Expiring Soon</div>
+          <div class="mt-2 text-3xl font-bold text-warning">{@stats[:expiring_soon] || 0}</div>
         </div>
 
-        <div class="bg-white shadow rounded-lg p-6">
-          <div class="text-sm font-medium text-gray-500">Expired</div>
-          <div class="mt-2 text-3xl font-bold text-red-600">{@stats[:expired] || 0}</div>
+        <div class="bg-surface-container shadow rounded-lg p-6">
+          <div class="text-sm font-medium text-on-surface-variant">Expired</div>
+          <div class="mt-2 text-3xl font-bold text-error">{@stats[:expired] || 0}</div>
         </div>
       </div>
       
     <!-- Filters -->
-      <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <div class="bg-surface-container shadow rounded-lg p-6 mb-6">
         <h2 class="text-lg font-semibold mb-4">Filters</h2>
 
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+            <label class="block text-sm font-medium text-on-surface mb-2">Search</label>
             <input
               type="text"
               phx-change="search"
@@ -221,7 +221,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
+            <label class="block text-sm font-medium text-on-surface mb-2">Role</label>
             <input
               type="text"
               phx-change="filter_role"
@@ -234,7 +234,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Agent ID</label>
+            <label class="block text-sm font-medium text-on-surface mb-2">Agent ID</label>
             <input
               type="text"
               phx-change="filter_agent"
@@ -247,7 +247,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Status</label>
+            <label class="block text-sm font-medium text-on-surface mb-2">Status</label>
             <select
               phx-change="filter_status"
               phx-value-value={@filter_status}
@@ -274,12 +274,12 @@ defmodule SecretHub.Web.LeaseViewerLive do
       </div>
       
     <!-- Leases Table -->
-      <div class="bg-white shadow rounded-lg overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
+      <div class="bg-surface-container shadow rounded-lg overflow-hidden">
+        <table class="min-w-full divide-y divide-outline-variant">
+          <thead class="bg-surface-container-low">
             <tr>
               <th
-                class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider cursor-pointer hover:bg-surface-container"
                 phx-click="sort"
                 phx-value-field="id"
               >
@@ -289,7 +289,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
                 <% end %>
               </th>
               <th
-                class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider cursor-pointer hover:bg-surface-container"
                 phx-click="sort"
                 phx-value-field="role_name"
               >
@@ -298,14 +298,14 @@ defmodule SecretHub.Web.LeaseViewerLive do
                   <span class="ml-1">{if @sort_order == :asc, do: "↑", else: "↓"}</span>
                 <% end %>
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                 Agent ID
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                 Engine
               </th>
               <th
-                class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider cursor-pointer hover:bg-surface-container"
                 phx-click="sort"
                 phx-value-field="created_at"
               >
@@ -315,7 +315,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
                 <% end %>
               </th>
               <th
-                class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider cursor-pointer hover:bg-surface-container"
                 phx-click="sort"
                 phx-value-field="expires_at"
               >
@@ -324,40 +324,40 @@ defmodule SecretHub.Web.LeaseViewerLive do
                   <span class="ml-1">{if @sort_order == :asc, do: "↑", else: "↓"}</span>
                 <% end %>
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                 TTL
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                 Status
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                 Actions
               </th>
             </tr>
           </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
+          <tbody class="bg-surface-container divide-y divide-outline-variant">
             <%= for lease <- @filtered_leases do %>
               <tr class={"#{ttl_row_class(lease)}"}>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-on-surface">
                   {String.slice(lease.id, 0, 8)}...
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
                   {lease.role_name}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                   <%= if lease.agent_id do %>
                     {String.slice(lease.agent_id, 0, 8)}...
                   <% else %>
                     N/A
                   <% end %>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                   {lease.engine_type}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                   {format_datetime(lease.created_at)}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                   {format_datetime(lease.expires_at)}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold">
@@ -372,12 +372,12 @@ defmodule SecretHub.Web.LeaseViewerLive do
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                   <%= if expired?(lease) do %>
-                    <span class="text-gray-400">No actions</span>
+                    <span class="text-on-surface-variant">No actions</span>
                   <% else %>
                     <button
                       phx-click="renew_lease"
                       phx-value-lease_id={lease.id}
-                      class="text-blue-600 hover:text-blue-900 mr-3"
+                      class="text-primary hover:text-primary mr-3"
                       title="Renew lease"
                     >
                       Renew
@@ -385,7 +385,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
                     <button
                       phx-click="revoke_lease"
                       phx-value-lease_id={lease.id}
-                      class="text-red-600 hover:text-red-900"
+                      class="text-error hover:text-error"
                       data-confirm="Are you sure you want to revoke this lease?"
                       title="Revoke lease"
                     >
@@ -399,7 +399,7 @@ defmodule SecretHub.Web.LeaseViewerLive do
         </table>
 
         <%= if @filtered_leases == [] do %>
-          <div class="px-6 py-12 text-center text-gray-500">
+          <div class="px-6 py-12 text-center text-on-surface-variant">
             <%= if @leases == [] do %>
               No active leases found.
             <% else %>
@@ -563,16 +563,16 @@ defmodule SecretHub.Web.LeaseViewerLive do
 
   defp ttl_class(lease) do
     cond do
-      expired?(lease) -> "text-red-600"
-      expiring_soon?(lease) -> "text-yellow-600"
-      true -> "text-green-600"
+      expired?(lease) -> "text-error"
+      expiring_soon?(lease) -> "text-warning"
+      true -> "text-success"
     end
   end
 
   defp ttl_row_class(lease) do
     cond do
-      expired?(lease) -> "bg-red-50"
-      expiring_soon?(lease) -> "bg-yellow-50"
+      expired?(lease) -> "bg-error/5"
+      expiring_soon?(lease) -> "bg-warning/5"
       true -> ""
     end
   end
@@ -587,9 +587,9 @@ defmodule SecretHub.Web.LeaseViewerLive do
 
   defp status_badge_class(lease) do
     cond do
-      expired?(lease) -> "bg-red-100 text-red-800"
-      expiring_soon?(lease) -> "bg-yellow-100 text-yellow-800"
-      true -> "bg-green-100 text-green-800"
+      expired?(lease) -> "bg-error/10 text-error"
+      expiring_soon?(lease) -> "bg-warning/10 text-warning"
+      true -> "bg-success/10 text-success"
     end
   end
 

@@ -101,10 +101,10 @@ defmodule SecretHub.Web.AgentMonitoringLive do
     ~H"""
     <div class="space-y-6">
       <!-- Filters and Search -->
-      <div class="bg-white p-4 rounded-lg shadow">
+      <div class="bg-surface-container p-4 rounded-lg shadow">
         <div class="flex flex-wrap gap-4 items-center">
           <div class="flex items-center space-x-2">
-            <label class="text-sm font-medium text-gray-700">Status:</label>
+            <label class="text-sm font-medium text-on-surface">Status:</label>
             <select
               class="form-select"
               phx-change="filter_agents"
@@ -119,7 +119,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
           </div>
 
           <div class="flex items-center space-x-2 flex-1">
-            <label class="text-sm font-medium text-gray-700">Search:</label>
+            <label class="text-sm font-medium text-on-surface">Search:</label>
             <input
               type="text"
               class="form-input flex-1"
@@ -133,44 +133,44 @@ defmodule SecretHub.Web.AgentMonitoringLive do
       </div>
       
     <!-- Agent List -->
-      <div class="bg-white rounded-lg shadow">
-        <div class="px-4 py-3 border-b border-gray-200">
-          <h3 class="text-lg font-semibold text-gray-900">
+      <div class="bg-surface-container rounded-lg shadow">
+        <div class="px-4 py-3 border-b border-outline-variant">
+          <h3 class="text-lg font-semibold text-on-surface">
             Connected Agents ({length(@agents)})
           </h3>
         </div>
 
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+          <table class="min-w-full divide-y divide-outline-variant">
+            <thead class="bg-surface-container-low">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Agent
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Status
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Last Seen
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   IP Address
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Secrets Accessed
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Uptime
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody class="bg-surface-container divide-y divide-outline-variant">
               <%= for agent <- filtered_agents(@agents, @filter_status, @search_query) do %>
                 <tr
-                  class="hover:bg-gray-50 cursor-pointer transition-colors"
+                  class="hover:bg-surface-container-low cursor-pointer transition-colors"
                   phx-click="select_agent"
                   phx-value-id={agent.id}
                 >
@@ -178,8 +178,8 @@ defmodule SecretHub.Web.AgentMonitoringLive do
                     <div class="flex items-center">
                       <div class={"w-3 h-3 rounded-full mr-3 #{status_color(agent.status)}"}></div>
                       <div>
-                        <div class="text-sm font-medium text-gray-900">{agent.name}</div>
-                        <div class="text-sm text-gray-500">{agent.os}</div>
+                        <div class="text-sm font-medium text-on-surface">{agent.name}</div>
+                        <div class="text-sm text-on-surface-variant">{agent.os}</div>
                       </div>
                     </div>
                   </td>
@@ -188,23 +188,23 @@ defmodule SecretHub.Web.AgentMonitoringLive do
                       {Atom.to_string(agent.status)}
                     </span>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {format_timestamp(agent.last_seen)}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
                     {agent.ip_address}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
                     {agent.secrets_accessed}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {format_uptime(agent.uptime_hours)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div class="flex space-x-2">
                       <%= if agent.status == :disconnected do %>
                         <button
-                          class="text-indigo-600 hover:text-indigo-900"
+                          class="text-secondary hover:text-indigo-900"
                           phx-click="reconnect_agent"
                           phx-value-id={agent.id}
                         >
@@ -213,7 +213,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
                       <% end %>
 
                       <button
-                        class="text-red-600 hover:text-red-900"
+                        class="text-error hover:text-error"
                         phx-click="disconnect_agent"
                         phx-value-id={agent.id}
                         phx-confirm="Are you sure you want to disconnect this agent?"
@@ -318,13 +318,13 @@ defmodule SecretHub.Web.AgentMonitoringLive do
     |> filtered_agents("all", query)
   end
 
-  defp status_color(:connected), do: "bg-green-500"
-  defp status_color(:disconnected), do: "bg-gray-400"
-  defp status_color(:error), do: "bg-red-500"
+  defp status_color(:connected), do: "bg-success"
+  defp status_color(:disconnected), do: "bg-outline"
+  defp status_color(:error), do: "bg-error"
 
-  defp status_badge_color(:connected), do: "bg-green-100 text-green-800"
-  defp status_badge_color(:disconnected), do: "bg-gray-100 text-gray-800"
-  defp status_badge_color(:error), do: "bg-red-100 text-red-800"
+  defp status_badge_color(:connected), do: "bg-success/10 text-success"
+  defp status_badge_color(:disconnected), do: "bg-surface-container text-on-surface"
+  defp status_badge_color(:error), do: "bg-error/10 text-error"
 
   defp format_timestamp(nil), do: "Never"
 

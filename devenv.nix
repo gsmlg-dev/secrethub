@@ -202,15 +202,13 @@ in
       mix ecto.migrate
     '';
     
-    # Asset management (using Bun)
+    # Asset management (using Bun workspaces)
     assets-install.exec = ''
-      cd apps/secrethub_web/assets
       bun install
     '';
-    
+
     assets-build.exec = ''
-      cd apps/secrethub_web/assets
-      bun run build
+      mix bun secrethub_web
     '';
     
     # Development server
@@ -294,7 +292,7 @@ in
     fi
     
     # Check if assets dependencies are installed
-    if [ -d "apps/secrethub_web/assets" ] && [ ! -d "apps/secrethub_web/assets/node_modules" ]; then
+    if [ ! -d "apps/secrethub_web/node_modules" ]; then
       echo "📦 Frontend dependencies not installed. Run: assets-install"
       echo ""
     fi

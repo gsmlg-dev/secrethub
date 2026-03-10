@@ -13,7 +13,7 @@ defmodule SecretHub.Web.CoreComponents do
   alias Phoenix.LiveView.JS
 
   @doc """
-  Renders flash notices as toast notifications.
+  Renders flash notices as toast notifications using DuskMoon alert styling.
 
   ## Examples
 
@@ -41,19 +41,19 @@ defmodule SecretHub.Web.CoreComponents do
       {@rest}
     >
       <div class={[
-        "dm-card dm-card--bordered w-80 sm:w-96 p-4 flex items-start gap-3 shadow-lg",
-        @kind == :info && "border-l-4 border-l-[var(--color-info)]",
-        @kind == :error && "border-l-4 border-l-[var(--color-error)]"
+        "alert w-80 sm:w-96 shadow-lg",
+        @kind == :info && "alert-info",
+        @kind == :error && "alert-error"
       ]}>
         <.icon
           :if={@kind == :info}
           name="hero-information-circle"
-          class="size-5 shrink-0 text-[var(--color-info)]"
+          class="size-5 shrink-0"
         />
         <.icon
           :if={@kind == :error}
           name="hero-exclamation-circle"
-          class="size-5 shrink-0 text-[var(--color-error)]"
+          class="size-5 shrink-0"
         />
         <div class="flex-1">
           <p :if={@title} class="font-semibold">{@title}</p>
@@ -68,7 +68,7 @@ defmodule SecretHub.Web.CoreComponents do
   end
 
   @doc """
-  Renders a button with navigation support.
+  Renders a button with navigation support using DuskMoon button styling.
 
   ## Examples
 
@@ -77,30 +77,38 @@ defmodule SecretHub.Web.CoreComponents do
       <.button navigate={~p"/"}>Home</.button>
   """
   attr :rest, :global, include: ~w(href navigate patch method download name value disabled)
-  attr :class, :string
-  attr :variant, :string, values: ~w(primary)
+  attr :class, :string, default: nil
+  attr :variant, :string, default: nil
   slot :inner_block, required: true
 
   def button(%{rest: rest} = assigns) do
-    variants = %{
-      "primary" => "dm-button dm-button--primary",
-      nil => "dm-button dm-button--primary dm-button--outline"
-    }
-
     assigns =
-      assign_new(assigns, :class, fn ->
-        Map.fetch!(variants, assigns[:variant])
+      assign_new(assigns, :btn_class, fn ->
+        base = "btn"
+
+        variant_class =
+          case assigns[:variant] do
+            "primary" -> "btn-primary"
+            "secondary" -> "btn-secondary"
+            "tertiary" -> "btn-tertiary"
+            "outline" -> "btn-outline"
+            "ghost" -> "btn-ghost"
+            "text" -> "btn-text"
+            _ -> "btn-outline btn-primary"
+          end
+
+        [base, variant_class, assigns[:class]]
       end)
 
     if rest[:href] || rest[:navigate] || rest[:patch] do
       ~H"""
-      <.link class={@class} {@rest}>
+      <.link class={@btn_class} {@rest}>
         {render_slot(@inner_block)}
       </.link>
       """
     else
       ~H"""
-      <button class={@class} {@rest}>
+      <button class={@btn_class} {@rest}>
         {render_slot(@inner_block)}
       </button>
       """
@@ -108,7 +116,7 @@ defmodule SecretHub.Web.CoreComponents do
   end
 
   @doc """
-  Renders an input with label and error messages.
+  Renders an input with label and error messages using DuskMoon form styling.
 
   A `Phoenix.HTML.FormField` may be passed as argument,
   which is used to retrieve the input name, id, and values.
@@ -172,7 +180,7 @@ defmodule SecretHub.Web.CoreComponents do
       end)
 
     ~H"""
-    <div class="dm-form-field mb-2">
+    <div class="form-group">
       <label class="flex items-center gap-2 cursor-pointer">
         <input type="hidden" name={@name} value="false" disabled={@rest[:disabled]} />
         <input
@@ -181,10 +189,10 @@ defmodule SecretHub.Web.CoreComponents do
           name={@name}
           value="true"
           checked={@checked}
-          class={@class || "dm-checkbox"}
+          class={@class || "checkbox checkbox-primary"}
           {@rest}
         />
-        <span :if={@label} class="dm-label">{@label}</span>
+        <span :if={@label} class="form-label">{@label}</span>
       </label>
       <.error :for={msg <- @errors}>{msg}</.error>
     </div>
@@ -193,13 +201,13 @@ defmodule SecretHub.Web.CoreComponents do
 
   def input(%{type: "select"} = assigns) do
     ~H"""
-    <div class="dm-form-field mb-2">
+    <div class="form-group">
       <label>
-        <span :if={@label} class="dm-label mb-1">{@label}</span>
+        <span :if={@label} class="form-label">{@label}</span>
         <select
           id={@id}
           name={@name}
-          class={[@class || "w-full dm-select", @errors != [] && (@error_class || "dm-select--error")]}
+          class={[@class || "w-full select", @errors != [] && (@error_class || "select-error")]}
           multiple={@multiple}
           {@rest}
         >
@@ -214,15 +222,15 @@ defmodule SecretHub.Web.CoreComponents do
 
   def input(%{type: "textarea"} = assigns) do
     ~H"""
-    <div class="dm-form-field mb-2">
+    <div class="form-group">
       <label>
-        <span :if={@label} class="dm-label mb-1">{@label}</span>
+        <span :if={@label} class="form-label">{@label}</span>
         <textarea
           id={@id}
           name={@name}
           class={[
-            @class || "w-full dm-textarea",
-            @errors != [] && (@error_class || "dm-textarea--error")
+            @class || "w-full textarea",
+            @errors != [] && (@error_class || "textarea-error")
           ]}
           {@rest}
         >{Form.normalize_value("textarea", @value)}</textarea>
@@ -235,17 +243,17 @@ defmodule SecretHub.Web.CoreComponents do
   # All other inputs text, datetime-local, url, password, etc. are handled here...
   def input(assigns) do
     ~H"""
-    <div class="dm-form-field mb-2">
+    <div class="form-group">
       <label>
-        <span :if={@label} class="dm-label mb-1">{@label}</span>
+        <span :if={@label} class="form-label">{@label}</span>
         <input
           type={@type}
           name={@name}
           id={@id}
           value={Form.normalize_value(@type, @value)}
           class={[
-            @class || "w-full dm-input",
-            @errors != [] && (@error_class || "dm-input--error")
+            @class || "w-full input",
+            @errors != [] && (@error_class || "input-error")
           ]}
           {@rest}
         />
@@ -255,11 +263,10 @@ defmodule SecretHub.Web.CoreComponents do
     """
   end
 
-  # Helper used by inputs to generate form errors
   defp error(assigns) do
     ~H"""
-    <p class="mt-1.5 flex gap-2 items-center text-sm text-[var(--color-error)]">
-      <.icon name="hero-exclamation-circle" class="size-5" />
+    <p class="helper-text mt-1 flex gap-1 items-center text-sm text-error">
+      <.icon name="hero-exclamation-circle" class="size-4" />
       {render_slot(@inner_block)}
     </p>
     """
@@ -276,10 +283,10 @@ defmodule SecretHub.Web.CoreComponents do
     ~H"""
     <header class={[@actions != [] && "flex items-center justify-between gap-6", "pb-4"]}>
       <div>
-        <h1 class="text-lg font-semibold leading-8">
+        <h1 class="text-lg font-semibold leading-8 text-on-surface">
           {render_slot(@inner_block)}
         </h1>
-        <p :if={@subtitle != []} class="text-sm opacity-70">
+        <p :if={@subtitle != []} class="text-sm text-on-surface-variant">
           {render_slot(@subtitle)}
         </p>
       </div>
@@ -289,7 +296,7 @@ defmodule SecretHub.Web.CoreComponents do
   end
 
   @doc """
-  Renders a table with generic styling.
+  Renders a data table with DuskMoon table styling.
 
   ## Examples
 
@@ -320,8 +327,8 @@ defmodule SecretHub.Web.CoreComponents do
       end
 
     ~H"""
-    <div class="dm-table-container overflow-x-auto">
-      <table class="dm-table w-full">
+    <div class="overflow-x-auto">
+      <table class="table table-hover w-full">
         <thead>
           <tr>
             <th :for={col <- @col}>{col[:label]}</th>
@@ -354,7 +361,7 @@ defmodule SecretHub.Web.CoreComponents do
   end
 
   @doc """
-  Renders a data list.
+  Renders a data list with DuskMoon list styling.
 
   ## Examples
 
@@ -369,11 +376,11 @@ defmodule SecretHub.Web.CoreComponents do
 
   def list(assigns) do
     ~H"""
-    <ul class="dm-list">
-      <li :for={item <- @item} class="dm-list__item p-3">
+    <ul class="list">
+      <li :for={item <- @item} class="list-item list-item-interactive p-3">
         <div>
-          <div class="font-bold">{item.title}</div>
-          <div class="text-sm opacity-70">{render_slot(item)}</div>
+          <div class="font-bold text-on-surface">{item.title}</div>
+          <div class="text-sm text-on-surface-variant">{render_slot(item)}</div>
         </div>
       </li>
     </ul>
@@ -407,51 +414,28 @@ defmodule SecretHub.Web.CoreComponents do
     """
   end
 
-  # Fallback for non-hero icons (plus, trash, etc.)
-  def icon(%{name: "plus"} = assigns) do
-    ~H"""
-    <svg class={@class} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-    </svg>
-    """
-  end
+  # Fallback: map common short names to hero icons
+  @hero_aliases %{
+    "plus" => "hero-plus",
+    "trash" => "hero-trash",
+    "pencil" => "hero-pencil-square",
+    "check" => "hero-check",
+    "check-circle" => "hero-check-circle",
+    "x-mark" => "hero-x-mark",
+    "search" => "hero-magnifying-glass",
+    "arrow-left" => "hero-arrow-left",
+    "user" => "hero-user",
+    "document" => "hero-document",
+    "information-circle" => "hero-information-circle",
+    "clock" => "hero-clock",
+    "bell-slash" => "hero-bell-slash"
+  }
 
-  def icon(%{name: "trash"} = assigns) do
-    ~H"""
-    <svg class={@class} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="2"
-        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-      />
-    </svg>
-    """
-  end
+  def icon(%{name: name} = assigns) when is_map_key(@hero_aliases, name) do
+    assigns = assign(assigns, :name, @hero_aliases[name])
 
-  def icon(%{name: "pencil"} = assigns) do
     ~H"""
-    <svg class={@class} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="2"
-        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-      />
-    </svg>
-    """
-  end
-
-  def icon(%{name: _} = assigns) do
-    ~H"""
-    <svg class={@class} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        stroke-width="2"
-        d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-      />
-    </svg>
+    <span class={[@name, @class]} />
     """
   end
 

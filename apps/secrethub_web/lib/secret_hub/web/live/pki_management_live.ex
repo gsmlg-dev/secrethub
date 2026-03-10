@@ -154,20 +154,20 @@ defmodule SecretHub.Web.PKIManagementLive do
     ~H"""
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">PKI Management</h1>
-        <p class="mt-2 text-sm text-gray-600">
+        <h1 class="text-3xl font-bold text-on-surface">PKI Management</h1>
+        <p class="mt-2 text-sm text-on-surface-variant">
           Manage Certificate Authorities and certificates for mTLS authentication.
         </p>
       </div>
       
     <!-- Statistics Cards -->
       <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-        <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="bg-surface-container overflow-hidden shadow rounded-lg">
           <div class="p-5">
             <div class="flex items-center">
               <div class="flex-shrink-0">
                 <svg
-                  class="h-6 w-6 text-gray-400"
+                  class="h-6 w-6 text-on-surface-variant"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -182,20 +182,20 @@ defmodule SecretHub.Web.PKIManagementLive do
               </div>
               <div class="ml-5 w-0 flex-1">
                 <dl>
-                  <dt class="text-sm font-medium text-gray-500 truncate">Total Certificates</dt>
-                  <dd class="text-lg font-semibold text-gray-900">{@stats.total}</dd>
+                  <dt class="text-sm font-medium text-on-surface-variant truncate">Total Certificates</dt>
+                  <dd class="text-lg font-semibold text-on-surface">{@stats.total}</dd>
                 </dl>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="bg-surface-container overflow-hidden shadow rounded-lg">
           <div class="p-5">
             <div class="flex items-center">
               <div class="flex-shrink-0">
                 <svg
-                  class="h-6 w-6 text-green-400"
+                  class="h-6 w-6 text-success"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -210,20 +210,20 @@ defmodule SecretHub.Web.PKIManagementLive do
               </div>
               <div class="ml-5 w-0 flex-1">
                 <dl>
-                  <dt class="text-sm font-medium text-gray-500 truncate">Active</dt>
-                  <dd class="text-lg font-semibold text-gray-900">{@stats.active}</dd>
+                  <dt class="text-sm font-medium text-on-surface-variant truncate">Active</dt>
+                  <dd class="text-lg font-semibold text-on-surface">{@stats.active}</dd>
                 </dl>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="bg-surface-container overflow-hidden shadow rounded-lg">
           <div class="p-5">
             <div class="flex items-center">
               <div class="flex-shrink-0">
                 <svg
-                  class="h-6 w-6 text-red-400"
+                  class="h-6 w-6 text-error"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -238,20 +238,20 @@ defmodule SecretHub.Web.PKIManagementLive do
               </div>
               <div class="ml-5 w-0 flex-1">
                 <dl>
-                  <dt class="text-sm font-medium text-gray-500 truncate">Revoked</dt>
-                  <dd class="text-lg font-semibold text-gray-900">{@stats.revoked}</dd>
+                  <dt class="text-sm font-medium text-on-surface-variant truncate">Revoked</dt>
+                  <dd class="text-lg font-semibold text-on-surface">{@stats.revoked}</dd>
                 </dl>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="bg-surface-container overflow-hidden shadow rounded-lg">
           <div class="p-5">
             <div class="flex items-center">
               <div class="flex-shrink-0">
                 <svg
-                  class="h-6 w-6 text-blue-400"
+                  class="h-6 w-6 text-primary"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -266,8 +266,8 @@ defmodule SecretHub.Web.PKIManagementLive do
               </div>
               <div class="ml-5 w-0 flex-1">
                 <dl>
-                  <dt class="text-sm font-medium text-gray-500 truncate">CAs</dt>
-                  <dd class="text-lg font-semibold text-gray-900">{@stats.cas}</dd>
+                  <dt class="text-sm font-medium text-on-surface-variant truncate">CAs</dt>
+                  <dd class="text-lg font-semibold text-on-surface">{@stats.cas}</dd>
                 </dl>
               </div>
             </div>
@@ -279,7 +279,7 @@ defmodule SecretHub.Web.PKIManagementLive do
       <div class="mb-6 flex gap-3">
         <button
           phx-click="new_root_ca"
-          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
         >
           <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -294,7 +294,7 @@ defmodule SecretHub.Web.PKIManagementLive do
 
         <button
           phx-click="new_intermediate_ca"
-          class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          class="inline-flex items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
         >
           <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -310,57 +310,57 @@ defmodule SecretHub.Web.PKIManagementLive do
       
     <!-- CA Generation Form Modal -->
       <%= if @show_ca_form do %>
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 z-40 flex items-center justify-center p-4">
-          <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
+        <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 z-40 flex items-center justify-center p-4">
+          <div class="bg-surface-container rounded-lg shadow-xl max-w-2xl w-full">
+            <div class="px-6 py-4 border-b border-outline-variant">
+              <h3 class="text-lg font-medium text-on-surface">
                 {if @ca_form_type == :root, do: "Generate Root CA", else: "Generate Intermediate CA"}
               </h3>
             </div>
 
             <form phx-submit="generate_ca" class="px-6 py-4 space-y-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700">Common Name</label>
+                <label class="block text-sm font-medium text-on-surface">Common Name</label>
                 <input
                   type="text"
                   name="ca[common_name]"
                   value={@ca_form_data["common_name"]}
                   required
-                  class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 />
               </div>
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Organization</label>
+                  <label class="block text-sm font-medium text-on-surface">Organization</label>
                   <input
                     type="text"
                     name="ca[organization]"
                     value={@ca_form_data["organization"]}
                     required
-                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   />
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Country</label>
+                  <label class="block text-sm font-medium text-on-surface">Country</label>
                   <input
                     type="text"
                     name="ca[country]"
                     value={@ca_form_data["country"]}
                     maxlength="2"
                     required
-                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   />
                 </div>
               </div>
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Key Type</label>
+                  <label class="block text-sm font-medium text-on-surface">Key Type</label>
                   <select
                     name="ca[key_type]"
-                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   >
                     <option value="rsa" selected={@ca_form_data["key_type"] == "rsa"}>RSA</option>
                     <option value="ecdsa" selected={@ca_form_data["key_type"] == "ecdsa"}>
@@ -370,10 +370,10 @@ defmodule SecretHub.Web.PKIManagementLive do
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-700">Key Bits</label>
+                  <label class="block text-sm font-medium text-on-surface">Key Bits</label>
                   <select
                     name="ca[key_bits]"
-                    class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   >
                     <option value="2048" selected={@ca_form_data["key_bits"] == "2048"}>
                       2048
@@ -386,7 +386,7 @@ defmodule SecretHub.Web.PKIManagementLive do
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700">
+                <label class="block text-sm font-medium text-on-surface">
                   TTL (days)
                 </label>
                 <input
@@ -394,13 +394,13 @@ defmodule SecretHub.Web.PKIManagementLive do
                   name="ca[ttl_days]"
                   value={@ca_form_data["ttl_days"]}
                   required
-                  class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 />
               </div>
 
               <%= if !Enum.empty?(@validation_errors) do %>
-                <div class="bg-red-50 border-l-4 border-red-400 p-4">
-                  <ul class="text-sm text-red-700 list-disc list-inside">
+                <div class="bg-error/5 border-l-4 border-red-400 p-4">
+                  <ul class="text-sm text-error list-disc list-inside">
                     <%= for error <- @validation_errors do %>
                       <li>{error}</li>
                     <% end %>
@@ -412,13 +412,13 @@ defmodule SecretHub.Web.PKIManagementLive do
                 <button
                   type="button"
                   phx-click="cancel_ca_form"
-                  class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                  class="inline-flex items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                  class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary"
                 >
                   Generate CA
                 </button>
@@ -429,14 +429,14 @@ defmodule SecretHub.Web.PKIManagementLive do
       <% end %>
       
     <!-- Filters and Search -->
-      <div class="bg-white p-4 rounded-lg shadow mb-6">
+      <div class="bg-surface-container p-4 rounded-lg shadow mb-6">
         <div class="flex gap-4 items-center">
           <div class="flex items-center space-x-2">
-            <label class="text-sm font-medium text-gray-700">Type:</label>
+            <label class="text-sm font-medium text-on-surface">Type:</label>
             <select
               phx-change="filter_certificates"
               name="filter_type"
-              class="form-select rounded-md border-gray-300"
+              class="form-select rounded-md border-outline-variant"
             >
               <option value="all">All</option>
               <option value="root_ca">Root CA</option>
@@ -448,29 +448,29 @@ defmodule SecretHub.Web.PKIManagementLive do
           </div>
 
           <div class="flex items-center space-x-2 flex-1">
-            <label class="text-sm font-medium text-gray-700">Search:</label>
+            <label class="text-sm font-medium text-on-surface">Search:</label>
             <input
               type="text"
               phx-change="search_certificates"
               name="query"
               value={@search_query}
               placeholder="Search by common name or serial..."
-              class="form-input flex-1 rounded-md border-gray-300"
+              class="form-input flex-1 rounded-md border-outline-variant"
             />
           </div>
         </div>
       </div>
       
     <!-- Certificates List -->
-      <div class="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul role="list" class="divide-y divide-gray-200">
+      <div class="bg-surface-container shadow overflow-hidden sm:rounded-md">
+        <ul role="list" class="divide-y divide-outline-variant">
           <%= if Enum.empty?(filtered_certificates(@certificates, @filter_type, @search_query)) do %>
             <li class="px-6 py-12 text-center">
-              <p class="text-gray-500">No certificates found.</p>
+              <p class="text-on-surface-variant">No certificates found.</p>
             </li>
           <% else %>
             <%= for cert <- filtered_certificates(@certificates, @filter_type, @search_query) do %>
-              <li class="px-6 py-4 hover:bg-gray-50">
+              <li class="px-6 py-4 hover:bg-surface-container-low">
                 <div class="flex items-center justify-between">
                   <div class="flex-1">
                     <div class="flex items-center">
@@ -492,8 +492,8 @@ defmodule SecretHub.Web.PKIManagementLive do
                         </div>
                       </div>
                       <div class="ml-4">
-                        <div class="text-sm font-medium text-gray-900">{cert.common_name}</div>
-                        <div class="text-sm text-gray-500">
+                        <div class="text-sm font-medium text-on-surface">{cert.common_name}</div>
+                        <div class="text-sm text-on-surface-variant">
                           Serial:
                           <span class="font-mono text-xs">
                             {String.slice(cert.serial_number, 0..15)}...
@@ -504,15 +504,15 @@ defmodule SecretHub.Web.PKIManagementLive do
                             {format_cert_type(cert.cert_type)}
                           </span>
                           <%= if cert.revoked do %>
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-error/10 text-error">
                               Revoked
                             </span>
                           <% else %>
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success">
                               Active
                             </span>
                           <% end %>
-                          <span class="text-xs text-gray-500">
+                          <span class="text-xs text-on-surface-variant">
                             Expires: {format_expiry(cert.not_after)}
                           </span>
                         </div>
@@ -523,7 +523,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                     <button
                       phx-click="view_certificate"
                       phx-value-cert_id={cert.id}
-                      class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
+                      class="inline-flex items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low"
                     >
                       View Details
                     </button>
@@ -532,7 +532,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                         phx-click="revoke_certificate"
                         phx-value-cert_id={cert.id}
                         data-confirm="Are you sure you want to revoke this certificate?"
-                        class="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50"
+                        class="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5"
                       >
                         Revoke
                       </button>
@@ -547,13 +547,13 @@ defmodule SecretHub.Web.PKIManagementLive do
       
     <!-- Certificate Details Modal -->
       <%= if @selected_cert do %>
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 z-40 flex items-center justify-center p-4">
-          <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-              <h3 class="text-lg font-medium text-gray-900">Certificate Details</h3>
+        <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 z-40 flex items-center justify-center p-4">
+          <div class="bg-surface-container rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="px-6 py-4 border-b border-outline-variant flex justify-between items-center">
+              <h3 class="text-lg font-medium text-on-surface">Certificate Details</h3>
               <button
                 phx-click="close_certificate_details"
-                class="text-gray-400 hover:text-gray-500"
+                class="text-on-surface-variant hover:text-on-surface-variant"
               >
                 <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -569,12 +569,12 @@ defmodule SecretHub.Web.PKIManagementLive do
             <div class="px-6 py-4 space-y-4">
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Common Name</label>
-                  <p class="mt-1 text-sm text-gray-900">{@selected_cert.common_name}</p>
+                  <label class="block text-sm font-medium text-on-surface-variant">Common Name</label>
+                  <p class="mt-1 text-sm text-on-surface">{@selected_cert.common_name}</p>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Type</label>
-                  <p class="mt-1 text-sm text-gray-900">
+                  <label class="block text-sm font-medium text-on-surface-variant">Type</label>
+                  <p class="mt-1 text-sm text-on-surface">
                     {format_cert_type(@selected_cert.cert_type)}
                   </p>
                 </div>
@@ -582,14 +582,14 @@ defmodule SecretHub.Web.PKIManagementLive do
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Serial Number</label>
-                  <p class="mt-1 text-sm font-mono text-gray-900 break-all">
+                  <label class="block text-sm font-medium text-on-surface-variant">Serial Number</label>
+                  <p class="mt-1 text-sm font-mono text-on-surface break-all">
                     {@selected_cert.serial_number}
                   </p>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Fingerprint (SHA-256)</label>
-                  <p class="mt-1 text-sm font-mono text-gray-900 break-all">
+                  <label class="block text-sm font-medium text-on-surface-variant">Fingerprint (SHA-256)</label>
+                  <p class="mt-1 text-sm font-mono text-on-surface break-all">
                     {@selected_cert.fingerprint_sha256}
                   </p>
                 </div>
@@ -597,28 +597,28 @@ defmodule SecretHub.Web.PKIManagementLive do
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Valid From</label>
-                  <p class="mt-1 text-sm text-gray-900">
+                  <label class="block text-sm font-medium text-on-surface-variant">Valid From</label>
+                  <p class="mt-1 text-sm text-on-surface">
                     {DateTime.to_string(@selected_cert.not_before)}
                   </p>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Valid Until</label>
-                  <p class="mt-1 text-sm text-gray-900">
+                  <label class="block text-sm font-medium text-on-surface-variant">Valid Until</label>
+                  <p class="mt-1 text-sm text-on-surface">
                     {DateTime.to_string(@selected_cert.not_after)}
                   </p>
                 </div>
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-500">Status</label>
+                <label class="block text-sm font-medium text-on-surface-variant">Status</label>
                 <p class="mt-1">
                   <%= if @selected_cert.revoked do %>
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-error/10 text-error">
                       Revoked at {DateTime.to_string(@selected_cert.revoked_at)}
                     </span>
                   <% else %>
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success">
                       Active
                     </span>
                   <% end %>
@@ -626,10 +626,10 @@ defmodule SecretHub.Web.PKIManagementLive do
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-500 mb-2">
+                <label class="block text-sm font-medium text-on-surface-variant mb-2">
                   Certificate PEM
                 </label>
-                <pre class="bg-gray-50 p-4 rounded-md overflow-x-auto text-xs font-mono border border-gray-200">{@selected_cert.certificate_pem}</pre>
+                <pre class="bg-surface-container-low p-4 rounded-md overflow-x-auto text-xs font-mono border border-outline-variant">{@selected_cert.certificate_pem}</pre>
               </div>
             </div>
           </div>
@@ -781,20 +781,20 @@ defmodule SecretHub.Web.PKIManagementLive do
   defp format_cert_type(:admin_client), do: "Admin Client"
   defp format_cert_type(type), do: to_string(type)
 
-  defp cert_type_badge_color(:root_ca), do: "bg-purple-100 text-purple-800"
-  defp cert_type_badge_color(:intermediate_ca), do: "bg-indigo-100 text-indigo-800"
-  defp cert_type_badge_color(:agent_client), do: "bg-blue-100 text-blue-800"
-  defp cert_type_badge_color(:app_client), do: "bg-green-100 text-green-800"
-  defp cert_type_badge_color(:admin_client), do: "bg-yellow-100 text-yellow-800"
-  defp cert_type_badge_color(_), do: "bg-gray-100 text-gray-800"
+  defp cert_type_badge_color(:root_ca), do: "bg-tertiary/10 text-tertiary"
+  defp cert_type_badge_color(:intermediate_ca), do: "bg-secondary/10 text-secondary"
+  defp cert_type_badge_color(:agent_client), do: "bg-primary/10 text-primary"
+  defp cert_type_badge_color(:app_client), do: "bg-success/10 text-success"
+  defp cert_type_badge_color(:admin_client), do: "bg-warning/10 text-warning"
+  defp cert_type_badge_color(_), do: "bg-surface-container text-on-surface"
 
-  defp cert_type_bg_color(:root_ca), do: "bg-purple-100"
-  defp cert_type_bg_color(:intermediate_ca), do: "bg-indigo-100"
-  defp cert_type_bg_color(_), do: "bg-blue-100"
+  defp cert_type_bg_color(:root_ca), do: "bg-tertiary/10"
+  defp cert_type_bg_color(:intermediate_ca), do: "bg-secondary/10"
+  defp cert_type_bg_color(_), do: "bg-primary/10"
 
-  defp cert_type_icon_color(:root_ca), do: "text-purple-600"
-  defp cert_type_icon_color(:intermediate_ca), do: "text-indigo-600"
-  defp cert_type_icon_color(_), do: "text-blue-600"
+  defp cert_type_icon_color(:root_ca), do: "text-tertiary"
+  defp cert_type_icon_color(:intermediate_ca), do: "text-secondary"
+  defp cert_type_icon_color(_), do: "text-primary"
 
   defp format_expiry(datetime) do
     datetime

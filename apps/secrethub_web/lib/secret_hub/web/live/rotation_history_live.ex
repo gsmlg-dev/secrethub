@@ -110,8 +110,8 @@ defmodule SecretHub.Web.RotationHistoryLive do
     <div class="px-4 sm:px-6 lg:px-8">
       <div class="sm:flex sm:items-center">
         <div class="sm:flex-auto">
-          <h1 class="text-2xl font-semibold text-gray-900">Rotation History</h1>
-          <p class="mt-2 text-sm text-gray-700">
+          <h1 class="text-2xl font-semibold text-on-surface">Rotation History</h1>
+          <p class="mt-2 text-sm text-on-surface">
             {@schedule.name} - {@schedule.description}
           </p>
         </div>
@@ -139,31 +139,31 @@ defmodule SecretHub.Web.RotationHistoryLive do
   defp statistics_cards(assigns) do
     ~H"""
     <div class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-      <div class="bg-white overflow-hidden shadow rounded-lg">
+      <div class="bg-surface-container overflow-hidden shadow rounded-lg">
         <div class="px-4 py-5 sm:p-6">
-          <dt class="text-sm font-medium text-gray-500 truncate">Total Rotations</dt>
-          <dd class="mt-1 text-3xl font-semibold text-gray-900">{@stats.total || 0}</dd>
+          <dt class="text-sm font-medium text-on-surface-variant truncate">Total Rotations</dt>
+          <dd class="mt-1 text-3xl font-semibold text-on-surface">{@stats.total || 0}</dd>
         </div>
       </div>
 
-      <div class="bg-white overflow-hidden shadow rounded-lg">
+      <div class="bg-surface-container overflow-hidden shadow rounded-lg">
         <div class="px-4 py-5 sm:p-6">
-          <dt class="text-sm font-medium text-gray-500 truncate">Successful</dt>
-          <dd class="mt-1 text-3xl font-semibold text-green-600">{@stats.successful || 0}</dd>
+          <dt class="text-sm font-medium text-on-surface-variant truncate">Successful</dt>
+          <dd class="mt-1 text-3xl font-semibold text-success">{@stats.successful || 0}</dd>
         </div>
       </div>
 
-      <div class="bg-white overflow-hidden shadow rounded-lg">
+      <div class="bg-surface-container overflow-hidden shadow rounded-lg">
         <div class="px-4 py-5 sm:p-6">
-          <dt class="text-sm font-medium text-gray-500 truncate">Failed</dt>
-          <dd class="mt-1 text-3xl font-semibold text-red-600">{@stats.failed || 0}</dd>
+          <dt class="text-sm font-medium text-on-surface-variant truncate">Failed</dt>
+          <dd class="mt-1 text-3xl font-semibold text-error">{@stats.failed || 0}</dd>
         </div>
       </div>
 
-      <div class="bg-white overflow-hidden shadow rounded-lg">
+      <div class="bg-surface-container overflow-hidden shadow rounded-lg">
         <div class="px-4 py-5 sm:p-6">
-          <dt class="text-sm font-medium text-gray-500 truncate">Success Rate</dt>
-          <dd class="mt-1 text-3xl font-semibold text-gray-900">
+          <dt class="text-sm font-medium text-on-surface-variant truncate">Success Rate</dt>
+          <dd class="mt-1 text-3xl font-semibold text-on-surface">
             {Float.round(@stats.success_rate || 0.0, 1)}%
           </dd>
         </div>
@@ -178,21 +178,21 @@ defmodule SecretHub.Web.RotationHistoryLive do
       <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
         <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
           <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-            <table class="min-w-full divide-y divide-gray-300">
-              <thead class="bg-gray-50">
+            <table class="min-w-full divide-y divide-outline-variant">
+              <thead class="bg-surface-container-low">
                 <tr>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Started</th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Started</th>
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                     Completed
                   </th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Status</th>
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                     Duration
                   </th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                     Old Version
                   </th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                     New Version
                   </th>
                   <th class="relative py-3.5 pl-3 pr-4 sm:pr-6">
@@ -200,17 +200,17 @@ defmodule SecretHub.Web.RotationHistoryLive do
                   </th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-200 bg-white">
+              <tbody class="divide-y divide-outline-variant bg-surface-container">
                 <%= for record <- @history do %>
-                  <tr class="hover:bg-gray-50">
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-900">
+                  <tr class="hover:bg-surface-container-low">
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface">
                       {Calendar.strftime(record.started_at, "%Y-%m-%d %H:%M:%S")}
                     </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                       <%= if record.completed_at do %>
                         {Calendar.strftime(record.completed_at, "%Y-%m-%d %H:%M:%S")}
                       <% else %>
-                        <span class="text-yellow-600">In Progress...</span>
+                        <span class="text-warning">In Progress...</span>
                       <% end %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm">
@@ -219,21 +219,21 @@ defmodule SecretHub.Web.RotationHistoryLive do
                         <span class="ml-2 badge badge-warning badge-sm">Rolled Back</span>
                       <% end %>
                     </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                       <%= if record.duration_ms do %>
                         {format_duration(record.duration_ms)}
                       <% else %>
                         -
                       <% end %>
                     </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                       <%= if record.old_version do %>
                         <code class="text-xs">{String.slice(record.old_version, 0..20)}</code>
                       <% else %>
                         -
                       <% end %>
                     </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                       <%= if record.new_version do %>
                         <code class="text-xs">{String.slice(record.new_version, 0..20)}</code>
                       <% else %>
@@ -254,7 +254,7 @@ defmodule SecretHub.Web.RotationHistoryLive do
 
                 <%= if @history == [] do %>
                   <tr>
-                    <td colspan="7" class="px-3 py-8 text-center text-sm text-gray-500">
+                    <td colspan="7" class="px-3 py-8 text-center text-sm text-on-surface-variant">
                       No rotation history yet. Trigger a rotation to see results here.
                     </td>
                   </tr>
@@ -272,41 +272,41 @@ defmodule SecretHub.Web.RotationHistoryLive do
     ~H"""
     <div class="fixed inset-0 z-50 overflow-y-auto" phx-click="close_details">
       <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-        <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75"></div>
+        <div class="fixed inset-0 transition-opacity bg-surface-container-low0 bg-opacity-75"></div>
 
         <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
 
         <div
-          class="inline-block overflow-hidden text-left align-bottom transition-all transform bg-white rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full"
+          class="inline-block overflow-hidden text-left align-bottom transition-all transform bg-surface-container rounded-lg shadow-xl sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full"
           phx-click="noop"
         >
-          <div class="px-4 pt-5 pb-4 bg-white sm:p-6 sm:pb-4">
+          <div class="px-4 pt-5 pb-4 bg-surface-container sm:p-6 sm:pb-4">
             <div class="sm:flex sm:items-start">
               <div class="w-full mt-3 text-center sm:mt-0 sm:text-left">
-                <h3 class="text-lg font-medium leading-6 text-gray-900">
+                <h3 class="text-lg font-medium leading-6 text-on-surface">
                   Rotation Details
                 </h3>
 
                 <div class="mt-4">
-                  <dl class="divide-y divide-gray-200">
+                  <dl class="divide-y divide-outline-variant">
                     <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                      <dt class="text-sm font-medium text-gray-500">Status</dt>
-                      <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                      <dt class="text-sm font-medium text-on-surface-variant">Status</dt>
+                      <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                         <.rotation_status_badge status={@history.status} />
                       </dd>
                     </div>
 
                     <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                      <dt class="text-sm font-medium text-gray-500">Started At</dt>
-                      <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                      <dt class="text-sm font-medium text-on-surface-variant">Started At</dt>
+                      <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                         {Calendar.strftime(@history.started_at, "%Y-%m-%d %H:%M:%S UTC")}
                       </dd>
                     </div>
 
                     <%= if @history.completed_at do %>
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                        <dt class="text-sm font-medium text-gray-500">Completed At</dt>
-                        <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                        <dt class="text-sm font-medium text-on-surface-variant">Completed At</dt>
+                        <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                           {Calendar.strftime(@history.completed_at, "%Y-%m-%d %H:%M:%S UTC")}
                         </dd>
                       </div>
@@ -314,8 +314,8 @@ defmodule SecretHub.Web.RotationHistoryLive do
 
                     <%= if @history.duration_ms do %>
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                        <dt class="text-sm font-medium text-gray-500">Duration</dt>
-                        <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                        <dt class="text-sm font-medium text-on-surface-variant">Duration</dt>
+                        <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                           {format_duration(@history.duration_ms)}
                         </dd>
                       </div>
@@ -323,9 +323,9 @@ defmodule SecretHub.Web.RotationHistoryLive do
 
                     <%= if @history.old_version do %>
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                        <dt class="text-sm font-medium text-gray-500">Old Version</dt>
-                        <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                          <code class="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <dt class="text-sm font-medium text-on-surface-variant">Old Version</dt>
+                        <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
+                          <code class="text-xs bg-surface-container px-2 py-1 rounded">
                             {@history.old_version}
                           </code>
                         </dd>
@@ -334,9 +334,9 @@ defmodule SecretHub.Web.RotationHistoryLive do
 
                     <%= if @history.new_version do %>
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                        <dt class="text-sm font-medium text-gray-500">New Version</dt>
-                        <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                          <code class="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <dt class="text-sm font-medium text-on-surface-variant">New Version</dt>
+                        <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
+                          <code class="text-xs bg-surface-container px-2 py-1 rounded">
                             {@history.new_version}
                           </code>
                         </dd>
@@ -345,8 +345,8 @@ defmodule SecretHub.Web.RotationHistoryLive do
 
                     <%= if @history.error_message do %>
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                        <dt class="text-sm font-medium text-gray-500">Error</dt>
-                        <dd class="mt-1 text-sm text-red-600 sm:col-span-2 sm:mt-0">
+                        <dt class="text-sm font-medium text-on-surface-variant">Error</dt>
+                        <dd class="mt-1 text-sm text-error sm:col-span-2 sm:mt-0">
                           {@history.error_message}
                         </dd>
                       </div>
@@ -354,8 +354,8 @@ defmodule SecretHub.Web.RotationHistoryLive do
 
                     <%= if @history.rollback_performed do %>
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                        <dt class="text-sm font-medium text-gray-500">Rollback</dt>
-                        <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                        <dt class="text-sm font-medium text-on-surface-variant">Rollback</dt>
+                        <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                           <span class="badge badge-warning">Rollback Performed</span>
                         </dd>
                       </div>
@@ -363,9 +363,9 @@ defmodule SecretHub.Web.RotationHistoryLive do
 
                     <%= if @history.metadata && map_size(@history.metadata) > 0 do %>
                       <div class="py-3 sm:grid sm:grid-cols-3 sm:gap-4">
-                        <dt class="text-sm font-medium text-gray-500">Metadata</dt>
-                        <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                          <pre class="text-xs bg-gray-50 p-3 rounded overflow-x-auto"><%= Jason.encode!(@history.metadata, pretty: true) %></pre>
+                        <dt class="text-sm font-medium text-on-surface-variant">Metadata</dt>
+                        <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
+                          <pre class="text-xs bg-surface-container-low p-3 rounded overflow-x-auto"><%= Jason.encode!(@history.metadata, pretty: true) %></pre>
                         </dd>
                       </div>
                     <% end %>
@@ -375,7 +375,7 @@ defmodule SecretHub.Web.RotationHistoryLive do
             </div>
           </div>
 
-          <div class="px-4 py-3 bg-gray-50 sm:px-6 sm:flex sm:flex-row-reverse">
+          <div class="px-4 py-3 bg-surface-container-low sm:px-6 sm:flex sm:flex-row-reverse">
             <button
               type="button"
               phx-click="close_details"

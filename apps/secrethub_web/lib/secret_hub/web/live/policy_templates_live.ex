@@ -55,14 +55,14 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
       <div class="mb-8">
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-3xl font-bold text-gray-900">Policy Templates</h1>
-            <p class="mt-2 text-sm text-gray-600">
+            <h1 class="text-3xl font-bold text-on-surface">Policy Templates</h1>
+            <p class="mt-2 text-sm text-on-surface-variant">
               Start with a pre-configured template for common use cases
             </p>
           </div>
           <.link
             navigate="/admin/policies"
-            class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            class="inline-flex items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low"
           >
             Back to Policies
           </.link>
@@ -75,7 +75,7 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
             type="button"
             phx-click="filter_category"
             phx-value-category="all"
-            class={"px-3 py-2 font-medium text-sm rounded-md #{if @selected_category == "all", do: "bg-blue-100 text-blue-700", else: "text-gray-500 hover:text-gray-700"}"}
+            class={"px-3 py-2 font-medium text-sm rounded-md #{if @selected_category == "all", do: "bg-primary/10 text-primary", else: "text-on-surface-variant hover:text-on-surface"}"}
           >
             All Templates
           </button>
@@ -84,7 +84,7 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
               type="button"
               phx-click="filter_category"
               phx-value-category={category.id}
-              class={"px-3 py-2 font-medium text-sm rounded-md #{if @selected_category == category.id, do: "bg-blue-100 text-blue-700", else: "text-gray-500 hover:text-gray-700"}"}
+              class={"px-3 py-2 font-medium text-sm rounded-md #{if @selected_category == category.id, do: "bg-primary/10 text-primary", else: "text-on-surface-variant hover:text-on-surface"}"}
             >
               {category.name}
             </button>
@@ -94,20 +94,20 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
       <!-- Templates Grid -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <%= for template <- filtered_templates(@templates, @selected_category) do %>
-          <div class="bg-white shadow rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
+          <div class="bg-surface-container shadow rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
             <div class="p-6">
               <div class="flex items-center justify-between mb-3">
-                <h3 class="text-lg font-semibold text-gray-900">{template.display_name}</h3>
+                <h3 class="text-lg font-semibold text-on-surface">{template.display_name}</h3>
                 <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{category_color(template.category)}"}>
                   {category_name(template.category, @categories)}
                 </span>
               </div>
 
-              <p class="text-sm text-gray-600 mb-4">{template.description}</p>
+              <p class="text-sm text-on-surface-variant mb-4">{template.description}</p>
 
               <div class="mb-4">
-                <h4 class="text-xs font-medium text-gray-700 mb-2">Features:</h4>
-                <ul class="text-xs text-gray-600 space-y-1">
+                <h4 class="text-xs font-medium text-on-surface mb-2">Features:</h4>
+                <ul class="text-xs text-on-surface-variant space-y-1">
                   <%= if template.policy_document["allowed_operations"] do %>
                     <li>
                       Operations:
@@ -146,7 +146,7 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
               <div class="flex gap-2">
                 <.link
                   navigate={"/admin/policies/new?template=#{template.name}"}
-                  class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                  class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary"
                 >
                   Use Template
                 </.link>
@@ -154,7 +154,7 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
                   type="button"
                   phx-click="preview_template"
                   phx-value-template={template.name}
-                  class="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                  class="inline-flex items-center px-3 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low"
                 >
                   <svg
                     class="h-5 w-5"
@@ -184,11 +184,11 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
       </div>
       <!-- Preview Modal -->
       <%= if @preview_template do %>
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 z-50 flex items-center justify-center p-4">
-          <div class="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+        <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 z-50 flex items-center justify-center p-4">
+          <div class="bg-surface-container rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="px-6 py-4 border-b border-outline-variant flex items-center justify-between">
               <div>
-                <h3 class="text-lg font-medium text-gray-900">
+                <h3 class="text-lg font-medium text-on-surface">
                   {@preview_template.display_name}
                 </h3>
                 <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium mt-1 #{category_color(@preview_template.category)}"}>
@@ -198,7 +198,7 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
               <button
                 type="button"
                 phx-click="close_preview"
-                class="text-gray-400 hover:text-gray-500"
+                class="text-on-surface-variant hover:text-on-surface-variant"
               >
                 <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
@@ -213,22 +213,22 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
 
             <div class="px-6 py-4 space-y-4">
               <div>
-                <h4 class="text-sm font-medium text-gray-900 mb-2">Description</h4>
-                <p class="text-sm text-gray-600">{@preview_template.description}</p>
+                <h4 class="text-sm font-medium text-on-surface mb-2">Description</h4>
+                <p class="text-sm text-on-surface-variant">{@preview_template.description}</p>
               </div>
 
               <div>
-                <h4 class="text-sm font-medium text-gray-900 mb-2">Example Usage</h4>
-                <p class="text-sm text-gray-600 whitespace-pre-line">
+                <h4 class="text-sm font-medium text-on-surface mb-2">Example Usage</h4>
+                <p class="text-sm text-on-surface-variant whitespace-pre-line">
                   {@preview_template.example_usage}
                 </p>
               </div>
 
               <div>
-                <h4 class="text-sm font-medium text-gray-900 mb-2">Customizable Fields</h4>
+                <h4 class="text-sm font-medium text-on-surface mb-2">Customizable Fields</h4>
                 <div class="flex flex-wrap gap-2">
                   <%= for field <- @preview_template.customizable_fields do %>
-                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-surface-container text-on-surface">
                       {field}
                     </span>
                   <% end %>
@@ -236,24 +236,24 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
               </div>
 
               <div>
-                <h4 class="text-sm font-medium text-gray-900 mb-2">Policy Document</h4>
-                <div class="bg-gray-50 rounded-md p-3 overflow-x-auto">
-                  <pre class="text-xs text-gray-800">{Jason.encode!(@preview_template.policy_document, pretty: true)}</pre>
+                <h4 class="text-sm font-medium text-on-surface mb-2">Policy Document</h4>
+                <div class="bg-surface-container-low rounded-md p-3 overflow-x-auto">
+                  <pre class="text-xs text-on-surface">{Jason.encode!(@preview_template.policy_document, pretty: true)}</pre>
                 </div>
               </div>
             </div>
 
-            <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+            <div class="px-6 py-4 border-t border-outline-variant flex justify-end space-x-3">
               <button
                 type="button"
                 phx-click="close_preview"
-                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                class="inline-flex items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low"
               >
                 Close
               </button>
               <.link
                 navigate={"/admin/policies/new?template=#{@preview_template.name}"}
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary"
               >
                 Use This Template
               </.link>
@@ -282,13 +282,13 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
 
   defp category_color(category) do
     case category do
-      "time_based" -> "bg-blue-100 text-blue-800"
-      "network_security" -> "bg-purple-100 text-purple-800"
-      "permissions" -> "bg-green-100 text-green-800"
-      "environment" -> "bg-yellow-100 text-yellow-800"
-      "emergency" -> "bg-red-100 text-red-800"
-      "production" -> "bg-indigo-100 text-indigo-800"
-      _ -> "bg-gray-100 text-gray-800"
+      "time_based" -> "bg-primary/10 text-primary"
+      "network_security" -> "bg-tertiary/10 text-tertiary"
+      "permissions" -> "bg-success/10 text-success"
+      "environment" -> "bg-warning/10 text-warning"
+      "emergency" -> "bg-error/10 text-error"
+      "production" -> "bg-secondary/10 text-secondary"
+      _ -> "bg-surface-container text-on-surface"
     end
   end
 end

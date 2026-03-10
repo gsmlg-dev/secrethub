@@ -293,8 +293,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
     ~H"""
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div class="mb-8">
-        <h1 class="text-3xl font-bold text-gray-900">Policy Management</h1>
-        <p class="mt-2 text-sm text-gray-600">
+        <h1 class="text-3xl font-bold text-on-surface">Policy Management</h1>
+        <p class="mt-2 text-sm text-on-surface-variant">
           Create and manage access control policies for secrets.
         </p>
       </div>
@@ -304,7 +304,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
         <div class="flex gap-3">
           <.link
             navigate="/admin/policies/new"
-            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
           >
             <svg
               class="-ml-1 mr-2 h-5 w-5"
@@ -322,7 +322,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
           </.link>
           <.link
             navigate="/admin/policies/templates"
-            class="inline-flex items-center px-4 py-2 border border-blue-600 shadow-sm text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-blue-50"
+            class="inline-flex items-center px-4 py-2 border border-primary shadow-sm text-sm font-medium rounded-md text-primary bg-surface-container hover:bg-primary/5"
           >
             <svg
               class="-ml-1 mr-2 h-5 w-5"
@@ -345,10 +345,10 @@ defmodule SecretHub.Web.PolicyManagementLive do
       
     <!-- Policy Form Modal -->
       <%= if @show_form do %>
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 z-40 flex items-center justify-center p-4">
-          <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div class="px-6 py-4 border-b border-gray-200">
-              <h3 class="text-lg font-medium text-gray-900">
+        <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 z-40 flex items-center justify-center p-4">
+          <div class="bg-surface-container rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="px-6 py-4 border-b border-outline-variant">
+              <h3 class="text-lg font-medium text-on-surface">
                 {if @form_mode == :create, do: "Create New Policy", else: "Edit Policy"}
               </h3>
             </div>
@@ -356,11 +356,11 @@ defmodule SecretHub.Web.PolicyManagementLive do
             <div class="px-6 py-4 space-y-6">
               <!-- Validation Errors -->
               <%= if !Enum.empty?(@validation_errors) do %>
-                <div class="bg-red-50 border-l-4 border-red-400 p-4">
+                <div class="bg-error/5 border-l-4 border-red-400 p-4">
                   <div class="flex">
                     <div class="flex-shrink-0">
                       <svg
-                        class="h-5 w-5 text-red-400"
+                        class="h-5 w-5 text-error"
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 20 20"
                         fill="currentColor"
@@ -373,8 +373,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
                       </svg>
                     </div>
                     <div class="ml-3">
-                      <h3 class="text-sm font-medium text-red-800">Validation errors:</h3>
-                      <ul class="mt-2 text-sm text-red-700 list-disc list-inside">
+                      <h3 class="text-sm font-medium text-error">Validation errors:</h3>
+                      <ul class="mt-2 text-sm text-error list-disc list-inside">
                         <%= for error <- @validation_errors do %>
                           <li>{error}</li>
                         <% end %>
@@ -386,25 +386,25 @@ defmodule SecretHub.Web.PolicyManagementLive do
               
     <!-- Basic Information -->
               <div>
-                <label class="block text-sm font-medium text-gray-700">Policy Name</label>
+                <label class="block text-sm font-medium text-on-surface">Policy Name</label>
                 <input
                   type="text"
                   phx-blur="update_form"
                   phx-value-field="name"
                   value={@form_data["name"]}
-                  class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   placeholder="e.g., database-readonly"
                   required
                 />
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700">Description</label>
+                <label class="block text-sm font-medium text-on-surface">Description</label>
                 <textarea
                   phx-blur="update_form"
                   phx-value-field="description"
                   rows="3"
-                  class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   placeholder="Describe what this policy controls..."
                 >{@form_data["description"]}</textarea>
               </div>
@@ -417,43 +417,43 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   phx-value-field="deny_policy"
                   phx-value-value={to_string(!@form_data["deny_policy"])}
                   checked={@form_data["deny_policy"]}
-                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  class="h-4 w-4 text-primary focus:ring-primary border-outline-variant rounded"
                 />
-                <label for="deny_policy" class="ml-2 block text-sm text-gray-900">
+                <label for="deny_policy" class="ml-2 block text-sm text-on-surface">
                   Deny Policy (blocks matching requests instead of allowing them)
                 </label>
               </div>
               
     <!-- Secret Patterns -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">
+                <label class="block text-sm font-medium text-on-surface mb-2">
                   Allowed Secret Patterns
                 </label>
                 <div class="flex gap-2 mb-2">
                   <input
                     type="text"
                     id="new-pattern"
-                    class="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    class="flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                     placeholder="e.g., prod.db.*, *.password"
                   />
                   <button
                     phx-click="add_secret_pattern"
                     phx-value-pattern={Phoenix.HTML.Form.input_value(assigns, :new_pattern) || ""}
                     type="button"
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary"
                   >
                     Add
                   </button>
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <%= for pattern <- get_in(@form_data, ["policy_document", "allowed_secrets"]) || [] do %>
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary">
                       <code class="text-xs">{pattern}</code>
                       <button
                         type="button"
                         phx-click="remove_secret_pattern"
                         phx-value-pattern={pattern}
-                        class="ml-2 text-blue-600 hover:text-blue-800"
+                        class="ml-2 text-primary hover:text-primary"
                       >
                         &times;
                       </button>
@@ -464,7 +464,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
               
     <!-- Allowed Operations -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">
+                <label class="block text-sm font-medium text-on-surface mb-2">
                   Allowed Operations
                 </label>
                 <div class="space-y-2">
@@ -477,9 +477,9 @@ defmodule SecretHub.Web.PolicyManagementLive do
                         checked={
                           op in (get_in(@form_data, ["policy_document", "allowed_operations"]) || [])
                         }
-                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        class="h-4 w-4 text-primary focus:ring-primary border-outline-variant rounded"
                       />
-                      <span class="ml-2 text-sm text-gray-700">{String.capitalize(op)}</span>
+                      <span class="ml-2 text-sm text-on-surface">{String.capitalize(op)}</span>
                     </label>
                   <% end %>
                 </div>
@@ -487,11 +487,11 @@ defmodule SecretHub.Web.PolicyManagementLive do
               
     <!-- Entity Bindings -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Entity Bindings</label>
+                <label class="block text-sm font-medium text-on-surface mb-2">Entity Bindings</label>
                 <div class="flex gap-2 mb-2">
                   <select
                     id="entity-select"
-                    class="flex-1 border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    class="flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   >
                     <option value="">Select an agent...</option>
                     <%= for agent <- @agents do %>
@@ -502,20 +502,20 @@ defmodule SecretHub.Web.PolicyManagementLive do
                     type="button"
                     phx-click="bind_entity"
                     phx-value-entity_id=""
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary"
                   >
                     Bind
                   </button>
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <%= for entity_id <- @form_data["entity_bindings"] || [] do %>
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-success/10 text-success">
                       {entity_id}
                       <button
                         type="button"
                         phx-click="unbind_entity"
                         phx-value-entity_id={entity_id}
-                        class="ml-2 text-green-600 hover:text-green-800"
+                        class="ml-2 text-success hover:text-success"
                       >
                         &times;
                       </button>
@@ -526,33 +526,33 @@ defmodule SecretHub.Web.PolicyManagementLive do
               
     <!-- Policy Document JSON -->
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">
+                <label class="block text-sm font-medium text-on-surface mb-2">
                   Policy Document (JSON)
                 </label>
                 <textarea
                   phx-blur="update_policy_document"
                   name="document"
                   rows="10"
-                  class="font-mono text-xs block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  class="font-mono text-xs block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary"
                 >{Jason.encode!(@form_data["policy_document"], pretty: true)}</textarea>
-                <p class="mt-1 text-sm text-gray-500">
+                <p class="mt-1 text-sm text-on-surface-variant">
                   Advanced: Edit the raw JSON policy document. Changes above are reflected here.
                 </p>
               </div>
             </div>
 
-            <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+            <div class="px-6 py-4 border-t border-outline-variant flex justify-end space-x-3">
               <button
                 type="button"
                 phx-click="cancel_form"
-                class="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                class="inline-flex items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 phx-click="save_policy"
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary"
               >
                 {if @form_mode == :create, do: "Create Policy", else: "Update Policy"}
               </button>
@@ -563,11 +563,11 @@ defmodule SecretHub.Web.PolicyManagementLive do
       
     <!-- Test Mode Panel -->
       <%= if @test_mode && @selected_policy do %>
-        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6">
+        <div class="bg-warning/5 border-l-4 border-yellow-400 p-4 mb-6">
           <div class="flex">
             <div class="flex-shrink-0">
               <svg
-                class="h-5 w-5 text-yellow-400"
+                class="h-5 w-5 text-warning"
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 20 20"
                 fill="currentColor"
@@ -580,12 +580,12 @@ defmodule SecretHub.Web.PolicyManagementLive do
               </svg>
             </div>
             <div class="ml-3 flex-1">
-              <h3 class="text-sm font-medium text-yellow-800">
+              <h3 class="text-sm font-medium text-warning">
                 Test Policy: {@selected_policy.name}
               </h3>
               <form phx-submit="test_policy" class="mt-4 grid grid-cols-3 gap-4">
                 <div>
-                  <label class="block text-xs font-medium text-yellow-700">Entity ID</label>
+                  <label class="block text-xs font-medium text-warning">Entity ID</label>
                   <input
                     type="text"
                     name="entity_id"
@@ -595,7 +595,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   />
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-yellow-700">Secret Path</label>
+                  <label class="block text-xs font-medium text-warning">Secret Path</label>
                   <input
                     type="text"
                     name="secret_path"
@@ -605,7 +605,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   />
                 </div>
                 <div>
-                  <label class="block text-xs font-medium text-yellow-700">Operation</label>
+                  <label class="block text-xs font-medium text-warning">Operation</label>
                   <select
                     name="operation"
                     value={@test_operation}
@@ -620,15 +620,15 @@ defmodule SecretHub.Web.PolicyManagementLive do
                 <div class="col-span-3">
                   <button
                     type="submit"
-                    class="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-yellow-700 bg-yellow-100 hover:bg-yellow-200"
+                    class="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-warning bg-warning/10 hover:bg-warning/20"
                   >
                     Test Access
                   </button>
                 </div>
               </form>
               <%= if @test_result do %>
-                <div class={"mt-4 p-3 rounded-md #{if @test_result.success, do: "bg-green-100", else: "bg-red-100"}"}>
-                  <p class={"text-sm font-medium #{if @test_result.success, do: "text-green-800", else: "text-red-800"}"}>
+                <div class={"mt-4 p-3 rounded-md #{if @test_result.success, do: "bg-success/10", else: "bg-error/10"}"}>
+                  <p class={"text-sm font-medium #{if @test_result.success, do: "text-success", else: "text-error"}"}>
                     {@test_result.message}
                   </p>
                 </div>
@@ -639,25 +639,25 @@ defmodule SecretHub.Web.PolicyManagementLive do
       <% end %>
       
     <!-- Policies List -->
-      <div class="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul role="list" class="divide-y divide-gray-200">
+      <div class="bg-surface-container shadow overflow-hidden sm:rounded-md">
+        <ul role="list" class="divide-y divide-outline-variant">
           <%= if Enum.empty?(@policies) do %>
             <li class="px-6 py-12 text-center">
-              <p class="text-gray-500">
+              <p class="text-on-surface-variant">
                 No policies created yet. Create your first policy to get started.
               </p>
             </li>
           <% else %>
             <%= for policy <- @policies do %>
-              <li class="px-6 py-4 hover:bg-gray-50">
+              <li class="px-6 py-4 hover:bg-surface-container-low">
                 <div class="flex items-center justify-between">
                   <div class="flex-1">
                     <div class="flex items-center">
                       <div class="flex-shrink-0">
-                        <div class={"h-10 w-10 rounded-full flex items-center justify-center #{if policy.deny_policy, do: "bg-red-100", else: "bg-green-100"}"}>
+                        <div class={"h-10 w-10 rounded-full flex items-center justify-center #{if policy.deny_policy, do: "bg-error/10", else: "bg-success/10"}"}>
                           <%= if policy.deny_policy do %>
                             <svg
-                              class="h-6 w-6 text-red-600"
+                              class="h-6 w-6 text-error"
                               xmlns="http://www.w3.org/2000/svg"
                               fill="none"
                               viewBox="0 0 24 24"
@@ -672,7 +672,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                             </svg>
                           <% else %>
                             <svg
-                              class="h-6 w-6 text-green-600"
+                              class="h-6 w-6 text-success"
                               xmlns="http://www.w3.org/2000/svg"
                               fill="none"
                               viewBox="0 0 24 24"
@@ -689,18 +689,18 @@ defmodule SecretHub.Web.PolicyManagementLive do
                         </div>
                       </div>
                       <div class="ml-4">
-                        <div class="text-sm font-medium text-gray-900">{policy.name}</div>
-                        <div class="text-sm text-gray-500">{policy.description}</div>
+                        <div class="text-sm font-medium text-on-surface">{policy.name}</div>
+                        <div class="text-sm text-on-surface-variant">{policy.description}</div>
                         <div class="mt-1 flex items-center gap-2 flex-wrap">
-                          <span class={"inline-flex items-center px-2 py-0.5 rounded text-xs font-medium #{if policy.deny_policy, do: "bg-red-100 text-red-800", else: "bg-green-100 text-green-800"}"}>
+                          <span class={"inline-flex items-center px-2 py-0.5 rounded text-xs font-medium #{if policy.deny_policy, do: "bg-error/10 text-error", else: "bg-success/10 text-success"}"}>
                             {if policy.deny_policy, do: "DENY", else: "ALLOW"}
                           </span>
                           <%= if policy.entity_bindings && length(policy.entity_bindings) > 0 do %>
-                            <span class="text-xs text-gray-500">
+                            <span class="text-xs text-on-surface-variant">
                               {length(policy.entity_bindings)} entity binding(s)
                             </span>
                           <% else %>
-                            <span class="text-xs text-gray-400">No bindings</span>
+                            <span class="text-xs text-on-surface-variant">No bindings</span>
                           <% end %>
                           {render_conditions_summary(policy)}
                         </div>
@@ -710,7 +710,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   <div class="ml-4 flex-shrink-0 flex space-x-2">
                     <.link
                       navigate={"/admin/policies/#{policy.id}/simulate"}
-                      class="inline-flex items-center px-3 py-1.5 border border-blue-300 shadow-sm text-xs font-medium rounded text-blue-700 bg-white hover:bg-blue-50"
+                      class="inline-flex items-center px-3 py-1.5 border border-primary shadow-sm text-xs font-medium rounded text-primary bg-surface-container hover:bg-primary/5"
                     >
                       <svg
                         class="-ml-0.5 mr-1 h-4 w-4"
@@ -736,7 +736,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                     </.link>
                     <.link
                       navigate={"/admin/policies/#{policy.id}/edit"}
-                      class="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
+                      class="inline-flex items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low"
                     >
                       Edit
                     </.link>
@@ -744,7 +744,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                       phx-click="delete_policy"
                       phx-value-policy_id={policy.id}
                       data-confirm="Are you sure you want to delete this policy?"
-                      class="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50"
+                      class="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5"
                     >
                       Delete
                     </button>
@@ -899,33 +899,31 @@ defmodule SecretHub.Web.PolicyManagementLive do
     }
   end
 
-  defp render_conditions_summary(assigns) do
-    policy = assigns
-
+  defp render_conditions_summary(policy) do
     conditions = get_in(policy.policy_document, ["conditions"]) || %{}
-    assigns = assign(assigns, :conditions, conditions)
+    assigns = %{conditions: conditions}
 
     if map_size(conditions) == 0 do
       ~H""
     else
       ~H"""
       <%= if Map.has_key?(@conditions, "time_of_day") do %>
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning">
           Time: {@conditions["time_of_day"]}
         </span>
       <% end %>
       <%= if Map.has_key?(@conditions, "days_of_week") do %>
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-warning/10 text-warning">
           Days: {length(@conditions["days_of_week"])}
         </span>
       <% end %>
       <%= if Map.has_key?(@conditions, "ip_ranges") do %>
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-tertiary/10 text-tertiary">
           IP Restricted
         </span>
       <% end %>
       <%= if Map.has_key?(@conditions, "max_ttl_seconds") do %>
-        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
           Max TTL: {@conditions["max_ttl_seconds"]}s
         </span>
       <% end %>

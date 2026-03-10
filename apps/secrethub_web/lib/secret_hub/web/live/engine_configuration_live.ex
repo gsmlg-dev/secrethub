@@ -239,7 +239,7 @@ defmodule SecretHub.Web.EngineConfigurationLive do
       <div class="flex justify-between items-center mb-6">
         <div>
           <h1 class="text-3xl font-bold">Dynamic Secret Engines</h1>
-          <p class="text-gray-600 mt-1">Configure and manage secret engine backends</p>
+          <p class="text-on-surface-variant mt-1">Configure and manage secret engine backends</p>
         </div>
 
         <div class="flex gap-2">
@@ -303,13 +303,13 @@ defmodule SecretHub.Web.EngineConfigurationLive do
 
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Enabled</div>
-          <div class="stat-value text-3xl text-green-600">{@stats.enabled}</div>
+          <div class="stat-value text-3xl text-success">{@stats.enabled}</div>
           <div class="stat-desc">Active engines</div>
         </div>
 
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Healthy</div>
-          <div class="stat-value text-3xl text-blue-600">{@stats.healthy}</div>
+          <div class="stat-value text-3xl text-primary">{@stats.healthy}</div>
           <div class="stat-desc">Passing health checks</div>
         </div>
 
@@ -332,11 +332,11 @@ defmodule SecretHub.Web.EngineConfigurationLive do
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <.link
             navigate={~p"/admin/engines/new/redis"}
-            class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            class="flex items-center justify-between p-4 border border-outline-variant rounded-lg hover:bg-surface-container-low transition"
           >
             <div class="flex items-center">
               <svg
-                class="h-8 w-8 text-red-600 mr-3"
+                class="h-8 w-8 text-error mr-3"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -350,12 +350,12 @@ defmodule SecretHub.Web.EngineConfigurationLive do
                 />
               </svg>
               <div>
-                <div class="text-sm font-medium text-gray-900">Add Redis Engine</div>
-                <div class="text-xs text-gray-500">Dynamic ACL users</div>
+                <div class="text-sm font-medium text-on-surface">Add Redis Engine</div>
+                <div class="text-xs text-on-surface-variant">Dynamic ACL users</div>
               </div>
             </div>
             <svg
-              class="h-5 w-5 text-gray-400"
+              class="h-5 w-5 text-on-surface-variant"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -372,11 +372,11 @@ defmodule SecretHub.Web.EngineConfigurationLive do
 
           <.link
             navigate={~p"/admin/engines/new/aws"}
-            class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            class="flex items-center justify-between p-4 border border-outline-variant rounded-lg hover:bg-surface-container-low transition"
           >
             <div class="flex items-center">
               <svg
-                class="h-8 w-8 text-orange-600 mr-3"
+                class="h-8 w-8 text-warning mr-3"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -390,12 +390,12 @@ defmodule SecretHub.Web.EngineConfigurationLive do
                 />
               </svg>
               <div>
-                <div class="text-sm font-medium text-gray-900">Add AWS Engine</div>
-                <div class="text-xs text-gray-500">STS temporary credentials</div>
+                <div class="text-sm font-medium text-on-surface">Add AWS Engine</div>
+                <div class="text-xs text-on-surface-variant">STS temporary credentials</div>
               </div>
             </div>
             <svg
-              class="h-5 w-5 text-gray-400"
+              class="h-5 w-5 text-on-surface-variant"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -412,11 +412,11 @@ defmodule SecretHub.Web.EngineConfigurationLive do
 
           <button
             phx-click="run_health_checks"
-            class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+            class="flex items-center justify-between p-4 border border-outline-variant rounded-lg hover:bg-surface-container-low transition"
           >
             <div class="flex items-center">
               <svg
-                class="h-8 w-8 text-green-600 mr-3"
+                class="h-8 w-8 text-success mr-3"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -430,8 +430,8 @@ defmodule SecretHub.Web.EngineConfigurationLive do
                 />
               </svg>
               <div>
-                <div class="text-sm font-medium text-gray-900">Run Health Checks</div>
-                <div class="text-xs text-gray-500">Test all engines</div>
+                <div class="text-sm font-medium text-on-surface">Run Health Checks</div>
+                <div class="text-xs text-on-surface-variant">Test all engines</div>
               </div>
             </div>
           </button>

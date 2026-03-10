@@ -272,14 +272,14 @@ defmodule SecretHub.Web.TemplateManagementLive do
         <h1 class="text-3xl font-bold">Template Management</h1>
         <button
           phx-click="new_template"
-          class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+          class="bg-primary hover:bg-primary text-on-primary px-4 py-2 rounded"
         >
           New Template
         </button>
       </div>
 
       <%= if @show_template_form do %>
-        <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+        <div class="bg-surface-container shadow-md rounded-lg p-6 mb-6">
           <h2 class="text-xl font-semibold mb-4">
             {if @form_mode == :create, do: "Create Template", else: "Edit Template"}
           </h2>
@@ -315,7 +315,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                   placeholder="Example: DB_PASS={{db.password}}"
                   required
                 ><%= @template_form.data["template_content"] %></textarea>
-                <p class="text-xs text-gray-500 mt-1">
+                <p class="text-xs text-on-surface-variant mt-1">
                   Use EEx syntax: &lt;%= variable %&gt; for output, &lt;% code %&gt; for logic
                 </p>
               </div>
@@ -328,7 +328,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                   rows="4"
                   placeholder='{"db": "prod.database.password", "api_key": "prod.api.key"}'
                 ><%= Jason.encode!(@template_form.data["variable_bindings"] || %{}) %></textarea>
-                <p class="text-xs text-gray-500 mt-1">
+                <p class="text-xs text-on-surface-variant mt-1">
                   Map variable names to secret paths
                 </p>
               </div>
@@ -352,14 +352,14 @@ defmodule SecretHub.Web.TemplateManagementLive do
             <div class="flex gap-2 mt-6">
               <button
                 type="submit"
-                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+                class="bg-primary hover:bg-primary text-on-primary px-4 py-2 rounded"
               >
                 Save Template
               </button>
               <button
                 type="button"
                 phx-click="cancel_template_form"
-                class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded"
+                class="bg-outline-variant hover:bg-outline text-on-surface px-4 py-2 rounded"
               >
                 Cancel
               </button>
@@ -369,7 +369,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
       <% end %>
 
       <%= if @show_sink_form do %>
-        <div class="bg-white shadow-md rounded-lg p-6 mb-6">
+        <div class="bg-surface-container shadow-md rounded-lg p-6 mb-6">
           <h2 class="text-xl font-semibold mb-4">
             {if @form_mode == :create, do: "Create Sink", else: "Edit Sink"}
           </h2>
@@ -409,7 +409,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                   rows="3"
                   placeholder='{"mode": 384, "owner": "myapp", "group": "myapp"}'
                 ><%= Jason.encode!(@sink_form.data["permissions"] || %{}) %></textarea>
-                <p class="text-xs text-gray-500 mt-1">
+                <p class="text-xs text-on-surface-variant mt-1">
                   Mode: decimal (e.g., 384 = 0o600)
                 </p>
               </div>
@@ -434,7 +434,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                   rows="3"
                   placeholder='{"type": "signal", "value": "HUP", "target": "myapp"}'
                 ><%= Jason.encode!(@sink_form.data["reload_trigger"] || %{}) %></textarea>
-                <p class="text-xs text-gray-500 mt-1">
+                <p class="text-xs text-on-surface-variant mt-1">
                   Types: signal, http, script
                 </p>
               </div>
@@ -455,14 +455,14 @@ defmodule SecretHub.Web.TemplateManagementLive do
             <div class="flex gap-2 mt-6">
               <button
                 type="submit"
-                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+                class="bg-primary hover:bg-primary text-on-primary px-4 py-2 rounded"
               >
                 Save Sink
               </button>
               <button
                 type="button"
                 phx-click="cancel_sink_form"
-                class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded"
+                class="bg-outline-variant hover:bg-outline text-on-surface px-4 py-2 rounded"
               >
                 Cancel
               </button>
@@ -473,26 +473,26 @@ defmodule SecretHub.Web.TemplateManagementLive do
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Templates List -->
-        <div class="bg-white shadow-md rounded-lg p-6">
+        <div class="bg-surface-container shadow-md rounded-lg p-6">
           <h2 class="text-xl font-semibold mb-4">Templates</h2>
 
           <%= if Enum.empty?(@templates) do %>
-            <p class="text-gray-500">No templates yet. Create one to get started.</p>
+            <p class="text-on-surface-variant">No templates yet. Create one to get started.</p>
           <% else %>
             <div class="space-y-2">
               <%= for template <- @templates do %>
-                <div class="border rounded p-4 hover:bg-gray-50">
+                <div class="border rounded p-4 hover:bg-surface-container-low">
                   <div class="flex justify-between items-start">
                     <div class="flex-1">
                       <h3 class="font-semibold">{template.name}</h3>
                       <%= if template.description do %>
-                        <p class="text-sm text-gray-600">{template.description}</p>
+                        <p class="text-sm text-on-surface-variant">{template.description}</p>
                       <% end %>
                       <div class="mt-2 flex gap-2 text-xs">
-                        <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                        <span class="bg-primary/10 text-primary px-2 py-1 rounded">
                           {template.status}
                         </span>
-                        <span class="bg-gray-100 text-gray-800 px-2 py-1 rounded">
+                        <span class="bg-surface-container text-on-surface px-2 py-1 rounded">
                           {length(template.sinks)} sinks
                         </span>
                       </div>
@@ -501,7 +501,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                       <button
                         phx-click="edit_template"
                         phx-value-id={template.id}
-                        class="text-blue-600 hover:text-blue-800 px-2 py-1"
+                        class="text-primary hover:text-primary px-2 py-1"
                       >
                         Edit
                       </button>
@@ -509,7 +509,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                         phx-click="delete_template"
                         phx-value-id={template.id}
                         data-confirm="Are you sure?"
-                        class="text-red-600 hover:text-red-800 px-2 py-1"
+                        class="text-error hover:text-error px-2 py-1"
                       >
                         Delete
                       </button>
@@ -523,30 +523,30 @@ defmodule SecretHub.Web.TemplateManagementLive do
                         <button
                           phx-click="new_sink"
                           phx-value-template_id={template.id}
-                          class="text-blue-600 hover:text-blue-800 text-sm"
+                          class="text-primary hover:text-primary text-sm"
                         >
                           + Add Sink
                         </button>
                       </div>
 
                       <%= if Enum.empty?(template.sinks) do %>
-                        <p class="text-sm text-gray-500">No sinks configured</p>
+                        <p class="text-sm text-on-surface-variant">No sinks configured</p>
                       <% else %>
                         <div class="space-y-2">
                           <%= for sink <- template.sinks do %>
-                            <div class="bg-gray-50 rounded p-2 text-sm">
+                            <div class="bg-surface-container-low rounded p-2 text-sm">
                               <div class="flex justify-between items-start">
                                 <div>
                                   <div class="font-medium">{sink.name}</div>
-                                  <div class="text-gray-600">{sink.file_path}</div>
+                                  <div class="text-on-surface-variant">{sink.file_path}</div>
                                   <%= if sink.last_write_status do %>
                                     <div class="mt-1">
                                       <span class={[
                                         "text-xs px-2 py-0.5 rounded",
                                         sink.last_write_status == "success" &&
-                                          "bg-green-100 text-green-800",
+                                          "bg-success/10 text-success",
                                         sink.last_write_status == "failure" &&
-                                          "bg-red-100 text-red-800"
+                                          "bg-error/10 text-error"
                                       ]}>
                                         {sink.last_write_status}
                                       </span>
@@ -557,7 +557,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                                   <button
                                     phx-click="edit_sink"
                                     phx-value-id={sink.id}
-                                    class="text-blue-600 hover:text-blue-800"
+                                    class="text-primary hover:text-primary"
                                   >
                                     Edit
                                   </button>
@@ -565,7 +565,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                                     phx-click="delete_sink"
                                     phx-value-id={sink.id}
                                     data-confirm="Are you sure?"
-                                    class="text-red-600 hover:text-red-800"
+                                    class="text-error hover:text-error"
                                   >
                                     Delete
                                   </button>
@@ -579,7 +579,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                   <% else %>
                     <button
                       phx-click={JS.patch(~p"/admin/templates/#{template.id}")}
-                      class="mt-2 text-sm text-blue-600 hover:text-blue-800"
+                      class="mt-2 text-sm text-primary hover:text-primary"
                     >
                       View Details →
                     </button>
@@ -591,37 +591,37 @@ defmodule SecretHub.Web.TemplateManagementLive do
         </div>
         
     <!-- Template Details / Preview -->
-        <div class="bg-white shadow-md rounded-lg p-6">
+        <div class="bg-surface-container shadow-md rounded-lg p-6">
           <h2 class="text-xl font-semibold mb-4">Template Details</h2>
 
           <%= if @selected_template do %>
             <div class="space-y-4">
               <div>
-                <h3 class="font-semibold text-sm text-gray-600">Template Content</h3>
-                <pre class="mt-2 bg-gray-50 rounded p-3 text-sm overflow-x-auto"><%= @selected_template.template_content %></pre>
+                <h3 class="font-semibold text-sm text-on-surface-variant">Template Content</h3>
+                <pre class="mt-2 bg-surface-container-low rounded p-3 text-sm overflow-x-auto"><%= @selected_template.template_content %></pre>
               </div>
 
               <div>
-                <h3 class="font-semibold text-sm text-gray-600">Variable Bindings</h3>
-                <pre class="mt-2 bg-gray-50 rounded p-3 text-sm overflow-x-auto"><%= Jason.encode!(@selected_template.variable_bindings, pretty: true) %></pre>
+                <h3 class="font-semibold text-sm text-on-surface-variant">Variable Bindings</h3>
+                <pre class="mt-2 bg-surface-container-low rounded p-3 text-sm overflow-x-auto"><%= Jason.encode!(@selected_template.variable_bindings, pretty: true) %></pre>
               </div>
 
               <div>
-                <h3 class="font-semibold text-sm text-gray-600">Statistics</h3>
+                <h3 class="font-semibold text-sm text-on-surface-variant">Statistics</h3>
                 <div class="mt-2 grid grid-cols-2 gap-2">
-                  <div class="bg-blue-50 rounded p-2">
-                    <div class="text-xs text-blue-600">Sinks</div>
+                  <div class="bg-primary/5 rounded p-2">
+                    <div class="text-xs text-primary">Sinks</div>
                     <div class="text-lg font-semibold">{length(@selected_template.sinks)}</div>
                   </div>
-                  <div class="bg-green-50 rounded p-2">
-                    <div class="text-xs text-green-600">Version</div>
+                  <div class="bg-success/5 rounded p-2">
+                    <div class="text-xs text-success">Version</div>
                     <div class="text-lg font-semibold">{@selected_template.version}</div>
                   </div>
                 </div>
               </div>
             </div>
           <% else %>
-            <p class="text-gray-500">Select a template to view details</p>
+            <p class="text-on-surface-variant">Select a template to view details</p>
           <% end %>
         </div>
       </div>

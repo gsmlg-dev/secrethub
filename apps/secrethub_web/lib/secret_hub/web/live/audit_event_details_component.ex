@@ -14,14 +14,14 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-          <h3 class="text-lg font-semibold text-gray-900">Audit Event Details</h3>
+    <div class="fixed inset-0 bg-surface-container-highest/75 bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-surface-container rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div class="px-6 py-4 border-b border-outline-variant flex justify-between items-center">
+          <h3 class="text-lg font-semibold text-on-surface">Audit Event Details</h3>
           <button
             phx-click="close"
             phx-target={@myself}
-            class="text-gray-400 hover:text-gray-600"
+            class="text-on-surface-variant hover:text-on-surface-variant"
           >
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -36,18 +36,18 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
 
         <div class="p-6 space-y-6">
           <!-- Event Summary -->
-          <div class="bg-gray-50 rounded-lg p-4">
+          <div class="bg-surface-container-low rounded-lg p-4">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label class="block text-sm font-medium text-gray-500">Event ID</label>
-                <p class="text-sm font-mono text-gray-900">{@event.id}</p>
+                <label class="block text-sm font-medium text-on-surface-variant">Event ID</label>
+                <p class="text-sm font-mono text-on-surface">{@event.id}</p>
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-500">Timestamp</label>
-                <p class="text-sm text-gray-900">{format_datetime(@event.timestamp)}</p>
+                <label class="block text-sm font-medium text-on-surface-variant">Timestamp</label>
+                <p class="text-sm text-on-surface">{format_datetime(@event.timestamp)}</p>
               </div>
               <div>
-                <label class="block text-sm font-medium text-gray-500">Event Type</label>
+                <label class="block text-sm font-medium text-on-surface-variant">Event Type</label>
                 <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{event_type_badge_color(@event.event_type)}"}>
                   {format_event_type(@event.event_type)}
                 </span>
@@ -57,36 +57,36 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
           
     <!-- Request Details -->
           <div>
-            <h4 class="text-lg font-medium text-gray-900 mb-4">Request Details</h4>
+            <h4 class="text-lg font-medium text-on-surface mb-4">Request Details</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div class="space-y-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Agent ID</label>
-                  <p class="text-sm text-gray-900">{@event.agent_id}</p>
+                  <label class="block text-sm font-medium text-on-surface-variant">Agent ID</label>
+                  <p class="text-sm text-on-surface">{@event.agent_id}</p>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Source IP Address</label>
-                  <p class="text-sm text-gray-900">{@event.source_ip}</p>
+                  <label class="block text-sm font-medium text-on-surface-variant">Source IP Address</label>
+                  <p class="text-sm text-on-surface">{@event.source_ip}</p>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">User Agent</label>
-                  <p class="text-sm text-gray-900 font-mono">{@event.user_agent}</p>
+                  <label class="block text-sm font-medium text-on-surface-variant">User Agent</label>
+                  <p class="text-sm text-on-surface font-mono">{@event.user_agent}</p>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Correlation ID</label>
-                  <p class="text-sm font-mono text-gray-900">{@event.correlation_id}</p>
+                  <label class="block text-sm font-medium text-on-surface-variant">Correlation ID</label>
+                  <p class="text-sm font-mono text-on-surface">{@event.correlation_id}</p>
                 </div>
               </div>
 
               <div class="space-y-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Secret Path</label>
-                  <p class="text-sm text-gray-900">
+                  <label class="block text-sm font-medium text-on-surface-variant">Secret Path</label>
+                  <p class="text-sm text-on-surface">
                     <%= if @event.secret_path do %>
-                      <code class="bg-gray-100 px-1 py-0.5 rounded">{@event.secret_path}</code>
+                      <code class="bg-surface-container px-1 py-0.5 rounded">{@event.secret_path}</code>
                     <% else %>
                       -
                     <% end %>
@@ -94,7 +94,7 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Access Status</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">Access Status</label>
                   <div class="flex items-center">
                     <div class={"w-2 h-2 rounded-full mr-2 #{access_status_color(@event.access_granted)}"}>
                     </div>
@@ -105,13 +105,13 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Response Time</label>
-                  <p class="text-sm text-gray-900">{@event.response_time_ms}ms</p>
+                  <label class="block text-sm font-medium text-on-surface-variant">Response Time</label>
+                  <p class="text-sm text-on-surface">{@event.response_time_ms}ms</p>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Policy Matched</label>
-                  <p class="text-sm text-gray-900">{@event.policy_matched || "N/A"}</p>
+                  <label class="block text-sm font-medium text-on-surface-variant">Policy Matched</label>
+                  <p class="text-sm text-on-surface">{@event.policy_matched || "N/A"}</p>
                 </div>
               </div>
             </div>
@@ -119,41 +119,41 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
           
     <!-- Request/Response Details -->
           <div>
-            <h4 class="text-lg font-medium text-gray-900 mb-4">Request & Response</h4>
+            <h4 class="text-lg font-medium text-on-surface mb-4">Request & Response</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="bg-gray-50 rounded-lg p-4">
-                <h5 class="text-sm font-medium text-gray-700 mb-2">Request</h5>
+              <div class="bg-surface-container-low rounded-lg p-4">
+                <h5 class="text-sm font-medium text-on-surface mb-2">Request</h5>
                 <div class="space-y-2">
                   <div class="flex justify-between">
-                    <span class="text-sm text-gray-500">Size:</span>
-                    <span class="text-sm text-gray-900">{@event.request_size} bytes</span>
+                    <span class="text-sm text-on-surface-variant">Size:</span>
+                    <span class="text-sm text-on-surface">{@event.request_size} bytes</span>
                   </div>
                   <%= if @event.request_headers do %>
                     <div>
-                      <span class="text-sm text-gray-500">Headers:</span>
-                      <pre class="text-xs bg-gray-100 p-2 rounded mt-1 overflow-x-auto"><%= Jason.encode!(@event.request_headers, pretty: true) %></pre>
+                      <span class="text-sm text-on-surface-variant">Headers:</span>
+                      <pre class="text-xs bg-surface-container p-2 rounded mt-1 overflow-x-auto"><%= Jason.encode!(@event.request_headers, pretty: true) %></pre>
                     </div>
                   <% end %>
                 </div>
               </div>
 
-              <div class="bg-gray-50 rounded-lg p-4">
-                <h5 class="text-sm font-medium text-gray-700 mb-2">Response</h5>
+              <div class="bg-surface-container-low rounded-lg p-4">
+                <h5 class="text-sm font-medium text-on-surface mb-2">Response</h5>
                 <div class="space-y-2">
                   <div class="flex justify-between">
-                    <span class="text-sm text-gray-500">Size:</span>
-                    <span class="text-sm text-gray-900">{@event.response_size} bytes</span>
+                    <span class="text-sm text-on-surface-variant">Size:</span>
+                    <span class="text-sm text-on-surface">{@event.response_size} bytes</span>
                   </div>
                   <%= if @event.response_status do %>
                     <div class="flex justify-between">
-                      <span class="text-sm text-gray-500">Status:</span>
-                      <span class="text-sm text-gray-900">{@event.response_status}</span>
+                      <span class="text-sm text-on-surface-variant">Status:</span>
+                      <span class="text-sm text-on-surface">{@event.response_status}</span>
                     </div>
                   <% end %>
                   <%= if @event.response_headers do %>
                     <div>
-                      <span class="text-sm text-gray-500">Headers:</span>
-                      <pre class="text-xs bg-gray-100 p-2 rounded mt-1 overflow-x-auto"><%= Jason.encode!(@event.response_headers, pretty: true) %></pre>
+                      <span class="text-sm text-on-surface-variant">Headers:</span>
+                      <pre class="text-xs bg-surface-container p-2 rounded mt-1 overflow-x-auto"><%= Jason.encode!(@event.response_headers, pretty: true) %></pre>
                     </div>
                   <% end %>
                 </div>
@@ -163,40 +163,40 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
           
     <!-- Denial Reason (if applicable) -->
           <%= if @event.access_granted == false and @event.denial_reason do %>
-            <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-              <h4 class="text-sm font-medium text-red-800 mb-2">Denial Reason</h4>
-              <p class="text-sm text-red-700">{@event.denial_reason}</p>
+            <div class="bg-error/5 border border-red-200 rounded-lg p-4">
+              <h4 class="text-sm font-medium text-error mb-2">Denial Reason</h4>
+              <p class="text-sm text-error">{@event.denial_reason}</p>
             </div>
           <% end %>
           
     <!-- Additional Context -->
           <%= if @event.context do %>
             <div>
-              <h4 class="text-lg font-medium text-gray-900 mb-4">Additional Context</h4>
-              <div class="bg-gray-50 rounded-lg p-4">
-                <pre class="text-xs text-gray-700 overflow-x-auto"><%= Jason.encode!(@event.context, pretty: true) %></pre>
+              <h4 class="text-lg font-medium text-on-surface mb-4">Additional Context</h4>
+              <div class="bg-surface-container-low rounded-lg p-4">
+                <pre class="text-xs text-on-surface overflow-x-auto"><%= Jason.encode!(@event.context, pretty: true) %></pre>
               </div>
             </div>
           <% end %>
           
     <!-- Hash Chain Information -->
           <div>
-            <h4 class="text-lg font-medium text-gray-900 mb-4">Integrity Verification</h4>
-            <div class="bg-gray-50 rounded-lg p-4">
+            <h4 class="text-lg font-medium text-on-surface mb-4">Integrity Verification</h4>
+            <div class="bg-surface-container-low rounded-lg p-4">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Event Hash</label>
-                  <p class="text-sm font-mono text-gray-900">{@event.hash || "SHA256:abc123..."}</p>
+                  <label class="block text-sm font-medium text-on-surface-variant">Event Hash</label>
+                  <p class="text-sm font-mono text-on-surface">{@event.hash || "SHA256:abc123..."}</p>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-gray-500">Previous Hash</label>
-                  <p class="text-sm font-mono text-gray-900">
+                  <label class="block text-sm font-medium text-on-surface-variant">Previous Hash</label>
+                  <p class="text-sm font-mono text-on-surface">
                     {@event.previous_hash || "SHA256:def456..."}
                   </p>
                 </div>
               </div>
               <div class="mt-4">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success">
                   ✓ Chain Integrity Verified
                 </span>
               </div>
@@ -205,7 +205,7 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
         </div>
         
     <!-- Actions -->
-        <div class="px-6 py-4 border-t border-gray-200 flex justify-end space-x-4">
+        <div class="px-6 py-4 border-t border-outline-variant flex justify-end space-x-4">
           <button
             class="btn-secondary"
             phx-click="close"
@@ -247,12 +247,12 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
   defp format_event_type("policy_updated"), do: "Policy Updated"
   defp format_event_type(type), do: String.replace(String.capitalize(type), "_", " ")
 
-  defp event_type_badge_color("secret_access"), do: "bg-green-100 text-green-800"
-  defp event_type_badge_color("secret_access_denied"), do: "bg-red-100 text-red-800"
-  defp event_type_badge_color("agent_connect"), do: "bg-blue-100 text-blue-800"
-  defp event_type_badge_color("agent_disconnect"), do: "bg-yellow-100 text-yellow-800"
-  defp event_type_badge_color(_), do: "bg-gray-100 text-gray-800"
+  defp event_type_badge_color("secret_access"), do: "bg-success/10 text-success"
+  defp event_type_badge_color("secret_access_denied"), do: "bg-error/10 text-error"
+  defp event_type_badge_color("agent_connect"), do: "bg-primary/10 text-primary"
+  defp event_type_badge_color("agent_disconnect"), do: "bg-warning/10 text-warning"
+  defp event_type_badge_color(_), do: "bg-surface-container text-on-surface"
 
-  defp access_status_color(true), do: "bg-green-500"
-  defp access_status_color(false), do: "bg-red-500"
+  defp access_status_color(true), do: "bg-success"
+  defp access_status_color(false), do: "bg-error"
 end

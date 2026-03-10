@@ -139,14 +139,14 @@ defmodule SecretHub.Web.AlertConfigurationLive do
       
     <!-- Configuration Form -->
       <%= if @show_form do %>
-        <div class="bg-white p-6 rounded-lg border shadow-sm">
+        <div class="bg-surface-container p-6 rounded-lg border shadow-sm">
           <h3 class="text-lg font-semibold mb-4">
             {if @editing_config, do: "Edit Alert Route", else: "New Alert Route"}
           </h3>
 
           <form phx-submit="save_config" class="space-y-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
+              <label class="block text-sm font-medium text-on-surface mb-2">
                 Route Name
               </label>
               <input
@@ -159,7 +159,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
+              <label class="block text-sm font-medium text-on-surface mb-2">
                 Channel Type
               </label>
               <select name="channel_type" class="w-full px-3 py-2 border rounded-md" required>
@@ -178,7 +178,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
+              <label class="block text-sm font-medium text-on-surface mb-2">
                 Severity Filter (comma-separated)
               </label>
               <input
@@ -188,13 +188,13 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                 placeholder="critical,high,medium,low,info"
                 class="w-full px-3 py-2 border rounded-md"
               />
-              <p class="text-sm text-gray-500 mt-1">
+              <p class="text-sm text-on-surface-variant mt-1">
                 Leave empty to receive all severity levels
               </p>
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-2">
+              <label class="block text-sm font-medium text-on-surface mb-2">
                 Configuration (JSON)
               </label>
               <textarea
@@ -203,7 +203,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                 class="w-full px-3 py-2 border rounded-md font-mono text-sm"
                 placeholder='{"webhook_url": "https://...", "recipients": ["admin@example.com"]}'
               ><%= Jason.encode!(@form_data.config, pretty: true) %></textarea>
-              <p class="text-sm text-gray-500 mt-1">
+              <p class="text-sm text-on-surface-variant mt-1">
                 Channel-specific configuration in JSON format
               </p>
             </div>
@@ -214,9 +214,9 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                 name="enabled"
                 id="enabled"
                 checked={@form_data.enabled}
-                class="rounded border-gray-300"
+                class="rounded border-outline-variant"
               />
-              <label for="enabled" class="ml-2 text-sm text-gray-700">
+              <label for="enabled" class="ml-2 text-sm text-on-surface">
                 Enable this alert route
               </label>
             </div>
@@ -234,41 +234,41 @@ defmodule SecretHub.Web.AlertConfigurationLive do
       <% end %>
       
     <!-- Configuration List -->
-      <div class="bg-white rounded-lg border shadow-sm overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-50">
+      <div class="bg-surface-container rounded-lg border shadow-sm overflow-hidden">
+        <table class="min-w-full divide-y divide-outline-variant">
+          <thead class="bg-surface-container-low">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase">
                 Name
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase">
                 Channel
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase">
                 Severity Filter
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase">
                 Status
               </th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase">
                 Last Used
               </th>
-              <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+              <th class="px-6 py-3 text-right text-xs font-medium text-on-surface-variant uppercase">
                 Actions
               </th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-200">
+          <tbody class="divide-y divide-outline-variant">
             <%= for config <- @configs do %>
               <tr>
                 <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="text-sm font-medium text-gray-900">{config.name}</div>
+                  <div class="text-sm font-medium text-on-surface">{config.name}</div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <.channel_badge type={config.channel_type} />
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="text-sm text-gray-500">
+                  <div class="text-sm text-on-surface-variant">
                     {if config.severity_filter == [],
                       do: "All",
                       else: Enum.join(config.severity_filter, ", ")}
@@ -277,7 +277,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                 <td class="px-6 py-4 whitespace-nowrap">
                   <.status_badge enabled={config.enabled} />
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                   <%= if config.last_used_at do %>
                     {Calendar.strftime(config.last_used_at, "%Y-%m-%d %H:%M")}
                   <% else %>
@@ -289,14 +289,14 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                     <button
                       phx-click="toggle_enabled"
                       phx-value-id={config.id}
-                      class="text-indigo-600 hover:text-indigo-900"
+                      class="text-secondary hover:text-indigo-900"
                     >
                       {if config.enabled, do: "Disable", else: "Enable"}
                     </button>
                     <button
                       phx-click="edit_config"
                       phx-value-id={config.id}
-                      class="text-blue-600 hover:text-blue-900"
+                      class="text-primary hover:text-primary"
                     >
                       Edit
                     </button>
@@ -304,7 +304,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                       phx-click="delete_config"
                       phx-value-id={config.id}
                       data-confirm="Are you sure you want to delete this configuration?"
-                      class="text-red-600 hover:text-red-900"
+                      class="text-error hover:text-error"
                     >
                       Delete
                     </button>
@@ -317,9 +317,9 @@ defmodule SecretHub.Web.AlertConfigurationLive do
 
         <%= if @configs == [] do %>
           <div class="text-center py-12">
-            <.icon name="bell-slash" class="mx-auto h-12 w-12 text-gray-400" />
-            <h3 class="mt-2 text-sm font-medium text-gray-900">No alert routes configured</h3>
-            <p class="mt-1 text-sm text-gray-500">
+            <.icon name="bell-slash" class="mx-auto h-12 w-12 text-on-surface-variant" />
+            <h3 class="mt-2 text-sm font-medium text-on-surface">No alert routes configured</h3>
+            <p class="mt-1 text-sm text-on-surface-variant">
               Get started by creating a new alert routing configuration.
             </p>
             <div class="mt-6">
@@ -357,11 +357,11 @@ defmodule SecretHub.Web.AlertConfigurationLive do
   defp status_badge(assigns) do
     ~H"""
     <%= if @enabled do %>
-      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-success/10 text-success">
         Enabled
       </span>
     <% else %>
-      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-surface-container text-on-surface">
         Disabled
       </span>
     <% end %>

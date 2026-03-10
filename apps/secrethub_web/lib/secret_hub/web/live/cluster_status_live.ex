@@ -111,19 +111,19 @@ defmodule SecretHub.Web.ClusterStatusLive do
 
   defp node_status_badge(status) do
     case status do
-      "unsealed" -> {"bg-green-100 text-green-800", "Unsealed"}
-      "sealed" -> {"bg-yellow-100 text-yellow-800", "Sealed"}
-      "initializing" -> {"bg-blue-100 text-blue-800", "Initializing"}
-      "starting" -> {"bg-gray-100 text-gray-800", "Starting"}
-      "shutdown" -> {"bg-red-100 text-red-800", "Shutdown"}
-      _ -> {"bg-gray-100 text-gray-800", status}
+      "unsealed" -> {"bg-success/10 text-success", "Unsealed"}
+      "sealed" -> {"bg-warning/10 text-warning", "Sealed"}
+      "initializing" -> {"bg-primary/10 text-primary", "Initializing"}
+      "starting" -> {"bg-surface-container text-on-surface", "Starting"}
+      "shutdown" -> {"bg-error/10 text-error", "Shutdown"}
+      _ -> {"bg-surface-container text-on-surface", status}
     end
   end
 
-  defp health_badge(:healthy), do: {"bg-green-100 text-green-800", "Healthy"}
-  defp health_badge(:degraded), do: {"bg-yellow-100 text-yellow-800", "Degraded"}
-  defp health_badge(:unhealthy), do: {"bg-red-100 text-red-800", "Unhealthy"}
-  defp health_badge(_), do: {"bg-gray-100 text-gray-800", "Unknown"}
+  defp health_badge(:healthy), do: {"bg-success/10 text-success", "Healthy"}
+  defp health_badge(:degraded), do: {"bg-warning/10 text-warning", "Degraded"}
+  defp health_badge(:unhealthy), do: {"bg-error/10 text-error", "Unhealthy"}
+  defp health_badge(_), do: {"bg-surface-container text-on-surface", "Unknown"}
 
   defp format_timestamp(nil), do: "Never"
 
@@ -146,15 +146,15 @@ defmodule SecretHub.Web.ClusterStatusLive do
       <div class="mb-6">
         <div class="flex items-center justify-between">
           <div>
-            <h1 class="text-3xl font-bold text-gray-900">Cluster Status</h1>
-            <p class="mt-2 text-sm text-gray-600">
+            <h1 class="text-3xl font-bold text-on-surface">Cluster Status</h1>
+            <p class="mt-2 text-sm text-on-surface-variant">
               Monitor the status and health of all SecretHub Core nodes in your cluster
             </p>
           </div>
           <div class="flex items-center space-x-3">
             <button
               phx-click="refresh_now"
-              class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              class="inline-flex items-center px-4 py-2 border border-outline-variant rounded-md shadow-sm text-sm font-medium text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
             >
               <svg
                 class="h-4 w-4 mr-2"
@@ -175,10 +175,10 @@ defmodule SecretHub.Web.ClusterStatusLive do
             <button
               phx-click="toggle_refresh"
               class={[
-                "inline-flex items-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500",
+                "inline-flex items-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary",
                 if(@auto_refresh,
-                  do: "border-blue-600 text-blue-700 bg-blue-50 hover:bg-blue-100",
-                  else: "border-gray-300 text-gray-700 bg-white hover:bg-gray-50"
+                  do: "border-primary text-primary bg-primary/5 hover:bg-primary/10",
+                  else: "border-outline-variant text-on-surface bg-surface-container hover:bg-surface-container-low"
                 )
               ]}
             >
@@ -206,18 +206,18 @@ defmodule SecretHub.Web.ClusterStatusLive do
         </div>
         
     <!-- Last refresh time -->
-        <div class="mt-2 text-xs text-gray-500">
+        <div class="mt-2 text-xs text-on-surface-variant">
           Last updated: {format_timestamp(@last_refresh)}
         </div>
       </div>
 
       <%= if @error do %>
         <!-- Error state -->
-        <div class="rounded-md bg-red-50 p-4">
+        <div class="rounded-md bg-error/5 p-4">
           <div class="flex">
             <div class="flex-shrink-0">
               <svg
-                class="h-5 w-5 text-red-400"
+                class="h-5 w-5 text-error"
                 fill="currentColor"
                 viewBox="0 0 20 20"
                 xmlns="http://www.w3.org/2000/svg"
@@ -230,8 +230,8 @@ defmodule SecretHub.Web.ClusterStatusLive do
               </svg>
             </div>
             <div class="ml-3">
-              <h3 class="text-sm font-medium text-red-800">Error loading cluster data</h3>
-              <p class="mt-2 text-sm text-red-700">{@error}</p>
+              <h3 class="text-sm font-medium text-error">Error loading cluster data</h3>
+              <p class="mt-2 text-sm text-error">{@error}</p>
             </div>
           </div>
         </div>
@@ -240,7 +240,7 @@ defmodule SecretHub.Web.ClusterStatusLive do
           <!-- Loading state -->
           <div class="text-center py-12">
             <svg
-              class="animate-spin h-12 w-12 mx-auto text-blue-600"
+              class="animate-spin h-12 w-12 mx-auto text-primary"
               fill="none"
               viewBox="0 0 24 24"
               xmlns="http://www.w3.org/2000/svg"
@@ -253,38 +253,38 @@ defmodule SecretHub.Web.ClusterStatusLive do
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            <p class="mt-4 text-gray-600">Loading cluster data...</p>
+            <p class="mt-4 text-on-surface-variant">Loading cluster data...</p>
           </div>
         <% else %>
           <%= if @cluster_info do %>
             <!-- Cluster overview cards -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-              <div class="bg-white rounded-lg shadow p-6">
-                <div class="text-sm font-medium text-gray-500 uppercase">Total Nodes</div>
-                <div class="mt-2 text-3xl font-bold text-gray-900">
+              <div class="bg-surface-container rounded-lg shadow p-6">
+                <div class="text-sm font-medium text-on-surface-variant uppercase">Total Nodes</div>
+                <div class="mt-2 text-3xl font-bold text-on-surface">
                   {@cluster_info.node_count}
                 </div>
               </div>
 
-              <div class="bg-white rounded-lg shadow p-6">
-                <div class="text-sm font-medium text-gray-500 uppercase">Unsealed</div>
-                <div class="mt-2 text-3xl font-bold text-green-600">
+              <div class="bg-surface-container rounded-lg shadow p-6">
+                <div class="text-sm font-medium text-on-surface-variant uppercase">Unsealed</div>
+                <div class="mt-2 text-3xl font-bold text-success">
                   {@cluster_info.unsealed_count}
                 </div>
               </div>
 
-              <div class="bg-white rounded-lg shadow p-6">
-                <div class="text-sm font-medium text-gray-500 uppercase">Sealed</div>
-                <div class="mt-2 text-3xl font-bold text-yellow-600">
+              <div class="bg-surface-container rounded-lg shadow p-6">
+                <div class="text-sm font-medium text-on-surface-variant uppercase">Sealed</div>
+                <div class="mt-2 text-3xl font-bold text-warning">
                   {@cluster_info.sealed_count}
                 </div>
               </div>
 
-              <div class="bg-white rounded-lg shadow p-6">
-                <div class="text-sm font-medium text-gray-500 uppercase">Initialized</div>
+              <div class="bg-surface-container rounded-lg shadow p-6">
+                <div class="text-sm font-medium text-on-surface-variant uppercase">Initialized</div>
                 <div class="mt-2 text-3xl font-bold">
                   <span class={
-                    if @cluster_info.initialized, do: "text-green-600", else: "text-gray-400"
+                    if @cluster_info.initialized, do: "text-success", else: "text-on-surface-variant"
                   }>
                     {if @cluster_info.initialized, do: "Yes", else: "No"}
                   </span>
@@ -293,16 +293,16 @@ defmodule SecretHub.Web.ClusterStatusLive do
             </div>
             
     <!-- Quick Actions -->
-            <div class="mb-6 bg-white rounded-lg shadow p-6">
-              <h3 class="text-lg font-semibold text-gray-900 mb-4">Cluster Management</h3>
+            <div class="mb-6 bg-surface-container rounded-lg shadow p-6">
+              <h3 class="text-lg font-semibold text-on-surface mb-4">Cluster Management</h3>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <.link
                   navigate={~p"/admin/cluster/alerts"}
-                  class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                  class="flex items-center justify-between p-4 border border-outline-variant rounded-lg hover:bg-surface-container-low transition"
                 >
                   <div class="flex items-center">
                     <svg
-                      class="h-8 w-8 text-blue-600 mr-3"
+                      class="h-8 w-8 text-primary mr-3"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -316,12 +316,12 @@ defmodule SecretHub.Web.ClusterStatusLive do
                       />
                     </svg>
                     <div>
-                      <div class="text-sm font-medium text-gray-900">Health Alerts</div>
-                      <div class="text-xs text-gray-500">Configure monitoring alerts</div>
+                      <div class="text-sm font-medium text-on-surface">Health Alerts</div>
+                      <div class="text-xs text-on-surface-variant">Configure monitoring alerts</div>
                     </div>
                   </div>
                   <svg
-                    class="h-5 w-5 text-gray-400"
+                    class="h-5 w-5 text-on-surface-variant"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -338,11 +338,11 @@ defmodule SecretHub.Web.ClusterStatusLive do
 
                 <.link
                   navigate={~p"/admin/cluster/auto-unseal"}
-                  class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                  class="flex items-center justify-between p-4 border border-outline-variant rounded-lg hover:bg-surface-container-low transition"
                 >
                   <div class="flex items-center">
                     <svg
-                      class="h-8 w-8 text-green-600 mr-3"
+                      class="h-8 w-8 text-success mr-3"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -356,12 +356,12 @@ defmodule SecretHub.Web.ClusterStatusLive do
                       />
                     </svg>
                     <div>
-                      <div class="text-sm font-medium text-gray-900">Auto-Unseal</div>
-                      <div class="text-xs text-gray-500">Manage automatic unsealing</div>
+                      <div class="text-sm font-medium text-on-surface">Auto-Unseal</div>
+                      <div class="text-xs text-on-surface-variant">Manage automatic unsealing</div>
                     </div>
                   </div>
                   <svg
-                    class="h-5 w-5 text-gray-400"
+                    class="h-5 w-5 text-on-surface-variant"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -378,11 +378,11 @@ defmodule SecretHub.Web.ClusterStatusLive do
 
                 <.link
                   navigate={~p"/admin/cluster/deployment"}
-                  class="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                  class="flex items-center justify-between p-4 border border-outline-variant rounded-lg hover:bg-surface-container-low transition"
                 >
                   <div class="flex items-center">
                     <svg
-                      class="h-8 w-8 text-purple-600 mr-3"
+                      class="h-8 w-8 text-tertiary mr-3"
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -396,12 +396,12 @@ defmodule SecretHub.Web.ClusterStatusLive do
                       />
                     </svg>
                     <div>
-                      <div class="text-sm font-medium text-gray-900">Deployment</div>
-                      <div class="text-xs text-gray-500">View Kubernetes status</div>
+                      <div class="text-sm font-medium text-on-surface">Deployment</div>
+                      <div class="text-xs text-on-surface-variant">View Kubernetes status</div>
                     </div>
                   </div>
                   <svg
-                    class="h-5 w-5 text-gray-400"
+                    class="h-5 w-5 text-on-surface-variant"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -420,11 +420,11 @@ defmodule SecretHub.Web.ClusterStatusLive do
             
     <!-- Overall health status -->
             <%= if @health_status do %>
-              <div class="mb-6 bg-white rounded-lg shadow p-6">
-                <h3 class="text-lg font-semibold text-gray-900 mb-4">Overall Health</h3>
+              <div class="mb-6 bg-surface-container rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-on-surface mb-4">Overall Health</h3>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
-                    <div class="text-sm text-gray-500">Status</div>
+                    <div class="text-sm text-on-surface-variant">Status</div>
                     <div class="mt-1">
                       <span class={
                         "px-2 py-1 text-xs font-semibold rounded-full #{elem(health_badge(@health_status.status), 0)}"
@@ -434,13 +434,13 @@ defmodule SecretHub.Web.ClusterStatusLive do
                     </div>
                   </div>
                   <div>
-                    <div class="text-sm text-gray-500">Initialized</div>
+                    <div class="text-sm text-on-surface-variant">Initialized</div>
                     <div class="mt-1 text-sm font-medium">
                       {if @health_status.initialized, do: "Yes", else: "No"}
                     </div>
                   </div>
                   <div>
-                    <div class="text-sm text-gray-500">Sealed</div>
+                    <div class="text-sm text-on-surface-variant">Sealed</div>
                     <div class="mt-1 text-sm font-medium">
                       {if @health_status.sealed, do: "Yes", else: "No"}
                     </div>
@@ -450,85 +450,85 @@ defmodule SecretHub.Web.ClusterStatusLive do
             <% end %>
             
     <!-- Nodes table -->
-            <div class="bg-white rounded-lg shadow overflow-hidden">
-              <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-semibold text-gray-900">Cluster Nodes</h3>
+            <div class="bg-surface-container rounded-lg shadow overflow-hidden">
+              <div class="px-6 py-4 border-b border-outline-variant">
+                <h3 class="text-lg font-semibold text-on-surface">Cluster Nodes</h3>
               </div>
 
               <%= if Enum.empty?(@cluster_info.nodes) do %>
-                <div class="p-6 text-center text-gray-500">
+                <div class="p-6 text-center text-on-surface-variant">
                   No nodes registered in the cluster
                 </div>
               <% else %>
                 <div class="overflow-x-auto">
-                  <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+                  <table class="min-w-full divide-y divide-outline-variant">
+                    <thead class="bg-surface-container-low">
                       <tr>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Node
                         </th>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Status
                         </th>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Seal State
                         </th>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Role
                         </th>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Last Seen
                         </th>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Uptime
                         </th>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Version
                         </th>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Health
                         </th>
                         <th
                           scope="col"
-                          class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider"
+                          class="px-6 py-3 text-right text-xs font-medium text-on-surface-variant uppercase tracking-wider"
                         >
                           Actions
                         </th>
                       </tr>
                     </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
+                    <tbody class="bg-surface-container divide-y divide-outline-variant">
                       <%= for node <- @cluster_info.nodes do %>
-                        <tr class="hover:bg-gray-50">
+                        <tr class="hover:bg-surface-container-low">
                           <td class="px-6 py-4 whitespace-nowrap">
                             <div class="flex items-center">
                               <div class="flex-shrink-0 h-10 w-10">
-                                <div class="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                <div class="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                                   <svg
-                                    class="h-6 w-6 text-blue-600"
+                                    class="h-6 w-6 text-primary"
                                     fill="none"
                                     stroke="currentColor"
                                     viewBox="0 0 24 24"
@@ -544,10 +544,10 @@ defmodule SecretHub.Web.ClusterStatusLive do
                                 </div>
                               </div>
                               <div class="ml-4">
-                                <div class="text-sm font-medium text-gray-900">
+                                <div class="text-sm font-medium text-on-surface">
                                   {Map.get(node, :hostname, "Unknown")}
                                 </div>
-                                <div class="text-sm text-gray-500">
+                                <div class="text-sm text-on-surface-variant">
                                   {Map.get(node, :node_id, "N/A")}
                                 </div>
                               </div>
@@ -562,46 +562,46 @@ defmodule SecretHub.Web.ClusterStatusLive do
                           </td>
                           <td class="px-6 py-4 whitespace-nowrap">
                             <%= if Map.get(node, :sealed, true) do %>
-                              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-warning/10 text-warning">
                                 Sealed
                               </span>
                             <% else %>
-                              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-success/10 text-success">
                                 Unsealed
                               </span>
                             <% end %>
                           </td>
                           <td class="px-6 py-4 whitespace-nowrap">
                             <%= if Map.get(node, :leader, false) do %>
-                              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">
+                              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-tertiary/10 text-tertiary">
                                 Leader
                               </span>
                             <% else %>
-                              <span class="text-sm text-gray-500">Standby</span>
+                              <span class="text-sm text-on-surface-variant">Standby</span>
                             <% end %>
                           </td>
-                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                             {format_timestamp(Map.get(node, :last_seen_at))}
                           </td>
-                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                             <%= if Map.get(node, :started_at) do %>
                               {format_timestamp(Map.get(node, :started_at))}
                             <% else %>
                               N/A
                             <% end %>
                           </td>
-                          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                             {Map.get(node, :version, "N/A")}
                           </td>
                           <td class="px-6 py-4 whitespace-nowrap">
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-success/10 text-success">
                               Monitoring
                             </span>
                           </td>
                           <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <.link
                               navigate={~p"/admin/cluster/nodes/#{Map.get(node, :node_id)}"}
-                              class="text-blue-600 hover:text-blue-900"
+                              class="text-primary hover:text-primary"
                             >
                               View Details
                             </.link>
@@ -615,9 +615,9 @@ defmodule SecretHub.Web.ClusterStatusLive do
             </div>
           <% else %>
             <!-- No data state -->
-            <div class="text-center py-12 bg-white rounded-lg shadow">
+            <div class="text-center py-12 bg-surface-container rounded-lg shadow">
               <svg
-                class="h-12 w-12 mx-auto text-gray-400"
+                class="h-12 w-12 mx-auto text-on-surface-variant"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -630,7 +630,7 @@ defmodule SecretHub.Web.ClusterStatusLive do
                   d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              <p class="mt-4 text-gray-600">No cluster data available</p>
+              <p class="mt-4 text-on-surface-variant">No cluster data available</p>
             </div>
           <% end %>
         <% end %>

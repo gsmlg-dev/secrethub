@@ -151,11 +151,11 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
       </.header>
       
     <!-- Comparison Tool -->
-      <div class="bg-white rounded-lg border shadow-sm p-6">
+      <div class="bg-surface-container rounded-lg border shadow-sm p-6">
         <h3 class="text-lg font-semibold mb-4">Compare Versions</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">
+            <label class="block text-sm font-medium text-on-surface mb-2">
               Version A
             </label>
             <select
@@ -178,7 +178,7 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
             </select>
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">
+            <label class="block text-sm font-medium text-on-surface mb-2">
               Version B
             </label>
             <select
@@ -211,7 +211,7 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           <div class="mt-6">
             <div class="flex justify-between items-center mb-4">
               <h4 class="text-md font-semibold">Comparison Result</h4>
-              <button phx-click="clear_comparison" class="text-sm text-gray-600 hover:text-gray-900">
+              <button phx-click="clear_comparison" class="text-sm text-on-surface-variant hover:text-on-surface">
                 Clear
               </button>
             </div>
@@ -221,32 +221,32 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
       </div>
       
     <!-- Version Timeline -->
-      <div class="bg-white rounded-lg border shadow-sm">
+      <div class="bg-surface-container rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b">
           <h3 class="text-lg font-semibold">Version Timeline</h3>
         </div>
         <div class="divide-y">
           <%= for version <- @versions do %>
-            <div class="px-6 py-4 hover:bg-gray-50">
+            <div class="px-6 py-4 hover:bg-surface-container-low">
               <div class="flex items-start justify-between">
                 <div class="flex-1">
                   <div class="flex items-center gap-3">
-                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary">
                       v{version.version_number}
                     </span>
                     <%= if version.version_number == @secret.version do %>
-                      <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success">
                         Current
                       </span>
                     <% end %>
-                    <span class="text-sm text-gray-500">
+                    <span class="text-sm text-on-surface-variant">
                       {Calendar.strftime(version.archived_at, "%Y-%m-%d %H:%M:%S")}
                     </span>
                   </div>
                   <%= if version.change_description do %>
-                    <p class="mt-2 text-sm text-gray-900">{version.change_description}</p>
+                    <p class="mt-2 text-sm text-on-surface">{version.change_description}</p>
                   <% end %>
-                  <div class="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                  <div class="mt-2 flex items-center gap-4 text-xs text-on-surface-variant">
                     <%= if version.created_by do %>
                       <span>
                         <.icon name="user" class="h-4 w-4 inline" /> {version.created_by}
@@ -268,7 +268,7 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
                   <button
                     phx-click="show_rollback_modal"
                     phx-value-version={version.version_number}
-                    class="ml-4 px-3 py-1 text-sm text-indigo-600 hover:text-indigo-900 border border-indigo-600 rounded-md hover:bg-indigo-50"
+                    class="ml-4 px-3 py-1 text-sm text-secondary hover:text-indigo-900 border border-indigo-600 rounded-md hover:bg-secondary/5"
                   >
                     Rollback
                   </button>
@@ -279,9 +279,9 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
 
           <%= if @versions == [] do %>
             <div class="px-6 py-12 text-center">
-              <.icon name="clock" class="mx-auto h-12 w-12 text-gray-400" />
-              <h3 class="mt-2 text-sm font-medium text-gray-900">No version history</h3>
-              <p class="mt-1 text-sm text-gray-500">
+              <.icon name="clock" class="mx-auto h-12 w-12 text-on-surface-variant" />
+              <h3 class="mt-2 text-sm font-medium text-on-surface">No version history</h3>
+              <p class="mt-1 text-sm text-on-surface-variant">
                 This secret has not been updated yet.
               </p>
             </div>
@@ -291,10 +291,10 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
       
     <!-- Rollback Confirmation Modal -->
       <%= if @show_rollback_modal do %>
-        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-          <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 flex items-center justify-center z-50">
+          <div class="bg-surface-container rounded-lg p-6 max-w-md w-full mx-4">
             <h3 class="text-lg font-semibold mb-4">Confirm Rollback</h3>
-            <p class="text-sm text-gray-600 mb-6">
+            <p class="text-sm text-on-surface-variant mb-6">
               Are you sure you want to rollback to version {@rollback_target}? This will create a new version (v{@secret.version +
                 1}) with the data from v{@rollback_target}.
             </p>
@@ -315,7 +315,7 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
 
   defp version_diff(assigns) do
     ~H"""
-    <div class="bg-gray-50 rounded-lg p-4 space-y-4">
+    <div class="bg-surface-container-low rounded-lg p-4 space-y-4">
       <div class="grid grid-cols-2 gap-4 text-sm">
         <div>
           <span class="font-medium">Version:</span> v{elem(@comparison.version_numbers, 0)}
@@ -345,11 +345,11 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
         <h5 class="font-medium text-sm mb-2">Data Size Change</h5>
         <p class="text-sm">
           <%= if @comparison.data_size_diff > 0 do %>
-            <span class="text-green-600">
+            <span class="text-success">
               +{format_bytes(@comparison.data_size_diff)}
             </span>
           <% else %>
-            <span class="text-red-600">
+            <span class="text-error">
               {format_bytes(@comparison.data_size_diff)}
             </span>
           <% end %>
@@ -361,8 +361,8 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           <h5 class="font-medium text-sm mb-2">Metadata Changes</h5>
           <%= if @comparison.metadata_diff.added != [] do %>
             <div class="mb-2">
-              <span class="text-xs font-medium text-green-700">Added:</span>
-              <ul class="text-sm text-gray-700 ml-4">
+              <span class="text-xs font-medium text-success">Added:</span>
+              <ul class="text-sm text-on-surface ml-4">
                 <%= for {key, value} <- @comparison.metadata_diff.added do %>
                   <li><code class="text-xs"><%= key %></code>: {inspect(value)}</li>
                 <% end %>
@@ -371,8 +371,8 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           <% end %>
           <%= if @comparison.metadata_diff.removed != [] do %>
             <div class="mb-2">
-              <span class="text-xs font-medium text-red-700">Removed:</span>
-              <ul class="text-sm text-gray-700 ml-4">
+              <span class="text-xs font-medium text-error">Removed:</span>
+              <ul class="text-sm text-on-surface ml-4">
                 <%= for {key, value} <- @comparison.metadata_diff.removed do %>
                   <li><code class="text-xs"><%= key %></code>: {inspect(value)}</li>
                 <% end %>
@@ -381,13 +381,13 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           <% end %>
           <%= if @comparison.metadata_diff.changed != [] do %>
             <div>
-              <span class="text-xs font-medium text-yellow-700">Changed:</span>
-              <ul class="text-sm text-gray-700 ml-4">
+              <span class="text-xs font-medium text-warning">Changed:</span>
+              <ul class="text-sm text-on-surface ml-4">
                 <%= for {key, {old_val, new_val}} <- @comparison.metadata_diff.changed do %>
                   <li>
                     <code class="text-xs"><%= key %></code>:
-                    <span class="line-through text-red-600">{inspect(old_val)}</span>
-                    → <span class="text-green-600">{inspect(new_val)}</span>
+                    <span class="line-through text-error">{inspect(old_val)}</span>
+                    → <span class="text-success">{inspect(new_val)}</span>
                   </li>
                 <% end %>
               </ul>
@@ -395,7 +395,7 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           <% end %>
         </div>
       <% else %>
-        <p class="text-sm text-gray-500">No metadata changes</p>
+        <p class="text-sm text-on-surface-variant">No metadata changes</p>
       <% end %>
     </div>
     """

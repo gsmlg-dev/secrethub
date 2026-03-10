@@ -221,8 +221,8 @@ defmodule SecretHub.Web.RotationScheduleLive do
     <div class="px-4 sm:px-6 lg:px-8">
       <div class="sm:flex sm:items-center">
         <div class="sm:flex-auto">
-          <h1 class="text-2xl font-semibold text-gray-900">Rotation Schedules</h1>
-          <p class="mt-2 text-sm text-gray-700">
+          <h1 class="text-2xl font-semibold text-on-surface">Rotation Schedules</h1>
+          <p class="mt-2 text-sm text-on-surface">
             Manage automatic secret rotation schedules for long-lived credentials.
           </p>
         </div>
@@ -263,17 +263,17 @@ defmodule SecretHub.Web.RotationScheduleLive do
       <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
         <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
           <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-            <table class="min-w-full divide-y divide-gray-300">
-              <thead class="bg-gray-50">
+            <table class="min-w-full divide-y divide-outline-variant">
+              <thead class="bg-surface-container-low">
                 <tr>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Name</th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Type</th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Schedule</th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Name</th>
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Type</th>
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Schedule</th>
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                     Next Rotation
                   </th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Status</th>
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                     Last Status
                   </th>
                   <th class="relative py-3.5 pl-3 pr-4 sm:pr-6">
@@ -281,24 +281,24 @@ defmodule SecretHub.Web.RotationScheduleLive do
                   </th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-gray-200 bg-white">
+              <tbody class="divide-y divide-outline-variant bg-surface-container">
                 <%= for schedule <- @schedules do %>
-                  <tr class="hover:bg-gray-50">
+                  <tr class="hover:bg-surface-container-low">
                     <td class="whitespace-nowrap px-3 py-4 text-sm">
-                      <div class="font-medium text-gray-900">{schedule.name}</div>
-                      <div class="text-gray-500">{schedule.description}</div>
+                      <div class="font-medium text-on-surface">{schedule.name}</div>
+                      <div class="text-on-surface-variant">{schedule.description}</div>
                     </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                       <.rotation_type_badge type={schedule.rotation_type} />
                     </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                       <code class="text-xs">{schedule.schedule_cron}</code>
                     </td>
-                    <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                    <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                       <%= if schedule.next_rotation_at do %>
                         {Calendar.strftime(schedule.next_rotation_at, "%Y-%m-%d %H:%M UTC")}
                       <% else %>
-                        <span class="text-gray-400">Not scheduled</span>
+                        <span class="text-on-surface-variant">Not scheduled</span>
                       <% end %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm">
@@ -308,7 +308,7 @@ defmodule SecretHub.Web.RotationScheduleLive do
                       <%= if schedule.last_rotation_status do %>
                         <.rotation_status_badge status={schedule.last_rotation_status} />
                       <% else %>
-                        <span class="text-gray-400">Never run</span>
+                        <span class="text-on-surface-variant">Never run</span>
                       <% end %>
                     </td>
                     <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
@@ -333,7 +333,7 @@ defmodule SecretHub.Web.RotationScheduleLive do
 
                 <%= if @schedules == [] do %>
                   <tr>
-                    <td colspan="7" class="px-3 py-8 text-center text-sm text-gray-500">
+                    <td colspan="7" class="px-3 py-8 text-center text-sm text-on-surface-variant">
                       No rotation schedules configured. Click "New Schedule" to create one.
                     </td>
                   </tr>
@@ -368,9 +368,9 @@ defmodule SecretHub.Web.RotationScheduleLive do
 
     ~H"""
     <div class="mt-8">
-      <div class="bg-white shadow sm:rounded-lg">
+      <div class="bg-surface-container shadow sm:rounded-lg">
         <div class="px-4 py-5 sm:p-6">
-          <h3 class="text-lg font-medium leading-6 text-gray-900">
+          <h3 class="text-lg font-medium leading-6 text-on-surface">
             {if @mode == :new, do: "Create Rotation Schedule", else: "Edit Rotation Schedule"}
           </h3>
 
@@ -379,7 +379,7 @@ defmodule SecretHub.Web.RotationScheduleLive do
             class="mt-6 space-y-6"
           >
             <div>
-              <label for="name" class="block text-sm font-medium text-gray-700">Name</label>
+              <label for="name" class="block text-sm font-medium text-on-surface">Name</label>
               <input
                 type="text"
                 name="name"
@@ -392,7 +392,7 @@ defmodule SecretHub.Web.RotationScheduleLive do
             </div>
 
             <div>
-              <label for="description" class="block text-sm font-medium text-gray-700">
+              <label for="description" class="block text-sm font-medium text-on-surface">
                 Description
               </label>
               <textarea
@@ -406,7 +406,7 @@ defmodule SecretHub.Web.RotationScheduleLive do
 
             <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
-                <label for="rotation_type" class="block text-sm font-medium text-gray-700">
+                <label for="rotation_type" class="block text-sm font-medium text-on-surface">
                   Rotation Type
                 </label>
                 <select
@@ -426,12 +426,12 @@ defmodule SecretHub.Web.RotationScheduleLive do
                   <% end %>
                 </select>
                 <%= if @mode == :edit do %>
-                  <p class="mt-1 text-sm text-gray-500">Rotation type cannot be changed</p>
+                  <p class="mt-1 text-sm text-on-surface-variant">Rotation type cannot be changed</p>
                 <% end %>
               </div>
 
               <div>
-                <label for="target_type" class="block text-sm font-medium text-gray-700">
+                <label for="target_type" class="block text-sm font-medium text-on-surface">
                   Target Type
                 </label>
                 <select
@@ -452,7 +452,7 @@ defmodule SecretHub.Web.RotationScheduleLive do
 
             <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
-                <label for="schedule_cron" class="block text-sm font-medium text-gray-700">
+                <label for="schedule_cron" class="block text-sm font-medium text-on-surface">
                   Cron Schedule
                 </label>
                 <input
@@ -464,13 +464,13 @@ defmodule SecretHub.Web.RotationScheduleLive do
                   class="input input-bordered w-full mt-1 font-mono text-sm"
                   placeholder="0 2 * * 0"
                 />
-                <p class="mt-1 text-sm text-gray-500">
+                <p class="mt-1 text-sm text-on-surface-variant">
                   Example: "0 2 * * 0" = Weekly on Sunday at 2 AM
                 </p>
               </div>
 
               <div>
-                <label for="grace_period_seconds" class="block text-sm font-medium text-gray-700">
+                <label for="grace_period_seconds" class="block text-sm font-medium text-on-surface">
                   Grace Period (seconds)
                 </label>
                 <input
@@ -482,14 +482,14 @@ defmodule SecretHub.Web.RotationScheduleLive do
                   min="0"
                   class="input input-bordered w-full mt-1"
                 />
-                <p class="mt-1 text-sm text-gray-500">
+                <p class="mt-1 text-sm text-on-surface-variant">
                   Time window for applications to transition to new credentials
                 </p>
               </div>
             </div>
 
             <div>
-              <label for="config" class="block text-sm font-medium text-gray-700">
+              <label for="config" class="block text-sm font-medium text-on-surface">
                 Configuration (JSON)
               </label>
               <textarea
@@ -499,7 +499,7 @@ defmodule SecretHub.Web.RotationScheduleLive do
                 class="textarea textarea-bordered w-full mt-1 font-mono text-sm"
                 placeholder='{"connection": {"host": "localhost", "port": 5432, ...}}'
               ><%= if @schedule, do: Jason.encode!(@schedule.config, pretty: true), else: "{}" %></textarea>
-              <p class="mt-1 text-sm text-gray-500">
+              <p class="mt-1 text-sm text-on-surface-variant">
                 Engine-specific configuration in JSON format
               </p>
             </div>
@@ -513,7 +513,7 @@ defmodule SecretHub.Web.RotationScheduleLive do
                 checked={!@schedule || @schedule.enabled}
                 class="checkbox checkbox-primary"
               />
-              <label for="enabled" class="ml-2 block text-sm text-gray-900">
+              <label for="enabled" class="ml-2 block text-sm text-on-surface">
                 Enable schedule immediately
               </label>
             </div>
@@ -536,12 +536,12 @@ defmodule SecretHub.Web.RotationScheduleLive do
   defp schedule_detail(assigns) do
     ~H"""
     <div class="mt-8">
-      <div class="bg-white shadow sm:rounded-lg">
+      <div class="bg-surface-container shadow sm:rounded-lg">
         <div class="px-4 py-5 sm:p-6">
           <div class="sm:flex sm:items-center sm:justify-between">
             <div>
-              <h3 class="text-lg font-medium leading-6 text-gray-900">{@schedule.name}</h3>
-              <p class="mt-1 text-sm text-gray-500">{@schedule.description}</p>
+              <h3 class="text-lg font-medium leading-6 text-on-surface">{@schedule.name}</h3>
+              <p class="mt-1 text-sm text-on-surface-variant">{@schedule.description}</p>
             </div>
             <div class="mt-4 sm:mt-0 flex gap-2">
               <button
@@ -562,82 +562,82 @@ defmodule SecretHub.Web.RotationScheduleLive do
             </div>
           </div>
 
-          <div class="mt-6 border-t border-gray-200">
-            <dl class="divide-y divide-gray-200">
+          <div class="mt-6 border-t border-outline-variant">
+            <dl class="divide-y divide-outline-variant">
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Rotation Type</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <dt class="text-sm font-medium text-on-surface-variant">Rotation Type</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                   <.rotation_type_badge type={@schedule.rotation_type} />
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Target Type</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <dt class="text-sm font-medium text-on-surface-variant">Target Type</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                   {format_atom(@schedule.target_type)}
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Schedule</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                  <code class="text-xs bg-gray-100 px-2 py-1 rounded">{@schedule.schedule_cron}</code>
+                <dt class="text-sm font-medium text-on-surface-variant">Schedule</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
+                  <code class="text-xs bg-surface-container px-2 py-1 rounded">{@schedule.schedule_cron}</code>
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Grace Period</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <dt class="text-sm font-medium text-on-surface-variant">Grace Period</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                   {@schedule.grace_period_seconds} seconds
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Status</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <dt class="text-sm font-medium text-on-surface-variant">Status</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                   <.enabled_badge enabled={@schedule.enabled} />
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Next Rotation</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <dt class="text-sm font-medium text-on-surface-variant">Next Rotation</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                   <%= if @schedule.next_rotation_at do %>
                     {Calendar.strftime(@schedule.next_rotation_at, "%Y-%m-%d %H:%M:%S UTC")}
                   <% else %>
-                    <span class="text-gray-400">Not scheduled</span>
+                    <span class="text-on-surface-variant">Not scheduled</span>
                   <% end %>
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Last Rotation</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <dt class="text-sm font-medium text-on-surface-variant">Last Rotation</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                   <%= if @schedule.last_rotation_at do %>
                     <div>
                       {Calendar.strftime(@schedule.last_rotation_at, "%Y-%m-%d %H:%M:%S UTC")}
                       <.rotation_status_badge status={@schedule.last_rotation_status} />
                     </div>
                     <%= if @schedule.last_rotation_error do %>
-                      <div class="mt-2 text-sm text-red-600">{@schedule.last_rotation_error}</div>
+                      <div class="mt-2 text-sm text-error">{@schedule.last_rotation_error}</div>
                     <% end %>
                   <% else %>
-                    <span class="text-gray-400">Never run</span>
+                    <span class="text-on-surface-variant">Never run</span>
                   <% end %>
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Rotation Count</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
+                <dt class="text-sm font-medium text-on-surface-variant">Rotation Count</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
                   {@schedule.rotation_count}
                 </dd>
               </div>
 
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
-                <dt class="text-sm font-medium text-gray-500">Configuration</dt>
-                <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                  <pre class="bg-gray-50 p-4 rounded text-xs overflow-x-auto"><%= Jason.encode!(@schedule.config, pretty: true) %></pre>
+                <dt class="text-sm font-medium text-on-surface-variant">Configuration</dt>
+                <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
+                  <pre class="bg-surface-container-low p-4 rounded text-xs overflow-x-auto"><%= Jason.encode!(@schedule.config, pretty: true) %></pre>
                 </dd>
               </div>
             </dl>

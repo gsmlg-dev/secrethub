@@ -86,14 +86,14 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
       <!-- Header -->
       <div class="flex justify-between items-center">
         <div>
-          <h2 class="text-2xl font-bold text-gray-900">Performance Dashboard</h2>
-          <p class="text-sm text-gray-600">
+          <h2 class="text-2xl font-bold text-on-surface">Performance Dashboard</h2>
+          <p class="text-sm text-on-surface-variant">
             Real-time system performance metrics and monitoring
           </p>
         </div>
         <div class="flex space-x-4">
           <button
-            class={"px-4 py-2 rounded-lg #{if @auto_refresh, do: "bg-green-500 text-white", else: "bg-gray-200 text-gray-700"}"}
+            class={"px-4 py-2 rounded-lg #{if @auto_refresh, do: "bg-success text-on-primary", else: "bg-surface-container-high text-on-surface"}"}
             phx-click="toggle_refresh"
           >
             <%= if @auto_refresh do %>
@@ -121,10 +121,10 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
     <!-- Key Metrics Grid -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
         <!-- Connected Agents -->
-        <div class="bg-white rounded-lg shadow p-6">
+        <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
-            <div class="flex-shrink-0 bg-blue-500 rounded-md p-3">
-              <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="flex-shrink-0 bg-primary rounded-md p-3">
+              <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -134,9 +134,9 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
               </svg>
             </div>
             <div class="ml-4">
-              <p class="text-sm font-medium text-gray-600">Connected Agents</p>
-              <p class="text-2xl font-bold text-gray-900">{@metrics.connected_agents}</p>
-              <p class="text-xs text-gray-500 mt-1">
+              <p class="text-sm font-medium text-on-surface-variant">Connected Agents</p>
+              <p class="text-2xl font-bold text-on-surface">{@metrics.connected_agents}</p>
+              <p class="text-xs text-on-surface-variant mt-1">
                 Target: 1,000+ ✓
               </p>
             </div>
@@ -144,10 +144,10 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         </div>
         
     <!-- Request Rate -->
-        <div class="bg-white rounded-lg shadow p-6">
+        <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
-            <div class="flex-shrink-0 bg-green-500 rounded-md p-3">
-              <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="flex-shrink-0 bg-success rounded-md p-3">
+              <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -157,9 +157,9 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
               </svg>
             </div>
             <div class="ml-4">
-              <p class="text-sm font-medium text-gray-600">Request Rate</p>
-              <p class="text-2xl font-bold text-gray-900">{@metrics.request_rate}/sec</p>
-              <p class="text-xs text-gray-500 mt-1">
+              <p class="text-sm font-medium text-on-surface-variant">Request Rate</p>
+              <p class="text-2xl font-bold text-on-surface">{@metrics.request_rate}/sec</p>
+              <p class="text-xs text-on-surface-variant mt-1">
                 {format_number(@metrics.request_rate * 60)}/min
               </p>
             </div>
@@ -167,10 +167,10 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         </div>
         
     <!-- P95 Latency -->
-        <div class="bg-white rounded-lg shadow p-6">
+        <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
             <div class={"flex-shrink-0 rounded-md p-3 #{latency_color(@metrics.p95_latency)}"}>
-              <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -180,9 +180,9 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
               </svg>
             </div>
             <div class="ml-4">
-              <p class="text-sm font-medium text-gray-600">P95 Latency</p>
-              <p class="text-2xl font-bold text-gray-900">{@metrics.p95_latency}ms</p>
-              <p class="text-xs text-gray-500 mt-1">
+              <p class="text-sm font-medium text-on-surface-variant">P95 Latency</p>
+              <p class="text-2xl font-bold text-on-surface">{@metrics.p95_latency}ms</p>
+              <p class="text-xs text-on-surface-variant mt-1">
                 Target: &lt; 100ms {latency_indicator(@metrics.p95_latency)}
               </p>
             </div>
@@ -190,10 +190,10 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         </div>
         
     <!-- Memory Usage -->
-        <div class="bg-white rounded-lg shadow p-6">
+        <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
-            <div class="flex-shrink-0 bg-purple-500 rounded-md p-3">
-              <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="flex-shrink-0 bg-tertiary rounded-md p-3">
+              <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -203,9 +203,9 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
               </svg>
             </div>
             <div class="ml-4">
-              <p class="text-sm font-medium text-gray-600">Memory Usage</p>
-              <p class="text-2xl font-bold text-gray-900">{@metrics.memory_mb}MB</p>
-              <p class="text-xs text-gray-500 mt-1">
+              <p class="text-sm font-medium text-on-surface-variant">Memory Usage</p>
+              <p class="text-2xl font-bold text-on-surface">{@metrics.memory_mb}MB</p>
+              <p class="text-xs text-on-surface-variant mt-1">
                 {@metrics.memory_percent}% of total
               </p>
             </div>
@@ -216,14 +216,14 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
     <!-- Detailed Metrics -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Database Metrics -->
-        <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">Database Performance</h3>
+        <div class="bg-surface-container rounded-lg shadow p-6">
+          <h3 class="text-lg font-medium text-on-surface mb-4">Database Performance</h3>
           <div class="space-y-4">
             <div class="flex justify-between items-center">
-              <span class="text-sm text-gray-600">Connection Pool Utilization</span>
-              <span class="text-sm font-medium text-gray-900">{@metrics.db_pool_utilization}%</span>
+              <span class="text-sm text-on-surface-variant">Connection Pool Utilization</span>
+              <span class="text-sm font-medium text-on-surface">{@metrics.db_pool_utilization}%</span>
             </div>
-            <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="w-full bg-surface-container-high rounded-full h-2">
               <div
                 class={"h-2 rounded-full #{pool_color(@metrics.db_pool_utilization)}"}
                 style={"width: #{@metrics.db_pool_utilization}%"}
@@ -232,60 +232,60 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
             </div>
 
             <div class="flex justify-between items-center pt-2">
-              <span class="text-sm text-gray-600">Average Query Time</span>
-              <span class="text-sm font-medium text-gray-900">{@metrics.avg_query_time}ms</span>
+              <span class="text-sm text-on-surface-variant">Average Query Time</span>
+              <span class="text-sm font-medium text-on-surface">{@metrics.avg_query_time}ms</span>
             </div>
 
             <div class="flex justify-between items-center">
-              <span class="text-sm text-gray-600">Active Connections</span>
-              <span class="text-sm font-medium text-gray-900">{@metrics.db_active_connections}</span>
+              <span class="text-sm text-on-surface-variant">Active Connections</span>
+              <span class="text-sm font-medium text-on-surface">{@metrics.db_active_connections}</span>
             </div>
 
             <div class="flex justify-between items-center">
-              <span class="text-sm text-gray-600">Query Rate</span>
-              <span class="text-sm font-medium text-gray-900">{@metrics.db_query_rate}/sec</span>
+              <span class="text-sm text-on-surface-variant">Query Rate</span>
+              <span class="text-sm font-medium text-on-surface">{@metrics.db_query_rate}/sec</span>
             </div>
           </div>
         </div>
         
     <!-- Cache Metrics -->
-        <div class="bg-white rounded-lg shadow p-6">
-          <h3 class="text-lg font-medium text-gray-900 mb-4">Cache Performance</h3>
+        <div class="bg-surface-container rounded-lg shadow p-6">
+          <h3 class="text-lg font-medium text-on-surface mb-4">Cache Performance</h3>
           <div class="space-y-4">
             <div class="flex justify-between items-center">
-              <span class="text-sm text-gray-600">Cache Hit Rate</span>
-              <span class="text-sm font-medium text-gray-900">{@metrics.cache_hit_rate}%</span>
+              <span class="text-sm text-on-surface-variant">Cache Hit Rate</span>
+              <span class="text-sm font-medium text-on-surface">{@metrics.cache_hit_rate}%</span>
             </div>
-            <div class="w-full bg-gray-200 rounded-full h-2">
-              <div class="bg-green-500 h-2 rounded-full" style={"width: #{@metrics.cache_hit_rate}%"}>
+            <div class="w-full bg-surface-container-high rounded-full h-2">
+              <div class="bg-success h-2 rounded-full" style={"width: #{@metrics.cache_hit_rate}%"}>
               </div>
             </div>
 
             <div class="grid grid-cols-2 gap-4 pt-2">
               <div>
-                <span class="text-sm text-gray-600">Policy Cache</span>
-                <p class="text-lg font-medium text-gray-900">
+                <span class="text-sm text-on-surface-variant">Policy Cache</span>
+                <p class="text-lg font-medium text-on-surface">
                   {@metrics.cache_sizes.policy_cache} KB
                 </p>
               </div>
               <div>
-                <span class="text-sm text-gray-600">Secret Cache</span>
-                <p class="text-lg font-medium text-gray-900">
+                <span class="text-sm text-on-surface-variant">Secret Cache</span>
+                <p class="text-lg font-medium text-on-surface">
                   {@metrics.cache_sizes.secret_cache} KB
                 </p>
               </div>
             </div>
 
             <div class="flex justify-between items-center pt-2">
-              <span class="text-sm text-gray-600">Total Cache Hits</span>
-              <span class="text-sm font-medium text-gray-900">
+              <span class="text-sm text-on-surface-variant">Total Cache Hits</span>
+              <span class="text-sm font-medium text-on-surface">
                 {format_number(@metrics.cache_hits)}
               </span>
             </div>
 
             <div class="flex justify-between items-center">
-              <span class="text-sm text-gray-600">Total Cache Misses</span>
-              <span class="text-sm font-medium text-gray-900">
+              <span class="text-sm text-on-surface-variant">Total Cache Misses</span>
+              <span class="text-sm font-medium text-on-surface">
                 {format_number(@metrics.cache_misses)}
               </span>
             </div>
@@ -294,49 +294,49 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
       </div>
       
     <!-- VM Metrics -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-medium text-gray-900 mb-4">VM Metrics</h3>
+      <div class="bg-surface-container rounded-lg shadow p-6">
+        <h3 class="text-lg font-medium text-on-surface mb-4">VM Metrics</h3>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
           <div>
-            <p class="text-sm text-gray-600">Process Count</p>
-            <p class="text-2xl font-bold text-gray-900">{format_number(@metrics.process_count)}</p>
+            <p class="text-sm text-on-surface-variant">Process Count</p>
+            <p class="text-2xl font-bold text-on-surface">{format_number(@metrics.process_count)}</p>
           </div>
           <div>
-            <p class="text-sm text-gray-600">Port Count</p>
-            <p class="text-2xl font-bold text-gray-900">{@metrics.port_count}</p>
+            <p class="text-sm text-on-surface-variant">Port Count</p>
+            <p class="text-2xl font-bold text-on-surface">{@metrics.port_count}</p>
           </div>
           <div>
-            <p class="text-sm text-gray-600">Run Queue Length</p>
-            <p class="text-2xl font-bold text-gray-900">{@metrics.run_queue_length}</p>
+            <p class="text-sm text-on-surface-variant">Run Queue Length</p>
+            <p class="text-2xl font-bold text-on-surface">{@metrics.run_queue_length}</p>
           </div>
           <div>
-            <p class="text-sm text-gray-600">ETS Memory</p>
-            <p class="text-2xl font-bold text-gray-900">{@metrics.ets_memory_mb}MB</p>
+            <p class="text-sm text-on-surface-variant">ETS Memory</p>
+            <p class="text-2xl font-bold text-on-surface">{@metrics.ets_memory_mb}MB</p>
           </div>
         </div>
       </div>
       
     <!-- WebSocket Metrics -->
-      <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="text-lg font-medium text-gray-900 mb-4">WebSocket Performance</h3>
+      <div class="bg-surface-container rounded-lg shadow p-6">
+        <h3 class="text-lg font-medium text-on-surface mb-4">WebSocket Performance</h3>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
           <div>
-            <p class="text-sm text-gray-600">Messages/sec</p>
-            <p class="text-2xl font-bold text-gray-900">{@metrics.ws_message_rate}</p>
+            <p class="text-sm text-on-surface-variant">Messages/sec</p>
+            <p class="text-2xl font-bold text-on-surface">{@metrics.ws_message_rate}</p>
           </div>
           <div>
-            <p class="text-sm text-gray-600">Avg Message Latency</p>
-            <p class="text-2xl font-bold text-gray-900">{@metrics.ws_avg_latency}ms</p>
+            <p class="text-sm text-on-surface-variant">Avg Message Latency</p>
+            <p class="text-2xl font-bold text-on-surface">{@metrics.ws_avg_latency}ms</p>
           </div>
           <div>
-            <p class="text-sm text-gray-600">Total Messages</p>
-            <p class="text-2xl font-bold text-gray-900">
+            <p class="text-sm text-on-surface-variant">Total Messages</p>
+            <p class="text-2xl font-bold text-on-surface">
               {format_number(@metrics.ws_total_messages)}
             </p>
           </div>
           <div>
-            <p class="text-sm text-gray-600">Error Rate</p>
-            <p class="text-2xl font-bold text-gray-900">{@metrics.ws_error_rate}%</p>
+            <p class="text-sm text-on-surface-variant">Error Rate</p>
+            <p class="text-2xl font-bold text-on-surface">{@metrics.ws_error_rate}%</p>
           </div>
         </div>
       </div>
@@ -431,24 +431,24 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
     |> Enum.take(-max_length)
   end
 
-  defp latency_color(latency) when latency < 100, do: "bg-green-500"
-  defp latency_color(latency) when latency < 200, do: "bg-yellow-500"
-  defp latency_color(_), do: "bg-red-500"
+  defp latency_color(latency) when latency < 100, do: "bg-success"
+  defp latency_color(latency) when latency < 200, do: "bg-warning"
+  defp latency_color(_), do: "bg-error"
 
   defp latency_indicator(latency) when latency < 100, do: "✓"
   defp latency_indicator(_), do: "✗"
 
-  defp pool_color(utilization) when utilization < 70, do: "bg-green-500"
-  defp pool_color(utilization) when utilization < 85, do: "bg-yellow-500"
-  defp pool_color(_), do: "bg-red-500"
+  defp pool_color(utilization) when utilization < 70, do: "bg-success"
+  defp pool_color(utilization) when utilization < 85, do: "bg-warning"
+  defp pool_color(_), do: "bg-error"
 
-  defp status_color(:healthy), do: "border-green-400 bg-green-50"
-  defp status_color(:warning), do: "border-yellow-400 bg-yellow-50"
-  defp status_color(:critical), do: "border-red-400 bg-red-50"
+  defp status_color(:healthy), do: "border-green-400 bg-success/5"
+  defp status_color(:warning), do: "border-yellow-400 bg-warning/5"
+  defp status_color(:critical), do: "border-red-400 bg-error/5"
 
   defp status_icon(assigns, :healthy) do
     ~H"""
-    <svg class="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+    <svg class="w-5 h-5 text-success" fill="currentColor" viewBox="0 0 20 20">
       <path
         fill-rule="evenodd"
         d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
@@ -460,7 +460,7 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
 
   defp status_icon(assigns, :warning) do
     ~H"""
-    <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+    <svg class="w-5 h-5 text-warning" fill="currentColor" viewBox="0 0 20 20">
       <path
         fill-rule="evenodd"
         d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
@@ -472,7 +472,7 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
 
   defp status_icon(assigns, :critical) do
     ~H"""
-    <svg class="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+    <svg class="w-5 h-5 text-error" fill="currentColor" viewBox="0 0 20 20">
       <path
         fill-rule="evenodd"
         d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"

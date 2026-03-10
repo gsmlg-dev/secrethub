@@ -215,10 +215,10 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
 
   defp status_dot_color(status) do
     case status do
-      :healthy -> "bg-green-500"
-      :degraded -> "bg-yellow-500"
-      :unhealthy -> "bg-red-500"
-      _ -> "bg-gray-400"
+      :healthy -> "bg-success"
+      :degraded -> "bg-warning"
+      :unhealthy -> "bg-error"
+      _ -> "bg-outline"
     end
   end
 
@@ -232,7 +232,7 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
             <h1 class="text-3xl font-bold">{@config.name}</h1>
             {health_status_badge(@config.health_status)}
           </div>
-          <p class="text-gray-600 mt-1">{@config.description || "No description"}</p>
+          <p class="text-on-surface-variant mt-1">{@config.description || "No description"}</p>
         </div>
 
         <div class="flex gap-2">
@@ -268,12 +268,12 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
 
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
             <div>
-              <div class="text-sm text-gray-600">Status</div>
+              <div class="text-sm text-on-surface-variant">Status</div>
               <div class="text-lg font-semibold">{health_status_badge(@config.health_status)}</div>
             </div>
 
             <div>
-              <div class="text-sm text-gray-600">Last Check</div>
+              <div class="text-sm text-on-surface-variant">Last Check</div>
               <div class="text-lg font-semibold">
                 <%= if @config.last_health_check_at do %>
                   {format_relative_time(@config.last_health_check_at)}
@@ -284,12 +284,12 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
             </div>
 
             <div>
-              <div class="text-sm text-gray-600">Engine Type</div>
+              <div class="text-sm text-on-surface-variant">Engine Type</div>
               <div class="text-lg font-semibold capitalize">{to_string(@config.engine_type)}</div>
             </div>
 
             <div>
-              <div class="text-sm text-gray-600">State</div>
+              <div class="text-sm text-on-surface-variant">State</div>
               <div class="text-lg font-semibold">
                 <%= if @config.enabled do %>
                   <span class="badge badge-success">Enabled</span>
@@ -318,13 +318,13 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
 
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Uptime</div>
-          <div class="stat-value text-3xl text-green-600">{@stats.uptime_percentage}%</div>
+          <div class="stat-value text-3xl text-success">{@stats.uptime_percentage}%</div>
           <div class="stat-desc">{@stats.healthy_count} healthy checks</div>
         </div>
 
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Failures</div>
-          <div class="stat-value text-3xl text-red-600">{@stats.unhealthy_count}</div>
+          <div class="stat-value text-3xl text-error">{@stats.unhealthy_count}</div>
           <div class="stat-desc">Failed health checks</div>
         </div>
 
@@ -392,7 +392,7 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
                         <div class="flex items-center gap-2">
                           <div class={"w-2 h-2 rounded-full #{status_dot_color(check.status)}"}></div>
                           <span class="text-sm">{format_timestamp(check.checked_at)}</span>
-                          <span class="text-xs text-gray-500">
+                          <span class="text-xs text-on-surface-variant">
                             ({format_relative_time(check.checked_at)})
                           </span>
                         </div>
@@ -404,11 +404,11 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
                         <%= if check.response_time_ms do %>
                           <span class={
                             if check.response_time_ms < 100,
-                              do: "text-green-600",
+                              do: "text-success",
                               else:
                                 if(check.response_time_ms < 500,
-                                  do: "text-yellow-600",
-                                  else: "text-red-600"
+                                  do: "text-warning",
+                                  else: "text-error"
                                 )
                           }>
                             {check.response_time_ms}ms

@@ -54,7 +54,7 @@ defmodule SecretHubWeb.MetricsDashboardLive do
         Metrics Dashboard
         <:subtitle>Real-time system metrics and performance indicators</:subtitle>
         <:actions>
-          <div class="text-sm text-gray-500">
+          <div class="text-sm text-on-surface-variant">
             Last updated: {Calendar.strftime(@last_updated, "%Y-%m-%d %H:%M:%S UTC")}
           </div>
         </:actions>
@@ -217,10 +217,10 @@ defmodule SecretHubWeb.MetricsDashboardLive do
 
   defp metric_card(assigns) do
     ~H"""
-    <div class="rounded-lg border p-6 bg-white shadow-sm hover:shadow-md transition-shadow">
+    <div class="rounded-lg border p-6 bg-surface-container shadow-sm hover:shadow-md transition-shadow">
       <div class="flex items-start justify-between">
         <div class="flex-1">
-          <p class="text-sm font-medium text-gray-600">{@title}</p>
+          <p class="text-sm font-medium text-on-surface-variant">{@title}</p>
           <p class={"text-3xl font-bold mt-2 text-#{@color}-600"}>{@value}</p>
         </div>
         <div class={"rounded-full p-3 bg-#{@color}-100"}>

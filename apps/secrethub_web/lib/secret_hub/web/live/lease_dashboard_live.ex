@@ -60,14 +60,14 @@ defmodule SecretHub.Web.LeaseDashboardLive do
     <div class="container mx-auto px-4 py-8">
       <div class="mb-6 flex justify-between items-center">
         <div>
-          <h1 class="text-3xl font-bold text-gray-900">Lease Renewal Dashboard</h1>
-          <p class="mt-2 text-gray-600">
+          <h1 class="text-3xl font-bold text-on-surface">Lease Renewal Dashboard</h1>
+          <p class="mt-2 text-on-surface-variant">
             Monitor lease renewal metrics and system health
           </p>
         </div>
 
         <div>
-          <label class="mr-2 text-sm font-medium text-gray-700">Time Range:</label>
+          <label class="mr-2 text-sm font-medium text-on-surface">Time Range:</label>
           <select
             phx-change="change_time_range"
             phx-value-range={@time_range}
@@ -84,40 +84,40 @@ defmodule SecretHub.Web.LeaseDashboardLive do
       
     <!-- Overview Statistics -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div class="bg-white shadow rounded-lg p-6">
-          <div class="text-sm font-medium text-gray-500">Total Leases</div>
-          <div class="mt-2 text-3xl font-bold text-gray-900">{@stats[:total_leases] || 0}</div>
-          <div class="mt-2 text-sm text-gray-500">
+        <div class="bg-surface-container shadow rounded-lg p-6">
+          <div class="text-sm font-medium text-on-surface-variant">Total Leases</div>
+          <div class="mt-2 text-3xl font-bold text-on-surface">{@stats[:total_leases] || 0}</div>
+          <div class="mt-2 text-sm text-on-surface-variant">
             {@stats[:active_leases] || 0} active
           </div>
         </div>
 
-        <div class="bg-white shadow rounded-lg p-6">
-          <div class="text-sm font-medium text-gray-500">Renewal Success Rate</div>
-          <div class="mt-2 text-3xl font-bold text-green-600">
+        <div class="bg-surface-container shadow rounded-lg p-6">
+          <div class="text-sm font-medium text-on-surface-variant">Renewal Success Rate</div>
+          <div class="mt-2 text-3xl font-bold text-success">
             {format_percentage(@renewal_metrics[:success_rate] || 100.0)}
           </div>
-          <div class="mt-2 text-sm text-gray-500">
+          <div class="mt-2 text-sm text-on-surface-variant">
             {@renewal_metrics[:successful] || 0} / {@renewal_metrics[:total_attempts] || 0} renewals
           </div>
         </div>
 
-        <div class="bg-white shadow rounded-lg p-6">
-          <div class="text-sm font-medium text-gray-500">Failed Renewals</div>
-          <div class="mt-2 text-3xl font-bold text-red-600">
+        <div class="bg-surface-container shadow rounded-lg p-6">
+          <div class="text-sm font-medium text-on-surface-variant">Failed Renewals</div>
+          <div class="mt-2 text-3xl font-bold text-error">
             {@renewal_metrics[:failed] || 0}
           </div>
-          <div class="mt-2 text-sm text-gray-500">
+          <div class="mt-2 text-sm text-on-surface-variant">
             Last {format_time_range(@time_range)}
           </div>
         </div>
 
-        <div class="bg-white shadow rounded-lg p-6">
-          <div class="text-sm font-medium text-gray-500">Avg Renewal Time</div>
-          <div class="mt-2 text-3xl font-bold text-blue-600">
+        <div class="bg-surface-container shadow rounded-lg p-6">
+          <div class="text-sm font-medium text-on-surface-variant">Avg Renewal Time</div>
+          <div class="mt-2 text-3xl font-bold text-primary">
             {@renewal_metrics[:avg_duration_ms] || 0}ms
           </div>
-          <div class="mt-2 text-sm text-gray-500">
+          <div class="mt-2 text-sm text-on-surface-variant">
             P95: {@renewal_metrics[:p95_duration_ms] || 0}ms
           </div>
         </div>
@@ -125,20 +125,20 @@ defmodule SecretHub.Web.LeaseDashboardLive do
       
     <!-- Renewal Metrics Chart -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div class="bg-white shadow rounded-lg p-6">
+        <div class="bg-surface-container shadow rounded-lg p-6">
           <h2 class="text-lg font-semibold mb-4">Renewal Trends</h2>
 
           <div class="space-y-4">
             <div>
               <div class="flex justify-between text-sm mb-1">
-                <span class="text-gray-600">Successful Renewals</span>
-                <span class="font-semibold text-green-600">
+                <span class="text-on-surface-variant">Successful Renewals</span>
+                <span class="font-semibold text-success">
                   {@renewal_metrics[:successful] || 0}
                 </span>
               </div>
-              <div class="w-full bg-gray-200 rounded-full h-2">
+              <div class="w-full bg-surface-container-high rounded-full h-2">
                 <div
-                  class="bg-green-600 h-2 rounded-full"
+                  class="bg-success h-2 rounded-full"
                   style={"width: #{renewal_bar_width(@renewal_metrics, :successful)}%"}
                 >
                 </div>
@@ -147,14 +147,14 @@ defmodule SecretHub.Web.LeaseDashboardLive do
 
             <div>
               <div class="flex justify-between text-sm mb-1">
-                <span class="text-gray-600">Failed Renewals</span>
-                <span class="font-semibold text-red-600">
+                <span class="text-on-surface-variant">Failed Renewals</span>
+                <span class="font-semibold text-error">
                   {@renewal_metrics[:failed] || 0}
                 </span>
               </div>
-              <div class="w-full bg-gray-200 rounded-full h-2">
+              <div class="w-full bg-surface-container-high rounded-full h-2">
                 <div
-                  class="bg-red-600 h-2 rounded-full"
+                  class="bg-error h-2 rounded-full"
                   style={"width: #{renewal_bar_width(@renewal_metrics, :failed)}%"}
                 >
                 </div>
@@ -163,14 +163,14 @@ defmodule SecretHub.Web.LeaseDashboardLive do
 
             <div>
               <div class="flex justify-between text-sm mb-1">
-                <span class="text-gray-600">Auto-Expired</span>
-                <span class="font-semibold text-yellow-600">
+                <span class="text-on-surface-variant">Auto-Expired</span>
+                <span class="font-semibold text-warning">
                   {@renewal_metrics[:expired] || 0}
                 </span>
               </div>
-              <div class="w-full bg-gray-200 rounded-full h-2">
+              <div class="w-full bg-surface-container-high rounded-full h-2">
                 <div
-                  class="bg-yellow-600 h-2 rounded-full"
+                  class="bg-warning h-2 rounded-full"
                   style={"width: #{renewal_bar_width(@renewal_metrics, :expired)}%"}
                 >
                 </div>
@@ -179,11 +179,11 @@ defmodule SecretHub.Web.LeaseDashboardLive do
           </div>
         </div>
 
-        <div class="bg-white shadow rounded-lg p-6">
+        <div class="bg-surface-container shadow rounded-lg p-6">
           <h2 class="text-lg font-semibold mb-4">Engine Breakdown</h2>
 
           <%= if @engine_breakdown == [] do %>
-            <div class="text-center text-gray-500 py-8">
+            <div class="text-center text-on-surface-variant py-8">
               No lease data available
             </div>
           <% else %>
@@ -191,14 +191,14 @@ defmodule SecretHub.Web.LeaseDashboardLive do
               <%= for engine <- @engine_breakdown do %>
                 <div>
                   <div class="flex justify-between text-sm mb-1">
-                    <span class="text-gray-600 capitalize">{engine.type}</span>
-                    <span class="font-semibold text-gray-900">
+                    <span class="text-on-surface-variant capitalize">{engine.type}</span>
+                    <span class="font-semibold text-on-surface">
                       {engine.count} ({format_percentage(engine.percentage)})
                     </span>
                   </div>
-                  <div class="w-full bg-gray-200 rounded-full h-2">
+                  <div class="w-full bg-surface-container-high rounded-full h-2">
                     <div
-                      class="bg-indigo-600 h-2 rounded-full"
+                      class="bg-secondary h-2 rounded-full"
                       style={"width: #{engine.percentage}%"}
                     >
                     </div>
@@ -211,51 +211,51 @@ defmodule SecretHub.Web.LeaseDashboardLive do
       </div>
       
     <!-- Upcoming Renewals Timeline -->
-      <div class="bg-white shadow rounded-lg p-6 mb-6">
+      <div class="bg-surface-container shadow rounded-lg p-6 mb-6">
         <h2 class="text-lg font-semibold mb-4">Upcoming Renewals</h2>
 
         <%= if @upcoming_renewals == [] do %>
-          <div class="text-center text-gray-500 py-8">
+          <div class="text-center text-on-surface-variant py-8">
             No upcoming renewals scheduled
           </div>
         <% else %>
           <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-gray-200">
-              <thead class="bg-gray-50">
+            <table class="min-w-full divide-y divide-outline-variant">
+              <thead class="bg-surface-container-low">
                 <tr>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th class="px-4 py-2 text-left text-xs font-medium text-on-surface-variant uppercase">
                     Lease ID
                   </th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th class="px-4 py-2 text-left text-xs font-medium text-on-surface-variant uppercase">
                     Role
                   </th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th class="px-4 py-2 text-left text-xs font-medium text-on-surface-variant uppercase">
                     Engine
                   </th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th class="px-4 py-2 text-left text-xs font-medium text-on-surface-variant uppercase">
                     Renewal Due
                   </th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th class="px-4 py-2 text-left text-xs font-medium text-on-surface-variant uppercase">
                     Time Until
                   </th>
-                  <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                  <th class="px-4 py-2 text-left text-xs font-medium text-on-surface-variant uppercase">
                     Status
                   </th>
                 </tr>
               </thead>
-              <tbody class="bg-white divide-y divide-gray-200">
+              <tbody class="bg-surface-container divide-y divide-outline-variant">
                 <%= for renewal <- Enum.take(@upcoming_renewals, 10) do %>
                   <tr>
-                    <td class="px-4 py-2 text-sm font-mono text-gray-900">
+                    <td class="px-4 py-2 text-sm font-mono text-on-surface">
                       {String.slice(renewal.lease_id, 0, 8)}...
                     </td>
-                    <td class="px-4 py-2 text-sm text-gray-900">
+                    <td class="px-4 py-2 text-sm text-on-surface">
                       {renewal.role_name}
                     </td>
-                    <td class="px-4 py-2 text-sm text-gray-500">
+                    <td class="px-4 py-2 text-sm text-on-surface-variant">
                       {renewal.engine_type}
                     </td>
-                    <td class="px-4 py-2 text-sm text-gray-500">
+                    <td class="px-4 py-2 text-sm text-on-surface-variant">
                       {format_datetime(renewal.renewal_time)}
                     </td>
                     <td class="px-4 py-2 text-sm font-semibold">
@@ -277,11 +277,11 @@ defmodule SecretHub.Web.LeaseDashboardLive do
       </div>
       
     <!-- Recent Activity -->
-      <div class="bg-white shadow rounded-lg p-6">
+      <div class="bg-surface-container shadow rounded-lg p-6">
         <h2 class="text-lg font-semibold mb-4">Recent Activity</h2>
 
         <%= if @recent_activity == [] do %>
-          <div class="text-center text-gray-500 py-8">
+          <div class="text-center text-on-surface-variant py-8">
             No recent activity
           </div>
         <% else %>
@@ -295,14 +295,14 @@ defmodule SecretHub.Web.LeaseDashboardLive do
                 <div class="flex-1 min-w-0">
                   <div class="flex justify-between items-start">
                     <div>
-                      <p class="text-sm font-medium text-gray-900">
+                      <p class="text-sm font-medium text-on-surface">
                         {activity.description}
                       </p>
-                      <p class="text-xs text-gray-500 mt-1">
+                      <p class="text-xs text-on-surface-variant mt-1">
                         Lease: {String.slice(activity.lease_id, 0, 16)}... | Role: {activity.role_name}
                       </p>
                     </div>
-                    <span class="text-xs text-gray-500 whitespace-nowrap ml-2">
+                    <span class="text-xs text-on-surface-variant whitespace-nowrap ml-2">
                       {format_time_ago(activity.timestamp)}
                     </span>
                   </div>
@@ -447,13 +447,13 @@ defmodule SecretHub.Web.LeaseDashboardLive do
 
   defp format_duration(seconds), do: "#{div(seconds, 86_400)}d"
 
-  defp time_until_class(seconds) when seconds < 300, do: "text-red-600"
-  defp time_until_class(seconds) when seconds < 1800, do: "text-yellow-600"
-  defp time_until_class(_), do: "text-green-600"
+  defp time_until_class(seconds) when seconds < 300, do: "text-error"
+  defp time_until_class(seconds) when seconds < 1800, do: "text-warning"
+  defp time_until_class(_), do: "text-success"
 
-  defp urgency_badge_class(seconds) when seconds < 300, do: "bg-red-100 text-red-800"
-  defp urgency_badge_class(seconds) when seconds < 1800, do: "bg-yellow-100 text-yellow-800"
-  defp urgency_badge_class(_), do: "bg-green-100 text-green-800"
+  defp urgency_badge_class(seconds) when seconds < 300, do: "bg-error/10 text-error"
+  defp urgency_badge_class(seconds) when seconds < 1800, do: "bg-warning/10 text-warning"
+  defp urgency_badge_class(_), do: "bg-success/10 text-success"
 
   defp urgency_text(seconds) when seconds < 300, do: "Urgent"
   defp urgency_text(seconds) when seconds < 1800, do: "Soon"
@@ -472,13 +472,13 @@ defmodule SecretHub.Web.LeaseDashboardLive do
 
   defp activity_border_class("renewal_success"), do: "border-green-500"
   defp activity_border_class("renewal_failed"), do: "border-red-500"
-  defp activity_border_class("lease_created"), do: "border-blue-500"
+  defp activity_border_class("lease_created"), do: "border-primary"
   defp activity_border_class("lease_revoked"), do: "border-yellow-500"
-  defp activity_border_class(_), do: "border-gray-300"
+  defp activity_border_class(_), do: "border-outline-variant"
 
-  defp activity_dot_class("renewal_success"), do: "bg-green-500"
-  defp activity_dot_class("renewal_failed"), do: "bg-red-500"
-  defp activity_dot_class("lease_created"), do: "bg-blue-500"
-  defp activity_dot_class("lease_revoked"), do: "bg-yellow-500"
-  defp activity_dot_class(_), do: "bg-gray-300"
+  defp activity_dot_class("renewal_success"), do: "bg-success"
+  defp activity_dot_class("renewal_failed"), do: "bg-error"
+  defp activity_dot_class("lease_created"), do: "bg-primary"
+  defp activity_dot_class("lease_revoked"), do: "bg-warning"
+  defp activity_dot_class(_), do: "bg-outline-variant"
 end

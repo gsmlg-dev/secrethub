@@ -168,7 +168,7 @@ defmodule SecretHub.Web.NodeHealthLive do
       <div class="flex justify-between items-center mb-6">
         <div>
           <h1 class="text-3xl font-bold">Node Health: {@node_id}</h1>
-          <p class="text-gray-600 mt-1">Detailed health monitoring and metrics</p>
+          <p class="text-on-surface-variant mt-1">Detailed health monitoring and metrics</p>
         </div>
 
         <div class="flex gap-2">
@@ -355,7 +355,7 @@ defmodule SecretHub.Web.NodeHealthLive do
               </table>
             </div>
 
-            <div class="mt-4 text-sm text-gray-600">
+            <div class="mt-4 text-sm text-on-surface-variant">
               Showing {min(length(@health_history), 50)} of {length(@health_history)} metrics
             </div>
           <% else %>

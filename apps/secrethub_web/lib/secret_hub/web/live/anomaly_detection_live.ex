@@ -148,31 +148,31 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
       </div>
       
     <!-- Detection Rules -->
-      <div class="bg-white rounded-lg border shadow-sm">
+      <div class="bg-surface-container rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b">
           <h2 class="text-lg font-semibold">Detection Rules</h2>
         </div>
         <div class="divide-y">
           <%= for rule <- @rules do %>
-            <div class="px-6 py-4 hover:bg-gray-50">
+            <div class="px-6 py-4 hover:bg-surface-container-low">
               <div class="flex items-start justify-between">
                 <div class="flex-1">
                   <div class="flex items-center gap-3">
-                    <h3 class="text-sm font-medium text-gray-900">{rule.name}</h3>
+                    <h3 class="text-sm font-medium text-on-surface">{rule.name}</h3>
                     <.rule_type_badge type={rule.rule_type} />
                     <.severity_badge severity={rule.severity} />
                     <%= if rule.enabled do %>
-                      <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-success/10 text-success">
                         Enabled
                       </span>
                     <% else %>
-                      <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-surface-container text-on-surface">
                         Disabled
                       </span>
                     <% end %>
                   </div>
-                  <p class="mt-1 text-sm text-gray-500">{rule.description}</p>
-                  <div class="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                  <p class="mt-1 text-sm text-on-surface-variant">{rule.description}</p>
+                  <div class="mt-2 flex items-center gap-4 text-xs text-on-surface-variant">
                     <span>Triggered: {rule.trigger_count} times</span>
                     <%= if rule.last_triggered_at do %>
                       <span>
@@ -184,7 +184,7 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
                 <button
                   phx-click="toggle_rule"
                   phx-value-id={rule.id}
-                  class="ml-4 text-sm text-indigo-600 hover:text-indigo-900"
+                  class="ml-4 text-sm text-secondary hover:text-indigo-900"
                 >
                   {if rule.enabled, do: "Disable", else: "Enable"}
                 </button>
@@ -195,7 +195,7 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
       </div>
       
     <!-- Recent Alerts -->
-      <div class="bg-white rounded-lg border shadow-sm">
+      <div class="bg-surface-container rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b flex items-center justify-between">
           <h2 class="text-lg font-semibold">Recent Alerts</h2>
           <div class="flex gap-2">
@@ -223,19 +223,19 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
         </div>
         <div class="divide-y">
           <%= for alert <- @alerts do %>
-            <div class="px-6 py-4 hover:bg-gray-50">
+            <div class="px-6 py-4 hover:bg-surface-container-low">
               <div class="flex items-start justify-between">
                 <div class="flex-1">
                   <div class="flex items-center gap-3">
                     <.severity_badge severity={alert.severity} />
                     <.status_badge status={alert.status} />
-                    <span class="text-xs text-gray-500">
+                    <span class="text-xs text-on-surface-variant">
                       {Calendar.strftime(alert.triggered_at, "%Y-%m-%d %H:%M:%S")}
                     </span>
                   </div>
-                  <p class="mt-2 text-sm text-gray-900">{alert.description}</p>
+                  <p class="mt-2 text-sm text-on-surface">{alert.description}</p>
                   <%= if alert.context do %>
-                    <div class="mt-2 text-xs text-gray-500 font-mono bg-gray-50 p-2 rounded">
+                    <div class="mt-2 text-xs text-on-surface-variant font-mono bg-surface-container-low p-2 rounded">
                       {Jason.encode!(alert.context, pretty: true)}
                     </div>
                   <% end %>
@@ -245,14 +245,14 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
                     <button
                       phx-click="acknowledge_alert"
                       phx-value-id={alert.id}
-                      class="text-sm text-blue-600 hover:text-blue-900"
+                      class="text-sm text-primary hover:text-primary"
                     >
                       Acknowledge
                     </button>
                     <button
                       phx-click="resolve_alert"
                       phx-value-id={alert.id}
-                      class="text-sm text-green-600 hover:text-green-900"
+                      class="text-sm text-success hover:text-success"
                     >
                       Resolve
                     </button>
@@ -264,9 +264,9 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
 
           <%= if @alerts == [] do %>
             <div class="px-6 py-12 text-center">
-              <.icon name="check-circle" class="mx-auto h-12 w-12 text-green-500" />
-              <h3 class="mt-2 text-sm font-medium text-gray-900">No alerts</h3>
-              <p class="mt-1 text-sm text-gray-500">
+              <.icon name="check-circle" class="mx-auto h-12 w-12 text-success" />
+              <h3 class="mt-2 text-sm font-medium text-on-surface">No alerts</h3>
+              <p class="mt-1 text-sm text-on-surface-variant">
                 <%= if @selected_severity == :all do %>
                   All systems operating normally
                 <% else %>
@@ -283,10 +283,10 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
 
   defp stat_card(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg border p-6 shadow-sm">
+    <div class="bg-surface-container rounded-lg border p-6 shadow-sm">
       <div class="flex items-start justify-between">
         <div>
-          <p class="text-sm font-medium text-gray-600">{@title}</p>
+          <p class="text-sm font-medium text-on-surface-variant">{@title}</p>
           <p class={"text-3xl font-bold mt-2 text-#{@color}-600"}>{@value}</p>
         </div>
         <div class={"rounded-full p-3 bg-#{@color}-100"}>
@@ -299,7 +299,7 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
 
   defp rule_type_badge(assigns) do
     ~H"""
-    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
       {format_rule_type(@type)}
     </span>
     """
@@ -358,8 +358,8 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
       class={[
         "px-3 py-1 text-sm rounded-md",
         if(@selected?,
-          do: "bg-indigo-600 text-white",
-          else: "bg-gray-100 text-gray-700 hover:bg-gray-200"
+          do: "bg-secondary text-on-primary",
+          else: "bg-surface-container text-on-surface hover:bg-surface-container-high"
         )
       ]}
     >

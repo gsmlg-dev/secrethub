@@ -30,20 +30,20 @@ defmodule SecretHub.Web.VaultInitLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div class="min-h-screen bg-surface-container-low py-12 px-4 sm:px-6 lg:px-8">
       <div class="max-w-3xl mx-auto">
         <div class="text-center mb-8">
-          <h1 class="text-4xl font-bold text-gray-900 mb-2">Initialize SecretHub Vault</h1>
-          <p class="text-lg text-gray-600">
+          <h1 class="text-4xl font-bold text-on-surface mb-2">Initialize SecretHub Vault</h1>
+          <p class="text-lg text-on-surface-variant">
             Set up Shamir secret sharing for vault encryption
           </p>
         </div>
 
         <%= if @vault_status.initialized do %>
           <!-- Already Initialized -->
-          <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+          <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden">
             <div class="px-6 py-6">
-              <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg">
+              <div class="bg-primary/5 border border-primary/50 text-primary px-4 py-3 rounded-lg">
                 <p class="font-medium">Vault Already Initialized</p>
                 <p class="text-sm mt-1">
                   The vault has already been initialized. You can proceed to unseal it.
@@ -53,7 +53,7 @@ defmodule SecretHub.Web.VaultInitLive do
               <div class="mt-6">
                 <a
                   href="/vault/unseal"
-                  class="block w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors duration-200 text-center"
+                  class="block w-full bg-primary text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200 text-center"
                 >
                   Go to Unseal Page
                 </a>
@@ -64,13 +64,13 @@ defmodule SecretHub.Web.VaultInitLive do
           <!-- Initialization Form -->
           <%= if @initialized_shares do %>
             <!-- Show Generated Shares -->
-            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-              <div class="px-6 py-4 border-b border-gray-200 bg-green-600">
-                <h2 class="text-xl font-semibold text-white">Vault Initialized Successfully!</h2>
+            <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden">
+              <div class="px-6 py-4 border-b border-outline-variant bg-success">
+                <h2 class="text-xl font-semibold text-on-primary">Vault Initialized Successfully!</h2>
               </div>
 
               <div class="px-6 py-6">
-                <div class="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg mb-6">
+                <div class="bg-warning/5 border border-yellow-200 text-warning px-4 py-3 rounded-lg mb-6">
                   <p class="font-medium">⚠️ Important: Save These Shares Securely</p>
                   <p class="text-sm mt-1">
                     These shares will only be shown once. Store them in separate secure locations.
@@ -80,18 +80,18 @@ defmodule SecretHub.Web.VaultInitLive do
 
                 <div class="space-y-4">
                   <%= for {share, index} <- Enum.with_index(@initialized_shares, 1) do %>
-                    <div class="border border-gray-300 rounded-lg p-4">
+                    <div class="border border-outline-variant rounded-lg p-4">
                       <div class="flex items-center justify-between mb-2">
-                        <span class="font-semibold text-gray-700">Share {index}</span>
+                        <span class="font-semibold text-on-surface">Share {index}</span>
                         <button
                           phx-click="copy_share"
                           phx-value-share={share}
-                          class="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded transition-colors"
+                          class="text-sm bg-surface-container hover:bg-surface-container-high px-3 py-1 rounded transition-colors"
                         >
                           Copy
                         </button>
                       </div>
-                      <code class="block bg-gray-900 text-gray-100 p-3 rounded text-xs break-all">
+                      <code class="block bg-surface-container-highest text-on-surface p-3 rounded text-xs break-all">
                         {share}
                       </code>
                     </div>
@@ -101,14 +101,14 @@ defmodule SecretHub.Web.VaultInitLive do
                 <div class="mt-6 flex space-x-4">
                   <button
                     phx-click="download_shares"
-                    class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors duration-200"
+                    class="flex-1 bg-primary text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200"
                   >
                     Download Shares
                   </button>
 
                   <a
                     href="/vault/unseal"
-                    class="flex-1 bg-green-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-green-700 transition-colors duration-200 text-center"
+                    class="flex-1 bg-success text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-success transition-colors duration-200 text-center"
                   >
                     Continue to Unseal
                   </a>
@@ -117,15 +117,15 @@ defmodule SecretHub.Web.VaultInitLive do
             </div>
           <% else %>
             <!-- Configuration Form -->
-            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
-              <div class="px-6 py-4 border-b border-gray-200">
-                <h2 class="text-xl font-semibold text-gray-800">Configuration</h2>
+            <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden">
+              <div class="px-6 py-4 border-b border-outline-variant">
+                <h2 class="text-xl font-semibold text-on-surface">Configuration</h2>
               </div>
 
               <div class="px-6 py-6">
                 <form phx-submit="initialize" class="space-y-6">
                   <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <label class="block text-sm font-medium text-on-surface mb-2">
                       Total Shares
                     </label>
                     <input
@@ -135,15 +135,15 @@ defmodule SecretHub.Web.VaultInitLive do
                       min="1"
                       max="255"
                       phx-change="update_total_shares"
-                      class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      class="w-full px-4 py-2 border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
-                    <p class="mt-2 text-sm text-gray-500">
+                    <p class="mt-2 text-sm text-on-surface-variant">
                       Number of key shares to generate (recommended: 5)
                     </p>
                   </div>
 
                   <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                    <label class="block text-sm font-medium text-on-surface mb-2">
                       Threshold
                     </label>
                     <input
@@ -153,21 +153,21 @@ defmodule SecretHub.Web.VaultInitLive do
                       min="1"
                       max={@total_shares}
                       phx-change="update_threshold"
-                      class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      class="w-full px-4 py-2 border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
-                    <p class="mt-2 text-sm text-gray-500">
+                    <p class="mt-2 text-sm text-on-surface-variant">
                       Number of shares required to unseal (recommended: 3)
                     </p>
                   </div>
 
                   <%= if @error_message do %>
-                    <div class="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
+                    <div class="bg-error/5 border border-red-200 text-error px-4 py-3 rounded-lg">
                       <p class="font-medium">Error</p>
                       <p class="text-sm">{@error_message}</p>
                     </div>
                   <% end %>
 
-                  <div class="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded-lg">
+                  <div class="bg-primary/5 border border-primary/50 text-primary px-4 py-3 rounded-lg">
                     <p class="font-medium">What is Shamir Secret Sharing?</p>
                     <p class="text-sm mt-1">
                       The vault's master encryption key will be split into {@total_shares} shares.
@@ -178,7 +178,7 @@ defmodule SecretHub.Web.VaultInitLive do
 
                   <button
                     type="submit"
-                    class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors duration-200"
+                    class="w-full bg-primary text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200"
                   >
                     Initialize Vault
                   </button>

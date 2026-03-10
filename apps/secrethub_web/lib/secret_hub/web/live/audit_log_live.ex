@@ -154,8 +154,8 @@ defmodule SecretHub.Web.AuditLogLive do
       <!-- Header -->
       <div class="flex justify-between items-center">
         <div>
-          <h2 class="text-2xl font-bold text-gray-900">Audit Logs</h2>
-          <p class="text-sm text-gray-600">
+          <h2 class="text-2xl font-bold text-on-surface">Audit Logs</h2>
+          <p class="text-sm text-on-surface-variant">
             Monitor and analyze all secret access attempts and system events
           </p>
         </div>
@@ -178,11 +178,11 @@ defmodule SecretHub.Web.AuditLogLive do
       </div>
       
     <!-- Filters -->
-      <div class="bg-white p-6 rounded-lg shadow">
+      <div class="bg-surface-container p-6 rounded-lg shadow">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-medium text-gray-900">Filters</h3>
+          <h3 class="text-lg font-medium text-on-surface">Filters</h3>
           <button
-            class="text-sm text-blue-600 hover:text-blue-800"
+            class="text-sm text-primary hover:text-primary"
             phx-click="clear_filters"
           >
             Clear all filters
@@ -192,7 +192,7 @@ defmodule SecretHub.Web.AuditLogLive do
         <form phx-change="filter_logs" class="space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Event Type</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Event Type</label>
               <select name="filters[event_type]" class="form-select w-full">
                 <option value="all" selected={@filters.event_type == "all"}>All Events</option>
                 <%= for type <- @event_types do %>
@@ -207,7 +207,7 @@ defmodule SecretHub.Web.AuditLogLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Access Status</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Access Status</label>
               <select name="filters[access_granted]" class="form-select w-full">
                 <option value="all" selected={@filters.access_granted == "all"}>All Status</option>
                 <option value="true" selected={@filters.access_granted == "true"}>Granted</option>
@@ -216,7 +216,7 @@ defmodule SecretHub.Web.AuditLogLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Agent ID</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Agent ID</label>
               <input
                 type="text"
                 name="filters[agent_id]"
@@ -227,7 +227,7 @@ defmodule SecretHub.Web.AuditLogLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Secret Path</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Secret Path</label>
               <input
                 type="text"
                 name="filters[secret_path]"
@@ -238,7 +238,7 @@ defmodule SecretHub.Web.AuditLogLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Date From</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Date From</label>
               <input
                 type="datetime-local"
                 name="filters[date_from]"
@@ -248,7 +248,7 @@ defmodule SecretHub.Web.AuditLogLive do
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Date To</label>
+              <label class="block text-sm font-medium text-on-surface mb-1">Date To</label>
               <input
                 type="datetime-local"
                 name="filters[date_to]"
@@ -259,7 +259,7 @@ defmodule SecretHub.Web.AuditLogLive do
           </div>
 
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
+            <label class="block text-sm font-medium text-on-surface mb-1">Search</label>
             <input
               type="text"
               name="query"
@@ -273,20 +273,20 @@ defmodule SecretHub.Web.AuditLogLive do
       </div>
       
     <!-- Results Summary -->
-      <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div class="bg-primary/5 border border-primary/50 rounded-lg p-4">
         <div class="flex items-center justify-between">
           <div>
-            <span class="text-sm font-medium text-blue-800">
+            <span class="text-sm font-medium text-primary">
               Showing {length(current_page_logs(@audit_logs, @pagination.page, @pagination.per_page))} of {@pagination.total_count} audit events
             </span>
           </div>
           <%= if @pagination.total_pages > 1 do %>
             <div class="flex items-center space-x-2">
-              <span class="text-sm text-blue-800">Page:</span>
+              <span class="text-sm text-primary">Page:</span>
               <div class="flex space-x-1">
                 <%= for page <- 1..@pagination.total_pages do %>
                   <button
-                    class={"px-3 py-1 text-sm rounded #{if page == @pagination.page, do: "bg-blue-600 text-white", else: "bg-white text-blue-600 border border-blue-300 hover:bg-blue-50"}"}
+                    class={"px-3 py-1 text-sm rounded #{if page == @pagination.page, do: "bg-primary text-on-primary", else: "bg-surface-container text-primary border border-primary hover:bg-primary/5"}"}
                     phx-click="page_change"
                     phx-value-page={page}
                   >
@@ -300,45 +300,45 @@ defmodule SecretHub.Web.AuditLogLive do
       </div>
       
     <!-- Audit Log Table -->
-      <div class="bg-white rounded-lg shadow">
+      <div class="bg-surface-container rounded-lg shadow">
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+          <table class="min-w-full divide-y divide-outline-variant">
+            <thead class="bg-surface-container-low">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Timestamp
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Event Type
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Agent
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Secret Path
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Status
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Source IP
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Response Time
                 </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody class="bg-surface-container divide-y divide-outline-variant">
               <%= for event <- current_page_logs(@audit_logs, @pagination.page, @pagination.per_page) do %>
                 <tr
-                  class="hover:bg-gray-50 transition-colors cursor-pointer"
+                  class="hover:bg-surface-container-low transition-colors cursor-pointer"
                   phx-click="select_event"
                   phx-value-id={event.id}
                 >
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {format_timestamp(event.timestamp)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
@@ -346,11 +346,11 @@ defmodule SecretHub.Web.AuditLogLive do
                       {format_event_type(event.event_type)}
                     </span>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
                     {event.agent_id}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <code class="text-sm bg-gray-100 px-1 py-0.5 rounded">
+                    <code class="text-sm bg-surface-container px-1 py-0.5 rounded">
                       {event.secret_path || "-"}
                     </code>
                   </td>
@@ -363,14 +363,14 @@ defmodule SecretHub.Web.AuditLogLive do
                       </span>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
                     {event.source_ip}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
                     {event.response_time_ms}ms
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button class="text-indigo-600 hover:text-indigo-900">
+                    <button class="text-secondary hover:text-indigo-900">
                       View Details
                     </button>
                   </td>
@@ -502,14 +502,14 @@ defmodule SecretHub.Web.AuditLogLive do
   defp format_event_type("policy_updated"), do: "Policy Updated"
   defp format_event_type(type), do: String.replace(String.capitalize(type), "_", " ")
 
-  defp event_type_badge_color("secret_access"), do: "bg-green-100 text-green-800"
-  defp event_type_badge_color("secret_access_denied"), do: "bg-red-100 text-red-800"
-  defp event_type_badge_color("agent_connect"), do: "bg-blue-100 text-blue-800"
-  defp event_type_badge_color("agent_disconnect"), do: "bg-yellow-100 text-yellow-800"
-  defp event_type_badge_color(_), do: "bg-gray-100 text-gray-800"
+  defp event_type_badge_color("secret_access"), do: "bg-success/10 text-success"
+  defp event_type_badge_color("secret_access_denied"), do: "bg-error/10 text-error"
+  defp event_type_badge_color("agent_connect"), do: "bg-primary/10 text-primary"
+  defp event_type_badge_color("agent_disconnect"), do: "bg-warning/10 text-warning"
+  defp event_type_badge_color(_), do: "bg-surface-container text-on-surface"
 
-  defp access_status_color(true), do: "bg-green-500"
-  defp access_status_color(false), do: "bg-red-500"
+  defp access_status_color(true), do: "bg-success"
+  defp access_status_color(false), do: "bg-error"
 
   defp build_audit_filters(ui_filters) do
     %{}

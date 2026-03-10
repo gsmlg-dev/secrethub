@@ -95,266 +95,186 @@ defmodule SecretHub.Web.AdminDashboardLive do
     <div class="space-y-6">
       <!-- System Stats Section -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
-          <div class="flex items-center">
-            <div class="flex-shrink-0 p-3 bg-blue-100 rounded-lg">
-              <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                />
-              </svg>
+        <.dm_card>
+          <:title>
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-primary/10">
+                <.dm_mdi name="shield-lock" class="w-6 h-6" color="primary" />
+              </div>
+              <span>Total Secrets</span>
             </div>
-            <div class="ml-5 w-0 flex-1">
-              <dl>
-                <dt class="text-sm font-medium text-gray-500 truncate">Total Secrets</dt>
-                <dd class="text-lg font-medium text-gray-900">{@system_stats.total_secrets}</dd>
-              </dl>
-            </div>
-          </div>
-        </div>
+          </:title>
+          <p class="text-3xl font-bold text-on-surface">{@system_stats.total_secrets}</p>
+        </.dm_card>
 
-        <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
-          <div class="flex items-center">
-            <div class="flex-shrink-0 p-3 bg-green-100 rounded-lg">
-              <svg
-                class="w-6 h-6 text-green-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                />
-              </svg>
+        <.dm_card>
+          <:title>
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-success/10">
+                <.dm_mdi name="server" class="w-6 h-6" color="success" />
+              </div>
+              <span>Active Agents</span>
             </div>
-            <div class="ml-5 w-0 flex-1">
-              <dl>
-                <dt class="text-sm font-medium text-gray-500 truncate">Active Agents</dt>
-                <dd class="text-lg font-medium text-gray-900">{@system_stats.active_agents}</dd>
-              </dl>
-            </div>
-          </div>
-        </div>
+          </:title>
+          <p class="text-3xl font-bold text-on-surface">{@system_stats.active_agents}</p>
+        </.dm_card>
 
-        <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
-          <div class="flex items-center">
-            <div class="flex-shrink-0 p-3 bg-purple-100 rounded-lg">
-              <svg
-                class="w-6 h-6 text-purple-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
+        <.dm_card>
+          <:title>
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-tertiary/10">
+                <.dm_mdi name="clock-outline" class="w-6 h-6" color="tertiary" />
+              </div>
+              <span>System Uptime</span>
             </div>
-            <div class="ml-5 w-0 flex-1">
-              <dl>
-                <dt class="text-sm font-medium text-gray-500 truncate">System Uptime</dt>
-                <dd class="text-lg font-medium text-gray-900">
-                  {format_uptime(@system_stats.uptime_hours)}
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
+          </:title>
+          <p class="text-3xl font-bold text-on-surface">
+            {format_uptime(@system_stats.uptime_hours)}
+          </p>
+        </.dm_card>
 
-        <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
-          <div class="flex items-center">
-            <div class="flex-shrink-0 p-3 bg-yellow-100 rounded-lg">
-              <svg
-                class="w-6 h-6 text-yellow-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-                />
-              </svg>
+        <.dm_card>
+          <:title>
+            <div class="flex items-center gap-3">
+              <div class="p-2 rounded-lg bg-warning/10">
+                <.dm_mdi name="database" class="w-6 h-6" color="warning" />
+              </div>
+              <span>Storage Used</span>
             </div>
-            <div class="ml-5 w-0 flex-1">
-              <dl>
-                <dt class="text-sm font-medium text-gray-500 truncate">Storage Used</dt>
-                <dd class="text-lg font-medium text-gray-900">
-                  {Float.round(@system_stats.storage_used_gb, 2)} GB
-                </dd>
-              </dl>
-            </div>
-          </div>
-        </div>
+          </:title>
+          <p class="text-3xl font-bold text-on-surface">
+            {Float.round(@system_stats.storage_used_gb, 2)} GB
+          </p>
+        </.dm_card>
       </div>
-      
-    <!-- Connected Agents Section -->
-      <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-semibold text-gray-900">Connected Agents</h3>
-          <.link
-            navigate="/admin/agents"
-            class="text-blue-600 hover:text-blue-800 text-sm font-medium"
-          >
-            View All →
-          </.link>
-        </div>
+
+      <!-- Connected Agents Section -->
+      <.dm_card>
+        <:title>
+          <div class="flex justify-between items-center w-full">
+            <span>Connected Agents</span>
+            <.dm_link navigate="/admin/agents" class="text-sm font-medium">
+              View All →
+            </.dm_link>
+          </div>
+        </:title>
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
+          <table class="table table-hover w-full">
+            <thead>
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Agent
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Last Seen
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  IP Address
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
+                <th>Agent</th>
+                <th>Status</th>
+                <th>Last Seen</th>
+                <th>IP Address</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
+            <tbody>
               <%= for agent <- Enum.take(@agents, 5) do %>
-                <tr class="hover:bg-gray-50">
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="flex items-center">
-                      <div class={"w-2 h-2 rounded-full mr-2 #{status_color(agent.status)}"}></div>
-                      <div class="text-sm font-medium text-gray-900">{agent.name}</div>
+                <tr>
+                  <td>
+                    <div class="flex items-center gap-2">
+                      <div class={"w-2 h-2 rounded-full #{status_color(agent.status)}"}></div>
+                      <span class="font-medium">{agent.name}</span>
                     </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <span class={"inline-flex px-2 py-1 text-xs font-semibold rounded-full #{status_badge_color(agent.status)}"}>
+                  <td>
+                    <.dm_badge variant={status_badge_dm_color(agent.status)} size="sm" pill>
                       {String.upcase(Atom.to_string(agent.status))}
-                    </span>
+                    </.dm_badge>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td class="text-on-surface-variant">
                     {format_timestamp(agent.last_seen)}
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {agent.ip_address}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      class="text-red-600 hover:text-red-900"
+                  <td>{agent.ip_address}</td>
+                  <td>
+                    <.dm_btn
+                      variant="error"
+                      size="sm"
                       phx-click="disconnect_agent"
                       phx-value-agent-id={agent.id}
-                      phx-confirm="Are you sure you want to disconnect this agent?"
+                      confirm="Are you sure you want to disconnect this agent?"
                     >
                       Disconnect
-                    </button>
+                    </.dm_btn>
                   </td>
                 </tr>
               <% end %>
             </tbody>
           </table>
         </div>
-      </div>
-      
-    <!-- Quick Actions -->
+      </.dm_card>
+
+      <!-- Quick Actions -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-900">Maintenance</h3>
-            <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-              />
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-          </div>
+        <.dm_card>
+          <:title>
+            <div class="flex items-center gap-2">
+              <.dm_mdi name="cog" class="w-5 h-5" />
+              <span>Maintenance</span>
+            </div>
+          </:title>
           <div class="space-y-3">
-            <button
+            <.dm_btn
+              variant="primary"
+              class="w-full"
               phx-click="rotate_all_leases"
-              class="w-full btn-primary"
               phx-disable-with="Rotating..."
             >
               Rotate All Leases
-            </button>
-            <button
+            </.dm_btn>
+            <.dm_btn
+              variant="secondary"
+              class="w-full"
               phx-click="cleanup_expired_secrets"
-              class="w-full btn-secondary"
               phx-disable-with="Cleaning..."
             >
               Cleanup Expired Secrets
-            </button>
+            </.dm_btn>
           </div>
-        </div>
+        </.dm_card>
 
-        <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-900">Data Management</h3>
-            <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
+        <.dm_card>
+          <:title>
+            <div class="flex items-center gap-2">
+              <.dm_mdi name="file-document-outline" class="w-5 h-5" />
+              <span>Data Management</span>
+            </div>
+          </:title>
           <div class="space-y-3">
-            <.link navigate="/admin/secrets" class="block w-full text-center btn-secondary">
+            <.dm_link navigate="/admin/secrets" class="btn btn-secondary w-full text-center block">
               Manage Secrets
-            </.link>
-            <.link navigate="/admin/audit" class="block w-full text-center btn-secondary">
+            </.dm_link>
+            <.dm_link navigate="/admin/audit" class="btn btn-secondary w-full text-center block">
               View Audit Logs
-            </.link>
+            </.dm_link>
           </div>
-        </div>
+        </.dm_card>
 
-        <div class="bg-white p-6 rounded-lg shadow-lg border border-gray-200">
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-lg font-semibold text-gray-900">Quick Links</h3>
-            <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-              />
-            </svg>
-          </div>
+        <.dm_card>
+          <:title>
+            <div class="flex items-center gap-2">
+              <.dm_mdi name="chart-bar" class="w-5 h-5" />
+              <span>Quick Stats</span>
+            </div>
+          </:title>
           <div class="space-y-2 text-sm">
             <div class="flex justify-between">
-              <span class="text-gray-500">Static Secrets:</span>
-              <span class="font-medium">{@system_stats.static_secrets}</span>
+              <span class="text-on-surface-variant">Static Secrets:</span>
+              <span class="font-medium text-on-surface">{@system_stats.static_secrets}</span>
             </div>
+            <.dm_divider />
             <div class="flex justify-between">
-              <span class="text-gray-500">Dynamic Secrets:</span>
-              <span class="font-medium">{@system_stats.dynamic_secrets}</span>
+              <span class="text-on-surface-variant">Dynamic Secrets:</span>
+              <span class="font-medium text-on-surface">{@system_stats.dynamic_secrets}</span>
             </div>
+            <.dm_divider />
             <div class="flex justify-between">
-              <span class="text-gray-500">Last Rotation:</span>
-              <span class="font-medium">{@system_stats.last_rotation}</span>
+              <span class="text-on-surface-variant">Last Rotation:</span>
+              <span class="font-medium text-on-surface">{@system_stats.last_rotation}</span>
             </div>
           </div>
-        </div>
+        </.dm_card>
       </div>
     </div>
     """
@@ -564,14 +484,15 @@ defmodule SecretHub.Web.AdminDashboardLive do
   defp map_agent_status(:pending_bootstrap), do: :disconnected
   defp map_agent_status(_), do: :disconnected
 
-  defp status_color(:connected), do: "bg-green-500"
-  defp status_color(:disconnected), do: "bg-gray-400"
-  defp status_color(:error), do: "bg-red-500"
-  defp status_color(_), do: "bg-gray-500"
+  defp status_color(:connected), do: "bg-success"
+  defp status_color(:disconnected), do: "bg-outline"
+  defp status_color(:error), do: "bg-error"
+  defp status_color(_), do: "bg-outline"
 
-  defp status_badge_color(:connected), do: "bg-green-100 text-green-800"
-  defp status_badge_color(:disconnected), do: "bg-gray-100 text-gray-800"
-  defp status_badge_color(:error), do: "bg-red-100 text-red-800"
+  defp status_badge_dm_color(:connected), do: "success"
+  defp status_badge_dm_color(:disconnected), do: "secondary"
+  defp status_badge_dm_color(:error), do: "error"
+  defp status_badge_dm_color(_), do: "secondary"
 
   defp format_timestamp(nil), do: "Never"
 

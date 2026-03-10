@@ -15,14 +15,14 @@ defmodule SecretHub.Web.AgentDetailsComponent do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-surface-container rounded-lg shadow p-6">
       <div class="flex justify-between items-start mb-6">
         <div>
-          <h3 class="text-xl font-semibold text-gray-900">
+          <h3 class="text-xl font-semibold text-on-surface">
             {@agent.name}
           </h3>
-          <p class="text-sm text-gray-500">
-            Agent ID: <code class="bg-gray-100 px-1 py-0.5 rounded">{@agent.id}</code>
+          <p class="text-sm text-on-surface-variant">
+            Agent ID: <code class="bg-surface-container px-1 py-0.5 rounded">{@agent.id}</code>
           </p>
         </div>
         <div class="flex space-x-2">
@@ -38,50 +38,50 @@ defmodule SecretHub.Web.AgentDetailsComponent do
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Connection Info -->
         <div class="space-y-4">
-          <h4 class="text-lg font-medium text-gray-900">Connection Information</h4>
+          <h4 class="text-lg font-medium text-on-surface">Connection Information</h4>
 
           <div class="space-y-3">
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">Status</span>
+              <span class="text-sm font-medium text-on-surface-variant">Status</span>
               <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{status_badge_color(@agent.status)}"}>
                 {Atom.to_string(@agent.status)}
               </span>
             </div>
 
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">IP Address</span>
-              <span class="text-sm text-gray-900">{@agent.ip_address}</span>
+              <span class="text-sm font-medium text-on-surface-variant">IP Address</span>
+              <span class="text-sm text-on-surface">{@agent.ip_address}</span>
             </div>
 
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">Operating System</span>
-              <span class="text-sm text-gray-900">{@agent.os}</span>
+              <span class="text-sm font-medium text-on-surface-variant">Operating System</span>
+              <span class="text-sm text-on-surface">{@agent.os}</span>
             </div>
 
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">Agent Version</span>
-              <span class="text-sm text-gray-900">{@agent.version}</span>
+              <span class="text-sm font-medium text-on-surface-variant">Agent Version</span>
+              <span class="text-sm text-on-surface">{@agent.version}</span>
             </div>
 
             <%= if @agent.connection_time do %>
               <div class="flex justify-between">
-                <span class="text-sm font-medium text-gray-500">Connected Since</span>
-                <span class="text-sm text-gray-900">
+                <span class="text-sm font-medium text-on-surface-variant">Connected Since</span>
+                <span class="text-sm text-on-surface">
                   {format_datetime(@agent.connection_time)}
                 </span>
               </div>
             <% end %>
 
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">Last Seen</span>
-              <span class="text-sm text-gray-900">
+              <span class="text-sm font-medium text-on-surface-variant">Last Seen</span>
+              <span class="text-sm text-on-surface">
                 {format_datetime(@agent.last_seen)}
               </span>
             </div>
 
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">Uptime</span>
-              <span class="text-sm text-gray-900">
+              <span class="text-sm font-medium text-on-surface-variant">Uptime</span>
+              <span class="text-sm text-on-surface">
                 {format_uptime(@agent.uptime_hours)}
               </span>
             </div>
@@ -90,26 +90,26 @@ defmodule SecretHub.Web.AgentDetailsComponent do
         
     <!-- Security Info -->
         <div class="space-y-4">
-          <h4 class="text-lg font-medium text-gray-900">Security Information</h4>
+          <h4 class="text-lg font-medium text-on-surface">Security Information</h4>
 
           <div class="space-y-3">
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">Certificate Fingerprint</span>
-              <span class="text-xs text-gray-600 font-mono">
+              <span class="text-sm font-medium text-on-surface-variant">Certificate Fingerprint</span>
+              <span class="text-xs text-on-surface-variant font-mono">
                 {@agent.certificate_fingerprint}
               </span>
             </div>
 
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">Last Policy Check</span>
-              <span class="text-sm text-gray-900">
+              <span class="text-sm font-medium text-on-surface-variant">Last Policy Check</span>
+              <span class="text-sm text-on-surface">
                 {format_datetime(@agent.last_policy_check)}
               </span>
             </div>
 
             <div class="flex justify-between">
-              <span class="text-sm font-medium text-gray-500">Secrets Accessed</span>
-              <span class="text-sm text-gray-900">{@agent.secrets_accessed}</span>
+              <span class="text-sm font-medium text-on-surface-variant">Secrets Accessed</span>
+              <span class="text-sm text-on-surface">{@agent.secrets_accessed}</span>
             </div>
           </div>
         </div>
@@ -117,15 +117,15 @@ defmodule SecretHub.Web.AgentDetailsComponent do
       
     <!-- Recent Activity -->
       <div class="mt-6">
-        <h4 class="text-lg font-medium text-gray-900 mb-4">Recent Activity</h4>
-        <div class="bg-gray-50 rounded-lg p-4">
+        <h4 class="text-lg font-medium text-on-surface mb-4">Recent Activity</h4>
+        <div class="bg-surface-container-low rounded-lg p-4">
           <div class="space-y-3">
             <%= for activity <- recent_activities(@agent.id) do %>
               <div class="flex items-start space-x-3">
                 <div class={"w-2 h-2 rounded-full mt-2 #{activity_icon_color(activity.type)}"}></div>
                 <div class="flex-1">
-                  <div class="text-sm text-gray-900">{activity.description}</div>
-                  <div class="text-xs text-gray-500">
+                  <div class="text-sm text-on-surface">{activity.description}</div>
+                  <div class="text-xs text-on-surface-variant">
                     {format_datetime(activity.timestamp)}
                   </div>
                 </div>
@@ -137,7 +137,7 @@ defmodule SecretHub.Web.AgentDetailsComponent do
       
     <!-- Agent Actions -->
       <div class="mt-6 border-t pt-6">
-        <h4 class="text-lg font-medium text-gray-900 mb-4">Agent Actions</h4>
+        <h4 class="text-lg font-medium text-on-surface mb-4">Agent Actions</h4>
         <div class="flex space-x-4">
           <button
             phx-click="restart_agent"
@@ -201,9 +201,9 @@ defmodule SecretHub.Web.AgentDetailsComponent do
   end
 
   # Helper functions
-  defp status_badge_color(:connected), do: "bg-green-100 text-green-800"
-  defp status_badge_color(:disconnected), do: "bg-gray-100 text-gray-800"
-  defp status_badge_color(:error), do: "bg-red-100 text-red-800"
+  defp status_badge_color(:connected), do: "bg-success/10 text-success"
+  defp status_badge_color(:disconnected), do: "bg-surface-container text-on-surface"
+  defp status_badge_color(:error), do: "bg-error/10 text-error"
 
   defp format_datetime(nil), do: "Never"
 
@@ -217,11 +217,11 @@ defmodule SecretHub.Web.AgentDetailsComponent do
   defp format_uptime(hours) when hours < 168, do: "#{Float.round(hours / 24, 1)} days"
   defp format_uptime(hours), do: "#{Float.round(hours / 168, 1)} weeks"
 
-  defp activity_icon_color("secret_access"), do: "bg-blue-500"
-  defp activity_icon_color("policy_check"), do: "bg-green-500"
-  defp activity_icon_color("error"), do: "bg-red-500"
-  defp activity_icon_color("connection"), do: "bg-yellow-500"
-  defp activity_icon_color(_), do: "bg-gray-500"
+  defp activity_icon_color("secret_access"), do: "bg-primary"
+  defp activity_icon_color("policy_check"), do: "bg-success"
+  defp activity_icon_color("error"), do: "bg-error"
+  defp activity_icon_color("connection"), do: "bg-warning"
+  defp activity_icon_color(_), do: "bg-surface-container-low0"
 
   defp recent_activities(_agent_id) do
     # FIXME: Replace with actual activity data from audit logs

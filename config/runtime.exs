@@ -20,15 +20,9 @@ if System.get_env("PHX_SERVER") do
   config :secrethub_web, SecretHub.Web.Endpoint, server: true
 end
 
-# Configure asset tool paths from environment variables
-# devenv sets these via lib.getExe to use Nix-managed binaries
-if System.get_env("MIX_BUN_PATH") do
-  config :bun, path: System.get_env("MIX_BUN_PATH")
-end
-
-if System.get_env("MIX_TAILWIND_PATH") do
-  config :tailwind, path: System.get_env("MIX_TAILWIND_PATH")
-end
+# Asset tool paths (MIX_BUN_PATH, MIX_TAILWIND_PATH) are configured
+# in config.exs via System.get_env so they apply at compile time
+# when mix bun/tailwind tasks run.
 
 if config_env() == :prod do
   # Database configuration from environment

@@ -112,8 +112,8 @@ defmodule SecretHub.Web.AdminCertificateLive do
     <div class="px-4 sm:px-6 lg:px-8">
       <div class="sm:flex sm:items-center">
         <div class="sm:flex-auto">
-          <h1 class="text-2xl font-semibold text-gray-900">Admin Certificates</h1>
-          <p class="mt-2 text-sm text-gray-700">
+          <h1 class="text-2xl font-semibold text-on-surface">Admin Certificates</h1>
+          <p class="mt-2 text-sm text-on-surface">
             Manage client certificates authorized for administrative access
           </p>
         </div>
@@ -121,7 +121,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
 
       <%= if @flash["info"] do %>
         <div
-          class="mt-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded"
+          class="mt-4 bg-success/5 border border-green-200 text-success px-4 py-3 rounded"
           role="alert"
         >
           {@flash["info"]}
@@ -129,18 +129,18 @@ defmodule SecretHub.Web.AdminCertificateLive do
       <% end %>
 
       <%= if @flash["error"] do %>
-        <div class="mt-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded" role="alert">
+        <div class="mt-4 bg-error/5 border border-red-200 text-error px-4 py-3 rounded" role="alert">
           {@flash["error"]}
         </div>
       <% end %>
       
     <!-- Upload Section -->
-      <div class="mt-8 bg-white shadow sm:rounded-lg">
+      <div class="mt-8 bg-surface-container shadow sm:rounded-lg">
         <div class="px-4 py-5 sm:p-6">
-          <h3 class="text-lg font-medium leading-6 text-gray-900">
+          <h3 class="text-lg font-medium leading-6 text-on-surface">
             Register New Admin Certificate
           </h3>
-          <div class="mt-2 max-w-xl text-sm text-gray-500">
+          <div class="mt-2 max-w-xl text-sm text-on-surface-variant">
             <p>
               Upload a client certificate (.pem, .crt, or .cer file) to grant administrative access.
             </p>
@@ -148,7 +148,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
           <form phx-submit="upload_certificate" phx-change="validate_upload" class="mt-5">
             <div class="space-y-4">
               <div>
-                <label for="admin_email" class="block text-sm font-medium text-gray-700">
+                <label for="admin_email" class="block text-sm font-medium text-on-surface">
                   Administrator Email
                 </label>
                 <input
@@ -156,19 +156,19 @@ defmodule SecretHub.Web.AdminCertificateLive do
                   name="admin_email"
                   id="admin_email"
                   required
-                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                  class="mt-1 block w-full rounded-md border-outline-variant shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
                   placeholder="admin@example.com"
                 />
               </div>
 
               <div>
-                <label class="block text-sm font-medium text-gray-700">
+                <label class="block text-sm font-medium text-on-surface">
                   Certificate File
                 </label>
-                <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+                <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-outline-variant border-dashed rounded-md">
                   <div class="space-y-1 text-center">
                     <svg
-                      class="mx-auto h-12 w-12 text-gray-400"
+                      class="mx-auto h-12 w-12 text-on-surface-variant"
                       stroke="currentColor"
                       fill="none"
                       viewBox="0 0 48 48"
@@ -180,22 +180,22 @@ defmodule SecretHub.Web.AdminCertificateLive do
                         stroke-linejoin="round"
                       />
                     </svg>
-                    <div class="flex text-sm text-gray-600">
+                    <div class="flex text-sm text-on-surface-variant">
                       <label
                         for="file-upload"
-                        class="relative cursor-pointer rounded-md bg-white font-medium text-blue-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 hover:text-blue-500"
+                        class="relative cursor-pointer rounded-md bg-surface-container font-medium text-primary focus-within:outline-none focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2 hover:text-primary"
                       >
                         <span phx-drop-target={@uploads.certificate.ref}>Upload a file</span>
                         <.live_file_input upload={@uploads.certificate} class="sr-only" />
                       </label>
                       <p class="pl-1">or drag and drop</p>
                     </div>
-                    <p class="text-xs text-gray-500">.pem, .crt, or .cer up to 50KB</p>
+                    <p class="text-xs text-on-surface-variant">.pem, .crt, or .cer up to 50KB</p>
                   </div>
                 </div>
 
                 <%= for entry <- @uploads.certificate.entries do %>
-                  <div class="mt-2 text-sm text-gray-600">
+                  <div class="mt-2 text-sm text-on-surface-variant">
                     Selected: {entry.client_name}
                   </div>
                 <% end %>
@@ -205,7 +205,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
             <div class="mt-5">
               <button
                 type="submit"
-                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                 disabled={@uploads.certificate.entries == []}
               >
                 Register Certificate
@@ -220,22 +220,22 @@ defmodule SecretHub.Web.AdminCertificateLive do
         <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
           <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
             <div class="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-              <table class="min-w-full divide-y divide-gray-300">
-                <thead class="bg-gray-50">
+              <table class="min-w-full divide-y divide-outline-variant">
+                <thead class="bg-surface-container-low">
                   <tr>
                     <th
                       scope="col"
-                      class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
+                      class="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-on-surface sm:pl-6"
                     >
                       Common Name
                     </th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                       Subject
                     </th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                       Valid Until
                     </th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                       Status
                     </th>
                     <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
@@ -243,30 +243,30 @@ defmodule SecretHub.Web.AdminCertificateLive do
                     </th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-200 bg-white">
+                <tbody class="divide-y divide-outline-variant bg-surface-container">
                   <%= for cert <- @certificates do %>
                     <tr>
-                      <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                      <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-on-surface sm:pl-6">
                         {cert.common_name}
                       </td>
-                      <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                         {cert.subject}
                       </td>
-                      <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                      <td class="whitespace-nowrap px-3 py-4 text-sm text-on-surface-variant">
                         {format_datetime(cert.valid_until)}
                       </td>
                       <td class="whitespace-nowrap px-3 py-4 text-sm">
                         <%= if cert.revoked do %>
-                          <span class="inline-flex rounded-full bg-red-100 px-2 text-xs font-semibold leading-5 text-red-800">
+                          <span class="inline-flex rounded-full bg-error/10 px-2 text-xs font-semibold leading-5 text-error">
                             Revoked
                           </span>
                         <% else %>
                           <%= if DateTime.compare(cert.valid_until, DateTime.utc_now() |> DateTime.truncate(:second)) == :gt do %>
-                            <span class="inline-flex rounded-full bg-green-100 px-2 text-xs font-semibold leading-5 text-green-800">
+                            <span class="inline-flex rounded-full bg-success/10 px-2 text-xs font-semibold leading-5 text-success">
                               Active
                             </span>
                           <% else %>
-                            <span class="inline-flex rounded-full bg-yellow-100 px-2 text-xs font-semibold leading-5 text-yellow-800">
+                            <span class="inline-flex rounded-full bg-warning/10 px-2 text-xs font-semibold leading-5 text-warning">
                               Expired
                             </span>
                           <% end %>
@@ -276,7 +276,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
                         <button
                           phx-click="view_details"
                           phx-value-id={cert.id}
-                          class="text-blue-600 hover:text-blue-900 mr-4"
+                          class="text-primary hover:text-primary mr-4"
                         >
                           View
                         </button>
@@ -285,7 +285,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
                             phx-click="revoke_certificate"
                             phx-value-id={cert.id}
                             data-confirm="Are you sure you want to revoke this certificate?"
-                            class="text-red-600 hover:text-red-900"
+                            class="text-error hover:text-error"
                           >
                             Revoke
                           </button>
@@ -304,45 +304,45 @@ defmodule SecretHub.Web.AdminCertificateLive do
       <%= if @selected_cert do %>
         <div class="fixed z-10 inset-0 overflow-y-auto" role="dialog">
           <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+            <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 transition-opacity"></div>
 
-            <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+            <div class="inline-block align-bottom bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
               <div>
                 <div class="mt-3 text-center sm:mt-5">
-                  <h3 class="text-lg leading-6 font-medium text-gray-900">
+                  <h3 class="text-lg leading-6 font-medium text-on-surface">
                     Certificate Details
                   </h3>
                   <div class="mt-4 text-left">
                     <dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
                       <div class="sm:col-span-2">
-                        <dt class="text-sm font-medium text-gray-500">Common Name</dt>
-                        <dd class="mt-1 text-sm text-gray-900">{@selected_cert.common_name}</dd>
+                        <dt class="text-sm font-medium text-on-surface-variant">Common Name</dt>
+                        <dd class="mt-1 text-sm text-on-surface">{@selected_cert.common_name}</dd>
                       </div>
                       <div class="sm:col-span-2">
-                        <dt class="text-sm font-medium text-gray-500">Subject</dt>
-                        <dd class="mt-1 text-sm text-gray-900 break-all">{@selected_cert.subject}</dd>
+                        <dt class="text-sm font-medium text-on-surface-variant">Subject</dt>
+                        <dd class="mt-1 text-sm text-on-surface break-all">{@selected_cert.subject}</dd>
                       </div>
                       <div class="sm:col-span-2">
-                        <dt class="text-sm font-medium text-gray-500">Fingerprint</dt>
-                        <dd class="mt-1 text-sm text-gray-900 font-mono break-all">
+                        <dt class="text-sm font-medium text-on-surface-variant">Fingerprint</dt>
+                        <dd class="mt-1 text-sm text-on-surface font-mono break-all">
                           {@selected_cert.fingerprint}
                         </dd>
                       </div>
                       <div>
-                        <dt class="text-sm font-medium text-gray-500">Valid From</dt>
-                        <dd class="mt-1 text-sm text-gray-900">
+                        <dt class="text-sm font-medium text-on-surface-variant">Valid From</dt>
+                        <dd class="mt-1 text-sm text-on-surface">
                           {format_datetime(@selected_cert.valid_from)}
                         </dd>
                       </div>
                       <div>
-                        <dt class="text-sm font-medium text-gray-500">Valid Until</dt>
-                        <dd class="mt-1 text-sm text-gray-900">
+                        <dt class="text-sm font-medium text-on-surface-variant">Valid Until</dt>
+                        <dd class="mt-1 text-sm text-on-surface">
                           {format_datetime(@selected_cert.valid_until)}
                         </dd>
                       </div>
                       <div class="sm:col-span-2">
-                        <dt class="text-sm font-medium text-gray-500">Serial Number</dt>
-                        <dd class="mt-1 text-sm text-gray-900 font-mono">
+                        <dt class="text-sm font-medium text-on-surface-variant">Serial Number</dt>
+                        <dd class="mt-1 text-sm text-on-surface font-mono">
                           {@selected_cert.serial_number}
                         </dd>
                       </div>
@@ -354,7 +354,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
                 <button
                   type="button"
                   phx-click="close_details"
-                  class="inline-flex justify-center w-full rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-600 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:text-sm"
+                  class="inline-flex justify-center w-full rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-on-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:text-sm"
                 >
                   Close
                 </button>
