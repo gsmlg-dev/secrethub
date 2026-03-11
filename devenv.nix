@@ -20,10 +20,6 @@ in
     # For testing AWS integrations locally
     awscli2
 
-    # Monitoring tools
-    prometheus
-    grafana
-
     # Frontend build tools (NixOS-compatible binaries)
     tailwindcss_4
   ] ++ lib.optionals pkgs.stdenv.isLinux [
@@ -76,36 +72,6 @@ in
         unix_socket_permissions = "0777";
         # Socket in project directory to avoid conflicts
         unix_socket_directories = "${config.devenv.root}/.devenv/state/postgres";
-      };
-    };
-
-    # Test PostgreSQL - For testing dynamic secret engines
-    # Note: devenv doesn't support multiple postgres instances directly
-    # We'll document manual setup or use Docker for this specific case
-  };
-
-  # Process management
-  processes = {
-    # Phoenix server (will add when ready)
-    # phoenix = {
-    #   exec = "mix phx.server";
-    #   process-compose = {
-    #     depends_on = {
-    #       postgres = {
-    #         condition = "process_healthy";
-    #       };
-    #     };
-    #   };
-    # };
-
-    # Prometheus (for metrics)
-    prometheus = {
-      exec = "prometheus --config.file=$DEVENV_ROOT/infrastructure/prometheus/prometheus.yml --storage.tsdb.path=$DEVENV_STATE/prometheus";
-      process-compose = {
-        availability = {
-          restart = "on_failure";
-          max_restarts = 3;
-        };
       };
     };
   };
@@ -277,7 +243,6 @@ in
     
     📝 Services running:
        • PostgreSQL:  Unix socket ($DEVENV_STATE/postgres)
-       • Prometheus:  localhost:9090
 
     EOF
 
@@ -294,12 +259,6 @@ in
     # Check if assets dependencies are installed
     if [ ! -d "apps/secrethub_web/node_modules" ]; then
       echo "📦 Frontend dependencies not installed. Run: assets-install"
-      echo ""
-    fi
-    
-    # Set up git hooks if not already set up
-    if [ ! -f ".git/hooks/pre-commit" ]; then
-      echo "🔧 Setting up git hooks..."
       echo ""
     fi
   '';

@@ -13,7 +13,7 @@ SecretHub is an enterprise-grade Machine-to-Machine secrets management platform 
 
 ## Development Environment
 
-This project uses **devenv** (devenv.sh) with Nix for reproducible development environments. PostgreSQL and Prometheus are automatically managed by devenv.
+This project uses **devenv** (devenv.sh) with Nix for reproducible development environments. PostgreSQL is automatically managed by devenv.
 
 ### Initial Setup
 
@@ -154,7 +154,7 @@ Two release configurations in root `mix.exs`:
 1. **secrethub_core**: `secrethub_core` + `secrethub_web` + `secrethub_shared`
 2. **secrethub_agent**: `secrethub_agent` + `secrethub_shared`
 
-Infrastructure code in `/infrastructure/` (Helm charts, Kubernetes manifests, Prometheus configs).
+Infrastructure code in `/infrastructure/` (PostgreSQL init scripts).
 
 ## Commit Convention
 

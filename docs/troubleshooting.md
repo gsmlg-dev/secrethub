@@ -609,32 +609,10 @@ curl -X POST https://secrethub.company.com/v1/auth/approle/role/<role>/secret-id
 
 ## Monitoring & Alerting
 
-### Setting Up Alerts
-
-**Critical Alerts:**
-```yaml
-# Prometheus alert rules
-groups:
-  - name: secrethub-critical
-    rules:
-      - alert: CoreDown
-        expr: up{job="secrethub-core"} == 0
-        for: 1m
-        annotations:
-          summary: "SecretHub Core instance down"
-
-      - alert: VaultSealed
-        expr: secrethub_vault_sealed == 1
-        for: 1m
-        annotations:
-          summary: "Vault is sealed - requires unseal"
-
-      - alert: DatabaseDown
-        expr: secrethub_db_connection_errors > 10
-        for: 2m
-        annotations:
-          summary: "Database connection errors"
-```
+Configure your monitoring stack to watch for critical conditions:
+- **Core Down**: SecretHub Core instance not responding
+- **Vault Sealed**: Vault is sealed and requires unseal
+- **Database Down**: Database connection errors exceeding threshold
 
 ---
 

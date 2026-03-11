@@ -286,16 +286,11 @@ Next Milestone: Complete infrastructure setup
 
 ### 4.1 Monitoring Stack **[CRITICAL]**
 
-- [ ] **Prometheus deployed**
+- [ ] **Monitoring stack deployed**
   - [ ] Namespace: `monitoring`
   - [ ] Storage: 500 GB
   - [ ] Retention: 30 days
   - [ ] Scraping Core metrics: **YES**
-
-- [ ] **Grafana deployed**
-  - [ ] URL: `https://grafana.company.com`
-  - [ ] Admin password set
-  - [ ] Prometheus data source configured
 
 - [ ] **Dashboards imported**
   - [ ] System overview dashboard

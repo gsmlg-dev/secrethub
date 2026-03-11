@@ -28,7 +28,7 @@
 ## Phase 1: Detection & Alert
 
 ### Automated Detection
-- Prometheus alerts → PagerDuty → On-call engineer
+- Monitoring alerts → PagerDuty → On-call engineer
 - Synthetic monitoring failures → Email + Slack
 - User reports → Ticket system
 
@@ -243,13 +243,9 @@ psql $DATABASE_URL -c "
   LIMIT 10;
 "
 
-# 4. Check cache hit rate
-curl -s http://prometheus:9090/api/v1/query \
-  --data-urlencode 'query=secrethub_cache_hit_rate' | jq '.data.result[0].value[1]'
+# 4. Check cache hit rate via application telemetry
 
-# 5. Check database connection pool
-curl -s http://prometheus:9090/api/v1/query \
-  --data-urlencode 'query=secrethub_db_pool_utilization' | jq '.data.result[0].value[1]'
+# 5. Check database connection pool utilization
 
 # If > 90%, consider increasing pool size
 

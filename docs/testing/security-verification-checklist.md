@@ -620,13 +620,6 @@ This checklist verifies that all security controls implemented during Week 29 (S
   # Expected: No critical outdated packages
   ```
 
-- [ ] **Prometheus updated (if applicable)**
-  ```bash
-  # Check Prometheus version
-  mix deps | grep prometheus
-  # Recommended: prometheus >= 5.0
-  ```
-
 ### 7.2 Security Headers **[MEDIUM]**
 
 - [ ] **X-Frame-Options set**

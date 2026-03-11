@@ -560,10 +560,9 @@ to Core-2           established
 - **Secret Sharing:** Shamir Secret Sharing
 
 ### Operations
-- **Metrics:** Telemetry + Prometheus
-- **Monitoring:** Grafana
+- **Metrics:** Telemetry
 - **Logging:** Elixir Logger
-- **Deployment:** Docker, Kubernetes (Helm)
+- **Deployment:** Docker
 
 ---
 

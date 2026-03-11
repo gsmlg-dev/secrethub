@@ -37,7 +37,7 @@ defmodule SecretHub.Core.MixProject do
       {:jason, "~> 1.4"},
       {:oban, "~> 2.18"},
       {:crontab, "~> 1.1"},
-      {:prometheus_ex, "~> 3.1"},
+
       {:redix, "~> 1.5"},
       {:ex_aws, "~> 2.5"},
       {:ex_aws_kms, "~> 2.3"},

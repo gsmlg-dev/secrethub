@@ -11,6 +11,3 @@ inputs:
   nixpkgs-stable:
     url: github:nixos/nixpkgs/release-25.11
 
-# Devenv modules to import (if you create any)
-# imports:
-#   - ./modules/custom-module.nix

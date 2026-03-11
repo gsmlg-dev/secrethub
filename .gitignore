@@ -82,9 +82,6 @@ _build/prod/
 .DS_Store
 Thumbs.db
 
-# Prometheus data (from devenv)
-infrastructure/prometheus/data/
-
 # Backup files
 *.backup
 *.bak

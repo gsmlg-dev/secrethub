@@ -165,8 +165,6 @@ server
 **Available at:**
 - **Web UI / Admin Dashboard:** http://localhost:4000/admin
 - **REST API:** http://localhost:4000/v1
-- **Metrics:** http://localhost:9090 (Prometheus)
-
 ### Quick Commands
 
 ```bash
@@ -233,9 +231,7 @@ secrethub/                              # Elixir Umbrella Application
 │
 ├── config/                             # Environment configs
 ├── infrastructure/                     # IaC
-│   ├── helm/                           # Helm charts
-│   ├── kubernetes/                     # K8s manifests
-│   └── prometheus/                     # Prometheus configs
+│   └── postgres/                       # PostgreSQL init scripts
 └── .github/workflows/                  # CI/CD pipelines
 ```
 

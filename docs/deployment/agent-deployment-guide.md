@@ -364,7 +364,7 @@ agent:
 
 ### Metrics & Observability
 
-Agent exposes Prometheus metrics on `:9091/metrics`:
+Agent exposes metrics on `:9091/metrics`:
 
 ```
 # Connection status

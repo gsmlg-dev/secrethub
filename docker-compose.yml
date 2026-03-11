@@ -106,31 +106,11 @@ services:
       retries: 3
       start_period: 30s
 
-  # Prometheus Monitoring
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: secrethub-prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    networks:
-      - secrethub-network
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/usr/share/prometheus/web/ui/libraries'
-      - '--web.console.templates=/usr/share/prometheus/web/ui/templates'
-    restart: unless-stopped
-
 # Named Volumes
 volumes:
   postgres_data:
     driver: local
   redis_data:
-    driver: local
-  prometheus_data:
     driver: local
   agent_socket:
     driver: local

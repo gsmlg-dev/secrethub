@@ -32,8 +32,6 @@ kubectl get nodes
 kubectl get pods -n secrethub
 
 # Verify monitoring is operational
-curl http://prometheus:9090/-/healthy
-curl http://grafana:3000/api/health
 
 # Verify backup systems
 aws s3 ls s3://secrethub-backups-staging/

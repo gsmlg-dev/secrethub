@@ -14,7 +14,7 @@ This runbook provides step-by-step instructions for deploying SecretHub to produ
 - [ ] **Network:** VPC with private subnets, security groups configured
 - [ ] **DNS:** Domain name configured (e.g., secrethub.company.com)
 - [ ] **SSL Certificate:** Valid SSL certificate for HTTPS
-- [ ] **Monitoring:** Prometheus + Grafana deployed
+- [ ] **Monitoring:** Monitoring stack deployed
 - [ ] **Logging:** Centralized logging (CloudWatch, ELK, etc.)
 - [ ] **Backup:** Database backup strategy in place
 
@@ -444,62 +444,9 @@ curl -X POST https://secrethub.company.com/v1/pki/ca/intermediate/generate \
 
 ### Phase 6: Monitoring Setup
 
-#### 6.1 Configure Prometheus
+#### 6.1 Configure Monitoring
 
-Add to Prometheus `prometheus.yml`:
-
-```yaml
-scrape_configs:
-  - job_name: 'secrethub-core'
-    static_configs:
-      - targets:
-        - core-1:4000
-        - core-2:4000
-        - core-3:4000
-    metrics_path: '/metrics'
-    scrape_interval: 15s
-```
-
-#### 6.2 Import Grafana Dashboards
-
-```bash
-# Import SecretHub dashboard
-curl -X POST http://grafana:3000/api/dashboards/db \
-  -H "Content-Type: application/json" \
-  -d @grafana-dashboard.json
-```
-
-#### 6.3 Configure Alerts
-
-Create Prometheus alert rules:
-
-```yaml
-groups:
-  - name: secrethub
-    rules:
-      - alert: SecretHubCoreDown
-        expr: up{job="secrethub-core"} == 0
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "SecretHub Core {{ $labels.instance }} is down"
-
-      - alert: HighLatency
-        expr: histogram_quantile(0.95, rate(secrethub_request_duration_ms_bucket[5m])) > 100
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High latency detected (P95 > 100ms)"
-
-      - alert: DatabasePoolExhausted
-        expr: secrethub_db_pool_utilization > 90
-        for: 5m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Database connection pool nearly exhausted"
+Configure your monitoring stack to scrape SecretHub Core's telemetry endpoints and set up appropriate alerts for service health, latency, and database pool utilization.
 ```
 
 ---
@@ -632,8 +579,8 @@ aws s3 cp backup-*.sql s3://secrethub-backups/
 
 ### Monitoring Checklist
 
-- [ ] Prometheus scraping all Core instances
-- [ ] Grafana dashboards imported and working
+- [ ] Monitoring scraping all Core instances
+- [ ] Dashboards configured and working
 - [ ] Alerts configured and tested
 - [ ] Log aggregation collecting Core logs
 - [ ] Database metrics monitored

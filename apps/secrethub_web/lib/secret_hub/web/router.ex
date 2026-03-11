@@ -111,8 +111,6 @@ defmodule SecretHub.Web.Router do
       live "/rotations", RotationScheduleLive, :index
       live "/rotations/:id", RotationScheduleLive, :show
       live "/rotations/:id/history", RotationHistoryLive, :show
-      # TODO: Implement MetricsDashboardLive module
-      # live "/metrics", MetricsDashboardLive, :index
       live "/alerts", AlertConfigurationLive, :index
       live "/anomalies", AnomalyDetectionLive, :index
       live "/performance", PerformanceDashboardLive, :index
