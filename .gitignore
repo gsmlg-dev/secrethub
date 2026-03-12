@@ -53,6 +53,8 @@ result-*
 node_modules/
 npm-debug.log
 yarn-error.log
+# Force-track bun.lock for reproducible Nix builds (overrides global gitignore)
+!bun.lock
 
 # Database
 *.db
