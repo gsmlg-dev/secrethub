@@ -1,2 +1,9 @@
 [install]
 exact = true
+
+[module]
+# Resolve Phoenix packages from deps/ without needing node_modules
+paths = ["./deps"]
+
+[workspace]
+packages = ["apps/*"]

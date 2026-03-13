@@ -69,8 +69,7 @@ config :bun,
   secrethub_web: [
     args:
       ~w(build assets/js/app.js --outdir=priv/static/assets/js --external /fonts/* --external /images/*),
-    cd: Path.expand("../apps/secrethub_web", __DIR__),
-    env: %{"NODE_PATH" => Path.expand("../deps", __DIR__)}
+    cd: Path.expand("../apps/secrethub_web", __DIR__)
   ]
 
 # Configure Tailwind CSS v4
