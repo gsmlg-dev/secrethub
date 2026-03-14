@@ -41,7 +41,7 @@ defmodule SecretHub.Web.AgentChannel do
   Agents must authenticate before they can request secrets.
   """
   def join("agent:lobby", _payload, socket) do
-    Logger.info("Agent attempting to join channel")
+    Logger.info("Agent attempting to join lobby channel")
 
     # Set up heartbeat monitoring
     schedule_heartbeat_check()
@@ -55,8 +55,22 @@ defmodule SecretHub.Web.AgentChannel do
     {:ok, %{status: "connected", authenticated: false}, socket}
   end
 
-  def join("agent:" <> _agent_id, _payload, _socket) do
-    {:error, %{reason: "unauthorized"}}
+  def join("agent:" <> agent_id, _payload, socket) do
+    Logger.info("Agent #{agent_id} attempting to join channel directly")
+
+    # Set up heartbeat monitoring
+    schedule_heartbeat_check()
+
+    # Auto-register or update agent on direct topic join
+    ensure_agent_registered(agent_id)
+
+    socket =
+      socket
+      |> assign(:authenticated, true)
+      |> assign(:agent_id, agent_id)
+      |> assign(:last_heartbeat, DateTime.utc_now() |> DateTime.truncate(:second))
+
+    {:ok, %{status: "connected", authenticated: true, agent_id: agent_id}, socket}
   end
 
   @doc """
@@ -348,5 +362,42 @@ defmodule SecretHub.Web.AgentChannel do
     |> DateTime.truncate(:second)
     |> DateTime.add(90 * 24 * 3600, :second)
     |> DateTime.to_iso8601()
+  end
+
+  defp ensure_agent_registered(agent_id) do
+    case Agents.get_agent(agent_id) do
+      nil ->
+        # Auto-register the agent on first connection
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+        %SecretHub.Shared.Schemas.Agent{}
+        |> Ecto.Changeset.change(%{
+          agent_id: agent_id,
+          name: agent_id,
+          status: :active,
+          authenticated_at: now,
+          last_seen_at: now,
+          last_heartbeat_at: now,
+          metadata: %{"auto_registered" => true}
+        })
+        |> SecretHub.Core.Repo.insert(
+          on_conflict: {:replace, [:status, :last_seen_at, :last_heartbeat_at]},
+          conflict_target: :agent_id
+        )
+
+      %{status: :active} = agent ->
+        Agents.update_heartbeat(agent_id)
+        {:ok, agent}
+
+      agent ->
+        # Reactivate disconnected/pending agents
+        agent
+        |> Ecto.Changeset.change(%{
+          status: :active,
+          last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second),
+          last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
+        |> SecretHub.Core.Repo.update()
+    end
   end
 end

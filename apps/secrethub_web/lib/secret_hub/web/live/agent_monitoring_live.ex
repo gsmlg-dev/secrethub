@@ -6,6 +6,8 @@ defmodule SecretHub.Web.AgentMonitoringLive do
   use SecretHub.Web, :live_view
   require Logger
 
+  alias SecretHub.Core.Agents
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
@@ -43,10 +45,19 @@ defmodule SecretHub.Web.AgentMonitoringLive do
   end
 
   @impl true
-  def handle_event("disconnect_agent", %{"agent_id" => agent_id}, socket) do
+  def handle_event("disconnect_agent", %{"id" => agent_id}, socket) do
     Logger.info("Disconnecting agent: #{agent_id}")
 
-    # FIXME: Call SecretHub.Core.Connections.disconnect_agent(agent_id)
+    case Agents.mark_disconnected(agent_id) do
+      {:ok, _agent} ->
+        # Broadcast disconnect to the agent's WebSocket channel
+        SecretHub.Web.Endpoint.broadcast("agent:#{agent_id}", "disconnect", %{
+          reason: "admin_disconnect"
+        })
+
+      {:error, reason} ->
+        Logger.warning("Failed to disconnect agent #{agent_id}: #{inspect(reason)}")
+    end
 
     agents = fetch_agents()
 
@@ -71,7 +82,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
   end
 
   @impl true
-  def handle_event("reconnect_agent", %{"agent_id" => agent_id}, socket) do
+  def handle_event("reconnect_agent", %{"id" => agent_id}, socket) do
     Logger.info("Reconnecting agent: #{agent_id}")
 
     # FIXME: Call SecretHub.Core.Connections.reconnect_agent(agent_id)
@@ -81,7 +92,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
   end
 
   @impl true
-  def handle_event("restart_agent", %{"agent_id" => agent_id}, socket) do
+  def handle_event("restart_agent", %{"id" => agent_id}, socket) do
     Logger.info("Restarting agent: #{agent_id}")
 
     # FIXME: Call SecretHub.Core.Connections.restart_agent(agent_id)
@@ -243,60 +254,42 @@ defmodule SecretHub.Web.AgentMonitoringLive do
 
   # Helper functions
   defp fetch_agents do
-    # FIXME: Replace with actual SecretHub.Core.Connections.list_agents()
-    [
-      %{
-        id: "agent-prod-01",
-        name: "Production Web Server",
-        status: :connected,
-        last_seen:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-300, :second),
-        secrets_accessed: 45,
-        uptime_hours: 48.5,
-        os: "linux",
-        ip_address: "10.0.1.42",
-        version: "1.0.0",
-        certificate_fingerprint: "SHA256:ABC123...",
-        connection_time:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-48, :hour),
-        last_policy_check:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-600, :second)
-      },
-      %{
-        id: "agent-prod-02",
-        name: "Backend Worker",
-        status: :disconnected,
-        last_seen:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1800, :second),
-        secrets_accessed: 12,
-        uptime_hours: nil,
-        os: "alpine-linux",
-        ip_address: "10.0.1.45",
-        version: "1.0.1",
-        certificate_fingerprint: "SHA256:DEF456...",
-        connection_time: nil,
-        last_policy_check:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-2400, :second)
-      },
-      %{
-        id: "agent-dev-01",
-        name: "Development Environment",
-        status: :error,
-        last_seen:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-7200, :second),
-        secrets_accessed: 8,
-        uptime_hours: 2.1,
-        os: "macos",
-        ip_address: "192.168.1.100",
-        version: "0.9.0",
-        certificate_fingerprint: "SHA256:GHI789...",
-        connection_time:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-2, :hour),
-        last_policy_check:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-7200, :second)
-      }
-    ]
+    Agents.list_agents()
+    |> Enum.map(&agent_to_display/1)
   end
+
+  defp agent_to_display(agent) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    uptime_hours =
+      if agent.status == :active && agent.authenticated_at do
+        DateTime.diff(now, agent.authenticated_at, :second) / 3600
+      else
+        nil
+      end
+
+    %{
+      id: agent.agent_id,
+      name: agent.name || agent.agent_id,
+      status: map_agent_status(agent.status),
+      last_seen: agent.last_seen_at,
+      secrets_accessed: agent.secret_access_count || 0,
+      uptime_hours: uptime_hours,
+      os: Map.get(agent.metadata || %{}, "os", "unknown"),
+      ip_address: agent.ip_address || "unknown",
+      version: Map.get(agent.metadata || %{}, "version", "unknown"),
+      certificate_fingerprint: nil,
+      connection_time: agent.authenticated_at,
+      last_policy_check: agent.last_seen_at
+    }
+  end
+
+  defp map_agent_status(:active), do: :connected
+  defp map_agent_status(:disconnected), do: :disconnected
+  defp map_agent_status(:pending_bootstrap), do: :disconnected
+  defp map_agent_status(:suspended), do: :error
+  defp map_agent_status(:revoked), do: :error
+  defp map_agent_status(_), do: :disconnected
 
   defp filtered_agents(agents, "all", ""), do: agents
 
