@@ -215,29 +215,86 @@ defmodule SecretHub.Agent.CertVerifier do
       {:error, "Failed to verify certificate validity: #{inspect(e)}"}
   end
 
-  defp verify_cert_chain(_cert) do
-    # Get CA cert from ETS
+  defp verify_cert_chain(cert) do
     case :ets.lookup(@ets_table, :ca_cert) do
       [{:ca_cert, :mock}] ->
-        # Mock mode - accept all certificates
         Logger.debug("Certificate chain verification skipped (mock mode)")
         :ok
 
-      [{:ca_cert, _ca_cert}] ->
-        # TODO: Implement proper chain verification with :public_key.pkix_path_validation/3
-        # For now, accept all certificates signed by our CA
-        Logger.debug("Certificate chain verification (simplified)")
-        :ok
+      [{:ca_cert, ca_cert}] ->
+        # Build trusted anchor from CA certificate
+        ca_der = :public_key.der_encode(:Certificate, ca_cert)
+
+        # pkix_path_validation/3 validates the certificate chain against a trusted anchor
+        case :public_key.pkix_path_validation(ca_der, [cert], []) do
+          {:ok, _policy_tree} ->
+            Logger.debug("Certificate chain verified successfully")
+            :ok
+
+          {:error, {:bad_cert, reason}} ->
+            {:error, "Certificate chain validation failed: #{inspect(reason)}"}
+
+          {:error, reason} ->
+            {:error, "Certificate chain validation failed: #{inspect(reason)}"}
+        end
 
       [] ->
         {:error, "CA certificate not loaded"}
     end
+  rescue
+    e ->
+      {:error, "Certificate chain verification error: #{inspect(e)}"}
   end
 
-  defp verify_cert_type(_cert) do
-    # TODO: Check certificate extensions for cert_type = "app_client"
-    # For now, assume all certificates are app_client type
-    :ok
+  defp verify_cert_type(cert) do
+    # Check Extended Key Usage includes clientAuth
+    {:Certificate, tbs, _sig_alg, _sig} = cert
+
+    {:TBSCertificate, _ver, _serial, _sig, _issuer, _validity, _subject, _pubkey, _issuer_uid,
+     _subject_uid, extensions} = tbs
+
+    case extensions do
+      :asn1_NOVALUE ->
+        # No extensions - allow for backwards compatibility
+        :ok
+
+      exts when is_list(exts) ->
+        # Check for Extended Key Usage (OID 2.5.29.37)
+        eku_oid = {2, 5, 29, 37}
+        client_auth_oid = {1, 3, 6, 1, 5, 5, 7, 3, 2}
+
+        has_client_auth =
+          Enum.any?(exts, fn
+            {:Extension, ^eku_oid, _critical, value} ->
+              case :public_key.der_decode(:ExtKeyUsageSyntax, value) do
+                oids when is_list(oids) -> client_auth_oid in oids
+                _ -> false
+              end
+
+            _ ->
+              false
+          end)
+
+        if has_client_auth do
+          :ok
+        else
+          # If no EKU extension exists at all, allow (EKU is optional per RFC 5280)
+          has_eku =
+            Enum.any?(exts, fn
+              {:Extension, ^eku_oid, _, _} -> true
+              _ -> false
+            end)
+
+          if has_eku do
+            {:error, "Certificate does not include clientAuth extended key usage"}
+          else
+            :ok
+          end
+        end
+    end
+  rescue
+    e ->
+      {:error, "Failed to verify certificate type: #{inspect(e)}"}
   end
 
   defp extract_subject(cert) do
