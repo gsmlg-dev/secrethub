@@ -49,14 +49,14 @@ defmodule SecretHub.Agent.Connection do
 
   require Logger
 
-  alias PhoenixClient.{Channel, Message, Socket}
+  alias Phoenix.SocketClient
+  alias Phoenix.SocketClient.{Channel, Message}
 
   @type state :: %{
           socket: pid() | nil,
           channel: pid() | nil,
           agent_id: String.t(),
           core_url: String.t(),
-          pending_requests: %{reference() => GenServer.from()},
           cert_path: String.t() | nil,
           key_path: String.t() | nil,
           ca_path: String.t() | nil,
@@ -177,7 +177,6 @@ defmodule SecretHub.Agent.Connection do
       channel: nil,
       agent_id: agent_id,
       core_url: core_url,
-      pending_requests: %{},
       cert_path: cert_path,
       key_path: key_path,
       ca_path: ca_path,
@@ -265,7 +264,7 @@ defmodule SecretHub.Agent.Connection do
   end
 
   def handle_info({:try_join, attempts}, state) do
-    if state.socket && Socket.connected?(state.socket) do
+    if state.socket && SocketClient.connected?(state.socket) do
       case join_channel(state.socket, state.agent_id) do
         {:ok, channel} ->
           Logger.info("Successfully connected to Core",
@@ -287,21 +286,6 @@ defmodule SecretHub.Agent.Connection do
       # Socket not connected yet, retry
       Process.send_after(self(), {:try_join, attempts + 1}, 100)
       {:noreply, state}
-    end
-  end
-
-  @impl true
-  def handle_info(%Message{event: "phx_reply", payload: payload, ref: ref}, state) do
-    Logger.debug("Received reply", ref: ref, payload: payload)
-
-    case Map.pop(state.pending_requests, ref) do
-      {nil, _} ->
-        Logger.warning("Received reply for unknown request", ref: ref)
-        {:noreply, state}
-
-      {from, pending_requests} ->
-        GenServer.reply(from, parse_reply(payload))
-        {:noreply, %{state | pending_requests: pending_requests}}
     end
   end
 
@@ -359,7 +343,7 @@ defmodule SecretHub.Agent.Connection do
       agent_id: state.agent_id
     )
 
-    case Socket.start_link(socket_opts) do
+    case SocketClient.start_link(socket_opts) do
       {:ok, socket} ->
         {:ok, socket}
 
@@ -377,12 +361,10 @@ defmodule SecretHub.Agent.Connection do
 
     base_opts = [
       url: url,
-      sender: self(),
-      serializer: Jason,
+      json_library: Jason,
       headers: [{"x-agent-id", state.agent_id}],
       heartbeat_interval: 30_000,
-      reconnect_interval: 5_000,
-      reconnect: true
+      reconnect_interval: 5_000
     ]
 
     # Add mTLS options if certificates are configured and exist
@@ -452,24 +434,17 @@ defmodule SecretHub.Agent.Connection do
     end
   end
 
-  defp send_request(state, from, event, payload) do
-    ref = make_ref()
+  defp send_request(state, _from, event, payload) do
+    Logger.debug("Sending request", event: event, payload: payload)
 
-    Logger.debug("Sending request", event: event, payload: payload, ref: ref)
+    result =
+      case Channel.push(state.channel, event, payload) do
+        {:ok, response} -> {:ok, response}
+        {:error, reason} -> {:error, reason}
+      end
 
-    case Channel.push(state.channel, event, payload) do
-      :ok ->
-        pending_requests = Map.put(state.pending_requests, ref, from)
-        {:noreply, %{state | pending_requests: pending_requests}}
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
+    {:reply, result, state}
   end
-
-  defp parse_reply(%{"status" => "ok", "response" => response}), do: {:ok, response}
-  defp parse_reply(%{"status" => "error", "response" => error}), do: {:error, error}
-  defp parse_reply(other), do: {:ok, other}
 
   @doc false
   def backoff_delay(retry_count) do
