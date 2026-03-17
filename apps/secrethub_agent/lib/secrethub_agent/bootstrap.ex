@@ -64,9 +64,12 @@ defmodule SecretHub.Agent.Bootstrap do
 
   require Logger
 
+  alias SecretHub.Shared.Crypto.Encryption
+
   @cert_dir "priv/cert"
   @cert_file "#{@cert_dir}/agent-cert.pem"
   @key_file "#{@cert_dir}/agent-key.pem"
+  @key_salt_file "#{@cert_dir}/agent-key.salt"
   @ca_chain_file "#{@cert_dir}/ca-chain.pem"
   @csr_file "#{@cert_dir}/agent-csr.pem"
 
@@ -479,8 +482,20 @@ defmodule SecretHub.Agent.Bootstrap do
   end
 
   defp write_private_key(key_pem) do
-    # TODO: Encrypt private key before storing
-    File.write(@key_file, key_pem)
+    passphrase = get_key_passphrase()
+    salt = :crypto.strong_rand_bytes(32)
+
+    encryption_key = Encryption.derive_key(passphrase, salt)
+
+    case Encryption.encrypt_to_blob(key_pem, encryption_key) do
+      {:ok, encrypted_blob} ->
+        with :ok <- File.write(@key_salt_file, salt) do
+          File.write(@key_file, encrypted_blob)
+        end
+
+      {:error, reason} ->
+        {:error, "Failed to encrypt private key: #{reason}"}
+    end
   end
 
   defp write_ca_chain(ca_chain_pem) do
@@ -488,12 +503,25 @@ defmodule SecretHub.Agent.Bootstrap do
   end
 
   defp read_private_key do
-    if File.exists?(@key_file) do
-      # TODO: Decrypt private key
-      File.read(@key_file)
+    if File.exists?(@key_file) and File.exists?(@key_salt_file) do
+      passphrase = get_key_passphrase()
+
+      with {:ok, encrypted_blob} <- File.read(@key_file),
+           {:ok, salt} <- File.read(@key_salt_file) do
+        encryption_key = Encryption.derive_key(passphrase, salt)
+        Encryption.decrypt_from_blob(encrypted_blob, encryption_key)
+      end
     else
       {:error, :key_not_found}
     end
+  end
+
+  defp get_key_passphrase do
+    # Derive passphrase from agent identity and a configured secret.
+    # In production, SECRETHUB_AGENT_KEY_PASSPHRASE should be set via
+    # environment variable, container secret, or instance metadata.
+    System.get_env("SECRETHUB_AGENT_KEY_PASSPHRASE") ||
+      Application.get_env(:secrethub_agent, :key_passphrase, "secrethub-agent-default-dev-key")
   end
 
   defp valid_certificate? do
@@ -566,9 +594,59 @@ defmodule SecretHub.Agent.Bootstrap do
     end
   end
 
-  defp days_until_expiry(_cert_text) do
-    # TODO: Parse dates and calculate actual days
-    # For now return a placeholder
-    30
+  defp days_until_expiry(cert_text) do
+    case extract_not_after(cert_text) do
+      nil ->
+        0
+
+      date_str ->
+        case parse_openssl_date(date_str) do
+          {:ok, expiry} ->
+            now = DateTime.utc_now()
+            DateTime.diff(expiry, now, :day)
+
+          :error ->
+            0
+        end
+    end
+  end
+
+  defp parse_openssl_date(date_str) do
+    # OpenSSL date format: "Mon DD HH:MM:SS YYYY GMT" e.g. "Mar 17 12:00:00 2026 GMT"
+    months = %{
+      "Jan" => 1,
+      "Feb" => 2,
+      "Mar" => 3,
+      "Apr" => 4,
+      "May" => 5,
+      "Jun" => 6,
+      "Jul" => 7,
+      "Aug" => 8,
+      "Sep" => 9,
+      "Oct" => 10,
+      "Nov" => 11,
+      "Dec" => 12
+    }
+
+    case Regex.run(~r/(\w{3})\s+(\d+)\s+(\d+):(\d+):(\d+)\s+(\d{4})/, date_str) do
+      [_, mon, day, hour, min, sec, year] ->
+        with month when month != nil <- Map.get(months, mon),
+             {:ok, dt} <-
+               DateTime.new(
+                 Date.new!(String.to_integer(year), month, String.to_integer(day)),
+                 Time.new!(
+                   String.to_integer(hour),
+                   String.to_integer(min),
+                   String.to_integer(sec)
+                 )
+               ) do
+          {:ok, dt}
+        else
+          _ -> :error
+        end
+
+      _ ->
+        :error
+    end
   end
 end
