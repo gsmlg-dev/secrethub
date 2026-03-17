@@ -22,7 +22,9 @@ defmodule SecretHub.Core.Vault.SealState do
   require Logger
 
   alias SecretHub.Core.Audit
+  alias SecretHub.Core.Repo
   alias SecretHub.Shared.Crypto.{Encryption, Shamir}
+  alias SecretHub.Shared.Schemas.VaultConfig
 
   # Auto-seal after 30 seconds of no activity
   @unseal_timeout_ms 30_000
@@ -177,9 +179,6 @@ defmodule SecretHub.Core.Vault.SealState do
             kdk = Encryption.generate_key()
             {:ok, encrypted_master_key} = Encryption.encrypt_to_blob(master_key, kdk)
 
-            # Store encrypted master key and KDK (encrypted shares) in database
-            # For now, we'll store just the encrypted master key
-            # TODO: Properly store this in a vault_config table
             persist_vault_config(encrypted_master_key, threshold, total_shares)
 
             new_state = %{
@@ -354,23 +353,72 @@ defmodule SecretHub.Core.Vault.SealState do
   end
 
   defp load_vault_state do
-    # TODO: Load from database vault_config table
-    # For now, return not_initialized state
-    %State{
-      status: :not_initialized,
-      master_key: nil,
-      encrypted_master_key: nil,
-      unseal_shares: [],
-      threshold: nil,
-      total_shares: nil,
-      unseal_progress: 0
-    }
+    case load_vault_config_from_db() do
+      {:ok, %VaultConfig{} = config} ->
+        %State{
+          status: :sealed,
+          master_key: nil,
+          encrypted_master_key: config.encrypted_master_key,
+          unseal_shares: [],
+          threshold: config.threshold,
+          total_shares: config.total_shares,
+          unseal_progress: 0,
+          initialized_at: config.initialized_at
+        }
+
+      {:error, _reason} ->
+        %State{
+          status: :not_initialized,
+          master_key: nil,
+          encrypted_master_key: nil,
+          unseal_shares: [],
+          threshold: nil,
+          total_shares: nil,
+          unseal_progress: 0
+        }
+    end
   end
 
-  defp persist_vault_config(_encrypted_master_key, _threshold, _total_shares) do
-    # TODO: Store in database vault_config table
-    # For now, just log
-    Logger.info("Vault configuration persisted")
+  defp load_vault_config_from_db do
+    import Ecto.Query
+
+    try do
+      case Repo.one(from(vc in VaultConfig, limit: 1)) do
+        nil -> {:error, :not_found}
+        config -> {:ok, config}
+      end
+    rescue
+      # DB not ready during startup or in test mode
+      _ -> {:error, :db_not_ready}
+    end
+  end
+
+  defp persist_vault_config(encrypted_master_key, threshold, total_shares) do
+    import Ecto.Query
+
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    attrs = %{
+      encrypted_master_key: encrypted_master_key,
+      threshold: threshold,
+      total_shares: total_shares,
+      initialized_at: now
+    }
+
+    try do
+      # Delete any existing config (singleton pattern)
+      Repo.delete_all(from(vc in VaultConfig))
+
+      %VaultConfig{}
+      |> VaultConfig.changeset(attrs)
+      |> Repo.insert!()
+
+      Logger.info("Vault configuration persisted to database")
+    rescue
+      e ->
+        Logger.error("Failed to persist vault config: #{inspect(e)}")
+        {:error, :persistence_failed}
+    end
   end
 
   defp audit_event(event_type, status, metadata \\ %{}) do
