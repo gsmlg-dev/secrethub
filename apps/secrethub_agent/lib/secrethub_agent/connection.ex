@@ -238,28 +238,11 @@ defmodule SecretHub.Agent.Connection do
 
     case connect_to_core(state) do
       {:ok, socket} ->
-        case join_channel(socket, state.agent_id) do
-          {:ok, channel} ->
-            Logger.info("Successfully connected to Core",
-              agent_id: state.agent_id,
-              channel: "agent:#{state.agent_id}"
-            )
+        # Socket connects asynchronously; schedule join attempt
+        Process.send_after(self(), {:try_join, 0}, 100)
 
-            new_state = %{
-              state
-              | socket: socket,
-                channel: channel,
-                connection_status: :connected,
-                reconnect_timer: nil,
-                retry_count: 0
-            }
-
-            {:noreply, new_state}
-
-          {:error, reason} ->
-            Logger.error("Failed to join channel", reason: reason, agent_id: state.agent_id)
-            schedule_reconnect(state)
-        end
+        {:noreply,
+         %{state | socket: socket, connection_status: :connecting, reconnect_timer: nil}}
 
       {:error, reason} ->
         Logger.error("Failed to connect to Core",
@@ -269,6 +252,38 @@ defmodule SecretHub.Agent.Connection do
         )
 
         schedule_reconnect(state)
+    end
+  end
+
+  # Maximum join attempts while waiting for socket connection (5 seconds total)
+  @max_join_attempts 50
+
+  @impl true
+  def handle_info({:try_join, attempts}, state) when attempts >= @max_join_attempts do
+    Logger.error("Timed out waiting for socket connection", agent_id: state.agent_id)
+    schedule_reconnect(%{state | connection_status: :disconnected})
+  end
+
+  def handle_info({:try_join, attempts}, state) do
+    if state.socket && Socket.connected?(state.socket) do
+      case join_channel(state.socket, state.agent_id) do
+        {:ok, channel} ->
+          Logger.info("Successfully connected to Core",
+            agent_id: state.agent_id,
+            channel: "agent:#{state.agent_id}"
+          )
+
+          {:noreply,
+           %{state | channel: channel, connection_status: :connected, retry_count: 0}}
+
+        {:error, reason} ->
+          Logger.error("Failed to join channel", reason: inspect(reason), agent_id: state.agent_id)
+          schedule_reconnect(state)
+      end
+    else
+      # Socket not connected yet, retry
+      Process.send_after(self(), {:try_join, attempts + 1}, 100)
+      {:noreply, state}
     end
   end
 
