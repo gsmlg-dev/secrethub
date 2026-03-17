@@ -167,7 +167,9 @@ defmodule SecretHub.Web.AutoUnsealConfigLive do
       <div class="flex justify-between items-center mb-6">
         <div>
           <h1 class="text-3xl font-bold">Auto-Unseal Configuration</h1>
-          <p class="text-on-surface-variant mt-1">Manage automatic vault unsealing with cloud KMS providers</p>
+          <p class="text-on-surface-variant mt-1">
+            Manage automatic vault unsealing with cloud KMS providers
+          </p>
         </div>
 
         <div class="flex gap-2">

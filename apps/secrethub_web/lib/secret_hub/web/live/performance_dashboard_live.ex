@@ -124,7 +124,12 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
             <div class="flex-shrink-0 bg-primary rounded-md p-3">
-              <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                class="w-6 h-6 text-on-primary"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -147,7 +152,12 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
             <div class="flex-shrink-0 bg-success rounded-md p-3">
-              <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                class="w-6 h-6 text-on-primary"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -170,7 +180,12 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
             <div class={"flex-shrink-0 rounded-md p-3 #{latency_color(@metrics.p95_latency)}"}>
-              <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                class="w-6 h-6 text-on-primary"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -193,7 +208,12 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
             <div class="flex-shrink-0 bg-tertiary rounded-md p-3">
-              <svg class="w-6 h-6 text-on-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                class="w-6 h-6 text-on-primary"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -238,7 +258,9 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
 
             <div class="flex justify-between items-center">
               <span class="text-sm text-on-surface-variant">Active Connections</span>
-              <span class="text-sm font-medium text-on-surface">{@metrics.db_active_connections}</span>
+              <span class="text-sm font-medium text-on-surface">
+                {@metrics.db_active_connections}
+              </span>
             </div>
 
             <div class="flex justify-between items-center">

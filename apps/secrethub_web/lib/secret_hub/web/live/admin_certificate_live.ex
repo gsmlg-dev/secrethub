@@ -229,13 +229,22 @@ defmodule SecretHub.Web.AdminCertificateLive do
                     >
                       Common Name
                     </th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
+                    <th
+                      scope="col"
+                      class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface"
+                    >
                       Subject
                     </th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
+                    <th
+                      scope="col"
+                      class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface"
+                    >
                       Valid Until
                     </th>
-                    <th scope="col" class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
+                    <th
+                      scope="col"
+                      class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface"
+                    >
                       Status
                     </th>
                     <th scope="col" class="relative py-3.5 pl-3 pr-4 sm:pr-6">
@@ -304,7 +313,8 @@ defmodule SecretHub.Web.AdminCertificateLive do
       <%= if @selected_cert do %>
         <div class="fixed z-10 inset-0 overflow-y-auto" role="dialog">
           <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 transition-opacity"></div>
+            <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 transition-opacity">
+            </div>
 
             <div class="inline-block align-bottom bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
               <div>
@@ -320,7 +330,9 @@ defmodule SecretHub.Web.AdminCertificateLive do
                       </div>
                       <div class="sm:col-span-2">
                         <dt class="text-sm font-medium text-on-surface-variant">Subject</dt>
-                        <dd class="mt-1 text-sm text-on-surface break-all">{@selected_cert.subject}</dd>
+                        <dd class="mt-1 text-sm text-on-surface break-all">
+                          {@selected_cert.subject}
+                        </dd>
                       </div>
                       <div class="sm:col-span-2">
                         <dt class="text-sm font-medium text-on-surface-variant">Fingerprint</dt>

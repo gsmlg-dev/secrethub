@@ -435,7 +435,8 @@ defmodule SecretHub.Web.PolicyEditorLive do
         </label>
         <p class="text-sm text-on-surface-variant mb-4">
           Define which secrets this policy applies to using glob patterns.
-          Use <code class="px-1 py-0.5 bg-surface-container rounded text-xs">*</code> to match any segment.
+          Use <code class="px-1 py-0.5 bg-surface-container rounded text-xs">*</code>
+          to match any segment.
         </p>
 
         <div class="flex gap-2 mb-3">

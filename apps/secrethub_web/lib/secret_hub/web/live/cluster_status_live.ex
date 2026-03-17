@@ -178,7 +178,8 @@ defmodule SecretHub.Web.ClusterStatusLive do
                 "inline-flex items-center px-4 py-2 border rounded-md shadow-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary",
                 if(@auto_refresh,
                   do: "border-primary text-primary bg-primary/5 hover:bg-primary/10",
-                  else: "border-outline-variant text-on-surface bg-surface-container hover:bg-surface-container-low"
+                  else:
+                    "border-outline-variant text-on-surface bg-surface-container hover:bg-surface-container-low"
                 )
               ]}
             >

@@ -66,7 +66,9 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-on-surface-variant">Source IP Address</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">
+                    Source IP Address
+                  </label>
                   <p class="text-sm text-on-surface">{@event.source_ip}</p>
                 </div>
 
@@ -76,7 +78,9 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-on-surface-variant">Correlation ID</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">
+                    Correlation ID
+                  </label>
                   <p class="text-sm font-mono text-on-surface">{@event.correlation_id}</p>
                 </div>
               </div>
@@ -86,7 +90,9 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
                   <label class="block text-sm font-medium text-on-surface-variant">Secret Path</label>
                   <p class="text-sm text-on-surface">
                     <%= if @event.secret_path do %>
-                      <code class="bg-surface-container px-1 py-0.5 rounded">{@event.secret_path}</code>
+                      <code class="bg-surface-container px-1 py-0.5 rounded">
+                        {@event.secret_path}
+                      </code>
                     <% else %>
                       -
                     <% end %>
@@ -94,7 +100,9 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-on-surface-variant">Access Status</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">
+                    Access Status
+                  </label>
                   <div class="flex items-center">
                     <div class={"w-2 h-2 rounded-full mr-2 #{access_status_color(@event.access_granted)}"}>
                     </div>
@@ -105,12 +113,16 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-on-surface-variant">Response Time</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">
+                    Response Time
+                  </label>
                   <p class="text-sm text-on-surface">{@event.response_time_ms}ms</p>
                 </div>
 
                 <div>
-                  <label class="block text-sm font-medium text-on-surface-variant">Policy Matched</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">
+                    Policy Matched
+                  </label>
                   <p class="text-sm text-on-surface">{@event.policy_matched || "N/A"}</p>
                 </div>
               </div>
@@ -189,7 +201,9 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
                   <p class="text-sm font-mono text-on-surface">{@event.hash || "SHA256:abc123..."}</p>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-on-surface-variant">Previous Hash</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">
+                    Previous Hash
+                  </label>
                   <p class="text-sm font-mono text-on-surface">
                     {@event.previous_hash || "SHA256:def456..."}
                   </p>

@@ -273,11 +273,14 @@ defmodule SecretHub.Agent.Connection do
             channel: "agent:#{state.agent_id}"
           )
 
-          {:noreply,
-           %{state | channel: channel, connection_status: :connected, retry_count: 0}}
+          {:noreply, %{state | channel: channel, connection_status: :connected, retry_count: 0}}
 
         {:error, reason} ->
-          Logger.error("Failed to join channel", reason: inspect(reason), agent_id: state.agent_id)
+          Logger.error("Failed to join channel",
+            reason: inspect(reason),
+            agent_id: state.agent_id
+          )
+
           schedule_reconnect(state)
       end
     else

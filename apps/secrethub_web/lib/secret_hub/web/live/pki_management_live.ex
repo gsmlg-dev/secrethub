@@ -182,7 +182,9 @@ defmodule SecretHub.Web.PKIManagementLive do
               </div>
               <div class="ml-5 w-0 flex-1">
                 <dl>
-                  <dt class="text-sm font-medium text-on-surface-variant truncate">Total Certificates</dt>
+                  <dt class="text-sm font-medium text-on-surface-variant truncate">
+                    Total Certificates
+                  </dt>
                   <dd class="text-lg font-semibold text-on-surface">{@stats.total}</dd>
                 </dl>
               </div>
@@ -582,13 +584,17 @@ defmodule SecretHub.Web.PKIManagementLive do
 
               <div class="grid grid-cols-2 gap-4">
                 <div>
-                  <label class="block text-sm font-medium text-on-surface-variant">Serial Number</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">
+                    Serial Number
+                  </label>
                   <p class="mt-1 text-sm font-mono text-on-surface break-all">
                     {@selected_cert.serial_number}
                   </p>
                 </div>
                 <div>
-                  <label class="block text-sm font-medium text-on-surface-variant">Fingerprint (SHA-256)</label>
+                  <label class="block text-sm font-medium text-on-surface-variant">
+                    Fingerprint (SHA-256)
+                  </label>
                   <p class="mt-1 text-sm font-mono text-on-surface break-all">
                     {@selected_cert.fingerprint_sha256}
                   </p>

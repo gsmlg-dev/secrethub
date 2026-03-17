@@ -198,7 +198,9 @@ defmodule SecretHub.Web.PolicySimulatorLive do
                   value={@custom_timestamp}
                   class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 />
-                <p class="mt-1 text-xs text-on-surface-variant">For testing time-based restrictions</p>
+                <p class="mt-1 text-xs text-on-surface-variant">
+                  For testing time-based restrictions
+                </p>
               <% end %>
             </div>
 

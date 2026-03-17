@@ -268,7 +268,9 @@ defmodule SecretHub.Web.RotationScheduleLive do
                 <tr>
                   <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Name</th>
                   <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Type</th>
-                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">Schedule</th>
+                  <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
+                    Schedule
+                  </th>
                   <th class="px-3 py-3.5 text-left text-sm font-semibold text-on-surface">
                     Next Rotation
                   </th>
@@ -581,7 +583,9 @@ defmodule SecretHub.Web.RotationScheduleLive do
               <div class="py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt class="text-sm font-medium text-on-surface-variant">Schedule</dt>
                 <dd class="mt-1 text-sm text-on-surface sm:col-span-2 sm:mt-0">
-                  <code class="text-xs bg-surface-container px-2 py-1 rounded">{@schedule.schedule_cron}</code>
+                  <code class="text-xs bg-surface-container px-2 py-1 rounded">
+                    {@schedule.schedule_cron}
+                  </code>
                 </dd>
               </div>
 

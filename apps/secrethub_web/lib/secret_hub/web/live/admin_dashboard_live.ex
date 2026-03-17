@@ -147,8 +147,8 @@ defmodule SecretHub.Web.AdminDashboardLive do
           </p>
         </.dm_card>
       </div>
-
-      <!-- Connected Agents Section -->
+      
+    <!-- Connected Agents Section -->
       <.dm_card>
         <:title>
           <div class="flex justify-between items-center w-full">
@@ -204,8 +204,8 @@ defmodule SecretHub.Web.AdminDashboardLive do
           </table>
         </div>
       </.dm_card>
-
-      <!-- Quick Actions -->
+      
+    <!-- Quick Actions -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <.dm_card>
           <:title>

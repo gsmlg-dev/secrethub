@@ -299,7 +299,9 @@ defmodule SecretHub.Web.SecretManagementLive do
                     <div class="text-sm text-on-surface-variant">{secret.description}</div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <code class="text-sm bg-surface-container px-1 py-0.5 rounded">{secret.path}</code>
+                    <code class="text-sm bg-surface-container px-1 py-0.5 rounded">
+                      {secret.path}
+                    </code>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
                     {secret.engine_type}

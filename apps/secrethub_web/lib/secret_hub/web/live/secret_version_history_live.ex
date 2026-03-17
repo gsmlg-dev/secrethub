@@ -211,7 +211,10 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           <div class="mt-6">
             <div class="flex justify-between items-center mb-4">
               <h4 class="text-md font-semibold">Comparison Result</h4>
-              <button phx-click="clear_comparison" class="text-sm text-on-surface-variant hover:text-on-surface">
+              <button
+                phx-click="clear_comparison"
+                class="text-sm text-on-surface-variant hover:text-on-surface"
+              >
                 Clear
               </button>
             </div>
