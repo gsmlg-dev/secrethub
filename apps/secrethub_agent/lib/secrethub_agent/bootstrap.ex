@@ -371,12 +371,11 @@ defmodule SecretHub.Agent.Bootstrap do
     # Connect to Core without TLS client certificate (using HTTP/WS only)
     socket_opts = [
       url: build_websocket_url(core_url),
-      sender: self(),
-      serializer: Jason,
+      json_library: Jason,
       headers: [{"x-agent-id", agent_id}]
     ]
 
-    PhoenixClient.Socket.start_link(socket_opts)
+    Phoenix.SocketClient.start_link(socket_opts)
   end
 
   defp connect_with_mtls(core_url, _agent_id) do
@@ -384,8 +383,7 @@ defmodule SecretHub.Agent.Bootstrap do
     if File.exists?(@cert_file) and File.exists?(@key_file) and File.exists?(@ca_chain_file) do
       socket_opts = [
         url: build_websocket_url(core_url),
-        sender: self(),
-        serializer: Jason,
+        json_library: Jason,
         transport_opts: [
           certfile: @cert_file,
           keyfile: @key_file,
@@ -393,7 +391,7 @@ defmodule SecretHub.Agent.Bootstrap do
         ]
       ]
 
-      PhoenixClient.Socket.start_link(socket_opts)
+      Phoenix.SocketClient.start_link(socket_opts)
     else
       {:error, :certificate_not_found}
     end
@@ -409,7 +407,7 @@ defmodule SecretHub.Agent.Bootstrap do
   defp join_agent_channel(socket, agent_id) do
     topic = "agent:#{agent_id}"
 
-    case PhoenixClient.Channel.join(socket, topic) do
+    case Phoenix.SocketClient.Channel.join(socket, topic) do
       {:ok, _response, channel} ->
         {:ok, channel}
 
@@ -424,56 +422,18 @@ defmodule SecretHub.Agent.Bootstrap do
       "secret_id" => secret_id
     }
 
-    case PhoenixClient.Channel.push(channel, "authenticate", payload) do
-      :ok ->
-        # Wait for authentication response
-        receive do
-          %PhoenixClient.Message{event: "phx_reply", payload: reply} ->
-            case reply do
-              %{"status" => "ok", "response" => auth_data} ->
-                {:ok, auth_data}
-
-              %{"status" => "error", "response" => error} ->
-                {:error, error}
-
-              _ ->
-                {:error, "Unknown authentication response"}
-            end
-        after
-          10_000 ->
-            {:error, :authentication_timeout}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+    case Phoenix.SocketClient.Channel.push(channel, "authenticate", payload, 10_000) do
+      {:ok, auth_data} -> {:ok, auth_data}
+      {:error, reason} -> {:error, reason}
     end
   end
 
   defp request_certificate_signing(channel, csr_pem) do
     payload = %{"csr" => csr_pem}
 
-    case PhoenixClient.Channel.push(channel, "certificate:request", payload) do
-      :ok ->
-        # Wait for certificate response
-        receive do
-          %PhoenixClient.Message{event: "phx_reply", payload: reply} ->
-            case reply do
-              %{"status" => "ok", "response" => cert_data} ->
-                {:ok, cert_data}
-
-              %{"status" => "error", "response" => error} ->
-                {:error, error}
-
-              _ ->
-                {:error, "Unknown certificate response"}
-            end
-        after
-          15_000 ->
-            {:error, :certificate_request_timeout}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+    case Phoenix.SocketClient.Channel.push(channel, "certificate:request", payload, 15_000) do
+      {:ok, cert_data} -> {:ok, cert_data}
+      {:error, reason} -> {:error, reason}
     end
   end
 
