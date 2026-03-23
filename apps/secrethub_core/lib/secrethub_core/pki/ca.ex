@@ -1060,17 +1060,19 @@ defmodule SecretHub.Core.PKI.CA do
   @spec issue_agent_certificate(String.t(), keyword()) ::
           {:ok, Certificate.t()} | {:error, String.t()}
   def issue_agent_certificate(agent_id, opts \\ []) do
-    key_type = Keyword.get(opts, :key_type, :rsa)
-    key_size = Keyword.get(opts, :key_size, 2048)
     validity_days = Keyword.get(opts, :validity_days, @client_cert_validity_days)
     organization = "SecretHub"
 
     Logger.info("Issuing agent certificate for: #{agent_id}")
 
-    with {:ok, private_key} <- generate_private_key(key_type, key_size),
-         {:ok, public_key} <- extract_public_key(private_key, key_type) do
-      case find_active_ca() do
-        {:ok, ca_cert} ->
+    case find_active_ca() do
+      {:ok, ca_cert} ->
+        # Full CA-signed certificate with key generation
+        key_type = Keyword.get(opts, :key_type, :rsa)
+        key_size = Keyword.get(opts, :key_size, 2048)
+
+        with {:ok, private_key} <- generate_private_key(key_type, key_size),
+             {:ok, public_key} <- extract_public_key(private_key, key_type) do
           issue_ca_signed_agent_cert(
             agent_id,
             organization,
@@ -1079,22 +1081,37 @@ defmodule SecretHub.Core.PKI.CA do
             validity_days,
             opts
           )
+        else
+          {:error, reason} ->
+            Logger.error("Failed to issue agent certificate for #{agent_id}: #{inspect(reason)}")
 
-        {:error, _} ->
+            {:error, "Failed to generate key: #{inspect(reason)}"}
+        end
+
+      {:error, _} ->
+        # No CA available - generate a fast self-signed cert with ECDSA
+        with {:ok, private_key} <- generate_private_key(:ecdsa, nil),
+             {:ok, public_key} <- extract_public_key(private_key, :ecdsa) do
           issue_self_signed_agent_cert(
             agent_id,
             organization,
             private_key,
             public_key,
-            validity_days,
-            opts
+            validity_days
           )
-      end
-    else
-      {:error, reason} ->
-        Logger.error("Failed to issue agent certificate for #{agent_id}: #{inspect(reason)}")
-        {:error, "Failed to generate key: #{inspect(reason)}"}
+        else
+          {:error, reason} ->
+            Logger.error(
+              "Failed to issue self-signed agent cert for #{agent_id}: #{inspect(reason)}"
+            )
+
+            {:error, "Failed to generate key: #{inspect(reason)}"}
+        end
     end
+  rescue
+    e ->
+      Logger.error("Failed to issue agent certificate for #{agent_id}: #{inspect(e)}")
+      {:error, "Certificate issuance failed: #{inspect(e)}"}
   end
 
   defp find_active_ca do
@@ -1154,8 +1171,7 @@ defmodule SecretHub.Core.PKI.CA do
          organization,
          private_key,
          public_key,
-         validity_days,
-         opts
+         validity_days
        ) do
     with {:ok, cert_der} <-
            create_self_signed_certificate(
@@ -1164,7 +1180,7 @@ defmodule SecretHub.Core.PKI.CA do
              agent_id,
              organization,
              validity_days,
-             opts
+             []
            ),
          {:ok, cert_pem} <- der_to_pem(cert_der, :certificate),
          {:ok, cert_record} <-
