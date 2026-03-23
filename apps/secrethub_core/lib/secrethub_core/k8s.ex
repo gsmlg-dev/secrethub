@@ -32,33 +32,62 @@ defmodule SecretHub.Core.K8s do
   @doc """
   Returns the current deployment status.
   """
+  @spec get_deployment_status() :: {:ok, map()} | {:error, term()}
   def get_deployment_status do
-    # TODO: Integrate with k8s library for real Kubernetes API access
-    {:error, :not_implemented}
+    if in_cluster?() do
+      # TODO: Integrate with k8s library for real Kubernetes API access
+      {:error, :not_implemented}
+    else
+      {:ok,
+       %{
+         name: @deployment_name,
+         namespace: @namespace,
+         replicas: 1,
+         ready_replicas: 0,
+         available_replicas: 0,
+         status: "Not connected to Kubernetes"
+       }}
+    end
   end
 
   @doc """
   Lists all pods in the SecretHub deployment.
   """
+  @spec list_pods() :: {:ok, list(map())} | {:error, term()}
   def list_pods do
-    # TODO: Integrate with k8s library for real Kubernetes API access
-    {:error, :not_implemented}
+    if in_cluster?() do
+      # TODO: Integrate with k8s library for real Kubernetes API access
+      {:error, :not_implemented}
+    else
+      {:ok, []}
+    end
   end
 
   @doc """
   Gets resource metrics for all pods.
   """
+  @spec get_pod_metrics() :: {:ok, list(map())} | {:error, term()}
   def get_pod_metrics do
-    # TODO: Integrate with k8s metrics server API
-    {:error, :not_implemented}
+    if in_cluster?() do
+      # TODO: Integrate with k8s metrics server API
+      {:error, :not_implemented}
+    else
+      {:ok, []}
+    end
   end
 
   @doc """
   Scales the deployment to the specified number of replicas.
   """
+  @spec scale_deployment(integer()) :: :ok | {:error, term()}
   def scale_deployment(replicas) when is_integer(replicas) and replicas >= 1 and replicas <= 10 do
-    # TODO: Integrate with k8s library for real Kubernetes API access
-    {:error, :not_implemented}
+    if in_cluster?() do
+      # TODO: Integrate with k8s library for real Kubernetes API access
+      {:error, :not_implemented}
+    else
+      # Outside Kubernetes, scaling is a no-op
+      :ok
+    end
   end
 
   def scale_deployment(_replicas) do
@@ -68,9 +97,14 @@ defmodule SecretHub.Core.K8s do
   @doc """
   Gets recent Kubernetes events related to the deployment.
   """
+  @spec get_events() :: {:ok, list(map())} | {:error, term()}
   def get_events do
-    # TODO: Integrate with k8s library for real Kubernetes API access
-    {:error, :not_implemented}
+    if in_cluster?() do
+      # TODO: Integrate with k8s library for real Kubernetes API access
+      {:error, :not_implemented}
+    else
+      {:ok, []}
+    end
   end
 
   @doc """

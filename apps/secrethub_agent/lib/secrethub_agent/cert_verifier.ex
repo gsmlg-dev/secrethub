@@ -259,42 +259,42 @@ defmodule SecretHub.Agent.CertVerifier do
         :ok
 
       exts when is_list(exts) ->
-        # Check for Extended Key Usage (OID 2.5.29.37)
-        eku_oid = {2, 5, 29, 37}
-        client_auth_oid = {1, 3, 6, 1, 5, 5, 7, 3, 2}
-
-        has_client_auth =
-          Enum.any?(exts, fn
-            {:Extension, ^eku_oid, _critical, value} ->
-              case :public_key.der_decode(:ExtKeyUsageSyntax, value) do
-                oids when is_list(oids) -> client_auth_oid in oids
-                _ -> false
-              end
-
-            _ ->
-              false
-          end)
-
-        if has_client_auth do
-          :ok
-        else
-          # If no EKU extension exists at all, allow (EKU is optional per RFC 5280)
-          has_eku =
-            Enum.any?(exts, fn
-              {:Extension, ^eku_oid, _, _} -> true
-              _ -> false
-            end)
-
-          if has_eku do
-            {:error, "Certificate does not include clientAuth extended key usage"}
-          else
-            :ok
-          end
-        end
+        verify_client_auth_eku(exts)
     end
   rescue
     e ->
       {:error, "Failed to verify certificate type: #{inspect(e)}"}
+  end
+
+  defp verify_client_auth_eku(exts) do
+    # Check for Extended Key Usage (OID 2.5.29.37)
+    eku_oid = {2, 5, 29, 37}
+    client_auth_oid = {1, 3, 6, 1, 5, 5, 7, 3, 2}
+
+    has_client_auth =
+      Enum.any?(exts, fn
+        {:Extension, ^eku_oid, _critical, value} ->
+          eku_includes_oid?(value, client_auth_oid)
+
+        _ ->
+          false
+      end)
+
+    # If no EKU extension exists at all, allow (EKU is optional per RFC 5280)
+    has_eku = Enum.any?(exts, &match?({:Extension, ^eku_oid, _, _}, &1))
+
+    cond do
+      has_client_auth -> :ok
+      not has_eku -> :ok
+      true -> {:error, "Certificate does not include clientAuth extended key usage"}
+    end
+  end
+
+  defp eku_includes_oid?(value, target_oid) do
+    case :public_key.der_decode(:ExtKeyUsageSyntax, value) do
+      oids when is_list(oids) -> target_oid in oids
+      _ -> false
+    end
   end
 
   defp extract_subject(cert) do

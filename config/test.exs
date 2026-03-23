@@ -52,6 +52,7 @@ config :phoenix, :plug_init_mode, :runtime
 config :phoenix_live_view,
   enable_expensive_runtime_checks: true
 
-# Configure agent to use temp directory for Unix Domain Socket in test
+# Disable agent application in test mode so unit tests can manage their own processes
 config :secrethub_agent,
+  enabled: false,
   socket_path: "/tmp/secrethub_test_agent.sock"

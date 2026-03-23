@@ -30,6 +30,7 @@ defmodule SecretHub.Web.AgentChannel do
 
   alias SecretHub.Core.Agents
   alias SecretHub.Core.Auth.AppRole
+  alias SecretHub.Core.Repo
   alias SecretHub.Core.Secrets
 
   # 90 seconds (3 missed heartbeats)
@@ -380,7 +381,7 @@ defmodule SecretHub.Web.AgentChannel do
           last_heartbeat_at: now,
           metadata: %{"auto_registered" => true}
         })
-        |> SecretHub.Core.Repo.insert(
+        |> Repo.insert(
           on_conflict: {:replace, [:status, :last_seen_at, :last_heartbeat_at]},
           conflict_target: :agent_id
         )
@@ -397,7 +398,7 @@ defmodule SecretHub.Web.AgentChannel do
           last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second),
           last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second)
         })
-        |> SecretHub.Core.Repo.update()
+        |> Repo.update()
     end
   end
 end

@@ -84,20 +84,7 @@ defmodule SecretHub.Web.CoreComponents do
   def button(%{rest: rest} = assigns) do
     assigns =
       assign_new(assigns, :btn_class, fn ->
-        base = "btn"
-
-        variant_class =
-          case assigns[:variant] do
-            "primary" -> "btn-primary"
-            "secondary" -> "btn-secondary"
-            "tertiary" -> "btn-tertiary"
-            "outline" -> "btn-outline"
-            "ghost" -> "btn-ghost"
-            "text" -> "btn-text"
-            _ -> "btn-outline btn-primary"
-          end
-
-        [base, variant_class, assigns[:class]]
+        ["btn", button_variant_class(assigns[:variant]), assigns[:class]]
       end)
 
     if rest[:href] || rest[:navigate] || rest[:patch] do
@@ -114,6 +101,14 @@ defmodule SecretHub.Web.CoreComponents do
       """
     end
   end
+
+  defp button_variant_class("primary"), do: "btn-primary"
+  defp button_variant_class("secondary"), do: "btn-secondary"
+  defp button_variant_class("tertiary"), do: "btn-tertiary"
+  defp button_variant_class("outline"), do: "btn-outline"
+  defp button_variant_class("ghost"), do: "btn-ghost"
+  defp button_variant_class("text"), do: "btn-text"
+  defp button_variant_class(_), do: "btn-outline btn-primary"
 
   @doc """
   Renders an input with label and error messages using DuskMoon form styling.
