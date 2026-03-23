@@ -83,21 +83,33 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQLTest do
       socket_dir = System.get_env("DEVENV_STATE", "/tmp") <> "/postgres"
 
       # Use Unix socket when available (devenv), TCP otherwise (CI)
+      # Parse DATABASE_URL if available for CI credentials
+      {db_user, db_pass, db_host, db_port} =
+        case System.get_env("DATABASE_URL") do
+          nil ->
+            {"secrethub", "secrethub_dev_password", "localhost", 5432}
+
+          url ->
+            uri = URI.parse(url)
+            [user, pass] = String.split(uri.userinfo || "secrethub:secrethub_dev_password", ":")
+            {user, pass, uri.host || "localhost", uri.port || 5432}
+        end
+
       connection =
         if File.exists?(socket_dir) do
           %{
             "socket_dir" => socket_dir,
             "database" => "secrethub_test",
-            "username" => "secrethub",
-            "password" => "secrethub_dev_password"
+            "username" => db_user,
+            "password" => db_pass
           }
         else
           %{
-            "host" => System.get_env("PGHOST", "localhost"),
-            "port" => String.to_integer(System.get_env("PGPORT", "5432")),
+            "host" => db_host,
+            "port" => db_port,
             "database" => "secrethub_test",
-            "username" => System.get_env("PGUSER", "secrethub"),
-            "password" => System.get_env("PGPASSWORD", "secrethub_dev_password")
+            "username" => db_user,
+            "password" => db_pass
           }
         end
 
