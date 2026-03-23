@@ -7,6 +7,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
   require Logger
 
   alias SecretHub.Core.Agents
+  alias SecretHub.Web.Endpoint
 
   @impl true
   def mount(_params, _session, socket) do
@@ -51,7 +52,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
     case Agents.mark_disconnected(agent_id) do
       {:ok, _agent} ->
         # Broadcast disconnect to the agent's WebSocket channel
-        SecretHub.Web.Endpoint.broadcast("agent:#{agent_id}", "disconnect", %{
+        Endpoint.broadcast("agent:#{agent_id}", "disconnect", %{
           reason: "admin_disconnect"
         })
 

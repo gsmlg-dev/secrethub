@@ -520,9 +520,9 @@ defmodule SecretHub.Core.Agents do
     "#{sanitized_hostname}-#{timestamp}"
   end
 
-  defp issue_agent_certificate(_agent) do
-    # TODO: Implement actual certificate issuance using PKI.CA.sign_csr/4
-    {:error, :certificate_issuance_not_implemented}
+  defp issue_agent_certificate(agent) do
+    alias SecretHub.Core.PKI.CA
+    CA.issue_agent_certificate(agent.agent_id)
   end
 
   defp should_reissue_certificate?(agent) do

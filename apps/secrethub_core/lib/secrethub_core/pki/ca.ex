@@ -1039,4 +1039,146 @@ defmodule SecretHub.Core.PKI.CA do
   def list_certificates do
     Repo.all(Certificate)
   end
+
+  @doc """
+  Issues an agent client certificate.
+
+  Tries to sign with an active intermediate CA (preferred) or root CA.
+  If no CA exists, generates a self-signed agent certificate.
+
+  ## Parameters
+  - `agent_id`: The agent's identifier (used as CN)
+  - `opts`: Optional parameters
+    - `:validity_days` - Certificate validity (default: 365)
+    - `:key_type` - Key type (default: :rsa)
+    - `:key_size` - Key size (default: 2048)
+
+  ## Returns
+  - `{:ok, %Certificate{}}` on success
+  - `{:error, reason}` on failure
+  """
+  @spec issue_agent_certificate(String.t(), keyword()) ::
+          {:ok, Certificate.t()} | {:error, String.t()}
+  def issue_agent_certificate(agent_id, opts \\ []) do
+    key_type = Keyword.get(opts, :key_type, :rsa)
+    key_size = Keyword.get(opts, :key_size, 2048)
+    validity_days = Keyword.get(opts, :validity_days, @client_cert_validity_days)
+    organization = "SecretHub"
+
+    Logger.info("Issuing agent certificate for: #{agent_id}")
+
+    with {:ok, private_key} <- generate_private_key(key_type, key_size),
+         {:ok, public_key} <- extract_public_key(private_key, key_type) do
+      case find_active_ca() do
+        {:ok, ca_cert} ->
+          issue_ca_signed_agent_cert(
+            agent_id,
+            organization,
+            public_key,
+            ca_cert,
+            validity_days,
+            opts
+          )
+
+        {:error, _} ->
+          issue_self_signed_agent_cert(
+            agent_id,
+            organization,
+            private_key,
+            public_key,
+            validity_days,
+            opts
+          )
+      end
+    else
+      {:error, reason} ->
+        Logger.error("Failed to issue agent certificate for #{agent_id}: #{inspect(reason)}")
+        {:error, "Failed to generate key: #{inspect(reason)}"}
+    end
+  end
+
+  defp find_active_ca do
+    # Prefer intermediate CA, fall back to root CA
+    query =
+      from(c in Certificate,
+        where: c.cert_type in [:intermediate_ca, :root_ca] and c.revoked == false,
+        where: c.valid_until > ^(DateTime.utc_now() |> DateTime.truncate(:second)),
+        order_by: [desc: c.cert_type, desc: c.inserted_at],
+        limit: 1
+      )
+
+    case Repo.one(query) do
+      nil -> {:error, :no_ca_available}
+      ca -> {:ok, ca}
+    end
+  end
+
+  defp issue_ca_signed_agent_cert(
+         agent_id,
+         organization,
+         public_key,
+         ca_cert,
+         validity_days,
+         opts
+       ) do
+    with {:ok, ca_key} <- decrypt_private_key(ca_cert.private_key_encrypted),
+         {:ok, cert_der} <-
+           create_ca_signed_certificate(
+             public_key,
+             ca_key,
+             ca_cert.certificate_pem,
+             agent_id,
+             organization,
+             validity_days: validity_days,
+             cert_type: :agent_client,
+             opts: opts
+           ),
+         {:ok, cert_pem} <- der_to_pem(cert_der, :certificate),
+         {:ok, cert_record} <-
+           store_signed_certificate(
+             cert_pem,
+             :agent_client,
+             agent_id,
+             organization,
+             validity_days,
+             ca_cert.id,
+             ca_cert.subject
+           ) do
+      Logger.info("CA-signed agent certificate issued for: #{agent_id}")
+      {:ok, cert_record}
+    end
+  end
+
+  defp issue_self_signed_agent_cert(
+         agent_id,
+         organization,
+         private_key,
+         public_key,
+         validity_days,
+         opts
+       ) do
+    with {:ok, cert_der} <-
+           create_self_signed_certificate(
+             private_key,
+             public_key,
+             agent_id,
+             organization,
+             validity_days,
+             opts
+           ),
+         {:ok, cert_pem} <- der_to_pem(cert_der, :certificate),
+         {:ok, cert_record} <-
+           store_signed_certificate(
+             cert_pem,
+             :agent_client,
+             agent_id,
+             organization,
+             validity_days,
+             nil,
+             nil
+           ) do
+      Logger.info("Self-signed agent certificate issued for: #{agent_id}")
+      {:ok, cert_record}
+    end
+  end
 end

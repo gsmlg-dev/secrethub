@@ -64,6 +64,7 @@ defmodule SecretHub.Agent.Bootstrap do
 
   require Logger
 
+  alias Phoenix.SocketClient.Channel
   alias SecretHub.Shared.Crypto.Encryption
 
   @cert_dir "priv/cert"
@@ -407,7 +408,7 @@ defmodule SecretHub.Agent.Bootstrap do
   defp join_agent_channel(socket, agent_id) do
     topic = "agent:#{agent_id}"
 
-    case Phoenix.SocketClient.Channel.join(socket, topic) do
+    case Channel.join(socket, topic) do
       {:ok, _response, channel} ->
         {:ok, channel}
 
@@ -422,7 +423,7 @@ defmodule SecretHub.Agent.Bootstrap do
       "secret_id" => secret_id
     }
 
-    case Phoenix.SocketClient.Channel.push(channel, "authenticate", payload, 10_000) do
+    case Channel.push(channel, "authenticate", payload, 10_000) do
       {:ok, auth_data} -> {:ok, auth_data}
       {:error, reason} -> {:error, reason}
     end
@@ -431,7 +432,7 @@ defmodule SecretHub.Agent.Bootstrap do
   defp request_certificate_signing(channel, csr_pem) do
     payload = %{"csr" => csr_pem}
 
-    case Phoenix.SocketClient.Channel.push(channel, "certificate:request", payload, 15_000) do
+    case Channel.push(channel, "certificate:request", payload, 15_000) do
       {:ok, cert_data} -> {:ok, cert_data}
       {:error, reason} -> {:error, reason}
     end

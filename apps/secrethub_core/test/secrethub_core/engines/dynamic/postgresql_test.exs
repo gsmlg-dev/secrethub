@@ -82,15 +82,27 @@ defmodule SecretHub.Core.Engines.Dynamic.PostgreSQLTest do
     test "generates valid PostgreSQL credentials" do
       socket_dir = System.get_env("DEVENV_STATE", "/tmp") <> "/postgres"
 
+      # Use Unix socket when available (devenv), TCP otherwise (CI)
+      connection =
+        if File.exists?(socket_dir) do
+          %{
+            "socket_dir" => socket_dir,
+            "database" => "secrethub_test",
+            "username" => "secrethub",
+            "password" => "secrethub_dev_password"
+          }
+        else
+          %{
+            "host" => System.get_env("PGHOST", "localhost"),
+            "port" => String.to_integer(System.get_env("PGPORT", "5432")),
+            "database" => "secrethub_test",
+            "username" => System.get_env("PGUSER", "secrethub"),
+            "password" => System.get_env("PGPASSWORD", "secrethub_dev_password")
+          }
+        end
+
       config = %{
-        "connection" => %{
-          "socket_dir" => socket_dir,
-          "host" => "localhost",
-          "port" => 5432,
-          "database" => "secrethub_test",
-          "username" => "secrethub",
-          "password" => "secrethub_dev_password"
-        },
+        "connection" => connection,
         "creation_statements" => [
           "CREATE USER {{username}} WITH PASSWORD '{{password}}' VALID UNTIL '{{expiration}}';"
         ],

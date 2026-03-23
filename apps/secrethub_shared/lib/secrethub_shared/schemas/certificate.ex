@@ -227,10 +227,9 @@ defmodule SecretHub.Shared.Schemas.Certificate do
   defp format_dn({:rdnSequence, rdn_sequence}) do
     rdn_sequence
     |> List.flatten()
-    |> Enum.map(fn {:AttributeTypeAndValue, oid, value} ->
+    |> Enum.map_join(", ", fn {:AttributeTypeAndValue, oid, value} ->
       "#{oid_to_name(oid)}=#{decode_attr_value(value)}"
     end)
-    |> Enum.join(", ")
   end
 
   defp format_dn(_), do: ""

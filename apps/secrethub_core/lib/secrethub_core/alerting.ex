@@ -209,5 +209,4 @@ defmodule SecretHub.Core.Alerting do
     Logger.warning("Opsgenie alert delivery not implemented")
     {:error, :not_implemented}
   end
-
 end
