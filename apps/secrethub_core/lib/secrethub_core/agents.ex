@@ -520,43 +520,9 @@ defmodule SecretHub.Core.Agents do
     "#{sanitized_hostname}-#{timestamp}"
   end
 
-  defp issue_agent_certificate(agent) do
-    # TODO: Implement actual certificate issuance using PKI module
-    cert_data = %{
-      serial_number: :crypto.strong_rand_bytes(16) |> Base.encode16(),
-      subject: "CN=#{agent.agent_id}",
-      common_name: agent.agent_id,
-      organization: "SecretHub Agents",
-      valid_from: DateTime.utc_now() |> DateTime.truncate(:second),
-      # 90 days
-      valid_until:
-        DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 90 * 24 * 3600, :second),
-      cert_type: :agent_client,
-      entity_id: agent.id,
-      entity_type: "agent"
-    }
-
-    # Generate temporary certificate (mock implementation)
-    certificate_pem =
-      "-----BEGIN CERTIFICATE-----\nMOCK_CERTIFICATE_DATA_#{cert_data.serial_number}\n-----END CERTIFICATE-----"
-
-    # Add certificate_pem and other required fields
-    cert_attrs = Map.put(cert_data, :certificate_pem, certificate_pem)
-
-    cert_attrs =
-      Map.put(
-        cert_attrs,
-        :fingerprint,
-        "SHA256:" <> (:crypto.hash(:sha256, certificate_pem) |> Base.encode16(case: :lower))
-      )
-
-    cert_attrs = Map.put(cert_attrs, :issuer, "CN=SecretHub CA")
-
-    certificate_changeset =
-      %Certificate{}
-      |> Certificate.changeset(cert_attrs)
-
-    Repo.insert(certificate_changeset)
+  defp issue_agent_certificate(_agent) do
+    # TODO: Implement actual certificate issuance using PKI.CA.sign_csr/4
+    {:error, :certificate_issuance_not_implemented}
   end
 
   defp should_reissue_certificate?(agent) do

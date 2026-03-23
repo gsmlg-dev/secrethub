@@ -170,145 +170,44 @@ defmodule SecretHub.Core.Alerting do
       config_name: config.name
     )
 
-    result =
-      case config.channel_type do
-        :email -> send_email(config, alert)
-        :slack -> send_slack(config, alert)
-        :webhook -> send_webhook(config, alert)
-        :pagerduty -> send_pagerduty(config, alert)
-        :opsgenie -> send_opsgenie(config, alert)
-        _ -> {:error, :unsupported_channel}
-      end
-
-    # Update last_used_at
-    if match?({:ok, _}, result) do
-      config
-      |> AlertRoutingConfig.record_usage()
-      |> Repo.update()
+    case config.channel_type do
+      :email -> send_email(config, alert)
+      :slack -> send_slack(config, alert)
+      :webhook -> send_webhook(config, alert)
+      :pagerduty -> send_pagerduty(config, alert)
+      :opsgenie -> send_opsgenie(config, alert)
+      _ -> {:error, :unsupported_channel}
     end
-
-    result
   end
 
-  defp send_email(config, alert) do
-    recipients = AlertRoutingConfig.email_recipients(config)
-
-    subject = "[SecretHub] #{format_severity(alert.severity)} Alert: #{alert.description}"
-
-    _body = format_email_body(alert)
-
-    Logger.info("Sending email alert",
-      recipients: recipients,
-      subject: subject
-    )
-
-    # Mock email sending - would integrate with Swoosh
-    {:ok, %{channel: :email, recipients: recipients}}
+  defp send_email(_config, _alert) do
+    # TODO: Integrate with Swoosh for email delivery
+    Logger.warning("Email alert delivery not implemented")
+    {:error, :not_implemented}
   end
 
-  defp send_slack(config, alert) do
-    webhook_url = AlertRoutingConfig.slack_webhook_url(config)
-
-    _payload = %{
-      text: "*SecretHub Alert*",
-      attachments: [
-        %{
-          color: severity_color(alert.severity),
-          title: alert.description,
-          fields: [
-            %{title: "Severity", value: format_severity(alert.severity), short: true},
-            %{title: "Status", value: format_status(alert.status), short: true},
-            %{
-              title: "Triggered At",
-              value: Calendar.strftime(alert.triggered_at, "%Y-%m-%d %H:%M:%S UTC"),
-              short: false
-            }
-          ],
-          footer: "SecretHub Anomaly Detection",
-          ts: DateTime.to_unix(alert.triggered_at)
-        }
-      ]
-    }
-
-    Logger.info("Sending Slack alert", webhook_url: webhook_url)
-
-    # Mock Slack sending - would use HTTPoison/Req
-    {:ok, %{channel: :slack, webhook_url: webhook_url}}
+  defp send_slack(_config, _alert) do
+    # TODO: Integrate with Req for Slack webhook delivery
+    Logger.warning("Slack alert delivery not implemented")
+    {:error, :not_implemented}
   end
 
-  defp send_webhook(config, alert) do
-    url = AlertRoutingConfig.webhook_url(config)
-
-    _payload = %{
-      alert_id: alert.id,
-      severity: alert.severity,
-      status: alert.status,
-      description: alert.description,
-      triggered_at: alert.triggered_at,
-      context: alert.context
-    }
-
-    Logger.info("Sending webhook alert", url: url)
-
-    # Mock webhook sending - would use HTTPoison/Req
-    {:ok, %{channel: :webhook, url: url}}
+  defp send_webhook(_config, _alert) do
+    # TODO: Integrate with Req for webhook delivery
+    Logger.warning("Webhook alert delivery not implemented")
+    {:error, :not_implemented}
   end
 
-  defp send_pagerduty(config, _alert) do
-    integration_key = get_in(config.config, ["integration_key"])
-
-    Logger.info("Sending PagerDuty alert", integration_key: String.slice(integration_key, 0..8))
-
-    # Mock PagerDuty sending
-    {:ok, %{channel: :pagerduty}}
+  defp send_pagerduty(_config, _alert) do
+    # TODO: Integrate with PagerDuty Events API v2
+    Logger.warning("PagerDuty alert delivery not implemented")
+    {:error, :not_implemented}
   end
 
-  defp send_opsgenie(config, _alert) do
-    api_key = get_in(config.config, ["api_key"])
-
-    Logger.info("Sending Opsgenie alert", api_key: String.slice(api_key, 0..8))
-
-    # Mock Opsgenie sending
-    {:ok, %{channel: :opsgenie}}
+  defp send_opsgenie(_config, _alert) do
+    # TODO: Integrate with Opsgenie Alert API
+    Logger.warning("Opsgenie alert delivery not implemented")
+    {:error, :not_implemented}
   end
 
-  defp format_email_body(alert) do
-    """
-    SecretHub Anomaly Alert
-
-    Severity: #{format_severity(alert.severity)}
-    Status: #{format_status(alert.status)}
-    Triggered: #{Calendar.strftime(alert.triggered_at, "%Y-%m-%d %H:%M:%S UTC")}
-
-    Description:
-    #{alert.description}
-
-    Context:
-    #{Jason.encode!(alert.context, pretty: true)}
-
-    ---
-    This is an automated alert from SecretHub.
-    """
-  end
-
-  defp format_severity(:critical), do: "CRITICAL"
-  defp format_severity(:high), do: "HIGH"
-  defp format_severity(:medium), do: "MEDIUM"
-  defp format_severity(:low), do: "LOW"
-  defp format_severity(:info), do: "INFO"
-  defp format_severity(other), do: to_string(other)
-
-  defp format_status(:open), do: "Open"
-  defp format_status(:acknowledged), do: "Acknowledged"
-  defp format_status(:investigating), do: "Investigating"
-  defp format_status(:resolved), do: "Resolved"
-  defp format_status(:false_positive), do: "False Positive"
-  defp format_status(other), do: to_string(other)
-
-  defp severity_color(:critical), do: "danger"
-  defp severity_color(:high), do: "warning"
-  defp severity_color(:medium), do: "#ffaa00"
-  defp severity_color(:low), do: "good"
-  defp severity_color(:info), do: "#cccccc"
-  defp severity_color(_), do: "#cccccc"
 end

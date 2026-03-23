@@ -204,69 +204,19 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
     end
   end
 
-  defp upload_to_s3(config, archive_data) do
-    bucket = config.config["bucket"]
-    region = config.config["region"]
-    prefix = config.config["prefix"] || "audit-logs"
-
-    filename = generate_filename()
-    key = "#{prefix}/#{filename}"
-
-    # Mock upload for now - will implement actual S3 upload
-    Logger.info("Uploading to S3",
-      bucket: bucket,
-      region: region,
-      key: key,
-      size: byte_size(archive_data)
-    )
-
-    location = "s3://#{bucket}/#{key}"
-    {:ok, location}
+  defp upload_to_s3(_config, _archive_data) do
+    # TODO: Implement actual S3 upload using ExAws or aws-elixir
+    {:error, :s3_upload_not_implemented}
   end
 
-  defp upload_to_gcs(config, archive_data) do
-    bucket = config.config["bucket"]
-    project_id = config.config["project_id"]
-    prefix = config.config["prefix"] || "audit-logs"
-
-    filename = generate_filename()
-    path = "#{prefix}/#{filename}"
-
-    # Mock upload for now - will implement actual GCS upload
-    Logger.info("Uploading to GCS",
-      bucket: bucket,
-      project_id: project_id,
-      path: path,
-      size: byte_size(archive_data)
-    )
-
-    location = "gs://#{bucket}/#{path}"
-    {:ok, location}
+  defp upload_to_gcs(_config, _archive_data) do
+    # TODO: Implement actual GCS upload using Goth + Google Cloud Storage API
+    {:error, :gcs_upload_not_implemented}
   end
 
-  defp upload_to_azure(config, archive_data) do
-    container = config.config["container"]
-    account_name = config.config["account_name"]
-    prefix = config.config["prefix"] || "audit-logs"
-
-    filename = generate_filename()
-    blob_name = "#{prefix}/#{filename}"
-
-    # Mock upload for now - will implement actual Azure upload
-    Logger.info("Uploading to Azure Blob",
-      container: container,
-      account_name: account_name,
-      blob_name: blob_name,
-      size: byte_size(archive_data)
-    )
-
-    location = "https://#{account_name}.blob.core.windows.net/#{container}/#{blob_name}"
-    {:ok, location}
-  end
-
-  defp generate_filename do
-    timestamp = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(:basic)
-    "audit-logs-#{timestamp}.json.gz"
+  defp upload_to_azure(_config, _archive_data) do
+    # TODO: Implement actual Azure Blob upload
+    {:error, :azure_upload_not_implemented}
   end
 
   defp compute_checksum(data) do
