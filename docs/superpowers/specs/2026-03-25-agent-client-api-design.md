@@ -133,7 +133,7 @@ Successful responses use `payload` (no `error` field). Error responses use `erro
 
 **Backpressure:** If the agent cannot write to a client's socket (buffer full), it queues up to 64 pending messages per connection. If the queue exceeds this limit, the agent closes the connection. The client will auto-reconnect and re-subscribe.
 
-**Agent-initiated keepalive:** The agent sends a `sys.ping` push every 30 seconds on idle connections. If the client does not respond within 10 seconds, the agent closes the connection. This detects silently dead connections (e.g., agent killed without FIN).
+**Keepalive:** The agent sends a `keepalive` frame (outside the RPC envelope: `{"type":"keepalive"}`) every 30 seconds on idle connections. The client must respond with `{"type":"keepalive_ack"}`. If no ack is received within 10 seconds, the agent closes the connection. This detects silently dead connections. Note: `keepalive`/`keepalive_ack` are transport-level frames, distinct from the `sys.ping` RPC which is a client-initiated health check.
 
 ### Secret Path Convention
 
