@@ -35,19 +35,19 @@ db-setup              # Create database and run migrations + seeds
 db-reset              # Drop, recreate, migrate, and seed database
 db-migrate            # Run pending migrations only
 
-# Testing
-mix test                                    # Run all tests
-mix test apps/secrethub_core/test/          # Test specific app
-mix test path/to/test_file.exs              # Run single test file
-mix test path/to/test_file.exs:42           # Run single test at line
+# Testing (devenv sets MIX_ENV=dev, so use test-all or prefix with MIX_ENV=test)
+test-all                                    # Run all tests (sets MIX_ENV=test)
+test-all apps/secrethub_core/test/          # Test specific app
+test-all path/to/test_file.exs              # Run single test file
+test-all path/to/test_file.exs:42           # Run single test at line
 test-watch                                  # Watch mode for tests
 
 # Code Quality
 mix format                                  # Format code
 mix credo --strict                          # Linter
 mix dialyzer                                # Static type analysis
-quality                                     # Run format check + credo + dialyzer
-./scripts/quality-check.sh                  # Full CI checks locally (includes tests)
+quality                                     # Run format check + credo + dialyzer (devenv script)
+./scripts/quality-check.sh                  # Full CI checks locally (format + compile --warnings-as-errors + credo + dialyzer + tests)
 SKIP_TESTS=1 ./scripts/quality-check.sh     # CI checks without tests
 
 # Database Migrations (always from secrethub_core)
