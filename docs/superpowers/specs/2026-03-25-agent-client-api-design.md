@@ -23,14 +23,28 @@ Applications connect to the local agent via Unix Domain Socket using a gRPC-styl
 
 ### Framing
 
-4-byte big-endian length prefix followed by a JSON payload. Each frame is one message.
+4-byte big-endian length prefix followed by a JSON payload. Each frame is one message. **Maximum frame size: 1 MB** (1,048,576 bytes). Both sides must reject frames exceeding this limit and close the connection with error code `FRAME_TOO_LARGE`.
 
 ```
 ┌──────────────┬──────────────────────────┐
 │ Length (4B)   │ JSON payload (N bytes)   │
-│ big-endian    │                          │
+│ big-endian    │ max 1 MB                 │
 └──────────────┴──────────────────────────┘
 ```
+
+### Protocol Version
+
+The client's first message must include a `protocol_version` field. The agent echoes its supported version in the response.
+
+```json
+// Client's first message includes version:
+{"type":"unary_request", "id":"1", "method":"auth.authenticate", "protocol_version":1, "payload":{...}}
+
+// Agent response includes its version:
+{"type":"unary_response", "id":"1", "protocol_version":1, "payload":{...}}
+```
+
+If the client omits `protocol_version`, the agent assumes v1. If versions are incompatible, the agent responds with error code `INCOMPATIBLE_VERSION` and closes the connection. The `protocol_version` field is only required on the first message of a connection.
 
 ### Message Types
 
@@ -72,7 +86,9 @@ Present in any `unary_response` or `stream_end`:
 }
 ```
 
-Error codes: `OK`, `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `UNAVAILABLE`, `INTERNAL`, `INVALID_ARGUMENT`
+Error codes: `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `UNAVAILABLE`, `INTERNAL`, `INVALID_ARGUMENT`, `INCOMPATIBLE_VERSION`, `FRAME_TOO_LARGE`
+
+Successful responses use `payload` (no `error` field). Error responses use `error` (no `payload` field). The two are mutually exclusive.
 
 ## RPC Methods
 
@@ -82,7 +98,7 @@ Error codes: `OK`, `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `UNAVAILABLE`, `INT
 |--------|-------------|
 | `auth.authenticate` | Authenticate with optional token/cert. Omit payload to use peer credentials. |
 | `secrets.get` | One-shot secret fetch. Returns current value + metadata. |
-| `secrets.list` | List accessible secret paths (prefix filter). |
+| `secrets.list` | List accessible secret paths under a prefix. Request: `{prefix: "secrets/db/"}`. Response: `{paths: ["secrets/db/postgres/prod", "secrets/db/redis/prod"]}`. |
 | `sys.ping` | Health check. Returns `{status: "ok"}`. |
 | `sys.info` | Agent version, uptime, connection status to Core. |
 
@@ -111,6 +127,14 @@ Error codes: `OK`, `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `UNAVAILABLE`, `INT
 <- {"type":"stream_end", "id":"2", "payload":{"reason":"cancelled"}}
 ```
 
+### Stream Semantics
+
+**Cancel race condition:** After sending `stream_cancel`, the client must be prepared to receive zero or more `stream_data` frames before the `stream_end` arrives. Clients should silently discard `stream_data` for cancelled streams.
+
+**Backpressure:** If the agent cannot write to a client's socket (buffer full), it queues up to 64 pending messages per connection. If the queue exceeds this limit, the agent closes the connection. The client will auto-reconnect and re-subscribe.
+
+**Agent-initiated keepalive:** The agent sends a `sys.ping` push every 30 seconds on idle connections. If the client does not respond within 10 seconds, the agent closes the connection. This detects silently dead connections (e.g., agent killed without FIN).
+
 ### Secret Path Convention
 
 Slash-delimited paths mirroring the REST API:
@@ -123,18 +147,20 @@ Slash-delimited paths mirroring the REST API:
 
 On connect, the agent reads `SO_PEERCRED` (Linux) or `LOCAL_PEERCRED` (macOS) from the socket to get the client's UID/GID/PID. The agent maps UID to an allowed app via its local config or Core policy. No explicit auth message needed.
 
+**Implementation note:** The existing `uds_server.ex` uses `:gen_tcp` which does not expose peer credentials. The new UDS server must use the OTP 24+ `:socket` module (`socket:open/3` + `socket:getopt/2` with `{socket, peercred}`) which provides native access to `SO_PEERCRED`/`LOCAL_PEERCRED`.
+
 ### Optional: Explicit Auth
 
 Client sends `auth.authenticate` as the first message to upgrade identity:
 
 ```json
 // Token auth
--> {"method":"auth.authenticate", "payload":{"type":"token", "token":"app-token-abc"}}
-<- {"payload":{"app_id":"my-app", "auth_method":"token", "permissions":[...]}}
+-> {"type":"unary_request", "id":"1", "method":"auth.authenticate", "protocol_version":1, "payload":{"type":"token", "token":"app-token-abc"}}
+<- {"type":"unary_response", "id":"1", "protocol_version":1, "payload":{"app_id":"my-app", "auth_method":"token", "permissions":[...]}}
 
 // Certificate auth
--> {"method":"auth.authenticate", "payload":{"type":"certificate", "cert_pem":"-----BEGIN CERT..."}}
-<- {"payload":{"app_id":"my-app", "auth_method":"certificate", "permissions":[...]}}
+-> {"type":"unary_request", "id":"1", "method":"auth.authenticate", "protocol_version":1, "payload":{"type":"certificate", "cert_pem":"-----BEGIN CERT..."}}
+<- {"type":"unary_response", "id":"1", "protocol_version":1, "payload":{"app_id":"my-app", "auth_method":"certificate", "permissions":[...]}}
 ```
 
 ### Rules
@@ -169,9 +195,11 @@ Client sends `auth.authenticate` as the first message to upgrade identity:
 # Cancel watch
 :ok = SecretHub.Client.cancel(client, watch_ref)
 
-# Lifecycle callbacks
-SecretHub.Client.on_disconnect(client, fn reason -> Logger.warn("disconnected: #{reason}") end)
-SecretHub.Client.on_reconnect(client, fn -> Logger.info("reconnected") end)
+# Lifecycle notifications — sent as messages to the caller (same pattern as watch)
+# Configure via connect options:
+{:ok, client} = SecretHub.Client.connect(socket: "...", notify: self())
+# Receives: {:secrethub_disconnected, client, reason}
+# Receives: {:secrethub_reconnected, client}
 ```
 
 ### Node.js (TypeScript)
@@ -274,8 +302,9 @@ DISCONNECTED -> CONNECTING -> AUTHENTICATING -> READY -> DISCONNECTED
 2. Client enters reconnect loop with exponential backoff (1s, 2s, 4s... cap 30s)
 3. On successful reconnect:
    - Re-authenticates (peer creds automatic, token/cert resent if configured)
-   - Re-subscribes all active watch/watch_dynamic streams
+   - Re-subscribes all active watch/watch_dynamic streams, including the `last_version` seen so the agent can detect if the client missed updates
    - Agent sends fresh snapshot for each re-subscribed stream
+   - If a dynamic credential's lease expired during disconnect, agent attempts to generate new credentials; if it cannot, it sends `stream_end` with error code `UNAVAILABLE`
    - Client fires `on_reconnect` callback
 4. During disconnect, `handle.current()` returns last known value (stale but usable)
 
@@ -289,7 +318,7 @@ DISCONNECTED -> CONNECTING -> AUTHENTICATING -> READY -> DISCONNECTED
 {:ok, client} = SecretHub.Client.connect(socket: "/var/run/secrethub/agent.sock", isolated: true)
 ```
 
-Isolated connections get their own socket FD. One stream's error or slow processing cannot affect others.
+By default, a single `connect()` call creates one socket connection and all `watch`/`watchDynamic` calls from that client are multiplexed over it. With `isolated: true`, each `connect()` still creates one connection, but the intent is that you create a separate client per critical secret so that one stream's error or slow processing cannot affect others.
 
 ## Agent-Side Architecture Changes
 
@@ -348,6 +377,8 @@ apps/secrethub_client/
 
 No runtime dependencies beyond stdlib + JSON. Uses `:socket` for Unix domain socket + peer credentials.
 
+**Note:** `secrethub_client` is not included in the `secrethub_core` or `secrethub_agent` release configurations. It is a standalone library for external consumers only.
+
 ### Node.js Client
 
 Separate repo `secrethub-js`, published as `@secrethub/client` on npm:
@@ -374,8 +405,8 @@ client/
 ├── stream.go                 # Channel-based handle
 ├── reconnect.go              # Backoff logic
 ├── auth.go                   # Auth builders
-└── peercred_linux.go         # SO_PEERCRED (build-tagged)
-    peercred_darwin.go        # LOCAL_PEERCRED (build-tagged)
+└── peercred_linux.go         # SO_PEERCRED (build-tagged, agent-side only)
+    peercred_darwin.go        # LOCAL_PEERCRED (build-tagged, agent-side only)
 ```
 
 Zero dependencies. Uses `net.Dial("unix", path)`. Build tags for OS-specific peer credential extraction.
