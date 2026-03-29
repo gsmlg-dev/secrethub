@@ -149,9 +149,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
         stderr_to_stdout: true
       )
 
-    # Sign with 1 day validity, but set startdate to far in the past
-    # Use faketime approach: sign normally then manipulate the validity via raw cert
-    # Simpler approach: generate a self-signed cert with past dates using -days 1 and startdate
+    # Sign a certificate with past validity dates (already expired)
     {_, 0} =
       System.cmd(
         "openssl",
@@ -169,13 +167,49 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
           client_cert_path,
           "-days",
           "1",
-          "-not_before",
-          "20240101000000Z",
-          "-not_after",
-          "20240102000000Z"
+          "-set_serial",
+          "01"
         ],
         stderr_to_stdout: true
       )
+
+    # Re-sign with explicit past dates using Erlang :public_key to set validity
+    # Read the cert we just created, modify validity, and re-sign
+    ca_key_pem = File.read!(ca.key_path)
+    [{key_type, key_der, _}] = :public_key.pem_decode(ca_key_pem)
+    ca_key = :public_key.pem_entry_decode({key_type, key_der, :not_encrypted})
+
+    client_pem_tmp = File.read!(client_cert_path)
+    [{:Certificate, client_der_tmp, _}] = :public_key.pem_decode(client_pem_tmp)
+    otp_cert = :public_key.pkix_decode_cert(client_der_tmp, :otp)
+
+    # Extract TBS certificate and modify validity
+    {
+      :OTPTBSCertificate,
+      version,
+      serial,
+      sig_alg,
+      issuer,
+      _validity,
+      subject,
+      spki,
+      issuer_uid,
+      subject_uid,
+      extensions
+    } = elem(otp_cert, 1)
+
+    # Set validity to past dates
+    new_validity =
+      {:Validity, {:utcTime, ~c"240101000000Z"}, {:utcTime, ~c"240102000000Z"}}
+
+    new_tbs =
+      {:OTPTBSCertificate, version, serial, sig_alg, issuer, new_validity, subject, spki,
+       issuer_uid, subject_uid, extensions}
+
+    # Re-sign the certificate
+    new_cert_der = :public_key.pkix_sign(new_tbs, ca_key)
+    new_cert_pem = :public_key.pem_encode([{:Certificate, new_cert_der, :not_encrypted}])
+    File.write!(client_cert_path, new_cert_pem)
 
     client_pem = File.read!(client_cert_path)
     [{:Certificate, client_der, _}] = :public_key.pem_decode(client_pem)
@@ -217,7 +251,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
         stderr_to_stdout: true
       )
 
-    # Certificate valid from far future
+    # Certificate valid from far future - first create a normal cert, then re-sign with future dates
     {_, 0} =
       System.cmd(
         "openssl",
@@ -235,13 +269,46 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
           client_cert_path,
           "-days",
           "365",
-          "-not_before",
-          "20500101000000Z",
-          "-not_after",
-          "20510101000000Z"
+          "-set_serial",
+          "02"
         ],
         stderr_to_stdout: true
       )
+
+    # Re-sign with future validity dates using Erlang :public_key
+    ca_key_pem = File.read!(ca.key_path)
+    [{key_type, key_der, _}] = :public_key.pem_decode(ca_key_pem)
+    ca_key = :public_key.pem_entry_decode({key_type, key_der, :not_encrypted})
+
+    client_pem_tmp = File.read!(client_cert_path)
+    [{:Certificate, client_der_tmp, _}] = :public_key.pem_decode(client_pem_tmp)
+    otp_cert = :public_key.pkix_decode_cert(client_der_tmp, :otp)
+
+    {
+      :OTPTBSCertificate,
+      version,
+      serial,
+      sig_alg,
+      issuer,
+      _validity,
+      subject,
+      spki,
+      issuer_uid,
+      subject_uid,
+      extensions
+    } = elem(otp_cert, 1)
+
+    # Set validity to future dates (use utcTime with 2-digit year for ASN1 compatibility)
+    new_validity =
+      {:Validity, {:utcTime, ~c"490101000000Z"}, {:utcTime, ~c"500101000000Z"}}
+
+    new_tbs =
+      {:OTPTBSCertificate, version, serial, sig_alg, issuer, new_validity, subject, spki,
+       issuer_uid, subject_uid, extensions}
+
+    new_cert_der = :public_key.pkix_sign(new_tbs, ca_key)
+    new_cert_pem = :public_key.pem_encode([{:Certificate, new_cert_der, :not_encrypted}])
+    File.write!(client_cert_path, new_cert_pem)
 
     client_pem = File.read!(client_cert_path)
     [{:Certificate, client_der, _}] = :public_key.pem_decode(client_pem)

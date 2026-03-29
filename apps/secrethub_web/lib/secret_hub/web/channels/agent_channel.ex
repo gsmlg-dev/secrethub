@@ -59,19 +59,20 @@ defmodule SecretHub.Web.AgentChannel do
   def join("agent:" <> agent_id, _payload, socket) do
     Logger.info("Agent #{agent_id} attempting to join channel directly")
 
-    # Set up heartbeat monitoring
-    schedule_heartbeat_check()
+    # Specific agent channels require prior authentication
+    if socket.assigns[:authenticated] do
+      schedule_heartbeat_check()
+      ensure_agent_registered(agent_id)
 
-    # Auto-register or update agent on direct topic join
-    ensure_agent_registered(agent_id)
+      socket =
+        socket
+        |> assign(:agent_id, agent_id)
+        |> assign(:last_heartbeat, DateTime.utc_now() |> DateTime.truncate(:second))
 
-    socket =
-      socket
-      |> assign(:authenticated, true)
-      |> assign(:agent_id, agent_id)
-      |> assign(:last_heartbeat, DateTime.utc_now() |> DateTime.truncate(:second))
-
-    {:ok, %{status: "connected", authenticated: true, agent_id: agent_id}, socket}
+      {:ok, %{status: "connected", authenticated: true, agent_id: agent_id}, socket}
+    else
+      {:error, %{reason: "unauthorized"}}
+    end
   end
 
   @doc """
