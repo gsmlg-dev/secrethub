@@ -1,20 +1,23 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'  # Trigger on version tags like v1.0.0
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., v1.0.0)'
+        description: 'Version to release (e.g., 1.0.0, 1.0.0-rc6)'
         required: true
         type: string
+      git-rev:
+        description: 'Git revision to release from (branch, tag, or SHA)'
+        required: false
+        type: string
+        default: 'main'
 
 env:
   ELIXIR_VERSION: '1.18'
   OTP_VERSION: '28'
   MIX_ENV: 'prod'
+  VERSION: v${{ inputs.version }}
 
 jobs:
   # Job 1: Build Core Release (tar.gz)
@@ -25,6 +28,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git-rev }}
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -63,14 +68,14 @@ jobs:
       - name: Create release tarball
         run: |
           cd _build/prod/rel/secrethub_core
-          tar -czf ../../../../secrethub_core-${{ github.ref_name }}.tar.gz .
+          tar -czf ../../../../secrethub_core-${{ env.VERSION }}.tar.gz .
           cd ../../../..
 
       - name: Upload Core release artifact
         uses: actions/upload-artifact@v4
         with:
           name: secrethub-core-release
-          path: secrethub_core-${{ github.ref_name }}.tar.gz
+          path: secrethub_core-${{ env.VERSION }}.tar.gz
           retention-days: 7
 
   # Job 2: Build Agent Release (tar.gz)
@@ -81,6 +86,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git-rev }}
 
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
@@ -114,14 +121,14 @@ jobs:
       - name: Create release tarball
         run: |
           cd _build/prod/rel/secrethub_agent
-          tar -czf ../../../../secrethub_agent-${{ github.ref_name }}.tar.gz .
+          tar -czf ../../../../secrethub_agent-${{ env.VERSION }}.tar.gz .
           cd ../../../..
 
       - name: Upload Agent release artifact
         uses: actions/upload-artifact@v4
         with:
           name: secrethub-agent-release
-          path: secrethub_agent-${{ github.ref_name }}.tar.gz
+          path: secrethub_agent-${{ env.VERSION }}.tar.gz
           retention-days: 7
 
   # Job 3: Build Core Docker Image
@@ -135,6 +142,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git-rev }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -146,27 +155,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/core
-          tags: |
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
       - name: Build and push Core Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.core
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghcr.io/${{ github.repository }}/core:${{ env.VERSION }}
+            ghcr.io/${{ github.repository }}/core:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
@@ -182,6 +183,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git-rev }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -193,27 +196,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/agent
-          tags: |
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
       - name: Build and push Agent Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.agent
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghcr.io/${{ github.repository }}/agent:${{ env.VERSION }}
+            ghcr.io/${{ github.repository }}/agent:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
@@ -229,6 +224,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git-rev }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -240,32 +237,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/core-standalone
-          tags: |
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
       - name: Build and push Core Standalone Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile.core-standalone
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ghcr.io/${{ github.repository }}/core-standalone:${{ env.VERSION }}
+            ghcr.io/${{ github.repository }}/core-standalone:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
 
-  # Final Job: Create GitHub Release with all artifacts
+  # Final Job: Create tag and GitHub Release with all artifacts
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -276,6 +265,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git-rev }}
+
+      - name: Create and push tag
+        run: |
+          git tag ${{ env.VERSION }}
+          git push origin ${{ env.VERSION }}
 
       - name: Download Core release artifact
         uses: actions/download-artifact@v4
@@ -290,7 +286,13 @@ jobs:
       - name: Generate release notes
         id: release_notes
         run: |
-          VERSION=${{ github.ref_name }}
+          VERSION=${{ env.VERSION }}
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            CHANGELOG_LINK="**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}"
+          else
+            CHANGELOG_LINK="**Full Changelog**: https://github.com/${{ github.repository }}/commits/${VERSION}"
+          fi
           cat > release_notes.md <<EOF
           # SecretHub ${VERSION}
 
@@ -349,18 +351,19 @@ jobs:
 
           ---
 
-          **Full Changelog**: https://github.com/${{ github.repository }}/compare/$(git describe --tags --abbrev=0 HEAD^)...${VERSION}
+          ${CHANGELOG_LINK}
           EOF
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ env.VERSION }}
           body_path: release_notes.md
           files: |
-            secrethub_core-${{ github.ref_name }}.tar.gz
-            secrethub_agent-${{ github.ref_name }}.tar.gz
+            secrethub_core-${{ env.VERSION }}.tar.gz
+            secrethub_agent-${{ env.VERSION }}.tar.gz
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(env.VERSION, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -368,7 +371,7 @@ jobs:
         run: |
           echo "## 🎉 Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version**: ${{ env.VERSION }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Artifacts Published:" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Core Release (tar.gz)" >> $GITHUB_STEP_SUMMARY
@@ -378,6 +381,6 @@ jobs:
           echo "- ✅ Agent Docker Image" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Docker Images:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ghcr.io/${{ github.repository }}/core:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ghcr.io/${{ github.repository }}/core-standalone:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`ghcr.io/${{ github.repository }}/agent:${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository }}/core:${{ env.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository }}/core-standalone:${{ env.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository }}/agent:${{ env.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
