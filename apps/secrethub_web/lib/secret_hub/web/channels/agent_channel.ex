@@ -84,44 +84,50 @@ defmodule SecretHub.Web.AgentChannel do
   def handle_in("authenticate", %{"role_id" => role_id, "secret_id" => secret_id}, socket) do
     source_ip = get_source_ip(socket)
 
-    case AppRole.login(role_id, secret_id, source_ip) do
-      {:ok, auth_result} ->
-        # Create or update agent record
-        case Agents.bootstrap_agent(role_id, secret_id, %{
-               "name" => auth_result.role_name,
-               "ip_address" => source_ip,
-               "user_agent" => "SecretHub Agent v1.0"
-             }) do
-          {:ok, agent} ->
-            socket =
-              socket
-              |> assign(:authenticated, true)
-              |> assign(:agent_id, agent.agent_id)
-              |> assign(:role_name, auth_result.role_name)
-              |> assign(:policies, auth_result.policies)
-              |> assign(:token, auth_result.token)
-              |> assign(:last_heartbeat, DateTime.utc_now() |> DateTime.truncate(:second))
+    try do
+      case AppRole.login(role_id, secret_id, source_ip) do
+        {:ok, auth_result} ->
+          # Create or update agent record
+          case Agents.bootstrap_agent(role_id, secret_id, %{
+                 "name" => auth_result.role_name,
+                 "ip_address" => source_ip,
+                 "user_agent" => "SecretHub Agent v1.0"
+               }) do
+            {:ok, agent} ->
+              socket =
+                socket
+                |> assign(:authenticated, true)
+                |> assign(:agent_id, agent.agent_id)
+                |> assign(:role_name, auth_result.role_name)
+                |> assign(:policies, auth_result.policies)
+                |> assign(:token, auth_result.token)
+                |> assign(:last_heartbeat, DateTime.utc_now() |> DateTime.truncate(:second))
 
-            Logger.info("Agent authenticated: #{agent.agent_id} (#{auth_result.role_name})")
+              Logger.info("Agent authenticated: #{agent.agent_id} (#{auth_result.role_name})")
 
-            {:reply,
-             {:ok,
-              %{
-                status: "authenticated",
-                agent_id: agent.agent_id,
-                role_name: auth_result.role_name,
-                policies: auth_result.policies,
-                token: auth_result.token
-              }}, socket}
+              {:reply,
+               {:ok,
+                %{
+                  status: "authenticated",
+                  agent_id: agent.agent_id,
+                  role_name: auth_result.role_name,
+                  policies: auth_result.policies,
+                  token: auth_result.token
+                }}, socket}
 
-          {:error, reason} ->
-            Logger.warning("Agent bootstrap failed: #{inspect(reason)}")
-            {:reply, {:error, %{reason: "authentication_failed"}}, socket}
-        end
+            {:error, reason} ->
+              Logger.warning("Agent bootstrap failed: #{inspect(reason)}")
+              {:reply, {:error, %{reason: "authentication_failed"}}, socket}
+          end
 
-      {:error, reason} ->
-        Logger.warning("AppRole login failed: #{reason}")
-        {:reply, {:error, %{reason: "invalid_credentials"}}, socket}
+        {:error, reason} ->
+          Logger.warning("AppRole login failed: #{reason}")
+          {:reply, {:error, %{reason: "invalid_credentials"}}, socket}
+      end
+    rescue
+      error ->
+        Logger.error("Unexpected error during authentication: #{inspect(error)}")
+        {:reply, {:error, %{reason: "internal_error"}}, socket}
     end
   end
 

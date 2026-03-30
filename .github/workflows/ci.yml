@@ -125,5 +125,8 @@ jobs:
           key: ${{ runner.os }}-dialyzer-${{ hashFiles('**/mix.lock') }}
           restore-keys: ${{ runner.os }}-dialyzer-
 
+      - name: Create PLT directory
+        run: mkdir -p priv/plts
+
       - name: Run Dialyzer
         run: mix dialyzer --halt-exit-status

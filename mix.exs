@@ -24,6 +24,12 @@ defmodule SecretHub.MixProject do
         "coveralls.html": :test
       ],
 
+      # Dialyzer
+      dialyzer: [
+        plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+        plt_add_apps: [:mix]
+      ],
+
       # Phoenix code reloader listener (required for Phoenix 1.8+)
       listeners: [Phoenix.CodeReloader]
     ]
@@ -67,7 +73,7 @@ defmodule SecretHub.MixProject do
       quality: ["format", "cmd mix lint"],
       lint: ["cmd mix lint"],
       credo: ["cmd mix credo --strict"],
-      dialyzer: ["cmd mix dialyzer"],
+      dialyzer: ["dialyzer"],
 
       # Assets
       "assets.deploy": [
