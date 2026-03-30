@@ -38,7 +38,13 @@ RUN mix deps.compile
 RUN npm install -g bun
 
 # Build assets using bun and tailwind
-RUN mix assets.setup && \
+# DATABASE_URL and SECRET_KEY_BASE are needed because mix assets.deploy
+# triggers runtime.exs evaluation in prod; these are build-time placeholders only
+RUN DATABASE_URL=ecto://placeholder/placeholder \
+    SECRET_KEY_BASE=placeholder_secret_key_base_for_asset_compilation_only_00 \
+    mix assets.setup && \
+    DATABASE_URL=ecto://placeholder/placeholder \
+    SECRET_KEY_BASE=placeholder_secret_key_base_for_asset_compilation_only_00 \
     mix assets.deploy
 
 # Compile application

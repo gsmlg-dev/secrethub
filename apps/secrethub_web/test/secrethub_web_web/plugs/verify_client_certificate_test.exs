@@ -124,7 +124,8 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
   end
 
   defp generate_expired_cert(tmp, ca, cn) do
-    # Generate a certificate, then use a config to make it expire
+    # Generate a certificate with past validity dates using openssl ca with config
+    # Uses -startdate/-enddate which are supported across all OpenSSL versions
     suffix = :erlang.unique_integer([:positive])
     client_key_path = Path.join(tmp, "expired_#{suffix}.key")
     client_cert_path = Path.join(tmp, "expired_#{suffix}.crt")
@@ -149,33 +150,11 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
         stderr_to_stdout: true
       )
 
-    # Sign with 1 day validity, but set startdate to far in the past
-    # Use faketime approach: sign normally then manipulate the validity via raw cert
-    # Simpler approach: generate a self-signed cert with past dates using -days 1 and startdate
-    {_, 0} =
-      System.cmd(
-        "openssl",
-        [
-          "x509",
-          "-req",
-          "-in",
-          client_csr_path,
-          "-CA",
-          ca.cert_path,
-          "-CAkey",
-          ca.key_path,
-          "-CAcreateserial",
-          "-out",
-          client_cert_path,
-          "-days",
-          "1",
-          "-not_before",
-          "20240101000000Z",
-          "-not_after",
-          "20240102000000Z"
-        ],
-        stderr_to_stdout: true
-      )
+    # Use openssl ca with -startdate/-enddate (compatible with all OpenSSL versions)
+    sign_expired_cert_with_ca_cmd(tmp, suffix, client_csr_path, client_cert_path, ca,
+      start_date: "20240101000000Z",
+      end_date: "20240102000000Z"
+    )
 
     client_pem = File.read!(client_cert_path)
     [{:Certificate, client_der, _}] = :public_key.pem_decode(client_pem)
@@ -217,31 +196,11 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
         stderr_to_stdout: true
       )
 
-    # Certificate valid from far future
-    {_, 0} =
-      System.cmd(
-        "openssl",
-        [
-          "x509",
-          "-req",
-          "-in",
-          client_csr_path,
-          "-CA",
-          ca.cert_path,
-          "-CAkey",
-          ca.key_path,
-          "-CAcreateserial",
-          "-out",
-          client_cert_path,
-          "-days",
-          "365",
-          "-not_before",
-          "20500101000000Z",
-          "-not_after",
-          "20510101000000Z"
-        ],
-        stderr_to_stdout: true
-      )
+    # Certificate valid from far future using openssl ca with -startdate/-enddate
+    sign_expired_cert_with_ca_cmd(tmp, suffix, client_csr_path, client_cert_path, ca,
+      start_date: "20500101000000Z",
+      end_date: "20510101000000Z"
+    )
 
     client_pem = File.read!(client_cert_path)
     [{:Certificate, client_der, _}] = :public_key.pem_decode(client_pem)
@@ -256,6 +215,70 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
       serial_number: serial,
       cn: cn
     }
+  end
+
+  # Helper to sign certificates with custom start/end dates using openssl ca command.
+  # Uses -startdate/-enddate flags which are supported across all OpenSSL versions,
+  # unlike -not_before/-not_after which require OpenSSL >= 3.2.
+  defp sign_expired_cert_with_ca_cmd(tmp, suffix, csr_path, cert_path, ca, opts) do
+    start_date = Keyword.fetch!(opts, :start_date)
+    end_date = Keyword.fetch!(opts, :end_date)
+
+    # Create a minimal openssl ca config
+    ca_dir = Path.join(tmp, "ca_#{suffix}")
+    File.mkdir_p!(ca_dir)
+    File.mkdir_p!(Path.join(ca_dir, "newcerts"))
+    File.write!(Path.join(ca_dir, "index.txt"), "")
+    File.write!(Path.join(ca_dir, "serial"), "01")
+
+    config_path = Path.join(tmp, "ca_#{suffix}.cnf")
+
+    config_content = """
+    [ca]
+    default_ca = CA_default
+
+    [CA_default]
+    dir = #{ca_dir}
+    database = #{ca_dir}/index.txt
+    serial = #{ca_dir}/serial
+    new_certs_dir = #{ca_dir}/newcerts
+    certificate = #{ca.cert_path}
+    private_key = #{ca.key_path}
+    default_md = sha256
+    policy = policy_anything
+    copy_extensions = none
+
+    [policy_anything]
+    countryName = optional
+    stateOrProvinceName = optional
+    organizationName = optional
+    organizationalUnitName = optional
+    commonName = supplied
+    emailAddress = optional
+    """
+
+    File.write!(config_path, config_content)
+
+    {_, 0} =
+      System.cmd(
+        "openssl",
+        [
+          "ca",
+          "-batch",
+          "-config",
+          config_path,
+          "-in",
+          csr_path,
+          "-out",
+          cert_path,
+          "-startdate",
+          start_date,
+          "-enddate",
+          end_date,
+          "-notext"
+        ],
+        stderr_to_stdout: true
+      )
   end
 
   defp generate_self_signed_cert(tmp, cn) do
