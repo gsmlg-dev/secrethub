@@ -88,7 +88,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
         })
 
       # Authentication may succeed or fail depending on PKI availability
-      assert_reply ref, status, reply
+      assert_reply(ref, status, reply)
       assert status in [:ok, :error]
 
       if status == :ok do
@@ -113,7 +113,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
           "secret_id" => "invalid-secret-id"
         })
 
-      assert_reply ref, :error, error_reply
+      assert_reply(ref, :error, error_reply)
       assert error_reply.reason == "invalid_credentials"
     end
 
@@ -131,7 +131,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
           "secret_id" => "wrong-secret-id"
         })
 
-      assert_reply ref, :error, error_reply
+      assert_reply(ref, :error, error_reply)
       assert error_reply.reason == "invalid_credentials"
     end
   end
@@ -151,7 +151,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
           "path" => "prod.db.postgres.password"
         })
 
-      assert_reply ref, :error, error_reply
+      assert_reply(ref, :error, error_reply)
       assert error_reply.reason == "not_authenticated"
     end
 
@@ -170,7 +170,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
         })
 
       # Will fail until we have actual secrets created - expect not_found or access_denied
-      assert_reply ref, :error, error_reply
+      assert_reply(ref, :error, error_reply)
       assert error_reply.reason in ["secret_not_found", "access_denied"]
     end
   end
@@ -187,7 +187,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
 
       ref = push(socket, "heartbeat", %{})
 
-      assert_reply ref, :ok, reply
+      assert_reply(ref, :ok, reply)
       assert reply.status == "alive"
     end
 
@@ -201,7 +201,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
 
       ref = push(socket, "heartbeat", %{})
 
-      assert_reply ref, :error, error_reply
+      assert_reply(ref, :error, error_reply)
       assert error_reply.reason == "not_authenticated"
     end
   end
@@ -220,7 +220,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
           "lease_id" => "test-lease-id"
         })
 
-      assert_reply ref, :error, error_reply
+      assert_reply(ref, :error, error_reply)
       assert error_reply.reason == "not_authenticated"
     end
 
@@ -238,7 +238,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
           "lease_id" => "test-lease-id"
         })
 
-      assert_reply ref, :ok, reply
+      assert_reply(ref, :ok, reply)
       assert reply.lease_id == "test-lease-id"
       assert reply.renewed == true
       assert reply.lease_duration == 3600
@@ -279,7 +279,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
 
       for malicious_path <- malicious_paths do
         ref = push(socket, "secret:request", %{"path" => malicious_path})
-        assert_reply ref, :error, _error_reply
+        assert_reply(ref, :error, _error_reply)
       end
     end
   end
@@ -298,7 +298,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
       # Send multiple heartbeats in quick succession (should be allowed)
       for _i <- 1..10 do
         ref = push(socket, "heartbeat", %{})
-        assert_reply ref, :ok, _reply
+        assert_reply(ref, :ok, _reply)
       end
     end
   end

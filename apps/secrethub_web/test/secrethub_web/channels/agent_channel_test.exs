@@ -40,27 +40,27 @@ defmodule SecretHub.Web.AgentChannelTest do
 
     test "rejects secret:request without authentication", %{socket: socket} do
       ref = push(socket, "secret:request", %{"path" => "prod.db.password"})
-      assert_reply ref, :error, %{reason: "not_authenticated"}
+      assert_reply(ref, :error, %{reason: "not_authenticated"})
     end
 
     test "rejects heartbeat without authentication", %{socket: socket} do
       ref = push(socket, "heartbeat", %{})
-      assert_reply ref, :error, %{reason: "not_authenticated"}
+      assert_reply(ref, :error, %{reason: "not_authenticated"})
     end
 
     test "rejects secret:renew without authentication", %{socket: socket} do
       ref = push(socket, "secret:renew", %{"lease_id" => "test-lease"})
-      assert_reply ref, :error, %{reason: "not_authenticated"}
+      assert_reply(ref, :error, %{reason: "not_authenticated"})
     end
 
     test "returns error for invalid authentication payload", %{socket: socket} do
       ref = push(socket, "authenticate", %{"invalid" => "data"})
-      assert_reply ref, :error, %{reason: "invalid_authentication_payload"}
+      assert_reply(ref, :error, %{reason: "invalid_authentication_payload"})
     end
 
     test "returns error for unknown event", %{socket: socket} do
       ref = push(socket, "unknown:event", %{})
-      assert_reply ref, :error, %{reason: "unknown_event"}
+      assert_reply(ref, :error, %{reason: "unknown_event"})
     end
   end
 end
