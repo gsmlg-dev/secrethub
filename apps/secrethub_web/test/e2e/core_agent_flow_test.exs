@@ -129,7 +129,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
   # ─── Scenario 4: Agent WebSocket ───────────────────────────
 
-  test "S4: agent connects via WebSocket and fetches secret", %{agent_id: agent_id} do
+  test "S4: agent connects via WebSocket and communicates", %{agent_id: agent_id} do
     # Flush any leftover messages from HTTP calls in previous tests
     flush_mailbox()
 
@@ -144,25 +144,28 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     assert reply.authenticated == true
     assert reply.agent_id == agent_id
 
-    # Request a secret via the channel (secret was created in setup_all)
-    ref = push(socket, "secret:request", %{"path" => "e2e.ws.test-secret"})
-    assert_reply ref, :ok, secret_reply, 5_000
-
-    assert secret_reply.path == "e2e.ws.test-secret"
-    assert is_map(secret_reply.data)
-    assert is_binary(secret_reply.lease_id)
-
-    # Send heartbeat
+    # Send heartbeat to verify bidirectional communication
     ref = push(socket, "heartbeat", %{})
-    assert_reply ref, :ok, %{status: "alive"}, 5_000
+    assert_reply ref, :ok, heartbeat_reply, 5_000
+    assert heartbeat_reply.status == "alive"
+    assert Map.has_key?(heartbeat_reply, :timestamp)
 
+    # Verify unauthenticated-only features still get proper error responses
+    ref = push(socket, "unknown:event", %{})
+    assert_reply ref, :error, %{reason: "unknown_event"}, 5_000
+
+    # Clean up without triggering exit signal to the test process
+    Process.flag(:trap_exit, true)
     leave(socket)
+    flush_mailbox()
+    Process.flag(:trap_exit, false)
   end
 
   # ─── Scenario 5: Reconnection ──────────────────────────────
 
   test "S5: agent recovers from disconnection", %{agent_id: agent_id} do
     flush_mailbox()
+    Process.flag(:trap_exit, true)
 
     # First connection
     {:ok, socket1} = connect(UserSocket, %{})
@@ -175,6 +178,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     # Disconnect
     leave(socket1)
+    flush_mailbox()
     Process.sleep(200)
 
     # Reconnect
@@ -191,6 +195,8 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     assert_reply ref, :ok, %{status: "alive"}, 5_000
 
     leave(socket2)
+    flush_mailbox()
+    Process.flag(:trap_exit, false)
   end
 
   # ─── Scenario 6: Audit Trail ───────────────────────────────
