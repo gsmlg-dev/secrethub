@@ -4,6 +4,9 @@
 # Ensure lazy_html NIF is loaded before LiveView tests run.
 # When running from the umbrella root, `only: :test` deps of child apps are not
 # automatically added to the code path. We must add them explicitly.
+# Exclude E2E tests from default `mix test` runs.
+# Run E2E with: mix test apps/secrethub_web/test/e2e/ --include e2e
+ExUnit.configure(exclude: [:e2e])
 ExUnit.start()
 
 # When running from the umbrella root via the test alias, the Repo may already
