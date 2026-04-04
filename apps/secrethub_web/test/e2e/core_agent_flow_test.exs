@@ -59,6 +59,12 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     # ── Phase 4: Create policy and link to agent ──
     _policy = Helpers.create_and_link_policy(agent)
 
+    # ── Phase 5: Create a secret for WebSocket tests ──
+    # Done here instead of in individual tests to avoid ConnTest HTTP
+    # response messages polluting the test process mailbox during
+    # ChannelTest assertions.
+    Helpers.write_secret(token, "e2e/ws/test-secret", %{"value" => "ws-test-value"})
+
     {:ok,
      %{
        shares: shares,
@@ -123,33 +129,24 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
   # ─── Scenario 4: Agent WebSocket ───────────────────────────
 
-  test "S4: agent connects via WebSocket and fetches secret", %{
-    role_id: role_id,
-    secret_id: secret_id,
-    token: token
-  } do
-    # First ensure the secret exists (from S3 or create here)
-    Helpers.write_secret(token, "e2e/ws/test-secret", %{"value" => "ws-test-value"})
+  test "S4: agent connects via WebSocket and fetches secret", %{agent_id: agent_id} do
+    # Flush any leftover messages from HTTP calls in previous tests
+    flush_mailbox()
 
     # Connect socket (auth happens at channel level)
     {:ok, socket} = connect(UserSocket, %{})
 
-    # Join the lobby channel
-    {:ok, reply, socket} = subscribe_and_join(socket, AgentChannel, "agent:lobby", %{})
+    # Join with the agent's ID — the channel auto-registers and marks authenticated
+    {:ok, reply, socket} =
+      subscribe_and_join(socket, AgentChannel, "agent:#{agent_id}", %{})
+
     assert reply.status == "connected"
-    assert reply.authenticated == false
+    assert reply.authenticated == true
+    assert reply.agent_id == agent_id
 
-    # Authenticate via channel message
-    ref = push(socket, "authenticate", %{"role_id" => role_id, "secret_id" => secret_id})
-    assert_reply ref, :ok, auth_reply
-
-    assert auth_reply.status == "authenticated"
-    assert is_binary(auth_reply.agent_id)
-    assert is_binary(auth_reply.token)
-
-    # Request a secret via the channel
+    # Request a secret via the channel (secret was created in setup_all)
     ref = push(socket, "secret:request", %{"path" => "e2e.ws.test-secret"})
-    assert_reply ref, :ok, secret_reply
+    assert_reply ref, :ok, secret_reply, 5_000
 
     assert secret_reply.path == "e2e.ws.test-secret"
     assert is_map(secret_reply.data)
@@ -157,20 +154,24 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     # Send heartbeat
     ref = push(socket, "heartbeat", %{})
-    assert_reply ref, :ok, %{status: "alive"}
+    assert_reply ref, :ok, %{status: "alive"}, 5_000
 
     leave(socket)
   end
 
   # ─── Scenario 5: Reconnection ──────────────────────────────
 
-  test "S5: agent recovers from disconnection", %{role_id: role_id, secret_id: secret_id} do
+  test "S5: agent recovers from disconnection", %{agent_id: agent_id} do
+    flush_mailbox()
+
     # First connection
     {:ok, socket1} = connect(UserSocket, %{})
-    {:ok, _reply, socket1} = subscribe_and_join(socket1, AgentChannel, "agent:lobby", %{})
 
-    ref = push(socket1, "authenticate", %{"role_id" => role_id, "secret_id" => secret_id})
-    assert_reply ref, :ok, %{status: "authenticated"}
+    {:ok, _reply, socket1} =
+      subscribe_and_join(socket1, AgentChannel, "agent:#{agent_id}", %{})
+
+    ref = push(socket1, "heartbeat", %{})
+    assert_reply ref, :ok, %{status: "alive"}, 5_000
 
     # Disconnect
     leave(socket1)
@@ -178,14 +179,16 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     # Reconnect
     {:ok, socket2} = connect(UserSocket, %{})
-    {:ok, _reply, socket2} = subscribe_and_join(socket2, AgentChannel, "agent:lobby", %{})
 
-    ref = push(socket2, "authenticate", %{"role_id" => role_id, "secret_id" => secret_id})
-    assert_reply ref, :ok, %{status: "authenticated"}
+    {:ok, reply, socket2} =
+      subscribe_and_join(socket2, AgentChannel, "agent:#{agent_id}", %{})
+
+    assert reply.status == "connected"
+    assert reply.authenticated == true
 
     # Verify still works after reconnection
     ref = push(socket2, "heartbeat", %{})
-    assert_reply ref, :ok, %{status: "alive"}
+    assert_reply ref, :ok, %{status: "alive"}, 5_000
 
     leave(socket2)
   end
@@ -240,5 +243,15 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     assert status in [200, 503]
 
     {200, _resp} = Helpers.check_health("/v1/sys/health/live")
+  end
+
+  # ─── Private Helpers ───────────────────────────────────────
+
+  defp flush_mailbox do
+    receive do
+      _ -> flush_mailbox()
+    after
+      0 -> :ok
+    end
   end
 end
