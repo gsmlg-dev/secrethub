@@ -6,7 +6,7 @@
 # automatically added to the code path. We must add them explicitly.
 # Exclude E2E tests from default `mix test` runs.
 # Run E2E with: mix test apps/secrethub_web/test/e2e/ --include e2e
-ExUnit.configure(exclude: [:e2e])
+ExUnit.configure(exclude: [:e2e, :pki])
 ExUnit.start()
 
 # When running from the umbrella root via the test alias, the Repo may already

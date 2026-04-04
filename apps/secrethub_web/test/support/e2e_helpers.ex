@@ -9,6 +9,9 @@ defmodule SecretHub.E2E.Helpers do
   import Phoenix.ConnTest
   import Plug.Conn
 
+  alias SecretHub.Core.Agents
+  alias SecretHub.Core.Auth.AppRole
+
   @endpoint SecretHub.Web.Endpoint
 
   # ─── HTTP Helpers ──────────────────────────────────────────
@@ -81,7 +84,7 @@ defmodule SecretHub.E2E.Helpers do
     opts = Keyword.merge([secret_id_num_uses: 0, secret_id_ttl: 3600], opts)
 
     {:ok, %{role_id: role_id, secret_id: secret_id}} =
-      SecretHub.Core.Auth.AppRole.create_role(role_name, opts)
+      AppRole.create_role(role_name, opts)
 
     {role_id, secret_id}
   end
@@ -112,7 +115,7 @@ defmodule SecretHub.E2E.Helpers do
   """
   def bootstrap_agent(role_id, secret_id, name \\ "e2e-test-agent") do
     {:ok, agent} =
-      SecretHub.Core.Agents.bootstrap_agent(role_id, secret_id, %{
+      Agents.bootstrap_agent(role_id, secret_id, %{
         "name" => name,
         "ip_address" => "127.0.0.1",
         "user_agent" => "E2E Test Suite"

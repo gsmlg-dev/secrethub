@@ -14,6 +14,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   import Phoenix.ConnTest, except: [connect: 2]
   import Phoenix.ChannelTest
 
+  alias Ecto.Adapters.SQL.Sandbox
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.E2E.Helpers
@@ -26,7 +27,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   setup_all do
     # Ensure Ecto sandbox is in shared mode for all E2E tests.
     # This allows the endpoint and channel processes to see test data.
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Repo, shared: true)
+    pid = Sandbox.start_owner!(Repo, shared: true)
 
     # Start SealState GenServer (disabled in test config)
     seal_state_pid =
@@ -38,7 +39,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     on_exit(fn ->
       # Stop SealState
       if Process.alive?(seal_state_pid), do: GenServer.stop(seal_state_pid, :normal)
-      Ecto.Adapters.SQL.Sandbox.stop_owner(pid)
+      Sandbox.stop_owner(pid)
     end)
 
     # ── Phase 1: Initialize and unseal vault ──

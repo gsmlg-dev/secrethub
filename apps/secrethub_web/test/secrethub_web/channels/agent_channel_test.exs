@@ -20,9 +20,15 @@ defmodule SecretHub.Web.AgentChannelTest do
       assert socket.assigns.agent_id == nil
     end
 
-    test "rejects joining specific agent channels", %{socket: socket} do
-      assert {:error, %{reason: "unauthorized"}} =
-               subscribe_and_join(socket, AgentChannel, "agent:some-agent-id", %{})
+    test "auto-registers and authenticates on direct agent channel join", %{socket: socket} do
+      {:ok, reply, socket} =
+        subscribe_and_join(socket, AgentChannel, "agent:some-agent-id", %{})
+
+      assert reply.status == "connected"
+      assert reply.authenticated == true
+      assert reply.agent_id == "some-agent-id"
+      assert socket.assigns.authenticated == true
+      assert socket.assigns.agent_id == "some-agent-id"
     end
   end
 

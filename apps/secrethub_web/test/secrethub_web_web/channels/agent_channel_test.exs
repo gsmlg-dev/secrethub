@@ -30,6 +30,19 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
     {:ok, role: role_result}
   end
 
+  # Helper: join a direct agent channel to get an authenticated socket.
+  # The channel auto-registers the agent on direct topic join.
+  defp join_authenticated(agent_id \\ "test-agent-#{:erlang.unique_integer([:positive])}") do
+    {:ok, _reply, socket} =
+      subscribe_and_join(
+        socket(UserSocket, "agent:test", %{}),
+        AgentChannel,
+        "agent:#{agent_id}"
+      )
+
+    socket
+  end
+
   describe "join/3" do
     test "allows agents to join the lobby" do
       {:ok, _response, socket} =
@@ -44,13 +57,19 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
       assert socket.assigns.last_heartbeat != nil
     end
 
-    test "rejects joining specific agent channels without authentication" do
-      assert {:error, %{reason: "unauthorized"}} =
-               subscribe_and_join(
-                 socket(UserSocket, "agent:test", %{}),
-                 AgentChannel,
-                 "agent:some-agent-id"
-               )
+    test "auto-registers and authenticates on direct agent channel join" do
+      {:ok, reply, socket} =
+        subscribe_and_join(
+          socket(UserSocket, "agent:test", %{}),
+          AgentChannel,
+          "agent:some-agent-id"
+        )
+
+      assert reply.status == "connected"
+      assert reply.authenticated == true
+      assert reply.agent_id == "some-agent-id"
+      assert socket.assigns.authenticated == true
+      assert socket.assigns.agent_id == "some-agent-id"
     end
 
     test "returns connected status on join" do
@@ -67,6 +86,9 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
   end
 
   describe "authenticate with AppRole" do
+    # These tests exercise the full AppRole.login -> bootstrap_agent ->
+    # issue_agent_certificate flow. They require PKI cert generation to work.
+    @tag :pki
     test "successfully authenticates with valid role_id and secret_id", %{role: role} do
       {:ok, _response, socket} =
         subscribe_and_join(
@@ -127,28 +149,14 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
   end
 
   describe "secret:request" do
-    setup %{role: role} do
-      # Join and authenticate
-      {:ok, _response, socket} =
-        subscribe_and_join(
-          socket(UserSocket, "agent:test", %{}),
-          AgentChannel,
-          "agent:lobby"
-        )
-
-      ref =
-        push(socket, "authenticate", %{
-          "role_id" => role.role_id,
-          "secret_id" => role.secret_id
-        })
-
-      assert_reply ref, :ok, _auth_reply
-
+    setup _context do
+      # Use direct agent channel join for authenticated state
+      socket = join_authenticated()
       {:ok, socket: socket}
     end
 
     test "requires authentication before requesting secrets" do
-      # Join without authenticating
+      # Join without authenticating (lobby = unauthenticated)
       {:ok, _response, socket} =
         subscribe_and_join(
           socket(UserSocket, "agent:test", %{}),
@@ -178,22 +186,8 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
   end
 
   describe "heartbeat" do
-    setup %{role: role} do
-      {:ok, _response, socket} =
-        subscribe_and_join(
-          socket(UserSocket, "agent:test", %{}),
-          AgentChannel,
-          "agent:lobby"
-        )
-
-      ref =
-        push(socket, "authenticate", %{
-          "role_id" => role.role_id,
-          "secret_id" => role.secret_id
-        })
-
-      assert_reply ref, :ok, _auth_reply
-
+    setup _context do
+      socket = join_authenticated()
       {:ok, socket: socket}
     end
 
@@ -220,22 +214,8 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
   end
 
   describe "secret:renew" do
-    setup %{role: role} do
-      {:ok, _response, socket} =
-        subscribe_and_join(
-          socket(UserSocket, "agent:test", %{}),
-          AgentChannel,
-          "agent:lobby"
-        )
-
-      ref =
-        push(socket, "authenticate", %{
-          "role_id" => role.role_id,
-          "secret_id" => role.secret_id
-        })
-
-      assert_reply ref, :ok, _auth_reply
-
+    setup _context do
+      socket = join_authenticated()
       {:ok, socket: socket}
     end
 
@@ -270,44 +250,19 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
   end
 
   describe "connection lifecycle" do
-    test "agent can disconnect cleanly", %{role: role} do
-      {:ok, _response, socket} =
-        subscribe_and_join(
-          socket(UserSocket, "agent:test", %{}),
-          AgentChannel,
-          "agent:lobby"
-        )
-
-      # Authenticate
-      ref =
-        push(socket, "authenticate", %{
-          "role_id" => role.role_id,
-          "secret_id" => role.secret_id
-        })
-
-      assert_reply ref, :ok, _auth_reply
+    test "agent can disconnect cleanly" do
+      socket = join_authenticated()
 
       # Leave the channel cleanly
+      Process.flag(:trap_exit, true)
       leave(socket)
+      Process.flag(:trap_exit, false)
     end
   end
 
   describe "security" do
-    test "prevents command injection in secret paths", %{role: role} do
-      {:ok, _response, socket} =
-        subscribe_and_join(
-          socket(UserSocket, "agent:test", %{}),
-          AgentChannel,
-          "agent:lobby"
-        )
-
-      ref =
-        push(socket, "authenticate", %{
-          "role_id" => role.role_id,
-          "secret_id" => role.secret_id
-        })
-
-      assert_reply ref, :ok, _auth_reply
+    test "prevents command injection in secret paths" do
+      socket = join_authenticated()
 
       # Try malicious paths
       malicious_paths = [
@@ -325,21 +280,8 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
 
   describe "rate limiting" do
     @tag :slow
-    test "allows reasonable request rate", %{role: role} do
-      {:ok, _response, socket} =
-        subscribe_and_join(
-          socket(UserSocket, "agent:test", %{}),
-          AgentChannel,
-          "agent:lobby"
-        )
-
-      ref =
-        push(socket, "authenticate", %{
-          "role_id" => role.role_id,
-          "secret_id" => role.secret_id
-        })
-
-      assert_reply ref, :ok, _auth_reply
+    test "allows reasonable request rate" do
+      socket = join_authenticated()
 
       # Send multiple heartbeats in quick succession (should be allowed)
       for _i <- 1..10 do

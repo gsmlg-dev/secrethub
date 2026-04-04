@@ -124,11 +124,27 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
   end
 
   defp generate_expired_cert(tmp, ca, cn) do
-    # Generate a certificate, then use a config to make it expire
+    generate_cert_with_dates(tmp, ca, cn, "expired",
+      not_before: "20240101000000Z",
+      not_after: "20240102000000Z"
+    )
+  end
+
+  defp generate_not_yet_valid_cert(tmp, ca, cn) do
+    generate_cert_with_dates(tmp, ca, cn, "future",
+      not_before: "20500101000000Z",
+      not_after: "20510101000000Z"
+    )
+  end
+
+  defp generate_cert_with_dates(tmp, ca, cn, prefix, opts) do
+    not_before = Keyword.fetch!(opts, :not_before)
+    not_after = Keyword.fetch!(opts, :not_after)
+
     suffix = :erlang.unique_integer([:positive])
-    client_key_path = Path.join(tmp, "expired_#{suffix}.key")
-    client_cert_path = Path.join(tmp, "expired_#{suffix}.crt")
-    client_csr_path = Path.join(tmp, "expired_#{suffix}.csr")
+    client_key_path = Path.join(tmp, "#{prefix}_#{suffix}.key")
+    client_cert_path = Path.join(tmp, "#{prefix}_#{suffix}.crt")
+    client_csr_path = Path.join(tmp, "#{prefix}_#{suffix}.csr")
 
     {_, 0} =
       System.cmd("openssl", ["genrsa", "-out", client_key_path, "2048"], stderr_to_stdout: true)
@@ -149,10 +165,8 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
         stderr_to_stdout: true
       )
 
-    # Sign with 1 day validity, but set startdate to far in the past
-    # Use faketime approach: sign normally then manipulate the validity via raw cert
-    # Simpler approach: generate a self-signed cert with past dates using -days 1 and startdate
-    {_, 0} =
+    # Try using -not_before/-not_after (OpenSSL 3.2+), fall back to OpenSSL conf approach
+    sign_result =
       System.cmd(
         "openssl",
         [
@@ -170,78 +184,75 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
           "-days",
           "1",
           "-not_before",
-          "20240101000000Z",
+          not_before,
           "-not_after",
-          "20240102000000Z"
+          not_after
         ],
         stderr_to_stdout: true
       )
 
-    client_pem = File.read!(client_cert_path)
-    [{:Certificate, client_der, _}] = :public_key.pem_decode(client_pem)
-    otp_cert = :public_key.pkix_decode_cert(client_der, :otp)
-    serial = extract_serial(otp_cert)
+    case sign_result do
+      {_, 0} ->
+        :ok
 
-    %{
-      key_path: client_key_path,
-      cert_path: client_cert_path,
-      pem: client_pem,
-      der: client_der,
-      serial_number: serial,
-      cn: cn
-    }
-  end
+      _ ->
+        # Fallback for OpenSSL < 3.2 which lacks -not_before/-not_after.
+        # Use an openssl.cnf with copy_extensions and a v3 ext file to embed dates.
+        # Simplest portable fallback: use `openssl ca` with a minimal config.
+        config_path = Path.join(tmp, "mini_ca_#{suffix}.cnf")
+        serial_path = Path.join(tmp, "mini_ca_serial_#{suffix}")
+        index_path = Path.join(tmp, "mini_ca_index_#{suffix}.txt")
+        newcerts_dir = Path.join(tmp, "newcerts_#{suffix}")
+        File.mkdir_p!(newcerts_dir)
+        File.write!(index_path, "")
+        File.write!(serial_path, "01\n")
 
-  defp generate_not_yet_valid_cert(tmp, ca, cn) do
-    suffix = :erlang.unique_integer([:positive])
-    client_key_path = Path.join(tmp, "future_#{suffix}.key")
-    client_cert_path = Path.join(tmp, "future_#{suffix}.crt")
-    client_csr_path = Path.join(tmp, "future_#{suffix}.csr")
+        config_content = """
+        [ca]
+        default_ca = mini_ca
 
-    {_, 0} =
-      System.cmd("openssl", ["genrsa", "-out", client_key_path, "2048"], stderr_to_stdout: true)
+        [mini_ca]
+        certificate = #{ca.cert_path}
+        private_key = #{ca.key_path}
+        new_certs_dir = #{newcerts_dir}
+        database = #{index_path}
+        serial = #{serial_path}
+        default_md = sha256
+        policy = policy_any
+        copy_extensions = none
 
-    {_, 0} =
-      System.cmd(
-        "openssl",
-        [
-          "req",
-          "-new",
-          "-key",
-          client_key_path,
-          "-out",
-          client_csr_path,
-          "-subj",
-          "/CN=#{cn}/O=SecretHub Test"
-        ],
-        stderr_to_stdout: true
-      )
+        [policy_any]
+        countryName = optional
+        stateOrProvinceName = optional
+        organizationName = optional
+        organizationalUnitName = optional
+        commonName = supplied
+        emailAddress = optional
+        """
 
-    # Certificate valid from far future
-    {_, 0} =
-      System.cmd(
-        "openssl",
-        [
-          "x509",
-          "-req",
-          "-in",
-          client_csr_path,
-          "-CA",
-          ca.cert_path,
-          "-CAkey",
-          ca.key_path,
-          "-CAcreateserial",
-          "-out",
-          client_cert_path,
-          "-days",
-          "365",
-          "-not_before",
-          "20500101000000Z",
-          "-not_after",
-          "20510101000000Z"
-        ],
-        stderr_to_stdout: true
-      )
+        File.write!(config_path, config_content)
+
+        {_, 0} =
+          System.cmd(
+            "openssl",
+            [
+              "ca",
+              "-batch",
+              "-config",
+              config_path,
+              "-in",
+              client_csr_path,
+              "-out",
+              client_cert_path,
+              "-startdate",
+              not_before,
+              "-enddate",
+              not_after,
+              "-notext"
+            ],
+            stderr_to_stdout: true
+          )
+    end
 
     client_pem = File.read!(client_cert_path)
     [{:Certificate, client_der, _}] = :public_key.pem_decode(client_pem)
