@@ -11,6 +11,7 @@ FROM elixir:1.18-alpine AS builder
 RUN apk add --no-cache \
     build-base \
     git \
+    nodejs \
     npm
 
 # Set working directory
@@ -34,8 +35,8 @@ RUN mix deps.get --only prod
 # Compile dependencies
 RUN mix deps.compile
 
-# Install bun for JavaScript bundling
-RUN npm install -g bun
+# Install frontend node_modules (Tailwind CSS v4 uses @duskmoon-dev/core npm package)
+RUN cd apps/secrethub_web && npm install --prefer-offline
 
 # Build assets using bun and tailwind
 # Dummy DATABASE_URL and SECRET_KEY_BASE are needed because mix assets.deploy

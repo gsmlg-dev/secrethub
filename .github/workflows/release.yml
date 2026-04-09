@@ -56,6 +56,10 @@ jobs:
       - name: Compile application
         run: mix compile
 
+      - name: Install frontend dependencies
+        run: |
+          cd apps/secrethub_web && npm install
+
       - name: Build frontend assets
         env:
           DATABASE_URL: "postgresql://dummy:dummy@localhost/dummy"
