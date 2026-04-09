@@ -57,11 +57,17 @@ jobs:
         run: mix compile
 
       - name: Build frontend assets
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost/dummy"
+          SECRET_KEY_BASE: "build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!"
         run: |
           mix assets.setup
           mix assets.deploy
 
       - name: Build Core release
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost/dummy"
+          SECRET_KEY_BASE: "build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!"
         run: |
           mix release secrethub_core
 
@@ -115,6 +121,9 @@ jobs:
         run: mix compile
 
       - name: Build Agent release
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost/dummy"
+          SECRET_KEY_BASE: "build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!"
         run: |
           mix release secrethub_agent
 

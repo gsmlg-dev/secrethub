@@ -36,7 +36,10 @@ RUN mix deps.compile
 RUN mix compile
 
 # Build OTP release for agent
-RUN mix release secrethub_agent
+# Dummy env vars needed because config/runtime.exs is evaluated during release build
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
+    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
+    mix release secrethub_agent
 
 # =====================================
 # Runtime Stage

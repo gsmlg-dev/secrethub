@@ -37,14 +37,23 @@ RUN mix deps.compile
 RUN npm install -g bun
 
 # Build assets using bun and tailwind
-RUN mix assets.setup && \
+# Dummy DATABASE_URL and SECRET_KEY_BASE are needed because mix assets.deploy
+# evaluates config/runtime.exs which requires these in prod mode.
+# Real values are provided at container runtime via environment variables.
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
+    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
+    mix assets.setup && \
+    DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
+    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
     mix assets.deploy
 
 # Compile application
 RUN mix compile
 
 # Build OTP release for core
-RUN mix release secrethub_core
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
+    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
+    mix release secrethub_core
 
 # =====================================
 # Runtime Stage
