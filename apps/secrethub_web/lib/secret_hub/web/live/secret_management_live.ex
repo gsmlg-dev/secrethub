@@ -5,27 +5,28 @@ defmodule SecretHub.Web.SecretManagementLive do
 
   use SecretHub.Web, :live_view
   require Logger
-  alias SecretHub.Core.{Policies, Repo, Secrets}
+  alias SecretHub.Core.{Policies, Secrets}
+  alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Schemas.Secret
 
   @impl true
   def mount(_params, _session, socket) do
     secrets = fetch_secrets()
-    engines = fetch_secret_engines()
+    rotators = fetch_rotators()
     policies = fetch_policies()
 
     socket =
       socket
       |> assign(:secrets, secrets)
-      |> assign(:engines, engines)
+      |> assign(:rotators, rotators)
       |> assign(:policies, policies)
       |> assign(:selected_secret, nil)
       |> assign(:show_form, false)
       |> assign(:form_mode, :create)
-      |> assign(:filter_engine, "all")
+      |> assign(:filter_rotator, "all")
       |> assign(:search_query, "")
       |> assign(:loading, false)
-      |> assign(:form_changeset, changeset_for_secret(%SecretHub.Shared.Schemas.Secret{}))
+      |> assign(:form_changeset, changeset_for_secret(%Secret{}, rotators))
 
     {:ok, socket}
   end
@@ -49,28 +50,42 @@ defmodule SecretHub.Web.SecretManagementLive do
 
   @impl true
   def handle_event("new_secret", _params, socket) do
-    socket =
-      socket
-      |> assign(:show_form, true)
-      |> assign(:form_mode, :create)
-      |> assign(:form_changeset, changeset_for_secret(%SecretHub.Shared.Schemas.Secret{}))
+    status = vault_status()
 
-    {:noreply, socket}
+    if vault_sealed?(status) do
+      {:noreply, vault_unavailable_socket(socket, status, :create)}
+    else
+      socket =
+        socket
+        |> assign(:vault_status, status)
+        |> assign(:show_form, true)
+        |> assign(:form_mode, :create)
+        |> assign(:form_changeset, changeset_for_secret(%Secret{}, socket.assigns.rotators))
+
+      {:noreply, socket}
+    end
   end
 
   @impl true
   def handle_event("edit_secret", %{"id" => secret_id}, socket) do
-    secret = Enum.find(socket.assigns.secrets, &(&1.id == secret_id))
-    changeset = changeset_for_secret(secret)
+    status = vault_status()
 
-    socket =
-      socket
-      |> assign(:show_form, true)
-      |> assign(:form_mode, :edit)
-      |> assign(:selected_secret, secret)
-      |> assign(:form_changeset, changeset)
+    if vault_sealed?(status) do
+      {:noreply, vault_unavailable_socket(socket, status, :update)}
+    else
+      secret = Enum.find(socket.assigns.secrets, &(&1.id == secret_id))
+      changeset = changeset_for_secret(secret, socket.assigns.rotators)
 
-    {:noreply, socket}
+      socket =
+        socket
+        |> assign(:vault_status, status)
+        |> assign(:show_form, true)
+        |> assign(:form_mode, :edit)
+        |> assign(:selected_secret, secret)
+        |> assign(:form_changeset, changeset)
+
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -115,8 +130,8 @@ defmodule SecretHub.Web.SecretManagementLive do
   end
 
   @impl true
-  def handle_event("filter_secrets", %{"engine" => engine}, socket) do
-    socket = assign(socket, :filter_engine, engine)
+  def handle_event("filter_secrets", %{"rotator" => rotator_id}, socket) do
+    socket = assign(socket, :filter_rotator, rotator_id)
     {:noreply, socket}
   end
 
@@ -130,7 +145,7 @@ defmodule SecretHub.Web.SecretManagementLive do
   def handle_event("validate_secret", %{"secret" => secret_params}, socket) do
     changeset =
       %Secret{}
-      |> Secret.changeset(secret_params)
+      |> Secret.changeset(with_default_rotator(secret_params, socket.assigns.rotators))
       |> Map.put(:action, :validate)
 
     {:noreply, assign(socket, :form_changeset, changeset)}
@@ -202,46 +217,45 @@ defmodule SecretHub.Web.SecretManagementLive do
       <!-- Header and Actions -->
       <div class="flex justify-between items-center">
         <h2 class="text-2xl font-bold text-on-surface">Secret Management</h2>
-        <button
-          class="btn-primary"
+        <.dm_btn
+          id="new-secret-button"
+          variant="primary"
+          size="md"
           phx-click="new_secret"
         >
-          <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-          </svg>
+          <:prefix>
+            <.dm_mdi name="plus" class="h-4 w-4" />
+          </:prefix>
           New Secret
-        </button>
+        </.dm_btn>
       </div>
       
     <!-- Filters and Search -->
       <div class="bg-surface-container p-4 rounded-lg shadow">
         <div class="flex flex-wrap gap-4 items-center">
-          <div class="flex items-center space-x-2">
-            <label class="text-sm font-medium text-on-surface">Engine:</label>
-            <select
-              class="form-select"
-              phx-change="filter_secrets"
-              name="engine"
-              value={@filter_engine}
-            >
-              <option value="all">All</option>
-              <%= for engine <- @engines do %>
-                <option value={engine.type}>{engine.name}</option>
-              <% end %>
-            </select>
-          </div>
+          <.dm_select
+            id="secret-rotator-filter"
+            name="rotator"
+            value={@filter_rotator}
+            label="Rotator"
+            options={rotator_filter_options(@rotators)}
+            horizontal
+            class="min-w-44"
+            phx-change="filter_secrets"
+          />
 
-          <div class="flex items-center space-x-2 flex-1">
-            <label class="text-sm font-medium text-on-surface">Search:</label>
-            <input
-              type="text"
-              class="form-input flex-1"
-              placeholder="Search secrets by name or path..."
-              phx-change="search_secrets"
-              name="query"
-              value={@search_query}
-            />
-          </div>
+          <.dm_input
+            id="secret-search-input"
+            type="search"
+            name="query"
+            value={@search_query}
+            label="Search"
+            placeholder="Search secrets by name, description, or path..."
+            horizontal
+            field_class="min-w-0 flex-1"
+            class="w-full"
+            phx-change="search_secrets"
+          />
         </div>
       </div>
       
@@ -253,7 +267,7 @@ defmodule SecretHub.Web.SecretManagementLive do
           changeset={@form_changeset}
           mode={@form_mode}
           secret={@selected_secret}
-          engines={@engines}
+          rotators={@rotators}
           policies={@policies}
           return_to="/admin/secrets"
         />
@@ -272,19 +286,19 @@ defmodule SecretHub.Web.SecretManagementLive do
                   Path
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Engine
+                  TTL
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Type
+                  Rotator
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Status
+                  Access Policies
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Last Rotation
+                  Created
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Next Rotation
+                  Updated
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
                   Actions
@@ -292,7 +306,7 @@ defmodule SecretHub.Web.SecretManagementLive do
               </tr>
             </thead>
             <tbody class="bg-surface-container divide-y divide-outline-variant">
-              <%= for secret <- filtered_secrets(@secrets, @filter_engine, @search_query) do %>
+              <%= for secret <- filtered_secrets(@secrets, @filter_rotator, @search_query) do %>
                 <tr class="hover:bg-surface-container-low transition-colors">
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="text-sm font-medium text-on-surface">{secret.name}</div>
@@ -304,42 +318,41 @@ defmodule SecretHub.Web.SecretManagementLive do
                     </code>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
-                    {secret.engine_type}
+                    {format_ttl(secret.ttl_seconds)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
-                    <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{secret_type_badge_color(secret.type)}"}>
-                      {Atom.to_string(secret.type)}
-                    </span>
+                    <div class="text-sm text-on-surface">{secret.rotator_name}</div>
+                    <div class="text-xs text-on-surface-variant">
+                      {format_rotator_type(secret.rotator_type)}
+                    </div>
                   </td>
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="flex items-center">
-                      <div class={"w-2 h-2 rounded-full mr-2 #{status_color(secret.status)}"}></div>
-                      <span class="text-sm text-on-surface">{secret.status}</span>
+                  <td class="px-6 py-4 text-sm text-on-surface-variant">
+                    <div class="flex flex-wrap gap-1">
+                      <%= if Enum.empty?(secret.policies) do %>
+                        <span>No policies</span>
+                      <% else %>
+                        <%= for policy <- secret.policies do %>
+                          <span class="rounded bg-surface-container-high px-2 py-0.5 text-xs text-on-surface">
+                            {policy}
+                          </span>
+                        <% end %>
+                      <% end %>
                     </div>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
-                    {format_datetime(secret.last_rotation)}
+                    {format_datetime(secret.inserted_at)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
-                    {format_datetime(secret.next_rotation)}
+                    {format_datetime(secret.updated_at)}
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div class="flex space-x-2">
                       <button
-                        class="text-secondary hover:text-indigo-900"
+                        class="text-secondary hover:text-secondary"
                         phx-click="edit_secret"
                         phx-value-id={secret.id}
                       >
                         Edit
-                      </button>
-
-                      <button
-                        class="text-success hover:text-success"
-                        phx-click="rotate_secret"
-                        phx-value-id={secret.id}
-                        phx-disable-with="Rotating..."
-                      >
-                        Rotate
                       </button>
 
                       <button
@@ -376,83 +389,126 @@ defmodule SecretHub.Web.SecretManagementLive do
 
   # Private functions
   defp create_secret(socket, secret_params) do
-    # Build changeset and insert directly (for dev/testing without encryption)
-    # In production, use Secrets.create_secret which handles encryption
-    # Add placeholder encrypted_data for NOT NULL constraint
-    secret_params = Map.put(secret_params, "encrypted_data", <<0>>)
+    status = vault_status()
 
-    changeset =
-      %Secret{}
-      |> Secret.changeset(secret_params)
+    if vault_sealed?(status) do
+      {:noreply, vault_unavailable_socket(socket, status, :create)}
+    else
+      create_secret_when_unsealed(socket, secret_params, status)
+    end
+  end
 
-    case Repo.insert(changeset) do
-      {:ok, secret} ->
-        Logger.info("Created secret: #{secret.id}")
+  defp create_secret_when_unsealed(socket, secret_params, status) do
+    secret_params = normalize_secret_form_params(secret_params, socket.assigns.rotators)
+    policy_ids = selected_policy_ids(secret_params)
 
-        secrets = fetch_secrets()
+    with {:ok, secret} <-
+           Secrets.create_secret(Map.put(secret_params, "created_by", "admin-web")),
+         {:ok, _secret_with_policies} <- Secrets.set_secret_policies(secret.id, policy_ids) do
+      Logger.info("Created secret: #{secret.id}")
+      secrets = fetch_secrets()
 
-        socket =
-          socket
-          |> assign(:secrets, secrets)
-          |> assign(:show_form, false)
-          |> put_flash(:info, "Secret created successfully")
-          |> push_patch(to: "/admin/secrets")
+      socket =
+        socket
+        |> assign(:vault_status, status)
+        |> assign(:secrets, secrets)
+        |> assign(:show_form, false)
+        |> put_flash(:info, "Secret created successfully")
+        |> push_patch(to: "/admin/secrets")
 
-        {:noreply, socket}
-
+      {:noreply, socket}
+    else
       {:error, %Ecto.Changeset{} = changeset} ->
         socket =
           socket
-          |> assign(:form_changeset, changeset)
+          |> assign(:form_changeset, Map.put(changeset, :action, :insert))
           |> put_flash(:error, "Failed to create secret: validation error")
 
         {:noreply, socket}
 
-      {:error, reason} ->
-        socket =
-          socket
-          |> put_flash(:error, "Failed to create secret: #{inspect(reason)}")
+      {:error, :sealed} ->
+        {:noreply,
+         socket
+         |> assign(:vault_status, vault_status())
+         |> put_flash(:error, vault_unavailable_message(:create))}
 
-        {:noreply, socket}
+      {:error, :not_initialized} ->
+        {:noreply,
+         socket
+         |> assign(:vault_status, vault_status())
+         |> put_flash(
+           :error,
+           "Vault is not initialized. Initialize and unseal the vault before creating secrets."
+         )}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to create secret: #{inspect(reason)}")}
     end
   end
 
   defp update_secret(socket, secret_id, secret_params) do
-    # Direct Repo update for dev/testing
-    case Repo.get(Secret, secret_id) do
-      nil ->
+    status = vault_status()
+
+    if vault_sealed?(status) do
+      {:noreply, vault_unavailable_socket(socket, status, :update)}
+    else
+      update_secret_when_unsealed(socket, secret_id, secret_params, status)
+    end
+  end
+
+  defp update_secret_when_unsealed(socket, secret_id, secret_params, status) do
+    secret_params = normalize_secret_form_params(secret_params, socket.assigns.rotators)
+    policy_ids = selected_policy_ids(secret_params)
+
+    with {:ok, updated_secret} <-
+           Secrets.update_secret(secret_id, secret_params,
+             created_by: "admin-web",
+             change_description: "Updated manually in web UI",
+             via_rotator_id: selected_rotator_id(secret_params, socket.assigns.rotators)
+           ),
+         {:ok, _secret_with_policies} <-
+           Secrets.set_secret_policies(updated_secret.id, policy_ids) do
+      Logger.info("Updated secret: #{updated_secret.id}")
+      secrets = fetch_secrets()
+
+      socket =
+        socket
+        |> assign(:vault_status, status)
+        |> assign(:secrets, secrets)
+        |> assign(:show_form, false)
+        |> put_flash(:info, "Secret updated successfully")
+        |> push_patch(to: "/admin/secrets")
+
+      {:noreply, socket}
+    else
+      {:error, "Secret not found"} ->
+        {:noreply, put_flash(socket, :error, "Secret not found")}
+
+      {:error, %Ecto.Changeset{} = changeset} ->
         socket =
           socket
-          |> put_flash(:error, "Secret not found")
+          |> assign(:form_changeset, Map.put(changeset, :action, :update))
+          |> put_flash(:error, "Failed to update secret: validation error")
 
         {:noreply, socket}
 
-      secret ->
-        changeset = Secret.changeset(secret, secret_params)
+      {:error, :sealed} ->
+        {:noreply,
+         socket
+         |> assign(:vault_status, vault_status())
+         |> put_flash(:error, vault_unavailable_message(:update))}
 
-        case Repo.update(changeset) do
-          {:ok, updated_secret} ->
-            Logger.info("Updated secret: #{updated_secret.id}")
+      {:error, :not_initialized} ->
+        {:noreply,
+         socket
+         |> assign(:vault_status, vault_status())
+         |> put_flash(
+           :error,
+           "Vault is not initialized. Initialize and unseal the vault before updating secrets."
+         )}
 
-            secrets = fetch_secrets()
-
-            socket =
-              socket
-              |> assign(:secrets, secrets)
-              |> assign(:show_form, false)
-              |> put_flash(:info, "Secret updated successfully")
-              |> push_patch(to: "/admin/secrets")
-
-            {:noreply, socket}
-
-          {:error, changeset} ->
-            socket =
-              socket
-              |> assign(:form_changeset, changeset)
-              |> put_flash(:error, "Failed to update secret: validation error")
-
-            {:noreply, socket}
-        end
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Failed to update secret: #{inspect(reason)}")}
     end
   end
 
@@ -462,45 +518,27 @@ defmodule SecretHub.Web.SecretManagementLive do
   end
 
   defp format_secret_for_display(secret) do
+    rotator = secret.rotator
+
     %{
       id: secret.id,
       name: secret.name,
       description: secret.description,
       path: secret.secret_path,
-      engine_type: secret.engine_type || "static",
-      type: secret.secret_type,
-      status: determine_secret_status(secret),
-      last_rotation: secret.last_rotated_at,
-      next_rotation: calculate_next_rotation(secret),
-      policies: Enum.map(secret.policies || [], & &1.name)
+      ttl_seconds: ttl_seconds(secret),
+      rotator_id: secret.rotator_id,
+      rotator_name: if(rotator, do: rotator.name, else: "Unknown"),
+      rotator_type: if(rotator, do: rotator.rotator_type, else: nil),
+      policy_ids: Enum.map(secret.policies || [], & &1.id),
+      policies: Enum.map(secret.policies || [], & &1.name),
+      inserted_at: secret.inserted_at,
+      updated_at: secret.updated_at
     }
   end
 
-  defp determine_secret_status(secret) do
-    cond do
-      Map.get(secret, :status) == "rotating" -> "rotating"
-      secret.rotation_enabled -> "active"
-      true -> "inactive"
-    end
-  end
-
-  defp calculate_next_rotation(secret) do
-    if secret.rotation_enabled && secret.last_rotated_at do
-      DateTime.add(secret.last_rotated_at, secret.rotation_period_hours * 3600, :second)
-    else
-      nil
-    end
-  end
-
-  defp fetch_secret_engines do
-    # FIXME: Replace with actual SecretHub.Core.Engines.list_engines()
-    [
-      %{type: "static", name: "Static Secrets"},
-      %{type: "postgresql", name: "PostgreSQL"},
-      %{type: "redis", name: "Redis"},
-      %{type: "aws", name: "AWS"},
-      %{type: "gcp", name: "GCP"}
-    ]
+  defp fetch_rotators do
+    Secrets.list_rotators()
+    |> Enum.map(&%{id: &1.id, slug: &1.slug, name: &1.name, rotator_type: &1.rotator_type})
   end
 
   defp fetch_policies do
@@ -508,41 +546,73 @@ defmodule SecretHub.Web.SecretManagementLive do
     |> Enum.map(&%{id: &1.id, name: &1.name})
   end
 
+  defp rotator_filter_options(rotators) do
+    [{"all", "All"} | Enum.map(rotators, &{&1.id, &1.name})]
+  end
+
   defp filtered_secrets(secrets, "all", ""), do: secrets
 
-  defp filtered_secrets(secrets, engine, ""),
-    do: Enum.filter(secrets, &(&1.engine_type == engine))
+  defp filtered_secrets(secrets, rotator_id, "") do
+    Enum.filter(secrets, &(&1.rotator_id == rotator_id))
+  end
 
   defp filtered_secrets(secrets, "all", query) do
     query = String.downcase(query)
 
     Enum.filter(secrets, fn secret ->
-      String.contains?(String.downcase(secret.name), query) or
-        String.contains?(String.downcase(secret.path), query) or
+      String.contains?(String.downcase(secret.name || ""), query) or
+        String.contains?(String.downcase(secret.path || ""), query) or
         String.contains?(String.downcase(secret.description || ""), query)
     end)
   end
 
-  defp filtered_secrets(secrets, engine, query) do
+  defp filtered_secrets(secrets, rotator_id, query) do
     secrets
-    |> Enum.filter(&(&1.engine_type == engine))
+    |> Enum.filter(&(&1.rotator_id == rotator_id))
     |> filtered_secrets("all", query)
   end
 
-  defp changeset_for_secret(secret) do
-    Secret.changeset(%Secret{}, extract_secret_attrs(secret))
+  defp changeset_for_secret(secret, rotators) do
+    Secret.changeset(%Secret{}, extract_secret_attrs(secret, rotators))
   end
 
-  # Handle both display-formatted maps (with :path) and schema structs (with :secret_path)
-  defp extract_secret_attrs(secret) do
+  defp normalize_secret_form_params(secret_params, rotators) do
+    secret_params
+    |> Map.put_new("rotator_id", default_rotator_id(rotators))
+    |> Map.put_new("ttl_seconds", 0)
+    |> Map.put_new("secret_type", "static")
+    |> Map.put_new("engine_type", "static")
+  end
+
+  defp with_default_rotator(secret_params, rotators) do
+    Map.put_new(secret_params, "rotator_id", default_rotator_id(rotators))
+  end
+
+  defp selected_policy_ids(secret_params) do
+    secret_params
+    |> Map.get("policies", [])
+    |> List.wrap()
+    |> Enum.reject(&(&1 in [nil, ""]))
+  end
+
+  defp selected_rotator_id(secret_params, rotators) do
+    case Map.get(secret_params, "rotator_id") do
+      rotator_id when is_binary(rotator_id) and rotator_id != "" -> rotator_id
+      _ -> default_rotator_id(rotators)
+    end
+  end
+
+  defp extract_secret_attrs(secret, rotators) do
     %{
       name: get_field(secret, :name, ""),
       description: get_field(secret, :description, ""),
       secret_path: extract_secret_path(secret),
-      engine_type: get_field(secret, :engine_type, "static"),
-      secret_type: extract_secret_type(secret),
-      ttl_hours: get_field(secret, :ttl_hours, 24),
-      rotation_period_hours: get_field(secret, :rotation_period_hours, 168)
+      value: "",
+      rotator_id: get_field(secret, :rotator_id, default_rotator_id(rotators)),
+      ttl_seconds: get_field(secret, :ttl_seconds, 0),
+      policies: get_field(secret, :policy_ids, []),
+      engine_type: "static",
+      secret_type: :static
     }
   end
 
@@ -552,22 +622,58 @@ defmodule SecretHub.Web.SecretManagementLive do
     get_field(secret, :secret_path, nil) || get_field(secret, :path, "")
   end
 
-  defp extract_secret_type(secret) do
-    get_field(secret, :secret_type, nil) || get_field(secret, :type, :static)
+  defp default_rotator_id(rotators) do
+    rotators
+    |> Enum.find(&(&1.slug == "manual-web-ui"))
+    |> case do
+      nil -> rotators |> List.first() |> then(&(&1 && &1.id))
+      rotator -> rotator.id
+    end
   end
 
-  defp secret_type_badge_color(:static), do: "bg-primary/10 text-primary"
-  defp secret_type_badge_color(:dynamic), do: "bg-success/10 text-success"
-  defp secret_type_badge_color(_), do: "bg-surface-container text-on-surface"
+  defp ttl_seconds(%{ttl_seconds: seconds}) when is_integer(seconds), do: seconds
+  defp ttl_seconds(%{ttl_hours: hours}) when is_integer(hours), do: hours * 3600
+  defp ttl_seconds(_secret), do: 0
 
-  defp status_color("active"), do: "bg-success"
-  defp status_color("rotating"), do: "bg-warning"
-  defp status_color("error"), do: "bg-error"
-  defp status_color(_), do: "bg-surface-container-low0"
+  defp format_ttl(0), do: "Always alive"
+  defp format_ttl(seconds), do: "#{seconds}s"
+
+  defp format_rotator_type(nil), do: ""
+
+  defp format_rotator_type(type) do
+    type
+    |> to_string()
+    |> String.replace("_", " ")
+  end
 
   defp format_datetime(nil), do: "Never"
 
   defp format_datetime(datetime) do
     DateTime.to_string(datetime)
   end
+
+  defp vault_status do
+    case Process.whereis(SealState) do
+      nil -> nil
+      _pid -> SealState.status()
+    end
+  catch
+    :exit, _reason -> nil
+  end
+
+  defp vault_sealed?(%{initialized: true, sealed: true}), do: true
+  defp vault_sealed?(_status), do: false
+
+  defp vault_unavailable_socket(socket, status, action) do
+    socket
+    |> assign(:vault_status, status)
+    |> assign(:show_form, false)
+    |> put_flash(:error, vault_unavailable_message(action))
+  end
+
+  defp vault_unavailable_message(:update),
+    do: "Vault is sealed. Unseal the vault before updating secrets."
+
+  defp vault_unavailable_message(_action),
+    do: "Vault is sealed. Unseal the vault before creating secrets."
 end

@@ -146,7 +146,7 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
               <div class="flex gap-2">
                 <.link
                   navigate={"/admin/policies/new?template=#{template.name}"}
-                  class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary"
+                  class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-primary-content bg-primary hover:bg-primary"
                 >
                   Use Template
                 </.link>
@@ -253,7 +253,7 @@ defmodule SecretHub.Web.PolicyTemplatesLive do
               </button>
               <.link
                 navigate={"/admin/policies/new?template=#{@preview_template.name}"}
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary"
               >
                 Use This Template
               </.link>

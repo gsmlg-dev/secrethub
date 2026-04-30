@@ -184,7 +184,7 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
                 <button
                   phx-click="toggle_rule"
                   phx-value-id={rule.id}
-                  class="ml-4 text-sm text-secondary hover:text-indigo-900"
+                  class="ml-4 text-sm text-secondary hover:text-secondary"
                 >
                   {if rule.enabled, do: "Disable", else: "Enable"}
                 </button>
@@ -358,7 +358,7 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
       class={[
         "px-3 py-1 text-sm rounded-md",
         if(@selected?,
-          do: "bg-secondary text-on-primary",
+          do: "bg-secondary text-secondary-content",
           else: "bg-surface-container text-on-surface hover:bg-surface-container-high"
         )
       ]}

@@ -217,9 +217,9 @@ defmodule SecretHub.Web.AgentDetailsComponent do
   defp format_uptime(hours) when hours < 168, do: "#{Float.round(hours / 24, 1)} days"
   defp format_uptime(hours), do: "#{Float.round(hours / 168, 1)} weeks"
 
-  defp activity_icon_color("secret_access"), do: "bg-primary"
+  defp activity_icon_color("secret_access"), do: "bg-primary text-primary-content"
   defp activity_icon_color("policy_check"), do: "bg-success"
-  defp activity_icon_color("error"), do: "bg-error"
+  defp activity_icon_color("error"), do: "bg-error text-error-content"
   defp activity_icon_color("connection"), do: "bg-warning"
   defp activity_icon_color(_), do: "bg-surface-container-low0"
 

@@ -603,36 +603,34 @@ defmodule SecretHub.Core.PKI.CA do
          _validity_days,
          issuer_id \\ nil
        ) do
-    # Encrypt the private key before storing
-    {:ok, encrypted_key} = encrypt_private_key(key_pem)
+    with {:ok, encrypted_key} <- encrypt_private_key(key_pem),
+         {:ok, cert_der} <- pem_to_der(cert_pem, :certificate) do
+      cert = :public_key.pkix_decode_cert(cert_der, :otp)
 
-    # Parse certificate to extract details
-    {:ok, cert_der} = pem_to_der(cert_pem, :certificate)
-    cert = :public_key.pkix_decode_cert(cert_der, :otp)
+      serial_number = extract_serial_number(cert)
+      {not_before, not_after} = extract_validity(cert)
+      fingerprint = calculate_fingerprint(cert_pem)
 
-    serial_number = extract_serial_number(cert)
-    {not_before, not_after} = extract_validity(cert)
-    fingerprint = calculate_fingerprint(cert_pem)
+      # Create certificate record
+      cert_record = %Certificate{
+        serial_number: serial_number,
+        fingerprint: fingerprint,
+        certificate_pem: cert_pem,
+        private_key_encrypted: encrypted_key,
+        subject: build_subject_string(common_name, organization),
+        issuer: build_subject_string(common_name, organization),
+        common_name: common_name,
+        organization: organization,
+        valid_from: not_before,
+        valid_until: not_after,
+        cert_type: cert_type,
+        key_usage: get_key_usage(cert_type),
+        issuer_id: issuer_id,
+        entity_type: "ca"
+      }
 
-    # Create certificate record
-    cert_record = %Certificate{
-      serial_number: serial_number,
-      fingerprint: fingerprint,
-      certificate_pem: cert_pem,
-      private_key_encrypted: encrypted_key,
-      subject: build_subject_string(common_name, organization),
-      issuer: build_subject_string(common_name, organization),
-      common_name: common_name,
-      organization: organization,
-      valid_from: not_before,
-      valid_until: not_after,
-      cert_type: cert_type,
-      key_usage: get_key_usage(cert_type),
-      issuer_id: issuer_id,
-      entity_type: "ca"
-    }
-
-    Repo.insert(cert_record)
+      Repo.insert(cert_record)
+    end
   end
 
   defp store_signed_certificate(

@@ -271,7 +271,7 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
                   <button
                     phx-click="show_rollback_modal"
                     phx-value-version={version.version_number}
-                    class="ml-4 px-3 py-1 text-sm text-secondary hover:text-indigo-900 border border-indigo-600 rounded-md hover:bg-secondary/5"
+                    class="ml-4 px-3 py-1 text-sm text-secondary hover:text-secondary border border-secondary rounded-md hover:bg-secondary/5"
                   >
                     Rollback
                   </button>

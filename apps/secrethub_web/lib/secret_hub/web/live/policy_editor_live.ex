@@ -267,7 +267,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
       </div>
       <!-- Validation Errors -->
       <%= if !Enum.empty?(@validation_errors) do %>
-        <div class="mb-6 bg-error/5 border-l-4 border-red-400 p-4">
+        <div class="mb-6 bg-error/5 border-l-4 border-error p-4">
           <div class="flex">
             <div class="flex-shrink-0">
               <svg
@@ -347,7 +347,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
             <button
               type="button"
               phx-click="save_policy"
-              class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary"
+              class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary"
             >
               {if @form_mode == :create, do: "Create Policy", else: "Update Policy"}
             </button>
@@ -450,7 +450,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
             type="button"
             phx-click="add_secret_pattern"
             phx-value-pattern={get_input_value("new-pattern-input")}
-            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-primary-content bg-primary hover:bg-primary"
           >
             Add Pattern
           </button>
@@ -676,7 +676,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
             type="button"
             phx-click="bind_entity"
             phx-value-entity_id={get_select_value("entity-select")}
-            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-primary-content bg-primary hover:bg-primary"
           >
             Bind Agent
           </button>

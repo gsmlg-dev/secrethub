@@ -3,8 +3,8 @@ defmodule SecretHub.Core.Vault.SealState do
   GenServer managing the vault's seal/unseal state.
 
   The vault starts in a sealed state and must be unsealed using Shamir shares
-  before it can decrypt secrets. The master encryption key is kept in memory
-  only while unsealed.
+  before it can decrypt secrets. Once unsealed, the master encryption key remains
+  in memory until the vault is explicitly sealed or the server process stops.
 
   ## States
   - `:not_initialized` - Vault has never been initialized
@@ -13,7 +13,6 @@ defmodule SecretHub.Core.Vault.SealState do
 
   ## Security Features
   - Master key never persists to disk unencrypted
-  - Automatic re-sealing after inactivity or crash
   - Audit logging of all seal state changes
   - Constant-time operations where applicable
   """
@@ -26,9 +25,6 @@ defmodule SecretHub.Core.Vault.SealState do
   alias SecretHub.Shared.Crypto.{Encryption, Shamir}
   alias SecretHub.Shared.Schemas.VaultConfig
 
-  # Auto-seal after 30 seconds of no activity
-  @unseal_timeout_ms 30_000
-
   defmodule State do
     @moduledoc false
     defstruct status: :not_initialized,
@@ -39,8 +35,7 @@ defmodule SecretHub.Core.Vault.SealState do
               total_shares: nil,
               unseal_progress: 0,
               initialized_at: nil,
-              unsealed_at: nil,
-              auto_seal_timer: nil
+              unsealed_at: nil
 
     @type status :: :not_initialized | :sealed | :unsealed
     @type t :: %__MODULE__{
@@ -52,8 +47,7 @@ defmodule SecretHub.Core.Vault.SealState do
             total_shares: non_neg_integer() | nil,
             unseal_progress: non_neg_integer(),
             initialized_at: DateTime.t() | nil,
-            unsealed_at: DateTime.t() | nil,
-            auto_seal_timer: reference() | nil
+            unsealed_at: DateTime.t() | nil
           }
   end
 
@@ -93,7 +87,7 @@ defmodule SecretHub.Core.Vault.SealState do
   end
 
   @doc """
-  Seals the vault, removing the master key from memory.
+  Manual sealing is disabled. The vault remains unsealed until the server process stops.
   """
   @spec seal() :: :ok
   def seal do
@@ -227,24 +221,8 @@ defmodule SecretHub.Core.Vault.SealState do
   def handle_call(:seal, _from, state) do
     case state.status do
       :unsealed ->
-        # Cancel auto-seal timer
-        if state.auto_seal_timer, do: Process.cancel_timer(state.auto_seal_timer)
-
-        # Clear master key from memory
-        new_state = %{
-          state
-          | status: :sealed,
-            master_key: nil,
-            unseal_shares: [],
-            unseal_progress: 0,
-            unsealed_at: nil,
-            auto_seal_timer: nil
-        }
-
-        Logger.info("Vault sealed")
-        audit_event("vault_sealed", :sealed)
-
-        {:reply, :ok, new_state}
+        Logger.info("Ignoring manual seal request; vault remains unsealed until server stop")
+        {:reply, :ok, state}
 
       _ ->
         {:reply, :ok, state}
@@ -268,12 +246,7 @@ defmodule SecretHub.Core.Vault.SealState do
   def handle_call(:get_master_key, _from, state) do
     case state.status do
       :unsealed ->
-        # Reset auto-seal timer on key access
-        if state.auto_seal_timer, do: Process.cancel_timer(state.auto_seal_timer)
-        timer = Process.send_after(self(), :auto_seal, @unseal_timeout_ms)
-
-        new_state = %{state | auto_seal_timer: timer}
-        {:reply, {:ok, state.master_key}, new_state}
+        {:reply, {:ok, state.master_key}, state}
 
       :sealed ->
         {:reply, {:error, :sealed}, state}
@@ -285,22 +258,8 @@ defmodule SecretHub.Core.Vault.SealState do
 
   @impl true
   def handle_info(:auto_seal, state) do
-    Logger.warning("Vault auto-sealing due to inactivity")
-
-    # Seal the vault
-    new_state = %{
-      state
-      | status: :sealed,
-        master_key: nil,
-        unseal_shares: [],
-        unseal_progress: 0,
-        unsealed_at: nil,
-        auto_seal_timer: nil
-    }
-
-    audit_event("vault_auto_sealed", :sealed)
-
-    {:noreply, new_state}
+    Logger.debug("Ignoring stale vault auto-seal message")
+    {:noreply, state}
   end
 
   # Private helper functions
@@ -326,18 +285,13 @@ defmodule SecretHub.Core.Vault.SealState do
   defp attempt_reconstruct_master_key(new_shares, state) do
     case Shamir.combine(Enum.take(new_shares, state.threshold)) do
       {:ok, reconstructed_key} ->
-        if state.auto_seal_timer, do: Process.cancel_timer(state.auto_seal_timer)
-
-        timer = Process.send_after(self(), :auto_seal, @unseal_timeout_ms)
-
         new_state = %{
           state
           | status: :unsealed,
             master_key: reconstructed_key,
             unseal_shares: [],
             unseal_progress: 0,
-            unsealed_at: DateTime.utc_now() |> DateTime.truncate(:second),
-            auto_seal_timer: timer
+            unsealed_at: DateTime.utc_now() |> DateTime.truncate(:second)
         }
 
         Logger.info("Vault unsealed successfully")

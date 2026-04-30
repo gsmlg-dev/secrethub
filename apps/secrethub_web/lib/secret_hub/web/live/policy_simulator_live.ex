@@ -207,7 +207,7 @@ defmodule SecretHub.Web.PolicySimulatorLive do
             <div class="pt-4 flex gap-3">
               <button
                 type="submit"
-                class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
               >
                 <svg
                   class="-ml-1 mr-2 h-5 w-5"
@@ -249,7 +249,7 @@ defmodule SecretHub.Web.PolicySimulatorLive do
 
           <%= if @simulation_result do %>
             <!-- Final Result -->
-            <div class={"mb-6 p-4 rounded-lg border-2 #{if @simulation_result.result == :allow, do: "bg-success/5 border-green-500", else: "bg-error/5 border-red-500"}"}>
+            <div class={"mb-6 p-4 rounded-lg border-2 #{if @simulation_result.result == :allow, do: "bg-success/5 border-success", else: "bg-error/5 border-error"}"}>
               <div class="flex items-start">
                 <div class="flex-shrink-0">
                   <%= if @simulation_result.result == :allow do %>

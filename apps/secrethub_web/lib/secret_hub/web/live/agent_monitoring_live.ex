@@ -216,7 +216,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
                     <div class="flex space-x-2">
                       <%= if agent.status == :disconnected do %>
                         <button
-                          class="text-secondary hover:text-indigo-900"
+                          class="text-secondary hover:text-secondary"
                           phx-click="reconnect_agent"
                           phx-value-id={agent.id}
                         >
@@ -314,7 +314,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
 
   defp status_color(:connected), do: "bg-success"
   defp status_color(:disconnected), do: "bg-outline"
-  defp status_color(:error), do: "bg-error"
+  defp status_color(:error), do: "bg-error text-error-content"
 
   defp status_badge_color(:connected), do: "bg-success/10 text-success"
   defp status_badge_color(:disconnected), do: "bg-surface-container text-on-surface"

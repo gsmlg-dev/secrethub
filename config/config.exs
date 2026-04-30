@@ -69,14 +69,22 @@ config :bun,
   secrethub_web: [
     args:
       ~w(build assets/js/app.js --outdir=priv/static/assets/js --external /fonts/* --external /images/*),
-    cd: Path.expand("../apps/secrethub_web", __DIR__)
+    cd: Path.expand("../apps/secrethub_web", __DIR__),
+    env: %{
+      "NODE_PATH" =>
+        [Path.expand("../deps", __DIR__), System.get_env("NODE_PATH")]
+        |> Enum.reject(&is_nil/1)
+        |> Enum.join(":")
+    }
   ]
 
 # Configure Tailwind CSS v4
 # MIX_TAILWIND_PATH env var (set by devenv) overrides the downloaded binary
 config :tailwind,
-  version: "4.1.18",
-  path: System.get_env("MIX_TAILWIND_PATH"),
+  version: "4.1.7",
+  path:
+    System.get_env("MIX_TAILWIND_PATH") ||
+      Path.expand("../apps/secrethub_web/node_modules/.bin/tailwindcss", __DIR__),
   secrethub_web: [
     args: ~w(
       --input=assets/css/app.css
@@ -84,6 +92,18 @@ config :tailwind,
     ),
     cd: Path.expand("../apps/secrethub_web", __DIR__)
   ]
+
+# Redact sensitive request, channel, and LiveView event parameters in logs.
+config :phoenix, :filter_parameters, [
+  "password",
+  "secret",
+  "secret_data",
+  "value",
+  "token",
+  "api_key",
+  "apikey",
+  "key"
+]
 
 # Configures Elixir's Logger
 config :logger, :default_formatter,

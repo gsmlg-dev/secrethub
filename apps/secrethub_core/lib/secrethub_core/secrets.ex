@@ -23,7 +23,83 @@ defmodule SecretHub.Core.Secrets do
   alias SecretHub.Core.{Audit, Policies, Repo}
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
-  alias SecretHub.Shared.Schemas.{Secret, SecretVersion}
+  alias SecretHub.Shared.Schemas.{Policy, Secret, SecretRotator, SecretVersion}
+
+  @manual_rotator_slug "manual-web-ui"
+
+  @default_rotators [
+    %{
+      id: "00000000-0000-0000-0000-000000000001",
+      slug: "built-in",
+      name: "Built-in Rotator",
+      description: "SecretHub managed rotation workflow.",
+      rotator_type: :built_in
+    },
+    %{
+      id: "00000000-0000-0000-0000-000000000002",
+      slug: "agent",
+      name: "Agent Rotator",
+      description: "Rotation requested and completed by a connected SecretHub agent.",
+      rotator_type: :agent
+    },
+    %{
+      id: "00000000-0000-0000-0000-000000000003",
+      slug: "api",
+      name: "API Rotator",
+      description: "Rotation performed through the SecretHub API.",
+      rotator_type: :api
+    },
+    %{
+      id: "00000000-0000-0000-0000-000000000004",
+      slug: @manual_rotator_slug,
+      name: "Manual Web UI",
+      description: "Manual secret updates from the admin web UI.",
+      rotator_type: :manual
+    }
+  ]
+
+  @doc """
+  Ensures the built-in rotator resources exist.
+  """
+  def ensure_default_rotators do
+    Enum.each(@default_rotators, fn attrs ->
+      %SecretRotator{id: attrs.id}
+      |> SecretRotator.changeset(attrs)
+      |> Repo.insert(
+        on_conflict: {:replace, [:name, :description, :rotator_type, :enabled, :updated_at]},
+        conflict_target: :slug
+      )
+    end)
+
+    :ok
+  end
+
+  @doc """
+  Lists all enabled secret rotators.
+  """
+  def list_rotators do
+    ensure_default_rotators()
+
+    from(r in SecretRotator,
+      where: r.enabled == true,
+      order_by: [asc: r.name]
+    )
+    |> Repo.all()
+  end
+
+  def get_rotator(rotator_id), do: Repo.get(SecretRotator, rotator_id)
+
+  def get_rotator_by_slug(slug) when is_binary(slug) do
+    ensure_default_rotators()
+    Repo.get_by(SecretRotator, slug: slug)
+  end
+
+  def rotator_id_for_slug(slug) do
+    case get_rotator_by_slug(slug) do
+      nil -> {:error, :rotator_not_found}
+      rotator -> {:ok, rotator.id}
+    end
+  end
 
   @doc """
   Create a new static secret with encryption.
@@ -49,7 +125,11 @@ defmodule SecretHub.Core.Secrets do
       {:ok, %Secret{}}
   """
   def create_secret(attrs) do
+    attrs = normalize_secret_attrs(attrs, :create)
+
     with {:ok, master_key} <- SealState.get_master_key(),
+         {:ok, rotator_id} <- ensure_rotator_id(attrs, @manual_rotator_slug),
+         attrs = Map.put(attrs, "rotator_id", rotator_id),
          {:ok, encrypted_data} <- encrypt_secret_data(attrs["secret_data"] || %{}, master_key) do
       attrs = Map.put(attrs, "encrypted_data", encrypted_data)
 
@@ -110,46 +190,66 @@ defmodule SecretHub.Core.Secrets do
   def update_secret(secret_id, attrs, opts \\ []) do
     created_by = Keyword.get(opts, :created_by, "system")
     change_description = Keyword.get(opts, :change_description, "Secret updated")
+    attrs = normalize_secret_attrs(attrs, :update)
 
     case Repo.get(Secret, secret_id) do
       nil ->
         {:error, "Secret not found"}
 
       secret ->
-        encrypted_attrs = maybe_encrypt_secret_data(attrs)
+        with {:ok, rotator_id} <- update_rotator_id(secret, attrs, opts),
+             {:ok, master_key} <- SealState.get_master_key(),
+             {:ok, encrypted_attrs} <- maybe_encrypt_secret_data(attrs, master_key) do
+          encrypted_attrs = put_rotator_id(encrypted_attrs, rotator_id)
 
-        Multi.new()
-        |> Multi.run(:archive_version, fn repo, _changes ->
-          archive_current_version(repo, secret, created_by, change_description)
-        end)
-        |> Multi.update(:secret, fn %{archive_version: _version} ->
-          # Increment version and update timestamps
-          attrs_with_version =
-            encrypted_attrs
-            |> Map.put("version", secret.version + 1)
-            |> Map.put("version_count", secret.version_count + 1)
-            |> Map.put("last_version_at", DateTime.utc_now() |> DateTime.truncate(:second))
+          Multi.new()
+          |> Multi.run(:archive_version, fn repo, _changes ->
+            archive_current_version(repo, secret, created_by, change_description)
+          end)
+          |> Multi.update(:secret, fn %{archive_version: _version} ->
+            attrs_with_version =
+              encrypted_attrs
+              |> Map.put("version", secret.version + 1)
+              |> Map.put("version_count", secret.version_count + 1)
+              |> Map.put("last_version_at", DateTime.utc_now() |> DateTime.truncate(:second))
+              |> Map.put("last_rotated_at", DateTime.utc_now() |> DateTime.truncate(:second))
 
-          secret
-          |> Secret.changeset(attrs_with_version)
-        end)
-        |> Repo.transaction()
-        |> case do
-          {:ok, %{secret: updated_secret}} ->
-            Logger.info("Secret updated with version tracking",
-              secret_id: secret_id,
-              new_version: updated_secret.version
-            )
+            Secret.changeset(secret, attrs_with_version)
+          end)
+          |> Repo.transaction()
+          |> case do
+            {:ok, %{secret: updated_secret}} ->
+              Logger.info("Secret updated with version tracking",
+                secret_id: secret_id,
+                new_version: updated_secret.version,
+                rotator_id: rotator_id
+              )
 
-            {:ok, updated_secret}
+              Audit.log_event(%{
+                event_type: "secret.updated",
+                actor_type: determine_actor_type(created_by),
+                actor_id: created_by,
+                secret_id: updated_secret.id,
+                secret_version: updated_secret.version,
+                secret_type: to_string(updated_secret.secret_type),
+                access_granted: true,
+                event_data: %{
+                  secret_path: updated_secret.secret_path,
+                  rotator_id: rotator_id,
+                  change_description: change_description
+                }
+              })
 
-          {:error, _step, reason, _changes} ->
-            Logger.error("Failed to update secret",
-              secret_id: secret_id,
-              reason: inspect(reason)
-            )
+              {:ok, updated_secret}
 
-            {:error, reason}
+            {:error, _step, reason, _changes} ->
+              Logger.error("Failed to update secret",
+                secret_id: secret_id,
+                reason: inspect(reason)
+              )
+
+              {:error, reason}
+          end
         end
     end
   end
@@ -181,7 +281,7 @@ defmodule SecretHub.Core.Secrets do
   List all secrets with optional filtering.
   """
   def list_secrets(filters \\ %{}) do
-    query = from(s in Secret, preload: [:policies])
+    query = from(s in Secret, preload: [:policies, :rotator])
 
     query =
       Enum.reduce(filters, query, fn
@@ -191,9 +291,19 @@ defmodule SecretHub.Core.Secrets do
         {:engine_type, engine}, q ->
           where(q, [s], s.engine_type == ^engine)
 
+        {:rotator_id, rotator_id}, q ->
+          where(q, [s], s.rotator_id == ^rotator_id)
+
         {:search, term}, q ->
           search_term = "%#{term}%"
-          where(q, [s], ilike(s.name, ^search_term) or ilike(s.secret_path, ^search_term))
+
+          where(
+            q,
+            [s],
+            ilike(s.name, ^search_term) or
+              ilike(s.secret_path, ^search_term) or
+              ilike(s.description, ^search_term)
+          )
 
         _, q ->
           q
@@ -209,7 +319,8 @@ defmodule SecretHub.Core.Secrets do
     %{
       total: Repo.aggregate(Secret, :count, :id),
       static: Repo.aggregate(from(s in Secret, where: s.secret_type == :static), :count, :id),
-      dynamic: Repo.aggregate(from(s in Secret, where: s.secret_type == :dynamic), :count, :id)
+      dynamic: Repo.aggregate(from(s in Secret, where: s.secret_type == :dynamic), :count, :id),
+      always_alive: Repo.aggregate(from(s in Secret, where: s.ttl_seconds == 0), :count, :id)
     }
   end
 
@@ -292,7 +403,7 @@ defmodule SecretHub.Core.Secrets do
         correlation_id: Map.get(context, :correlation_id),
         event_data: %{
           secret_path: secret_path,
-          ttl_hours: secret.ttl_hours
+          ttl_seconds: secret_ttl_seconds(secret)
         }
       })
 
@@ -336,27 +447,139 @@ defmodule SecretHub.Core.Secrets do
     with {:ok, secret} <- get_secret(secret_id),
          {:ok, policy} <- Policies.get_policy(policy_id) do
       # Use Ecto's many_to_many association
+      secret = Repo.preload(secret, :policies)
+      policies = Enum.uniq_by([policy | secret.policies], & &1.id)
+
+      secret
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:policies, policies)
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Replaces all access policies assigned to a secret.
+  """
+  def set_secret_policies(secret_id, policy_ids) when is_list(policy_ids) do
+    with {:ok, secret} <- get_secret(secret_id) do
+      ids = Enum.reject(policy_ids, &blank?/1)
+
+      policies =
+        from(p in Policy, where: p.id in ^ids)
+        |> Repo.all()
+
       secret
       |> Repo.preload(:policies)
       |> Ecto.Changeset.change()
-      |> Ecto.Changeset.put_assoc(:policies, [policy | secret.policies])
+      |> Ecto.Changeset.put_assoc(:policies, policies)
       |> Repo.update()
     end
   end
 
   ## Private Functions
 
-  defp maybe_encrypt_secret_data(attrs) do
-    case attrs["secret_data"] do
-      nil ->
+  defp normalize_secret_attrs(attrs, mode) do
+    attrs
+    |> stringify_keys()
+    |> put_default("secret_type", "static")
+    |> put_default("engine_type", "static")
+    |> put_default("ttl_seconds", 0)
+    |> normalize_secret_value(mode)
+  end
+
+  defp stringify_keys(attrs) when is_map(attrs) do
+    Map.new(attrs, fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp put_default(attrs, key, default) do
+    case Map.get(attrs, key) do
+      nil -> Map.put(attrs, key, default)
+      "" -> Map.put(attrs, key, default)
+      _value -> attrs
+    end
+  end
+
+  defp normalize_secret_value(attrs, :create) do
+    cond do
+      Map.has_key?(attrs, "secret_data") ->
         attrs
 
-      secret_data ->
-        with {:ok, master_key} <- SealState.get_master_key(),
-             {:ok, encrypted} <- encrypt_secret_data(secret_data, master_key) do
-          Map.put(attrs, "encrypted_data", encrypted)
-        else
-          _ -> attrs
+      Map.has_key?(attrs, "value") ->
+        Map.put(attrs, "secret_data", %{"value" => Map.get(attrs, "value") || ""})
+
+      true ->
+        attrs
+    end
+  end
+
+  defp normalize_secret_value(attrs, :update) do
+    cond do
+      Map.has_key?(attrs, "secret_data") ->
+        attrs
+
+      not blank?(Map.get(attrs, "value")) ->
+        Map.put(attrs, "secret_data", %{"value" => Map.get(attrs, "value")})
+
+      true ->
+        Map.delete(attrs, "value")
+    end
+  end
+
+  defp ensure_rotator_id(attrs, default_slug) do
+    case Map.get(attrs, "rotator_id") do
+      rotator_id when not is_nil(rotator_id) and rotator_id != "" ->
+        {:ok, rotator_id}
+
+      _ ->
+        attrs
+        |> Map.get("rotator_slug", default_slug)
+        |> rotator_id_for_slug()
+    end
+  end
+
+  defp update_rotator_id(secret, attrs, opts) do
+    cond do
+      not blank?(Keyword.get(opts, :via_rotator_id)) ->
+        {:ok, Keyword.fetch!(opts, :via_rotator_id)}
+
+      not blank?(Keyword.get(opts, :rotator_id)) ->
+        {:ok, Keyword.fetch!(opts, :rotator_id)}
+
+      not blank?(Keyword.get(opts, :via_rotator_slug)) ->
+        rotator_id_for_slug(Keyword.fetch!(opts, :via_rotator_slug))
+
+      not blank?(Map.get(attrs, "rotator_id")) ->
+        {:ok, Map.fetch!(attrs, "rotator_id")}
+
+      not blank?(Map.get(attrs, "rotator_slug")) ->
+        rotator_id_for_slug(Map.fetch!(attrs, "rotator_slug"))
+
+      not blank?(secret.rotator_id) ->
+        {:ok, secret.rotator_id}
+
+      true ->
+        {:error, :rotator_required}
+    end
+  end
+
+  defp put_rotator_id(attrs, rotator_id) do
+    case Map.get(attrs, "rotator_id") do
+      rotator_id_in_attrs when not is_nil(rotator_id_in_attrs) and rotator_id_in_attrs != "" ->
+        attrs
+
+      _ ->
+        Map.put(attrs, "rotator_id", rotator_id)
+    end
+  end
+
+  defp maybe_encrypt_secret_data(attrs, master_key) do
+    case Map.fetch(attrs, "secret_data") do
+      :error ->
+        {:ok, attrs}
+
+      {:ok, secret_data} ->
+        with {:ok, encrypted} <- encrypt_secret_data(secret_data, master_key) do
+          {:ok, Map.put(attrs, "encrypted_data", encrypted)}
         end
     end
   end
@@ -372,6 +595,8 @@ defmodule SecretHub.Core.Secrets do
       {:error, "Encryption failed: #{inspect(e)}"}
   end
 
+  defp encrypt_secret_data(_data, _master_key), do: {:error, "Secret data must be a map"}
+
   defp decrypt_secret_data(encrypted_blob, master_key) when is_binary(encrypted_blob) do
     with {:ok, json_data} <- Encryption.decrypt_from_blob(encrypted_blob, master_key),
          {:ok, data} <- Jason.decode(json_data) do
@@ -386,7 +611,7 @@ defmodule SecretHub.Core.Secrets do
     {:ok, %{}}
   end
 
-  defp determine_actor_type(entity_id) do
+  defp determine_actor_type(entity_id) when is_binary(entity_id) do
     cond do
       String.starts_with?(entity_id, "agent-") -> "agent"
       String.starts_with?(entity_id, "app-") -> "app"
@@ -394,6 +619,17 @@ defmodule SecretHub.Core.Secrets do
       true -> "unknown"
     end
   end
+
+  defp determine_actor_type(_entity_id), do: "unknown"
+
+  defp secret_ttl_seconds(%{ttl_seconds: seconds}) when is_integer(seconds), do: seconds
+  defp secret_ttl_seconds(%{ttl_hours: hours}) when is_integer(hours), do: hours * 3600
+  defp secret_ttl_seconds(_secret), do: 0
+
+  defp blank?(nil), do: true
+  defp blank?(""), do: true
+  defp blank?(value) when is_binary(value), do: String.trim(value) == ""
+  defp blank?(_value), do: false
 
   ## Version Management Functions
 

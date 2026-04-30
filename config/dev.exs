@@ -1,14 +1,43 @@
 import Config
 
-# Configure the database (using Unix domain socket via PGHOST env var)
-config :secrethub_core, SecretHub.Core.Repo,
-  username: System.get_env("PGUSER", "secrethub"),
-  password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
-  database: System.get_env("PGDATABASE", "secrethub_dev"),
-  socket_dir: System.get_env("PGHOST"),
-  stacktrace: true,
-  show_sensitive_data_on_connection_error: true,
-  pool_size: 10
+# Configure the database.
+#
+# devenv exposes PostgreSQL over a Unix socket. Prefer PGHOST when the shell
+# exports it, fall back to $DEVENV_STATE/postgres, then TCP for non-devenv use.
+db_config =
+  cond do
+    socket_dir = System.get_env("PGHOST") ->
+      [
+        username: System.get_env("PGUSER", "secrethub"),
+        password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
+        database: System.get_env("PGDATABASE", "secrethub_dev"),
+        socket_dir: socket_dir
+      ]
+
+    devenv_state = System.get_env("DEVENV_STATE") ->
+      [
+        username: System.get_env("PGUSER", "secrethub"),
+        password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
+        database: System.get_env("PGDATABASE", "secrethub_dev"),
+        socket_dir: Path.join(devenv_state, "postgres")
+      ]
+
+    true ->
+      [
+        username: System.get_env("PGUSER", System.get_env("USER", "postgres")),
+        password: System.get_env("PGPASSWORD"),
+        database: System.get_env("PGDATABASE", "secrethub_dev"),
+        hostname: System.get_env("DATABASE_HOST", "localhost"),
+        port: String.to_integer(System.get_env("DATABASE_PORT", "5432"))
+      ]
+  end
+  |> Keyword.merge(
+    stacktrace: true,
+    show_sensitive_data_on_connection_error: true,
+    pool_size: 10
+  )
+
+config :secrethub_core, SecretHub.Core.Repo, db_config
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

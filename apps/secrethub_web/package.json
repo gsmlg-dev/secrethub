@@ -8,6 +8,7 @@
     "phoenix-colocated": "file:../../deps/phoenix_live_view",
     "phoenix_duskmoon": "file:../../deps/phoenix_duskmoon",
     "tailwindcss": "4.1.7",
+    "@tailwindcss/cli": "4.1.7",
     "@duskmoon-dev/core": "^1.11.1",
     "@duskmoon-dev/elements": "^0.7.1"
   }

@@ -79,7 +79,7 @@ defmodule SecretHub.MixProject do
 
       # Database
       "ecto.setup": ["ecto.create", "ecto.migrate", "run apps/secrethub_core/priv/repo/seeds.exs"],
-      "ecto.reset": ["ecto.drop", "ecto.setup"]
+      "ecto.reset": ["ecto.drop --force", "ecto.setup"]
     ]
   end
 

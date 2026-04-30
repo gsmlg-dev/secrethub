@@ -289,7 +289,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                     <button
                       phx-click="toggle_enabled"
                       phx-value-id={config.id}
-                      class="text-secondary hover:text-indigo-900"
+                      class="text-secondary hover:text-secondary"
                     >
                       {if config.enabled, do: "Disable", else: "Enable"}
                     </button>

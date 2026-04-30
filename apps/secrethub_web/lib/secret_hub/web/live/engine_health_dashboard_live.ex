@@ -217,7 +217,7 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
     case status do
       :healthy -> "bg-success"
       :degraded -> "bg-warning"
-      :unhealthy -> "bg-error"
+      :unhealthy -> "bg-error text-error-content"
       _ -> "bg-outline"
     end
   end

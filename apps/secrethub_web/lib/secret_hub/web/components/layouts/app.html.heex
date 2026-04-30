@@ -1,5 +1,5 @@
 <div class="min-h-screen flex flex-col">
-  <.dm_appbar title="SecretHub" title_to={~p"/"}>
+  <.dm_appbar title="SecretHub" title_to={~p"/"} class="appbar-primary" sticky>
     <:menu to={~p"/vault/init"}>Initialize</:menu>
     <:menu to={~p"/vault/unseal"}>Unseal</:menu>
     <:menu to={~p"/admin/auth/login"}>Admin Login</:menu>
@@ -8,7 +8,7 @@
     </:user_profile>
   </.dm_appbar>
 
-  <main class="flex-1">
+  <main class="flex-1 bg-surface text-on-surface">
     <.flash_group flash={@flash} />
     {@inner_content}
   </main>

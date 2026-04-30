@@ -1,6 +1,7 @@
 # Script to populate SecretHub with sample data for development
 
 alias SecretHub.Core.Repo
+alias SecretHub.Core.Secrets
 
 import SecretHub.Shared.Schemas.{Secret, Policy, Role}
 import Ecto.UUID
@@ -18,21 +19,29 @@ Repo.delete_all(SecretHub.Shared.Schemas.Policy)
 Repo.delete_all(SecretHub.Shared.Schemas.Role)
 Repo.delete_all(SecretHub.Shared.Schemas.Lease)
 
+Secrets.ensure_default_rotators()
+{:ok, manual_rotator_id} = Secrets.rotator_id_for_slug("manual-web-ui")
+
 # Create sample secrets
 secrets = [
   %{
     name: "postgres-auth-password",
     secret_path: "dev.db.postgres.auth.password",
     secret_type: :static,
+    rotator_id: manual_rotator_id,
+    ttl_seconds: 0,
     encrypted_data: "encrypted_pg_password_123",
     description: "PostgreSQL auth database password",
     rotation_enabled: true,
-    rotation_schedule: "0 2 * * 1"  # Every Sunday at 2 AM
+    # Every Sunday at 2 AM
+    rotation_schedule: "0 2 * * 1"
   },
   %{
     name: "payment-gateway-apikey",
     secret_path: "dev.api.payment-gateway.apikey",
     secret_type: :static,
+    rotator_id: manual_rotator_id,
+    ttl_seconds: 0,
     encrypted_data: "encrypted_payment_api_key_456",
     description: "Payment gateway API key",
     rotation_enabled: true,
@@ -43,20 +52,23 @@ secrets = [
     secret_path: "dev.db.redis.cache.role",
     secret_type: :dynamic,
     engine_type: "redis",
+    rotator_id: manual_rotator_id,
+    ttl_seconds: 0,
     encrypted_data: "redis_cache_role_template",
     description: "Redis cache access role",
     rotation_enabled: false
   }
 ]
 
-created_secrets = Enum.map(secrets, fn secret_attrs ->
-  {:ok, secret} =
-    %SecretHub.Shared.Schemas.Secret{}
-    |> SecretHub.Shared.Schemas.Secret.changeset(secret_attrs)
-    |> Repo.insert()
+created_secrets =
+  Enum.map(secrets, fn secret_attrs ->
+    {:ok, secret} =
+      %SecretHub.Shared.Schemas.Secret{}
+      |> SecretHub.Shared.Schemas.Secret.changeset(secret_attrs)
+      |> Repo.insert()
 
-  secret
-end)
+    secret
+  end)
 
 # Create sample roles
 roles = [
@@ -78,14 +90,15 @@ roles = [
   }
 ]
 
-created_roles = Enum.map(roles, fn role_attrs ->
-  {:ok, role} =
-    %SecretHub.Shared.Schemas.Role{}
-    |> SecretHub.Shared.Schemas.Role.changeset(role_attrs)
-    |> Repo.insert()
+created_roles =
+  Enum.map(roles, fn role_attrs ->
+    {:ok, role} =
+      %SecretHub.Shared.Schemas.Role{}
+      |> SecretHub.Shared.Schemas.Role.changeset(role_attrs)
+      |> Repo.insert()
 
-  role
-end)
+    role
+  end)
 
 # Create sample policies
 policies = [
@@ -124,14 +137,15 @@ policies = [
   }
 ]
 
-created_policies = Enum.map(policies, fn policy_attrs ->
-  {:ok, policy} =
-    %SecretHub.Shared.Schemas.Policy{}
-    |> SecretHub.Shared.Schemas.Policy.changeset(policy_attrs)
-    |> Repo.insert()
+created_policies =
+  Enum.map(policies, fn policy_attrs ->
+    {:ok, policy} =
+      %SecretHub.Shared.Schemas.Policy{}
+      |> SecretHub.Shared.Schemas.Policy.changeset(policy_attrs)
+      |> Repo.insert()
 
-  policy
-end)
+    policy
+  end)
 
 IO.puts("✅ Database seeded successfully!")
 IO.puts("📊 Created #{length(created_secrets)} secrets")

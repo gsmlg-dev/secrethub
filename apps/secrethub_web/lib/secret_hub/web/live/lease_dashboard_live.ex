@@ -154,7 +154,7 @@ defmodule SecretHub.Web.LeaseDashboardLive do
               </div>
               <div class="w-full bg-surface-container-high rounded-full h-2">
                 <div
-                  class="bg-error h-2 rounded-full"
+                  class="bg-error text-error-content h-2 rounded-full"
                   style={"width: #{renewal_bar_width(@renewal_metrics, :failed)}%"}
                 >
                 </div>
@@ -198,7 +198,7 @@ defmodule SecretHub.Web.LeaseDashboardLive do
                   </div>
                   <div class="w-full bg-surface-container-high rounded-full h-2">
                     <div
-                      class="bg-secondary h-2 rounded-full"
+                      class="bg-secondary text-secondary-content h-2 rounded-full"
                       style={"width: #{engine.percentage}%"}
                     >
                     </div>
@@ -470,15 +470,15 @@ defmodule SecretHub.Web.LeaseDashboardLive do
     end
   end
 
-  defp activity_border_class("renewal_success"), do: "border-green-500"
-  defp activity_border_class("renewal_failed"), do: "border-red-500"
+  defp activity_border_class("renewal_success"), do: "border-success"
+  defp activity_border_class("renewal_failed"), do: "border-error"
   defp activity_border_class("lease_created"), do: "border-primary"
-  defp activity_border_class("lease_revoked"), do: "border-yellow-500"
+  defp activity_border_class("lease_revoked"), do: "border-warning"
   defp activity_border_class(_), do: "border-outline-variant"
 
   defp activity_dot_class("renewal_success"), do: "bg-success"
-  defp activity_dot_class("renewal_failed"), do: "bg-error"
-  defp activity_dot_class("lease_created"), do: "bg-primary"
+  defp activity_dot_class("renewal_failed"), do: "bg-error text-error-content"
+  defp activity_dot_class("lease_created"), do: "bg-primary text-primary-content"
   defp activity_dot_class("lease_revoked"), do: "bg-warning"
   defp activity_dot_class(_), do: "bg-outline-variant"
 end

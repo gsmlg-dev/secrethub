@@ -14,6 +14,15 @@ defmodule SecretHub.Web.PKIManagementLive do
   require Logger
 
   alias SecretHub.Core.PKI.CA
+  alias SecretHub.Core.Vault.SealState
+
+  @sealed_vault_status %{
+    initialized: true,
+    sealed: true,
+    progress: 0,
+    threshold: nil,
+    total_shares: nil
+  }
 
   @impl true
   def mount(_params, _session, socket) do
@@ -281,7 +290,7 @@ defmodule SecretHub.Web.PKIManagementLive do
       <div class="mb-6 flex gap-3">
         <button
           phx-click="new_root_ca"
-          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
         >
           <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
@@ -401,7 +410,7 @@ defmodule SecretHub.Web.PKIManagementLive do
               </div>
 
               <%= if !Enum.empty?(@validation_errors) do %>
-                <div class="bg-error/5 border-l-4 border-red-400 p-4">
+                <div class="bg-error/5 border-l-4 border-error p-4">
                   <ul class="text-sm text-error list-disc list-inside">
                     <%= for error <- @validation_errors do %>
                       <li>{error}</li>
@@ -420,7 +429,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                 </button>
                 <button
                   type="submit"
-                  class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary"
+                  class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary"
                 >
                   Generate CA
                 </button>
@@ -534,7 +543,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                         phx-click="revoke_certificate"
                         phx-value-cert_id={cert.id}
                         data-confirm="Are you sure you want to revoke this certificate?"
-                        class="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5"
+                        class="inline-flex items-center px-3 py-1.5 border border-error shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5"
                       >
                         Revoke
                       </button>
@@ -679,10 +688,13 @@ defmodule SecretHub.Web.PKIManagementLive do
 
         {:noreply, socket}
 
+      {:error, "Vault is sealed"} ->
+        {:noreply, show_vault_sealed_banner(socket)}
+
       {:error, reason} ->
         socket =
           socket
-          |> assign(:validation_errors, [inspect(reason)])
+          |> assign(:validation_errors, [format_ca_error(reason)])
           |> put_flash(:error, "Failed to generate Root CA")
 
         {:noreply, socket}
@@ -725,10 +737,13 @@ defmodule SecretHub.Web.PKIManagementLive do
 
         {:noreply, socket}
 
+      {:error, "Vault is sealed"} ->
+        {:noreply, show_vault_sealed_banner(socket)}
+
       {:error, reason} ->
         socket =
           socket
-          |> assign(:validation_errors, [inspect(reason)])
+          |> assign(:validation_errors, [format_ca_error(reason)])
           |> put_flash(:error, "Failed to generate Intermediate CA")
 
         {:noreply, socket}
@@ -756,6 +771,24 @@ defmodule SecretHub.Web.PKIManagementLive do
       revoked: revoked,
       cas: cas
     }
+  end
+
+  defp show_vault_sealed_banner(socket) do
+    socket
+    |> assign(:vault_status, current_vault_status())
+    |> assign(:validation_errors, [])
+  end
+
+  defp current_vault_status do
+    case Process.whereis(SealState) do
+      nil ->
+        @sealed_vault_status
+
+      _pid ->
+        SealState.status()
+    end
+  catch
+    :exit, _reason -> @sealed_vault_status
   end
 
   defp filtered_certificates(certs, "all", ""), do: certs
@@ -786,6 +819,13 @@ defmodule SecretHub.Web.PKIManagementLive do
   defp format_cert_type(:app_client), do: "App Client"
   defp format_cert_type(:admin_client), do: "Admin Client"
   defp format_cert_type(type), do: to_string(type)
+
+  defp format_ca_error("Vault is sealed") do
+    "Vault is sealed. Unseal the vault before generating CA certificates."
+  end
+
+  defp format_ca_error(reason) when is_binary(reason), do: reason
+  defp format_ca_error(reason), do: inspect(reason)
 
   defp cert_type_badge_color(:root_ca), do: "bg-tertiary/10 text-tertiary"
   defp cert_type_badge_color(:intermediate_ca), do: "bg-secondary/10 text-secondary"

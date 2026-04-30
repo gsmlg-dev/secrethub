@@ -222,7 +222,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     <button
                       phx-click="edit_role"
                       phx-value-role={role.name}
-                      class="text-secondary hover:text-indigo-900 mr-4"
+                      class="text-secondary hover:text-secondary mr-4"
                     >
                       Edit
                     </button>
@@ -264,7 +264,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                 phx-blur="update_field"
                 phx-value-field="role_name"
                 value={@form_data.role_name}
-                class={"input input-bordered w-full #{if @validation_errors[:role_name], do: "border-red-500"}"}
+                class={"input input-bordered w-full #{if @validation_errors[:role_name], do: "border-error"}"}
                 disabled={@form_mode == :edit}
                 required
               />
@@ -287,7 +287,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     phx-blur="update_field"
                     phx-value-field="host"
                     value={@form_data.host}
-                    class={"input input-bordered w-full #{if @validation_errors[:host], do: "border-red-500"}"}
+                    class={"input input-bordered w-full #{if @validation_errors[:host], do: "border-error"}"}
                     required
                   />
                   <%= if error = @validation_errors[:host] do %>
@@ -304,7 +304,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     phx-blur="update_field"
                     phx-value-field="port"
                     value={@form_data.port}
-                    class={"input input-bordered w-full #{if @validation_errors[:port], do: "border-red-500"}"}
+                    class={"input input-bordered w-full #{if @validation_errors[:port], do: "border-error"}"}
                     required
                   />
                   <%= if error = @validation_errors[:port] do %>
@@ -321,7 +321,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     phx-blur="update_field"
                     phx-value-field="database"
                     value={@form_data.database}
-                    class={"input input-bordered w-full #{if @validation_errors[:database], do: "border-red-500"}"}
+                    class={"input input-bordered w-full #{if @validation_errors[:database], do: "border-error"}"}
                     required
                   />
                   <%= if error = @validation_errors[:database] do %>
@@ -338,7 +338,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     phx-blur="update_field"
                     phx-value-field="username"
                     value={@form_data.username}
-                    class={"input input-bordered w-full #{if @validation_errors[:username], do: "border-red-500"}"}
+                    class={"input input-bordered w-full #{if @validation_errors[:username], do: "border-error"}"}
                     required
                   />
                   <%= if error = @validation_errors[:username] do %>
@@ -355,7 +355,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     phx-blur="update_field"
                     phx-value-field="password"
                     value={@form_data.password}
-                    class={"input input-bordered w-full #{if @validation_errors[:password], do: "border-red-500"}"}
+                    class={"input input-bordered w-full #{if @validation_errors[:password], do: "border-error"}"}
                     required
                   />
                   <%= if error = @validation_errors[:password] do %>
@@ -412,7 +412,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     phx-blur="update_field"
                     phx-value-field="default_ttl"
                     value={@form_data.default_ttl}
-                    class={"input input-bordered w-full #{if @validation_errors[:default_ttl], do: "border-red-500"}"}
+                    class={"input input-bordered w-full #{if @validation_errors[:default_ttl], do: "border-error"}"}
                     required
                   />
                   <%= if error = @validation_errors[:default_ttl] do %>
@@ -429,7 +429,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                     phx-blur="update_field"
                     phx-value-field="max_ttl"
                     value={@form_data.max_ttl}
-                    class={"input input-bordered w-full #{if @validation_errors[:max_ttl], do: "border-red-500"}"}
+                    class={"input input-bordered w-full #{if @validation_errors[:max_ttl], do: "border-error"}"}
                     required
                   />
                   <%= if error = @validation_errors[:max_ttl] do %>
@@ -454,7 +454,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                   phx-blur="update_field"
                   phx-value-field="creation_statements"
                   rows="4"
-                  class={"textarea textarea-bordered w-full font-mono text-sm #{if @validation_errors[:creation_statements], do: "border-red-500"}"}
+                  class={"textarea textarea-bordered w-full font-mono text-sm #{if @validation_errors[:creation_statements], do: "border-error"}"}
                   required
                 ><%= @form_data.creation_statements %></textarea>
                 <%= if error = @validation_errors[:creation_statements] do %>
@@ -482,7 +482,7 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                   phx-blur="update_field"
                   phx-value-field="revocation_statements"
                   rows="2"
-                  class={"textarea textarea-bordered w-full font-mono text-sm #{if @validation_errors[:revocation_statements], do: "border-red-500"}"}
+                  class={"textarea textarea-bordered w-full font-mono text-sm #{if @validation_errors[:revocation_statements], do: "border-error"}"}
                   required
                 ><%= @form_data.revocation_statements %></textarea>
                 <%= if error = @validation_errors[:revocation_statements] do %>

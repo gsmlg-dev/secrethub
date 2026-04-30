@@ -53,7 +53,7 @@ defmodule SecretHub.Web.VaultInitLive do
               <div class="mt-6">
                 <a
                   href="/vault/unseal"
-                  class="block w-full bg-primary text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200 text-center"
+                  class="block w-full bg-primary text-primary-content px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200 text-center"
                 >
                   Go to Unseal Page
                 </a>
@@ -66,11 +66,13 @@ defmodule SecretHub.Web.VaultInitLive do
             <!-- Show Generated Shares -->
             <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden">
               <div class="px-6 py-4 border-b border-outline-variant bg-success">
-                <h2 class="text-xl font-semibold text-on-primary">Vault Initialized Successfully!</h2>
+                <h2 class="text-xl font-semibold text-primary-content">
+                  Vault Initialized Successfully!
+                </h2>
               </div>
 
               <div class="px-6 py-6">
-                <div class="bg-warning/5 border border-yellow-200 text-warning px-4 py-3 rounded-lg mb-6">
+                <div class="bg-warning/5 border border-warning text-warning px-4 py-3 rounded-lg mb-6">
                   <p class="font-medium">⚠️ Important: Save These Shares Securely</p>
                   <p class="text-sm mt-1">
                     These shares will only be shown once. Store them in separate secure locations.
@@ -101,14 +103,14 @@ defmodule SecretHub.Web.VaultInitLive do
                 <div class="mt-6 flex space-x-4">
                   <button
                     phx-click="download_shares"
-                    class="flex-1 bg-primary text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200"
+                    class="flex-1 bg-primary text-primary-content px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200"
                   >
                     Download Shares
                   </button>
 
                   <a
                     href="/vault/unseal"
-                    class="flex-1 bg-success text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-success transition-colors duration-200 text-center"
+                    class="flex-1 bg-success text-success-content px-6 py-3 rounded-lg font-semibold hover:bg-success transition-colors duration-200 text-center"
                   >
                     Continue to Unseal
                   </a>
@@ -161,7 +163,7 @@ defmodule SecretHub.Web.VaultInitLive do
                   </div>
 
                   <%= if @error_message do %>
-                    <div class="bg-error/5 border border-red-200 text-error px-4 py-3 rounded-lg">
+                    <div class="bg-error/5 border border-error text-error px-4 py-3 rounded-lg">
                       <p class="font-medium">Error</p>
                       <p class="text-sm">{@error_message}</p>
                     </div>
@@ -178,7 +180,7 @@ defmodule SecretHub.Web.VaultInitLive do
 
                   <button
                     type="submit"
-                    class="w-full bg-primary text-on-primary px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200"
+                    class="w-full bg-primary text-primary-content px-6 py-3 rounded-lg font-semibold hover:bg-primary transition-colors duration-200"
                   >
                     Initialize Vault
                   </button>

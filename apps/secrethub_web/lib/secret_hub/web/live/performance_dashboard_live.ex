@@ -93,7 +93,7 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         </div>
         <div class="flex space-x-4">
           <button
-            class={"px-4 py-2 rounded-lg #{if @auto_refresh, do: "bg-success text-on-primary", else: "bg-surface-container-high text-on-surface"}"}
+            class={"px-4 py-2 rounded-lg #{if @auto_refresh, do: "bg-success text-success-content", else: "bg-surface-container-high text-on-surface"}"}
             phx-click="toggle_refresh"
           >
             <%= if @auto_refresh do %>
@@ -123,9 +123,9 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
         <!-- Connected Agents -->
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
-            <div class="flex-shrink-0 bg-primary rounded-md p-3">
+            <div class="flex-shrink-0 bg-primary text-primary-content rounded-md p-3">
               <svg
-                class="w-6 h-6 text-on-primary"
+                class="w-6 h-6 text-primary-content"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -153,7 +153,7 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
           <div class="flex items-center">
             <div class="flex-shrink-0 bg-success rounded-md p-3">
               <svg
-                class="w-6 h-6 text-on-primary"
+                class="w-6 h-6 text-primary-content"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -181,7 +181,7 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
           <div class="flex items-center">
             <div class={"flex-shrink-0 rounded-md p-3 #{latency_color(@metrics.p95_latency)}"}>
               <svg
-                class="w-6 h-6 text-on-primary"
+                class="w-6 h-6 text-primary-content"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -207,9 +207,9 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
     <!-- Memory Usage -->
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
-            <div class="flex-shrink-0 bg-tertiary rounded-md p-3">
+            <div class="flex-shrink-0 bg-tertiary text-tertiary-content rounded-md p-3">
               <svg
-                class="w-6 h-6 text-on-primary"
+                class="w-6 h-6 text-primary-content"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -455,18 +455,18 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
 
   defp latency_color(latency) when latency < 100, do: "bg-success"
   defp latency_color(latency) when latency < 200, do: "bg-warning"
-  defp latency_color(_), do: "bg-error"
+  defp latency_color(_), do: "bg-error text-error-content"
 
   defp latency_indicator(latency) when latency < 100, do: "✓"
   defp latency_indicator(_), do: "✗"
 
   defp pool_color(utilization) when utilization < 70, do: "bg-success"
   defp pool_color(utilization) when utilization < 85, do: "bg-warning"
-  defp pool_color(_), do: "bg-error"
+  defp pool_color(_), do: "bg-error text-error-content"
 
-  defp status_color(:healthy), do: "border-green-400 bg-success/5"
-  defp status_color(:warning), do: "border-yellow-400 bg-warning/5"
-  defp status_color(:critical), do: "border-red-400 bg-error/5"
+  defp status_color(:healthy), do: "border-success bg-success/5"
+  defp status_color(:warning), do: "border-warning bg-warning/5"
+  defp status_color(:critical), do: "border-error bg-error/5"
 
   defp status_icon(assigns, :healthy) do
     ~H"""

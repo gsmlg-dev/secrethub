@@ -84,6 +84,25 @@ defmodule SecretHub.Core.SecretsTest do
       assert {:ok, secret} = Secrets.create_secret(attrs)
       assert secret.name == "Empty Secret"
     end
+
+    test "creates simplified secret with value, default ttl, and manual rotator" do
+      unseal_vault()
+
+      assert {:ok, manual_rotator_id} = Secrets.rotator_id_for_slug("manual-web-ui")
+
+      assert {:ok, secret} =
+               Secrets.create_secret(%{
+                 "name" => "Simple Secret",
+                 "secret_path" => "test.simple.value",
+                 "value" => "plain-value"
+               })
+
+      assert secret.ttl_seconds == 0
+      assert secret.rotator_id == manual_rotator_id
+
+      assert {:ok, %{"value" => "plain-value"}, _secret} =
+               Secrets.read_decrypted("test.simple.value")
+    end
   end
 
   describe "get_secret/1" do
@@ -193,6 +212,78 @@ defmodule SecretHub.Core.SecretsTest do
       # v1 archived; v2 is current (not archived yet)
       assert length(versions) == 1
       assert hd(versions).version_number == 1
+    end
+
+    test "metadata-only update requires and keeps an unsealed vault" do
+      unseal_vault()
+
+      {:ok, secret} =
+        Secrets.create_secret(%{
+          "name" => "Metadata Update",
+          "secret_path" => "test.metadata.update",
+          "secret_data" => %{"val" => "v1"}
+        })
+
+      assert {:ok, updated} =
+               Secrets.update_secret(secret.id, %{
+                 "name" => "Updated Metadata",
+                 "value" => ""
+               })
+
+      assert updated.name == "Updated Metadata"
+      assert SealState.sealed?() == false
+    end
+
+    test "metadata-only update is rejected when vault is sealed" do
+      unseal_vault()
+
+      {:ok, secret} =
+        Secrets.create_secret(%{
+          "name" => "Sealed Metadata Update",
+          "secret_path" => "test.sealed.metadata.update",
+          "secret_data" => %{"val" => "v1"}
+        })
+
+      pid = Process.whereis(SealState)
+      GenServer.stop(pid)
+      start_supervised!(SealState)
+
+      assert {:error, :sealed} =
+               Secrets.update_secret(secret.id, %{
+                 "name" => "Should Not Update",
+                 "value" => ""
+               })
+    end
+
+    test "updates simplified secret through a rotator" do
+      unseal_vault()
+
+      {:ok, api_rotator_id} = Secrets.rotator_id_for_slug("api")
+
+      {:ok, secret} =
+        Secrets.create_secret(%{
+          "name" => "Rotator Update",
+          "secret_path" => "test.rotator.update",
+          "value" => "old"
+        })
+
+      assert {:ok, updated} =
+               Secrets.update_secret(
+                 secret.id,
+                 %{
+                   "value" => "new",
+                   "rotator_id" => api_rotator_id,
+                   "ttl_seconds" => "3600"
+                 },
+                 via_rotator_slug: "api",
+                 created_by: "admin-test"
+               )
+
+      assert updated.rotator_id == api_rotator_id
+      assert updated.ttl_seconds == 3600
+
+      assert {:ok, %{"value" => "new"}, _secret} =
+               Secrets.read_decrypted("test.rotator.update")
     end
 
     test "returns error for non-existent secret" do

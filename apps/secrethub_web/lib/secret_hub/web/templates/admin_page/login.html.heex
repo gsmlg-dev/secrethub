@@ -1,16 +1,9 @@
-<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+<div class="min-h-screen flex items-center justify-center bg-surface text-on-surface py-12 px-4 sm:px-6 lg:px-8">
   <div class="max-w-md w-full space-y-8">
     <!-- Logo and Title -->
     <div>
       <div class="flex justify-center">
-        <svg class="w-16 h-16 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-          />
-        </svg>
+        <.dm_mdi name="shield-lock" class="w-16 h-16 text-primary" />
       </div>
       <h2 class="mt-6 text-center text-3xl font-extrabold text-on-surface">
         SecretHub Admin
@@ -24,7 +17,7 @@
     <div class="mt-8 bg-surface-container py-8 px-4 shadow-lg rounded-lg sm:px-10">
       <%= if @conn.assigns[:flash]["error"] do %>
         <div
-          class="mb-4 bg-error/5 border border-red-200 text-error px-4 py-3 rounded relative"
+          class="mb-4 bg-error-container text-on-error-container border border-error px-4 py-3 rounded relative"
           role="alert"
         >
           <span class="block sm:inline">{@conn.assigns[:flash]["error"]}</span>
@@ -33,7 +26,7 @@
 
       <%= if @conn.assigns[:flash]["info"] do %>
         <div
-          class="mb-4 bg-primary/5 border border-primary/50 text-primary px-4 py-3 rounded relative"
+          class="mb-4 bg-primary-container text-on-primary-container border border-primary px-4 py-3 rounded relative"
           role="alert"
         >
           <span class="block sm:inline">{@conn.assigns[:flash]["info"]}</span>
@@ -42,22 +35,16 @@
       
 <!-- Instructions -->
       <div class="space-y-4">
-        <div class="border-l-4 border-primary bg-primary/5 p-4">
+        <div class="border-l-4 border-primary bg-primary-container text-on-primary-container p-4">
           <div class="flex">
             <div class="flex-shrink-0">
-              <svg class="h-5 w-5 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fill-rule="evenodd"
-                  d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                  clip-rule="evenodd"
-                />
-              </svg>
+              <.dm_mdi name="information" class="h-5 w-5" />
             </div>
             <div class="ml-3">
-              <h3 class="text-sm font-medium text-primary">
+              <h3 class="text-sm font-medium">
                 How to authenticate
               </h3>
-              <div class="mt-2 text-sm text-primary">
+              <div class="mt-2 text-sm">
                 <p>
                   Your browser must present a valid client certificate to access the admin interface.
                 </p>
@@ -74,40 +61,18 @@
 
           <div class="space-y-3">
             <div class="flex items-center">
-              <svg
-                class="h-5 w-5 text-on-surface-variant mr-2"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path
-                  fill-rule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clip-rule="evenodd"
-                />
-              </svg>
+              <.dm_mdi name="check-circle" class="h-5 w-5 text-on-surface-variant mr-2" />
               <span class="text-sm text-on-surface">HTTPS Connection Established</span>
             </div>
 
             <div class="flex items-center">
               <%= if get_req_header(@conn, "x-ssl-client-cert") != [] do %>
-                <svg class="h-5 w-5 text-success mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <.dm_mdi name="check-circle" class="h-5 w-5 text-success mr-2" />
                 <span class="text-sm text-success font-medium">
                   Client Certificate Detected
                 </span>
               <% else %>
-                <svg class="h-5 w-5 text-error mr-2" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fill-rule="evenodd"
-                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <.dm_mdi name="close-circle" class="h-5 w-5 text-error mr-2" />
                 <span class="text-sm text-error font-medium">No Client Certificate</span>
               <% end %>
             </div>
@@ -116,22 +81,19 @@
         
 <!-- Development Mode Login -->
         <%= if Mix.env() == :dev do %>
-          <div class="border-l-4 border-yellow-500 bg-warning/5 p-4 mb-4">
+          <div class="border-l-4 border-warning bg-warning-container text-on-warning-container p-4 mb-4">
             <div class="flex">
               <div class="flex-shrink-0">
-                <svg class="h-5 w-5 text-warning" fill="currentColor" viewBox="0 0 20 20">
-                  <path
-                    fill-rule="evenodd"
-                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                    clip-rule="evenodd"
-                  />
-                </svg>
+                <.dm_mdi name="alert" class="h-5 w-5" />
               </div>
               <div class="ml-3">
-                <h3 class="text-sm font-medium text-warning">Development Mode</h3>
-                <div class="mt-2 text-sm text-warning">
+                <h3 class="text-sm font-medium">Development Mode</h3>
+                <div class="mt-2 text-sm">
                   <p>
-                    Use password <code class="bg-warning/10 px-1 rounded">secrethub_dev</code>
+                    Use password
+                    <code class="bg-surface-container-high text-on-surface px-1 rounded">
+                      secrethub_dev
+                    </code>
                     to login
                   </p>
                 </div>
@@ -145,20 +107,21 @@
               <label for="dev_password" class="block text-sm font-medium text-on-surface">
                 Development Password
               </label>
-              <input
+              <.input
                 type="password"
                 name="dev_password"
                 id="dev_password"
-                class="mt-1 block w-full px-3 py-2 border border-outline-variant rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                class="mt-1 w-full"
                 placeholder="Enter dev password"
               />
             </div>
-            <button
+            <.button
               type="submit"
-              class="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-on-primary bg-warning hover:bg-warning focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-warning transition-colors"
+              variant="secondary"
+              class="w-full justify-center"
             >
               Login (Dev Mode)
-            </button>
+            </.button>
           </form>
 
           <div class="relative my-4">
@@ -178,41 +141,30 @@
           <%= if get_req_header(@conn, "x-ssl-client-cert") != [] do %>
             <form action="/admin/auth/login" method="post" class="w-full">
               <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
-              <button
+              <.button
                 type="submit"
-                class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors"
+                variant="primary"
+                class="group relative w-full justify-center"
               >
                 <span class="absolute left-0 inset-y-0 flex items-center pl-3">
-                  <svg
-                    class="h-5 w-5 text-primary group-hover:text-primary"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fill-rule="evenodd"
-                      d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
-                      clip-rule="evenodd"
-                    />
-                  </svg>
+                  <.dm_mdi name="lock" class="h-5 w-5" />
                 </span>
                 Authenticate with Certificate
-              </button>
+              </.button>
             </form>
           <% else %>
-            <button
+            <.button
               disabled
-              class="w-full flex justify-center py-2 px-4 border border-outline-variant text-sm font-medium rounded-md text-on-surface-variant bg-surface-container cursor-not-allowed"
+              variant="outline"
+              class="w-full justify-center cursor-not-allowed"
             >
               Certificate Required
-            </button>
+            </.button>
           <% end %>
 
-          <a
-            href="/"
-            class="w-full flex justify-center py-2 px-4 border border-outline-variant text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors"
-          >
+          <.button navigate="/" variant="outline" class="w-full justify-center">
             Back to Home
-          </a>
+          </.button>
         </div>
         
 <!-- Help Text -->

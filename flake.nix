@@ -152,6 +152,7 @@
                   --minify
 
                 cd apps/secrethub_web
+                export NODE_PATH="$(pwd)/../../deps''${NODE_PATH:+:$NODE_PATH}"
                 $MIX_BUN_PATH build assets/js/app.js \
                   --outdir=priv/static/assets/js \
                   --external "/fonts/*" --external "/images/*" \

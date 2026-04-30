@@ -1,97 +1,98 @@
-<div class="min-h-screen bg-gradient-to-br from-primary/5 to-indigo-100">
-  <div class="container mx-auto px-4 py-16">
-    <!-- Header -->
-    <div class="text-center mb-16">
-      <h1 class="text-6xl font-bold text-on-surface mb-4">SecretHub</h1>
-      <p class="text-2xl text-on-surface-variant mb-2">Enterprise Secrets Management Platform</p>
-      <p class="text-lg text-on-surface-variant">Secure • Scalable • Simple</p>
+<div class="min-h-screen bg-surface text-on-surface">
+  <section class="bg-primary-container text-on-primary-container">
+    <div class="container mx-auto px-6 py-14">
+      <div class="max-w-4xl">
+        <h1 class="text-6xl font-bold mb-4">SecretHub</h1>
+        <p class="text-2xl mb-2">Enterprise Secrets Management Platform</p>
+        <p class="text-lg text-on-surface-variant">
+          Secure, scalable, and simple machine-to-machine secret delivery.
+        </p>
+      </div>
     </div>
-    
-<!-- Features Grid -->
-    <div class="grid md:grid-cols-3 gap-8 mb-16">
-      <div class="bg-surface-container rounded-lg shadow-lg p-6">
-        <div class="text-4xl mb-4">🔐</div>
-        <h3 class="text-xl font-semibold text-on-surface mb-2">Secure by Design</h3>
+  </section>
+
+  <div class="container mx-auto px-6 py-12">
+    <!-- Features Grid -->
+    <div class="grid md:grid-cols-3 gap-6 mb-12">
+      <.dm_card shadow="md">
+        <div class="mb-4 text-primary">
+          <.dm_mdi name="shield-lock" class="w-10 h-10" />
+        </div>
+        <:title>Secure by Design</:title>
         <p class="text-on-surface-variant">
           AES-256-GCM encryption, Shamir secret sharing, and mTLS throughout.
         </p>
-      </div>
+      </.dm_card>
 
-      <div class="bg-surface-container rounded-lg shadow-lg p-6">
-        <div class="text-4xl mb-4">🚀</div>
-        <h3 class="text-xl font-semibold text-on-surface mb-2">Agent-Based Delivery</h3>
+      <.dm_card shadow="md">
+        <div class="mb-4 text-secondary">
+          <.dm_mdi name="rocket-launch" class="w-10 h-10" />
+        </div>
+        <:title>Agent-Based Delivery</:title>
         <p class="text-on-surface-variant">
           Lightweight agents deployed alongside your applications for seamless secret access.
         </p>
-      </div>
+      </.dm_card>
 
-      <div class="bg-surface-container rounded-lg shadow-lg p-6">
-        <div class="text-4xl mb-4">📊</div>
-        <h3 class="text-xl font-semibold text-on-surface mb-2">Complete Audit Trail</h3>
+      <.dm_card shadow="md">
+        <div class="mb-4 text-tertiary">
+          <.dm_mdi name="clipboard-text-clock" class="w-10 h-10" />
+        </div>
+        <:title>Complete Audit Trail</:title>
         <p class="text-on-surface-variant">
           Hash-chained audit logs provide tamper-evident tracking of all operations.
         </p>
-      </div>
+      </.dm_card>
     </div>
     
 <!-- Quick Actions -->
-    <div class="bg-surface-container rounded-lg shadow-xl p-8 max-w-2xl mx-auto">
+    <section class="bg-surface-container-low rounded-lg p-8 max-w-2xl mx-auto">
       <h2 class="text-2xl font-bold text-on-surface mb-6 text-center">Get Started</h2>
 
       <div class="space-y-4">
-        <a
-          href="/vault/init"
-          class="block w-full bg-primary text-on-primary px-6 py-4 rounded-lg font-semibold hover:bg-primary transition-colors duration-200 text-center"
-        >
-          🔧 Initialize Vault
-        </a>
+        <.button navigate="/vault/init" variant="primary" class="w-full justify-center">
+          <.dm_mdi name="cog-outline" class="w-5 h-5" /> Initialize Vault
+        </.button>
 
-        <a
-          href="/vault/unseal"
-          class="block w-full bg-success text-on-primary px-6 py-4 rounded-lg font-semibold hover:bg-success transition-colors duration-200 text-center"
-        >
-          🔓 Unseal Vault
-        </a>
+        <.button navigate="/vault/unseal" variant="secondary" class="w-full justify-center">
+          <.dm_mdi name="lock-open-variant" class="w-5 h-5" /> Unseal Vault
+        </.button>
 
-        <a
-          href="/admin/dashboard"
-          class="block w-full bg-secondary text-on-primary px-6 py-4 rounded-lg font-semibold hover:bg-secondary transition-colors duration-200 text-center"
-        >
-          📊 Admin Dashboard
-        </a>
+        <.button navigate="/admin/dashboard" variant="outline" class="w-full justify-center">
+          <.dm_mdi name="view-dashboard" class="w-5 h-5" /> Admin Dashboard
+        </.button>
       </div>
       
 <!-- API Endpoints -->
       <div class="mt-8 pt-8 border-t border-outline-variant">
         <h3 class="text-lg font-semibold text-on-surface mb-4">API Endpoints</h3>
         <div class="space-y-2 text-sm">
-          <div class="flex items-center justify-between">
-            <code class="bg-surface-container px-3 py-1 rounded">GET /v1/sys/health</code>
+          <div class="flex items-center justify-between gap-4">
+            <code class="bg-surface-container-high text-on-surface px-3 py-1 rounded">
+              GET /v1/sys/health
+            </code>
             <span class="text-on-surface-variant">Health check</span>
           </div>
-          <div class="flex items-center justify-between">
-            <code class="bg-surface-container px-3 py-1 rounded">POST /v1/sys/init</code>
+          <div class="flex items-center justify-between gap-4">
+            <code class="bg-surface-container-high text-on-surface px-3 py-1 rounded">
+              POST /v1/sys/init
+            </code>
             <span class="text-on-surface-variant">Initialize vault</span>
           </div>
-          <div class="flex items-center justify-between">
-            <code class="bg-surface-container px-3 py-1 rounded">POST /v1/sys/unseal</code>
+          <div class="flex items-center justify-between gap-4">
+            <code class="bg-surface-container-high text-on-surface px-3 py-1 rounded">
+              POST /v1/sys/unseal
+            </code>
             <span class="text-on-surface-variant">Unseal vault</span>
           </div>
-          <div class="flex items-center justify-between">
-            <code class="bg-surface-container px-3 py-1 rounded text-xs">
+          <div class="flex items-center justify-between gap-4">
+            <code class="bg-surface-container-high text-on-surface px-3 py-1 rounded text-xs">
               POST /v1/auth/approle/role/:name
             </code>
             <span class="text-on-surface-variant">Create AppRole</span>
           </div>
         </div>
       </div>
-    </div>
-    
-<!-- Documentation Links -->
-    <div class="mt-12 text-center">
-      <p class="text-on-surface-variant mb-4">
-        For more information, check out the documentation
-      </p>
-    </div>
+    </section>
   </div>
 </div>

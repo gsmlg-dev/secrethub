@@ -98,8 +98,8 @@ defmodule SecretHub.Web.AdminDashboardLive do
         <.dm_card>
           <:title>
             <div class="flex items-center gap-3">
-              <div class="p-2 rounded-lg bg-primary/10">
-                <.dm_mdi name="shield-lock" class="w-6 h-6" color="primary" />
+              <div class="p-2 rounded-lg bg-primary/10 text-primary">
+                <.dm_mdi name="shield-lock" class="w-6 h-6" color="currentcolor" />
               </div>
               <span>Total Secrets</span>
             </div>
@@ -110,8 +110,8 @@ defmodule SecretHub.Web.AdminDashboardLive do
         <.dm_card>
           <:title>
             <div class="flex items-center gap-3">
-              <div class="p-2 rounded-lg bg-success/10">
-                <.dm_mdi name="server" class="w-6 h-6" color="success" />
+              <div class="p-2 rounded-lg bg-success/10 text-success">
+                <.dm_mdi name="server" class="w-6 h-6" color="currentcolor" />
               </div>
               <span>Active Agents</span>
             </div>
@@ -122,8 +122,8 @@ defmodule SecretHub.Web.AdminDashboardLive do
         <.dm_card>
           <:title>
             <div class="flex items-center gap-3">
-              <div class="p-2 rounded-lg bg-tertiary/10">
-                <.dm_mdi name="clock-outline" class="w-6 h-6" color="tertiary" />
+              <div class="p-2 rounded-lg bg-tertiary/10 text-tertiary">
+                <.dm_mdi name="clock-outline" class="w-6 h-6" color="currentcolor" />
               </div>
               <span>System Uptime</span>
             </div>
@@ -136,8 +136,8 @@ defmodule SecretHub.Web.AdminDashboardLive do
         <.dm_card>
           <:title>
             <div class="flex items-center gap-3">
-              <div class="p-2 rounded-lg bg-warning/10">
-                <.dm_mdi name="database" class="w-6 h-6" color="warning" />
+              <div class="p-2 rounded-lg bg-warning/10 text-warning">
+                <.dm_mdi name="database" class="w-6 h-6" color="currentcolor" />
               </div>
               <span>Storage Used</span>
             </div>
@@ -486,7 +486,7 @@ defmodule SecretHub.Web.AdminDashboardLive do
 
   defp status_color(:connected), do: "bg-success"
   defp status_color(:disconnected), do: "bg-outline"
-  defp status_color(:error), do: "bg-error"
+  defp status_color(:error), do: "bg-error text-error-content"
   defp status_color(_), do: "bg-outline"
 
   defp status_badge_dm_color(:connected), do: "success"

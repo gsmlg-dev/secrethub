@@ -286,7 +286,7 @@ defmodule SecretHub.Web.AuditLogLive do
               <div class="flex space-x-1">
                 <%= for page <- 1..@pagination.total_pages do %>
                   <button
-                    class={"px-3 py-1 text-sm rounded #{if page == @pagination.page, do: "bg-primary text-on-primary", else: "bg-surface-container text-primary border border-primary hover:bg-primary/5"}"}
+                    class={"px-3 py-1 text-sm rounded #{if page == @pagination.page, do: "bg-primary text-primary-content", else: "bg-surface-container text-primary border border-primary hover:bg-primary/5"}"}
                     phx-click="page_change"
                     phx-value-page={page}
                   >
@@ -370,7 +370,7 @@ defmodule SecretHub.Web.AuditLogLive do
                     {event.response_time_ms}ms
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button class="text-secondary hover:text-indigo-900">
+                    <button class="text-secondary hover:text-secondary">
                       View Details
                     </button>
                   </td>
@@ -509,7 +509,7 @@ defmodule SecretHub.Web.AuditLogLive do
   defp event_type_badge_color(_), do: "bg-surface-container text-on-surface"
 
   defp access_status_color(true), do: "bg-success"
-  defp access_status_color(false), do: "bg-error"
+  defp access_status_color(false), do: "bg-error text-error-content"
 
   defp build_audit_filters(ui_filters) do
     %{}

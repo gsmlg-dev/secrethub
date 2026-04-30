@@ -1,93 +1,102 @@
-<div class="min-h-screen flex">
+<div class="min-h-screen flex bg-surface text-on-surface">
   <!-- Sidebar -->
-  <.dm_left_menu size="md" active={to_string(@active_nav)}>
-    <:title>
-      <.dm_link navigate={~p"/admin/dashboard"} class="flex items-center space-x-2 p-4">
-        <.dm_mdi name="shield-lock" class="w-8 h-8" color="primary" />
-        <span class="text-xl font-bold">SecretHub</span>
-      </.dm_link>
-    </:title>
-    <:menu>
-      <.dm_left_menu_group active={to_string(@active_nav)}>
-        <:title>Overview</:title>
-        <:menu id="dashboard" to={~p"/admin/dashboard"}>
-          <.dm_mdi name="view-dashboard" class="w-5 h-5" /> Dashboard
-        </:menu>
-      </.dm_left_menu_group>
+  <aside class="bg-secondary text-secondary-content w-72 shrink-0 min-h-screen">
+    <.dm_left_menu
+      size="md"
+      active={to_string(@active_nav)}
+      class="bg-secondary text-secondary-content"
+    >
+      <:title>
+        <.dm_link
+          navigate={~p"/admin/dashboard"}
+          class="flex items-center space-x-2 p-4 text-secondary-content"
+        >
+          <.dm_mdi name="shield-lock" class="w-8 h-8" color="currentcolor" />
+          <span class="text-xl font-bold">SecretHub</span>
+        </.dm_link>
+      </:title>
+      <:menu>
+        <.dm_left_menu_group active={to_string(@active_nav)}>
+          <:title>Overview</:title>
+          <:menu id="dashboard" to={~p"/admin/dashboard"}>
+            <.dm_mdi name="view-dashboard" class="w-5 h-5" /> Dashboard
+          </:menu>
+        </.dm_left_menu_group>
 
-      <.dm_left_menu_group active={to_string(@active_nav)}>
-        <:title>Secrets</:title>
-        <:menu id="secrets" to={~p"/admin/secrets"}>
-          <.dm_mdi name="key-variant" class="w-5 h-5" /> Secrets
-        </:menu>
-        <:menu id="engines" to={~p"/admin/engines"}>
-          <.dm_mdi name="cog" class="w-5 h-5" /> Engines
-        </:menu>
-        <:menu id="rotations" to={~p"/admin/rotations"}>
-          <.dm_mdi name="refresh" class="w-5 h-5" /> Rotations
-        </:menu>
-        <:menu id="leases" to={~p"/admin/leases"}>
-          <.dm_mdi name="clock-outline" class="w-5 h-5" /> Leases
-        </:menu>
-      </.dm_left_menu_group>
+        <.dm_left_menu_group active={to_string(@active_nav)}>
+          <:title>Secrets</:title>
+          <:menu id="secrets" to={~p"/admin/secrets"}>
+            <.dm_mdi name="key-variant" class="w-5 h-5" /> Secrets
+          </:menu>
+          <:menu id="engines" to={~p"/admin/engines"}>
+            <.dm_mdi name="cog" class="w-5 h-5" /> Engines
+          </:menu>
+          <:menu id="rotations" to={~p"/admin/rotations"}>
+            <.dm_mdi name="refresh" class="w-5 h-5" /> Rotations
+          </:menu>
+          <:menu id="leases" to={~p"/admin/leases"}>
+            <.dm_mdi name="clock-outline" class="w-5 h-5" /> Leases
+          </:menu>
+        </.dm_left_menu_group>
 
-      <.dm_left_menu_group active={to_string(@active_nav)}>
-        <:title>Access Control</:title>
-        <:menu id="policies" to={~p"/admin/policies"}>
-          <.dm_mdi name="shield-check" class="w-5 h-5" /> Policies
-        </:menu>
-        <:menu id="approles" to={~p"/admin/approles"}>
-          <.dm_mdi name="account-group" class="w-5 h-5" /> AppRoles
-        </:menu>
-        <:menu id="agents" to={~p"/admin/agents"}>
-          <.dm_mdi name="server" class="w-5 h-5" /> Agents
-        </:menu>
-      </.dm_left_menu_group>
+        <.dm_left_menu_group active={to_string(@active_nav)}>
+          <:title>Access Control</:title>
+          <:menu id="policies" to={~p"/admin/policies"}>
+            <.dm_mdi name="shield-check" class="w-5 h-5" /> Policies
+          </:menu>
+          <:menu id="approles" to={~p"/admin/approles"}>
+            <.dm_mdi name="account-group" class="w-5 h-5" /> AppRoles
+          </:menu>
+          <:menu id="agents" to={~p"/admin/agents"}>
+            <.dm_mdi name="server" class="w-5 h-5" /> Agents
+          </:menu>
+        </.dm_left_menu_group>
 
-      <.dm_left_menu_group active={to_string(@active_nav)}>
-        <:title>Security</:title>
-        <:menu id="pki" to={~p"/admin/pki"}>
-          <.dm_mdi name="certificate" class="w-5 h-5" /> PKI
-        </:menu>
-        <:menu id="certificates" to={~p"/admin/certificates"}>
-          <.dm_mdi name="file-certificate" class="w-5 h-5" /> Certificates
-        </:menu>
-        <:menu id="audit" to={~p"/admin/audit"}>
-          <.dm_mdi name="eye" class="w-5 h-5" /> Audit Log
-        </:menu>
-      </.dm_left_menu_group>
+        <.dm_left_menu_group active={to_string(@active_nav)}>
+          <:title>Security</:title>
+          <:menu id="pki" to={~p"/admin/pki"}>
+            <.dm_mdi name="certificate" class="w-5 h-5" /> PKI
+          </:menu>
+          <:menu id="certificates" to={~p"/admin/certificates"}>
+            <.dm_mdi name="file-certificate" class="w-5 h-5" /> Certificates
+          </:menu>
+          <:menu id="audit" to={~p"/admin/audit"}>
+            <.dm_mdi name="eye" class="w-5 h-5" /> Audit Log
+          </:menu>
+        </.dm_left_menu_group>
 
-      <.dm_left_menu_group active={to_string(@active_nav)}>
-        <:title>Infrastructure</:title>
-        <:menu id="cluster" to={~p"/admin/cluster"}>
-          <.dm_mdi name="server-network" class="w-5 h-5" /> Cluster
-        </:menu>
-        <:menu id="templates" to={~p"/admin/templates"}>
-          <.dm_mdi name="file-document-outline" class="w-5 h-5" /> Templates
-        </:menu>
-        <:menu id="alerts" to={~p"/admin/alerts"}>
-          <.dm_mdi name="bell" class="w-5 h-5" /> Alerts
-        </:menu>
-        <:menu id="performance" to={~p"/admin/performance"}>
-          <.dm_mdi name="chart-bar" class="w-5 h-5" /> Performance
-        </:menu>
-      </.dm_left_menu_group>
+        <.dm_left_menu_group active={to_string(@active_nav)}>
+          <:title>Infrastructure</:title>
+          <:menu id="cluster" to={~p"/admin/cluster"}>
+            <.dm_mdi name="server-network" class="w-5 h-5" /> Cluster
+          </:menu>
+          <:menu id="templates" to={~p"/admin/templates"}>
+            <.dm_mdi name="file-document-outline" class="w-5 h-5" /> Templates
+          </:menu>
+          <:menu id="alerts" to={~p"/admin/alerts"}>
+            <.dm_mdi name="bell" class="w-5 h-5" /> Alerts
+          </:menu>
+          <:menu id="performance" to={~p"/admin/performance"}>
+            <.dm_mdi name="chart-bar" class="w-5 h-5" /> Performance
+          </:menu>
+        </.dm_left_menu_group>
 
-      <.dm_divider />
+        <.dm_divider />
 
-      <.dm_link
-        href={~p"/admin/logout"}
-        method="delete"
-        class="flex items-center space-x-2 px-3 py-2 opacity-70 hover:opacity-100 transition-opacity"
-      >
-        <.dm_mdi name="logout" class="w-5 h-5" />
-        <span>Logout</span>
-      </.dm_link>
-    </:menu>
-  </.dm_left_menu>
+        <.dm_link
+          href={~p"/admin/logout"}
+          method="delete"
+          class="flex items-center space-x-2 px-3 py-2 opacity-70 hover:opacity-100 transition-opacity text-secondary-content"
+        >
+          <.dm_mdi name="logout" class="w-5 h-5" />
+          <span>Logout</span>
+        </.dm_link>
+      </:menu>
+    </.dm_left_menu>
+  </aside>
   
 <!-- Main Content -->
-  <main class="flex-1 flex flex-col min-h-screen">
+  <main class="flex-1 flex flex-col min-h-screen bg-surface text-on-surface">
     <.dm_actionbar>
       <:left>
         <h1 class="text-2xl font-semibold">{@page_title || "Admin"}</h1>
@@ -97,7 +106,9 @@
       </:right>
     </.dm_actionbar>
 
-    <div class="flex-1 p-6 overflow-auto">
+    <.vault_sealed_banner vault_status={assigns[:vault_status]} />
+
+    <div class="flex-1 p-6 overflow-auto bg-surface">
       <.flash_group flash={@flash} />
       {@inner_content}
     </div>

@@ -251,7 +251,7 @@ defmodule SecretHub.Web.AgentChannel do
             path: secret.secret_path,
             data: secret_data,
             lease_id: Ecto.UUID.generate(),
-            lease_duration: secret.ttl_hours * 3600,
+            lease_duration: secret_ttl_seconds(secret),
             renewable: true
           }}, socket}
 
@@ -264,6 +264,10 @@ defmodule SecretHub.Web.AgentChannel do
   defp schedule_heartbeat_check do
     Process.send_after(self(), :check_heartbeat, @heartbeat_timeout)
   end
+
+  defp secret_ttl_seconds(%{ttl_seconds: seconds}) when is_integer(seconds), do: seconds
+  defp secret_ttl_seconds(%{ttl_hours: hours}) when is_integer(hours), do: hours * 3600
+  defp secret_ttl_seconds(_secret), do: 0
 
   def handle_info(:check_heartbeat, socket) do
     if socket.assigns.authenticated do

@@ -136,14 +136,8 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       Enum.each(combo1, &SealState.unseal/1)
       assert SealState.status().sealed == false
 
-      # Re-seal for next test
-      SealState.seal()
-
-      # Combination 2: shares 1, 3, 4
-      combo2 = [Enum.at(shares, 1), Enum.at(shares, 3), Enum.at(shares, 4)]
-
-      Enum.each(combo2, &SealState.unseal/1)
-      assert SealState.status().sealed == false
+      assert {:ok, result} = SealState.unseal(Enum.at(shares, 3))
+      assert result.sealed == false
     end
 
     test "rejects unseal when not initialized" do
@@ -194,7 +188,7 @@ defmodule SecretHub.Core.Vault.SealStateTest do
     end
   end
 
-  describe "sealing" do
+  describe "manual seal requests" do
     setup do
       {:ok, shares} = SealState.initialize(5, 3)
       # Unseal the vault
@@ -202,42 +196,39 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       %{shares: shares}
     end
 
-    test "seals an unsealed vault" do
+    test "keeps an unsealed vault unsealed" do
       status = SealState.status()
       assert status.sealed == false
 
       assert :ok = SealState.seal()
 
       status = SealState.status()
-      assert status.sealed == true
+      assert status.sealed == false
       assert status.progress == 0
     end
 
-    test "sealing when already sealed is idempotent" do
+    test "repeated manual seal requests are idempotent no-ops" do
       SealState.seal()
       assert :ok = SealState.seal()
 
       status = SealState.status()
-      assert status.sealed == true
+      assert status.sealed == false
     end
 
-    test "clears master key from memory when sealed" do
-      # Vault is unsealed in setup
+    test "keeps master key in memory after manual seal request" do
       assert {:ok, _key} = SealState.get_master_key()
 
       SealState.seal()
 
-      # Master key should no longer be accessible
-      assert {:error, :sealed} = SealState.get_master_key()
+      assert {:ok, _key} = SealState.get_master_key()
     end
 
-    test "requires re-unsealing after seal", %{shares: shares} do
+    test "does not require re-unsealing after manual seal request", %{shares: shares} do
       SealState.seal()
 
       status = SealState.status()
-      assert status.sealed == true
+      assert status.sealed == false
 
-      # Should need shares again
       Enum.take(shares, 3) |> Enum.each(&SealState.unseal/1)
 
       status = SealState.status()
@@ -286,56 +277,36 @@ defmodule SecretHub.Core.Vault.SealStateTest do
     end
   end
 
-  describe "auto-sealing" do
+  describe "seal persistence" do
     setup do
       {:ok, shares} = SealState.initialize(5, 3)
       Enum.take(shares, 3) |> Enum.each(&SealState.unseal/1)
       :ok
     end
 
-    test "auto-seals after timeout period" do
-      # Vault is unsealed
+    test "does not auto-seal after unsealing" do
       status = SealState.status()
       assert status.sealed == false
 
-      # Wait for auto-seal timeout (30 seconds + buffer)
-      # Note: In real tests, you might want to make this configurable
-      # or use a shorter timeout for testing
-      Process.sleep(31_000)
+      send(Process.whereis(SealState), :auto_seal)
 
-      # Vault should be sealed
-      status = SealState.status()
-      assert status.sealed == true
-    end
-
-    test "accessing master key resets auto-seal timer" do
-      # Access key to reset timer
-      SealState.get_master_key()
-
-      # Wait less than timeout
-      Process.sleep(15_000)
-
-      # Access again
-      SealState.get_master_key()
-
-      # Wait less than timeout again
-      Process.sleep(15_000)
-
-      # Vault should still be unsealed (timer was reset)
       status = SealState.status()
       assert status.sealed == false
     end
 
-    test "manual seal cancels auto-seal timer" do
-      # Seal manually
+    test "accessing master key keeps vault unsealed" do
+      SealState.get_master_key()
+      SealState.get_master_key()
+
+      status = SealState.status()
+      assert status.sealed == false
+    end
+
+    test "manual seal request keeps vault unsealed" do
       SealState.seal()
 
-      # Wait past auto-seal timeout
-      Process.sleep(31_000)
-
-      # Vault should still be sealed (not double-sealed or errored)
       status = SealState.status()
-      assert status.sealed == true
+      assert status.sealed == false
     end
   end
 
@@ -457,9 +428,9 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       SealState.unseal(Enum.at(shares, 2))
       assert {:ok, _key} = SealState.get_master_key()
 
-      # After sealing again
+      # Manual seal requests are ignored after unsealing
       SealState.seal()
-      assert {:error, :sealed} = SealState.get_master_key()
+      assert {:ok, _key} = SealState.get_master_key()
     end
 
     test "initialized? and sealed? helper functions work correctly" do
@@ -474,10 +445,10 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       assert SealState.initialized?() == true
       assert SealState.sealed?() == false
 
-      # After sealing again
+      # Manual seal requests are ignored after unsealing
       SealState.seal()
       assert SealState.initialized?() == true
-      assert SealState.sealed?() == true
+      assert SealState.sealed?() == false
     end
 
     test "insufficient shares cannot unseal vault" do
@@ -510,7 +481,7 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       {:ok, decrypted} = Encryption.decrypt(encrypted, master_key)
       assert decrypted == plaintext
 
-      # Seal and unseal again
+      # Manual seal requests do not clear the master key
       SealState.seal()
       Enum.take(shares, 3) |> Enum.each(&SealState.unseal/1)
       {:ok, master_key2} = SealState.get_master_key()

@@ -7,12 +7,15 @@ defmodule SecretHub.Web.AdminLayoutHook do
   import Phoenix.Component
   import Phoenix.LiveView
 
+  alias SecretHub.Core.Vault.SealState
+
   def on_mount(:default, _params, _session, socket) do
     # Set default values and attach hook for navigation updates
     socket =
       socket
       |> assign(:active_nav, :dashboard)
       |> assign(:page_title, "Dashboard")
+      |> assign(:vault_status, vault_status())
       |> attach_hook(:admin_nav, :handle_params, &update_nav/3)
 
     {:cont, socket}
@@ -27,8 +30,21 @@ defmodule SecretHub.Web.AdminLayoutHook do
       socket
       |> assign(:active_nav, active_nav)
       |> assign(:page_title, page_title_for(active_nav))
+      |> assign(:vault_status, vault_status())
 
     {:cont, socket}
+  end
+
+  defp vault_status do
+    case Process.whereis(SealState) do
+      nil ->
+        nil
+
+      _pid ->
+        SealState.status()
+    end
+  catch
+    :exit, _reason -> nil
   end
 
   # Data-driven mapping from URL path segments to nav keys

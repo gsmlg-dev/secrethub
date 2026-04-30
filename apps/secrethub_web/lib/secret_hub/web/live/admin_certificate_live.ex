@@ -121,7 +121,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
 
       <%= if @flash["info"] do %>
         <div
-          class="mt-4 bg-success/5 border border-green-200 text-success px-4 py-3 rounded"
+          class="mt-4 bg-success/5 border border-success text-success px-4 py-3 rounded"
           role="alert"
         >
           {@flash["info"]}
@@ -129,7 +129,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
       <% end %>
 
       <%= if @flash["error"] do %>
-        <div class="mt-4 bg-error/5 border border-red-200 text-error px-4 py-3 rounded" role="alert">
+        <div class="mt-4 bg-error/5 border border-error text-error px-4 py-3 rounded" role="alert">
           {@flash["error"]}
         </div>
       <% end %>
@@ -205,7 +205,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
             <div class="mt-5">
               <button
                 type="submit"
-                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                 disabled={@uploads.certificate.entries == []}
               >
                 Register Certificate
@@ -366,7 +366,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
                 <button
                   type="button"
                   phx-click="close_details"
-                  class="inline-flex justify-center w-full rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-on-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:text-sm"
+                  class="inline-flex justify-center w-full rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-primary-content hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:text-sm"
                 >
                   Close
                 </button>

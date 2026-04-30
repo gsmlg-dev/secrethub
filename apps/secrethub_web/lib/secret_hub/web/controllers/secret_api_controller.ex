@@ -138,7 +138,8 @@ defmodule SecretHub.Web.SecretApiController do
   defp update_existing_secret(conn, existing, data, agent) do
     case Secrets.update_secret(existing.id, %{"secret_data" => data},
            created_by: agent.agent_id,
-           change_description: "Updated via API"
+           change_description: "Updated via API",
+           via_rotator_slug: "api"
          ) do
       {:ok, updated} ->
         json(conn, %{version: updated.version})
@@ -165,6 +166,8 @@ defmodule SecretHub.Web.SecretApiController do
       "secret_data" => data,
       "secret_type" => "static",
       "engine_type" => "static",
+      "rotator_slug" => "api",
+      "ttl_seconds" => 0,
       "description" => "Created via API",
       "created_by" => agent && agent.id
     }

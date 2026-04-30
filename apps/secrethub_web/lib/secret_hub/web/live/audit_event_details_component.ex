@@ -175,7 +175,7 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
           
     <!-- Denial Reason (if applicable) -->
           <%= if @event.access_granted == false and @event.denial_reason do %>
-            <div class="bg-error/5 border border-red-200 rounded-lg p-4">
+            <div class="bg-error/5 border border-error rounded-lg p-4">
               <h4 class="text-sm font-medium text-error mb-2">Denial Reason</h4>
               <p class="text-sm text-error">{@event.denial_reason}</p>
             </div>
@@ -268,5 +268,5 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
   defp event_type_badge_color(_), do: "bg-surface-container text-on-surface"
 
   defp access_status_color(true), do: "bg-success"
-  defp access_status_color(false), do: "bg-error"
+  defp access_status_color(false), do: "bg-error text-error-content"
 end

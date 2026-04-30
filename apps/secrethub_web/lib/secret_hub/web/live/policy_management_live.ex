@@ -304,7 +304,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
         <div class="flex gap-3">
           <.link
             navigate="/admin/policies/new"
-            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
           >
             <svg
               class="-ml-1 mr-2 h-5 w-5"
@@ -356,7 +356,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
             <div class="px-6 py-4 space-y-6">
               <!-- Validation Errors -->
               <%= if !Enum.empty?(@validation_errors) do %>
-                <div class="bg-error/5 border-l-4 border-red-400 p-4">
+                <div class="bg-error/5 border-l-4 border-error p-4">
                   <div class="flex">
                     <div class="flex-shrink-0">
                       <svg
@@ -440,7 +440,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                     phx-click="add_secret_pattern"
                     phx-value-pattern={Phoenix.HTML.Form.input_value(assigns, :new_pattern) || ""}
                     type="button"
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-primary-content bg-primary hover:bg-primary"
                   >
                     Add
                   </button>
@@ -502,7 +502,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                     type="button"
                     phx-click="bind_entity"
                     phx-value-entity_id=""
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-on-primary bg-primary hover:bg-primary"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-primary-content bg-primary hover:bg-primary"
                   >
                     Bind
                   </button>
@@ -552,7 +552,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
               <button
                 type="button"
                 phx-click="save_policy"
-                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-on-primary bg-primary hover:bg-primary"
+                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary"
               >
                 {if @form_mode == :create, do: "Create Policy", else: "Update Policy"}
               </button>
@@ -563,7 +563,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
       
     <!-- Test Mode Panel -->
       <%= if @test_mode && @selected_policy do %>
-        <div class="bg-warning/5 border-l-4 border-yellow-400 p-4 mb-6">
+        <div class="bg-warning/5 border-l-4 border-warning p-4 mb-6">
           <div class="flex">
             <div class="flex-shrink-0">
               <svg
@@ -590,7 +590,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                     type="text"
                     name="entity_id"
                     value={@test_entity_id}
-                    class="mt-1 block w-full border border-yellow-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                    class="mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
                     placeholder="agent-001"
                   />
                 </div>
@@ -600,7 +600,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                     type="text"
                     name="secret_path"
                     value={@test_secret_path}
-                    class="mt-1 block w-full border border-yellow-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                    class="mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
                     placeholder="prod.db.postgres"
                   />
                 </div>
@@ -609,7 +609,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   <select
                     name="operation"
                     value={@test_operation}
-                    class="mt-1 block w-full border border-yellow-300 rounded-md shadow-sm py-1 px-2 text-sm"
+                    class="mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
                   >
                     <option value="read">Read</option>
                     <option value="write">Write</option>
@@ -744,7 +744,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                       phx-click="delete_policy"
                       phx-value-policy_id={policy.id}
                       data-confirm="Are you sure you want to delete this policy?"
-                      class="inline-flex items-center px-3 py-1.5 border border-red-300 shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5"
+                      class="inline-flex items-center px-3 py-1.5 border border-error shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5"
                     >
                       Delete
                     </button>

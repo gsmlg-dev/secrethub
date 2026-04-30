@@ -272,7 +272,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
         <h1 class="text-3xl font-bold">Template Management</h1>
         <button
           phx-click="new_template"
-          class="bg-primary hover:bg-primary text-on-primary px-4 py-2 rounded"
+          class="bg-primary hover:bg-primary text-primary-content px-4 py-2 rounded"
         >
           New Template
         </button>
@@ -352,7 +352,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
             <div class="flex gap-2 mt-6">
               <button
                 type="submit"
-                class="bg-primary hover:bg-primary text-on-primary px-4 py-2 rounded"
+                class="bg-primary hover:bg-primary text-primary-content px-4 py-2 rounded"
               >
                 Save Template
               </button>
@@ -455,7 +455,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
             <div class="flex gap-2 mt-6">
               <button
                 type="submit"
-                class="bg-primary hover:bg-primary text-on-primary px-4 py-2 rounded"
+                class="bg-primary hover:bg-primary text-primary-content px-4 py-2 rounded"
               >
                 Save Sink
               </button>

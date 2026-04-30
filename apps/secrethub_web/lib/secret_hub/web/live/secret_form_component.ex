@@ -7,37 +7,45 @@ defmodule SecretHub.Web.SecretFormComponent do
   require Logger
 
   alias Phoenix.HTML.Form
-  alias SecretHub.Shared.Schemas.Secret
 
   @impl true
   def update(assigns, socket) do
-    # Extract values from changeset to build form
     changeset = assigns.changeset
-    data = changeset.data
-    changes = changeset.changes
+    form_context = form_context(assigns)
 
-    form_params = %{
-      "name" => Map.get(changes, :name, data.name || ""),
-      "description" => Map.get(changes, :description, data.description || ""),
-      "secret_path" => Map.get(changes, :secret_path, data.secret_path || ""),
-      "engine_type" => Map.get(changes, :engine_type, data.engine_type || "static"),
-      "secret_type" => to_string(Map.get(changes, :secret_type, data.secret_type || :static)),
-      "ttl_hours" => Map.get(changes, :ttl_hours, data.ttl_hours || 24),
-      "rotation_period_hours" =>
-        Map.get(changes, :rotation_period_hours, data.rotation_period_hours || 168)
-    }
+    form_params =
+      if socket.assigns[:form_context] == form_context && socket.assigns[:form_params] do
+        if submitted_changeset?(changeset) do
+          form_params_from_changeset(changeset)
+        else
+          merge_form_params(form_params_from_changeset(changeset), socket.assigns.form_params)
+        end
+      else
+        form_params_from_changeset(changeset)
+      end
 
-    form = Phoenix.Component.to_form(form_params, as: :secret, errors: changeset.errors)
-    socket = socket |> assign(assigns) |> assign(:form, form)
+    form =
+      Phoenix.Component.to_form(form_params,
+        as: :secret,
+        errors: visible_errors(changeset)
+      )
+
+    socket =
+      socket
+      |> assign(assigns)
+      |> assign(:form_context, form_context)
+      |> assign(:form_params, form_params)
+      |> assign(:form, form)
+
     {:ok, socket}
   end
 
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="fixed inset-0 bg-surface-container-highest/75 bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-surface-container rounded-lg shadow-xl max-w-2xl w-full mx-4">
-        <div class="px-6 py-4 border-b border-outline-variant">
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-surface-container-highest/75 px-4 py-6">
+      <div class="max-h-full w-full max-w-3xl overflow-y-auto rounded-lg bg-surface-container shadow-xl">
+        <div class="border-b border-outline-variant px-6 py-4">
           <h3 class="text-lg font-semibold text-on-surface">
             <%= if @mode == :create do %>
               Create New Secret
@@ -47,197 +55,108 @@ defmodule SecretHub.Web.SecretFormComponent do
           </h3>
         </div>
 
-        <form phx-target={@myself} phx-submit="save" phx-change="validate" class="p-6">
+        <.dm_form
+          :let={f}
+          id="secret-form"
+          for={@form}
+          as={:secret}
+          phx-target={@myself}
+          phx-change="update_form_values"
+          phx-submit="save"
+          phx-hook="PreserveFormValues"
+          class="p-6"
+          actions_align="right"
+        >
           <div class="space-y-6">
-            <!-- Basic Information -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div class="md:col-span-2">
-                <label class="block text-sm font-medium text-on-surface mb-1">
-                  Secret Name
-                </label>
-                <input
-                  type="text"
-                  name="secret[name]"
-                  value={Form.input_value(@form, :name)}
-                  class="form-input w-full"
+            <.dm_form_section title="Basic Information">
+              <.dm_form_grid cols={2}>
+                <.dm_input
+                  field={f[:name]}
+                  label="Secret Name"
                   placeholder="e.g., Production Database"
+                  errors={field_errors(@form, :name)}
+                  field_class="md:col-span-2"
                 />
-                <%= if error = get_field_error(@form, :name) do %>
-                  <p class="mt-1 text-sm text-error">{error}</p>
-                <% end %>
-              </div>
-
-              <div class="md:col-span-2">
-                <label class="block text-sm font-medium text-on-surface mb-1">
-                  Description
-                </label>
-                <textarea
-                  name="secret[description]"
-                  rows="2"
-                  class="form-input w-full"
+                <.dm_textarea
+                  field={f[:description]}
+                  label="Description"
+                  rows={2}
                   placeholder="Brief description of what this secret provides access to"
-                ><%= Form.input_value(@form, :description) %></textarea>
-                <%= if error = get_field_error(@form, :description) do %>
-                  <p class="mt-1 text-sm text-error">{error}</p>
-                <% end %>
-              </div>
-
-              <div class="md:col-span-2">
-                <label class="block text-sm font-medium text-on-surface mb-1">
-                  Secret Path
-                </label>
-                <input
-                  type="text"
-                  name="secret[secret_path]"
-                  value={Form.input_value(@form, :secret_path)}
-                  class="form-input w-full"
-                  placeholder="e.g., prod/db/postgres"
+                  errors={field_errors(@form, :description)}
+                  class="md:col-span-2"
                 />
-                <p class="mt-1 text-xs text-on-surface-variant">
-                  Hierarchical path for secret organization (e.g., environment/service/credential)
-                </p>
-                <%= if error = get_field_error(@form, :secret_path) do %>
-                  <p class="mt-1 text-sm text-error">{error}</p>
-                <% end %>
-              </div>
-            </div>
-            
-    <!-- Engine Configuration -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label class="block text-sm font-medium text-on-surface mb-1">
-                  Secret Engine
-                </label>
-                <select
-                  name="secret[engine_type]"
-                  class="form-select w-full"
-                >
-                  <%= for engine <- @engines do %>
-                    <option
-                      value={engine.type}
-                      selected={to_string(Form.input_value(@form, :engine_type)) == engine.type}
-                    >
-                      {engine.name}
-                    </option>
-                  <% end %>
-                </select>
-                <%= if error = get_field_error(@form, :engine_type) do %>
-                  <p class="mt-1 text-sm text-error">{error}</p>
-                <% end %>
-              </div>
+                <.dm_input
+                  field={f[:secret_path]}
+                  label="Secret Path"
+                  placeholder="e.g., prod.db.postgres"
+                  helper="Use reverse domain notation such as environment.service.credential."
+                  errors={field_errors(@form, :secret_path)}
+                  field_class="md:col-span-2"
+                />
+              </.dm_form_grid>
+            </.dm_form_section>
 
-              <div>
-                <label class="block text-sm font-medium text-on-surface mb-1">
-                  Secret Type
-                </label>
-                <select
-                  name="secret[secret_type]"
-                  class="form-select w-full"
-                >
-                  <option
-                    value="static"
-                    selected={to_string(Form.input_value(@form, :secret_type)) == "static"}
-                  >
-                    Static (long-lived)
-                  </option>
-                  <option
-                    value="dynamic"
-                    selected={to_string(Form.input_value(@form, :secret_type)) == "dynamic"}
-                  >
-                    Dynamic (temporary)
-                  </option>
-                </select>
-                <%= if error = get_field_error(@form, :secret_type) do %>
-                  <p class="mt-1 text-sm text-error">{error}</p>
-                <% end %>
-              </div>
-            </div>
-            
-    <!-- Rotation Settings -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label class="block text-sm font-medium text-on-surface mb-1">
-                  TTL (hours)
-                </label>
-                <input
+            <.dm_form_section title="Secret Value">
+              <.dm_textarea
+                field={f[:value]}
+                label="Value"
+                rows={4}
+                placeholder="Paste or type the secret value"
+                helper={value_helper(@mode)}
+                errors={field_errors(@form, :value)}
+              />
+            </.dm_form_section>
+
+            <.dm_form_section title="Rotation and Lifetime">
+              <.dm_form_grid cols={2}>
+                <.dm_select
+                  field={f[:rotator_id]}
+                  label="Rotator"
+                  options={rotator_options(@rotators)}
+                  helper="The selected rotator is responsible for future value updates."
+                  errors={field_errors(@form, :rotator_id)}
+                />
+                <.dm_input
+                  field={f[:ttl_seconds]}
                   type="number"
-                  name="secret[ttl_hours]"
-                  value={Form.input_value(@form, :ttl_hours)}
-                  class="form-input w-full"
-                  min="1"
-                  placeholder="24"
+                  label="TTL (seconds)"
+                  min="0"
+                  placeholder="0"
+                  helper="0 means always alive."
+                  errors={field_errors(@form, :ttl_seconds)}
                 />
-                <p class="mt-1 text-xs text-on-surface-variant">
-                  Time to live for dynamic secrets (hours)
-                </p>
-                <%= if error = get_field_error(@form, :ttl_hours) do %>
-                  <p class="mt-1 text-sm text-error">{error}</p>
-                <% end %>
-              </div>
+              </.dm_form_grid>
+            </.dm_form_section>
 
-              <div>
-                <label class="block text-sm font-medium text-on-surface mb-1">
-                  Rotation Period (hours)
-                </label>
-                <input
-                  type="number"
-                  name="secret[rotation_period_hours]"
-                  value={Form.input_value(@form, :rotation_period_hours)}
-                  class="form-input w-full"
-                  min="1"
-                  placeholder="168"
+            <.dm_form_section title="Access Policies">
+              <%= if Enum.empty?(@policies) do %>
+                <.dm_alert variant="info" outlined>
+                  No policies are available yet.
+                </.dm_alert>
+              <% else %>
+                <.dm_input
+                  field={f[:policies]}
+                  type="checkbox_group"
+                  label="Policies"
+                  options={policy_options(@policies)}
+                  helper={policies_helper(@policies)}
                 />
-                <p class="mt-1 text-xs text-on-surface-variant">
-                  How often to rotate static secrets (hours)
-                </p>
-                <%= if error = get_field_error(@form, :rotation_period_hours) do %>
-                  <p class="mt-1 text-sm text-error">{error}</p>
-                <% end %>
-              </div>
-            </div>
-            
-    <!-- Policies -->
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">
-                Access Policies
-              </label>
-              <div class="space-y-2">
-                <%= for policy <- @policies do %>
-                  <label class="flex items-center">
-                    <input
-                      type="checkbox"
-                      name="secret[policies][]"
-                      value={policy.id}
-                      class="form-checkbox h-4 w-4 text-primary rounded"
-                    />
-                    <span class="ml-2 text-sm text-on-surface">{policy.name}</span>
-                  </label>
-                <% end %>
-              </div>
-              <p class="mt-1 text-xs text-on-surface-variant">
-                Select which policies can access this secret
-              </p>
-            </div>
-            
-    <!-- Engine-specific Configuration -->
-            <div id="engine-config" class="space-y-4">
-              {render_engine_config(assigns)}
-            </div>
+              <% end %>
+            </.dm_form_section>
           </div>
-          
-    <!-- Form Actions -->
-          <div class="px-6 py-4 border-t border-outline-variant flex justify-end space-x-4">
-            <button
+
+          <:actions>
+            <.dm_btn
               type="button"
-              class="btn-secondary"
+              variant="ghost"
               phx-click="cancel"
               phx-target={@myself}
             >
               Cancel
-            </button>
-            <button
+            </.dm_btn>
+            <.dm_btn
               type="submit"
-              class="btn-primary"
+              variant="primary"
               phx-disable-with="Saving..."
             >
               <%= if @mode == :create do %>
@@ -245,9 +164,9 @@ defmodule SecretHub.Web.SecretFormComponent do
               <% else %>
                 Update Secret
               <% end %>
-            </button>
-          </div>
-        </form>
+            </.dm_btn>
+          </:actions>
+        </.dm_form>
       </div>
     </div>
     """
@@ -255,6 +174,8 @@ defmodule SecretHub.Web.SecretFormComponent do
 
   @impl true
   def handle_event("save", %{"secret" => secret_params}, socket) do
+    secret_params = merge_form_params(socket.assigns.form_params, secret_params)
+
     case socket.assigns.mode do
       :create ->
         send(self(), {:save_secret, secret_params})
@@ -267,14 +188,15 @@ defmodule SecretHub.Web.SecretFormComponent do
   end
 
   @impl true
-  def handle_event("validate", %{"secret" => secret_params}, socket) do
-    changeset =
-      %Secret{}
-      |> Secret.changeset(secret_params)
-      |> Map.put(:action, :validate)
+  def handle_event("update_form_values", %{"secret" => secret_params}, socket) do
+    form_params = merge_form_params(socket.assigns.form_params, secret_params)
+    form = Phoenix.Component.to_form(form_params, as: :secret)
 
-    form = Phoenix.Component.to_form(secret_params, as: :secret, errors: changeset.errors)
-    socket = socket |> assign(:changeset, changeset) |> assign(:form, form)
+    socket =
+      socket
+      |> assign(:form_params, form_params)
+      |> assign(:form, form)
+
     {:noreply, socket}
   end
 
@@ -284,155 +206,86 @@ defmodule SecretHub.Web.SecretFormComponent do
     {:noreply, socket}
   end
 
-  # Helper functions for rendering engine-specific configuration
-  defp render_engine_config(assigns) do
-    engine_type = to_string(Form.input_value(assigns.form, :engine_type))
+  defp field_errors(form, field) do
+    form.errors
+    |> Keyword.get_values(field)
+    |> Enum.map(&format_error/1)
+  end
 
-    case engine_type do
-      "static" ->
-        ~H"""
-        <div class="bg-warning/5 border border-yellow-200 rounded-lg p-4">
-          <h4 class="text-sm font-medium text-warning mb-2">Static Secret Configuration</h4>
-          <p class="text-sm text-warning">
-            Static secrets store long-lived credentials that are rotated periodically.
-            After creation, you'll need to configure the actual secret values through the engine settings.
-          </p>
-        </div>
-        """
+  defp format_error({msg, opts}) do
+    Enum.reduce(opts, msg, fn {key, value}, acc ->
+      String.replace(acc, "%{#{key}}", to_string(value))
+    end)
+  end
 
-      "postgresql" ->
-        ~H"""
-        <div class="space-y-4">
-          <h4 class="text-sm font-medium text-on-surface">PostgreSQL Configuration</h4>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Database Host</label>
-              <input
-                type="text"
-                name="secret[engine_config][host]"
-                class="form-input w-full"
-                placeholder="localhost"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Database Port</label>
-              <input
-                type="number"
-                name="secret[engine_config][port]"
-                class="form-input w-full"
-                placeholder="5432"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Database Name</label>
-              <input
-                type="text"
-                name="secret[engine_config][database]"
-                class="form-input w-full"
-                placeholder="myapp"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Username</label>
-              <input
-                type="text"
-                name="secret[engine_config][username]"
-                class="form-input w-full"
-                placeholder="myuser"
-              />
-            </div>
-          </div>
-        </div>
-        """
+  defp format_error(msg), do: to_string(msg)
 
-      "redis" ->
-        ~H"""
-        <div class="space-y-4">
-          <h4 class="text-sm font-medium text-on-surface">Redis Configuration</h4>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Redis Host</label>
-              <input
-                type="text"
-                name="secret[engine_config][host]"
-                class="form-input w-full"
-                placeholder="localhost"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Redis Port</label>
-              <input
-                type="number"
-                name="secret[engine_config][port]"
-                class="form-input w-full"
-                placeholder="6379"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Database</label>
-              <input
-                type="number"
-                name="secret[engine_config][database]"
-                class="form-input w-full"
-                placeholder="0"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Password</label>
-              <input
-                type="password"
-                name="secret[engine_config][password]"
-                class="form-input w-full"
-                placeholder="optional"
-              />
-            </div>
-          </div>
-        </div>
-        """
+  defp submitted_changeset?(%{action: action}), do: action in [:insert, :update]
 
-      "aws" ->
-        ~H"""
-        <div class="space-y-4">
-          <h4 class="text-sm font-medium text-on-surface">AWS Configuration</h4>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">AWS Region</label>
-              <select name="secret[engine_config][region]" class="form-select w-full">
-                <option value="us-east-1">US East (N. Virginia)</option>
-                <option value="us-west-2">US West (Oregon)</option>
-                <option value="eu-west-1">EU West (Ireland)</option>
-                <option value="ap-southeast-1">AP Southeast (Singapore)</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Service Type</label>
-              <select name="secret[engine_config][service]" class="form-select w-full">
-                <option value="iam">IAM Users</option>
-                <option value="s3">S3 Access</option>
-                <option value="ec2">EC2 Instances</option>
-                <option value="rds">RDS Database</option>
-              </select>
-            </div>
-          </div>
-        </div>
-        """
+  defp visible_errors(%{action: nil}), do: []
+  defp visible_errors(changeset), do: changeset.errors
 
-      _ ->
-        ~H"""
-        <div class="bg-surface-container-low border border-outline-variant rounded-lg p-4">
-          <p class="text-sm text-on-surface-variant">
-            No specific configuration needed for this engine type.
-          </p>
-        </div>
-        """
+  defp form_context(assigns) do
+    {assigns.mode, selected_secret_id(assigns[:secret])}
+  end
+
+  defp selected_secret_id(%{id: id}), do: id
+  defp selected_secret_id(_secret), do: nil
+
+  defp form_params_from_changeset(changeset) do
+    data = changeset.data
+    changes = changeset.changes
+
+    %{
+      "name" => Map.get(changes, :name, data.name || ""),
+      "description" => Map.get(changes, :description, data.description || ""),
+      "secret_path" => Map.get(changes, :secret_path, data.secret_path || ""),
+      "value" => Map.get(changes, :value, ""),
+      "rotator_id" => Map.get(changes, :rotator_id, data.rotator_id || ""),
+      "ttl_seconds" => Map.get(changes, :ttl_seconds, data.ttl_seconds || 0),
+      "policies" => selected_policy_ids(data)
+    }
+  end
+
+  defp merge_form_params(current_params, incoming_params) do
+    Map.merge(current_params || %{}, incoming_params || %{}, fn
+      "engine_config", current_config, incoming_config
+      when is_map(current_config) and is_map(incoming_config) ->
+        Map.merge(current_config, incoming_config)
+
+      _key, _current_value, incoming_value ->
+        incoming_value
+    end)
+  end
+
+  defp rotator_options(rotators) do
+    Enum.map(rotators, &{&1.id, rotator_label(&1)})
+  end
+
+  defp rotator_label(%{name: name, rotator_type: type}) when not is_nil(type) do
+    "#{name} (#{type |> to_string() |> String.replace("_", " ")})"
+  end
+
+  defp rotator_label(%{name: name}), do: name
+
+  defp policy_options(policies), do: Enum.map(policies, &{&1.name, &1.id})
+
+  defp selected_policy_ids(%Phoenix.HTML.Form{} = form) do
+    case Form.input_value(form, :policies) do
+      policy_ids when is_list(policy_ids) -> policy_ids
+      _ -> []
     end
   end
 
-  # Helper function to get field error from form
-  defp get_field_error(form, field) do
-    case form.errors[field] do
-      {msg, _opts} -> msg
-      _ -> nil
-    end
+  defp selected_policy_ids(%{policies: policies}) when is_list(policies) do
+    Enum.map(policies, & &1.id)
   end
+
+  defp selected_policy_ids(_), do: []
+
+  defp policies_helper([]), do: "No policies are available yet."
+  defp policies_helper(_policies), do: "Select policies that can access this secret."
+
+  defp value_helper(:edit), do: "Leave blank to keep the current encrypted value."
+  defp value_helper(_mode), do: "This value is encrypted before storage."
 end

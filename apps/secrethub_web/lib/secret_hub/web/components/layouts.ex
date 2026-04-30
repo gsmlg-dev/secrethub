@@ -52,4 +52,42 @@ defmodule SecretHub.Web.Layouts do
     </div>
     """
   end
+
+  @doc """
+  Shows a persistent admin warning when the vault is sealed.
+  """
+  attr :vault_status, :map, default: nil
+
+  def vault_sealed_banner(assigns) do
+    ~H"""
+    <div
+      :if={vault_sealed?(@vault_status)}
+      id="vault-sealed-banner"
+      class="border-b border-error/30 bg-error/10 px-6 py-3 text-error"
+      role="alert"
+      aria-live="polite"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <.dm_mdi name="lock-alert" class="h-5 w-5 flex-none" color="currentcolor" />
+          <div>
+            <p class="font-semibold leading-5">Vault sealed</p>
+            <p class="text-sm text-error/90">
+              Secret and PKI operations are unavailable until the vault is unsealed.
+            </p>
+          </div>
+        </div>
+        <.dm_link
+          href={~p"/vault/unseal"}
+          class="inline-flex items-center gap-1 rounded-md border border-error/40 px-3 py-1.5 text-sm font-medium text-error hover:bg-error/10"
+        >
+          Unseal vault <.dm_mdi name="arrow-right" class="h-4 w-4" color="currentcolor" />
+        </.dm_link>
+      </div>
+    </div>
+    """
+  end
+
+  defp vault_sealed?(%{initialized: true, sealed: true}), do: true
+  defp vault_sealed?(_vault_status), do: false
 end

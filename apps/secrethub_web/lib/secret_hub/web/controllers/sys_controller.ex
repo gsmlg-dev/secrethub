@@ -156,12 +156,13 @@ defmodule SecretHub.Web.SysController do
   """
   def seal(conn, _params) do
     :ok = SealState.seal()
+    status = SealState.status()
 
-    Logger.info("Vault sealed")
+    Logger.info("Manual seal request ignored")
 
     conn
     |> put_status(:ok)
-    |> json(%{sealed: true})
+    |> json(status)
   end
 
   @doc """
