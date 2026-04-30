@@ -229,6 +229,15 @@ defmodule SecretHub.Core.PKI.CATest do
                )
     end
 
+    test "rejects missing root CA without raising" do
+      assert {:error, "Root CA certificate is required"} =
+               CA.generate_intermediate_ca(
+                 "Test Intermediate CA",
+                 "SecretHub Test Inc",
+                 nil
+               )
+    end
+
     test "rejects non-CA certificate as root" do
       # Create a client certificate
       {:ok, _root} = CA.generate_root_ca("Root", "Org")

@@ -16,6 +16,8 @@ defmodule SecretHub.Web.PKIManagementLive do
   alias SecretHub.Core.PKI.CA
   alias SecretHub.Core.Vault.SealState
 
+  @remove_confirmation_text "I know remove certificate will break everything, I'm sure I want remove it"
+
   @sealed_vault_status %{
     initialized: true,
     sealed: true,
@@ -34,6 +36,8 @@ defmodule SecretHub.Web.PKIManagementLive do
       |> assign(:certificates, certificates)
       |> assign(:stats, stats)
       |> assign(:selected_cert, nil)
+      |> assign(:remove_cert, nil)
+      |> assign(:remove_confirmation_text, @remove_confirmation_text)
       |> assign(:show_ca_form, false)
       |> assign(:ca_form_type, :root)
       |> assign(:ca_form_data, %{
@@ -72,6 +76,15 @@ defmodule SecretHub.Web.PKIManagementLive do
 
   @impl true
   def handle_event("new_intermediate_ca", _params, socket) do
+    parent_ca_id =
+      socket.assigns.certificates
+      |> active_parent_cas()
+      |> List.first()
+      |> then(fn
+        nil -> ""
+        cert -> cert.id
+      end)
+
     socket =
       socket
       |> assign(:show_ca_form, true)
@@ -80,6 +93,7 @@ defmodule SecretHub.Web.PKIManagementLive do
         "common_name" => "SecretHub Intermediate CA",
         "organization" => "SecretHub",
         "country" => "US",
+        "parent_ca_id" => parent_ca_id,
         "key_type" => "rsa",
         "key_bits" => "2048",
         "ttl_days" => "1825"
@@ -124,6 +138,52 @@ defmodule SecretHub.Web.PKIManagementLive do
   @impl true
   def handle_event("close_certificate_details", _params, socket) do
     {:noreply, assign(socket, :selected_cert, nil)}
+  end
+
+  @impl true
+  def handle_event("request_remove_certificate", %{"cert_id" => cert_id}, socket) do
+    case CA.get_certificate(cert_id) do
+      {:ok, certificate} ->
+        socket =
+          socket
+          |> assign(:remove_cert, certificate)
+          |> assign(:validation_errors, [])
+
+        {:noreply, socket}
+
+      {:error, _reason} ->
+        socket = put_flash(socket, :error, "Failed to load certificate")
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_remove_certificate", _params, socket) do
+    socket =
+      socket
+      |> assign(:remove_cert, nil)
+      |> assign(:validation_errors, [])
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event(
+        "remove_certificate",
+        %{"remove" => %{"confirmation" => @remove_confirmation_text}},
+        socket
+      ) do
+    remove_certificate(socket, socket.assigns.remove_cert)
+  end
+
+  @impl true
+  def handle_event("remove_certificate", _params, socket) do
+    socket =
+      socket
+      |> assign(:validation_errors, ["Confirmation text does not match"])
+      |> put_flash(:error, "Failed to remove certificate")
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -330,6 +390,29 @@ defmodule SecretHub.Web.PKIManagementLive do
             </div>
 
             <form phx-submit="generate_ca" class="px-6 py-4 space-y-4">
+              <%= if @ca_form_type == :intermediate do %>
+                <div>
+                  <label class="block text-sm font-medium text-on-surface">Parent CA</label>
+                  <select
+                    name="ca[parent_ca_id]"
+                    required
+                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                  >
+                    <option value="" selected={@ca_form_data["parent_ca_id"] in [nil, ""]}>
+                      Select parent CA
+                    </option>
+                    <%= for cert <- active_parent_cas(@certificates) do %>
+                      <option
+                        value={cert.id}
+                        selected={@ca_form_data["parent_ca_id"] == cert.id}
+                      >
+                        {cert.common_name} ({format_cert_type(cert.cert_type)})
+                      </option>
+                    <% end %>
+                  </select>
+                </div>
+              <% end %>
+
               <div>
                 <label class="block text-sm font-medium text-on-surface">Common Name</label>
                 <input
@@ -524,7 +607,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                             </span>
                           <% end %>
                           <span class="text-xs text-on-surface-variant">
-                            Expires: {format_expiry(cert.not_after)}
+                            Expires: {format_expiry(cert.valid_until)}
                           </span>
                         </div>
                       </div>
@@ -548,6 +631,13 @@ defmodule SecretHub.Web.PKIManagementLive do
                         Revoke
                       </button>
                     <% end %>
+                    <button
+                      phx-click="request_remove_certificate"
+                      phx-value-cert_id={cert.id}
+                      class="inline-flex items-center px-3 py-1.5 border border-error shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5"
+                    >
+                      Remove
+                    </button>
                   </div>
                 </div>
               </li>
@@ -605,7 +695,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                     Fingerprint (SHA-256)
                   </label>
                   <p class="mt-1 text-sm font-mono text-on-surface break-all">
-                    {@selected_cert.fingerprint_sha256}
+                    {@selected_cert.fingerprint}
                   </p>
                 </div>
               </div>
@@ -614,13 +704,13 @@ defmodule SecretHub.Web.PKIManagementLive do
                 <div>
                   <label class="block text-sm font-medium text-on-surface-variant">Valid From</label>
                   <p class="mt-1 text-sm text-on-surface">
-                    {DateTime.to_string(@selected_cert.not_before)}
+                    {DateTime.to_string(@selected_cert.valid_from)}
                   </p>
                 </div>
                 <div>
                   <label class="block text-sm font-medium text-on-surface-variant">Valid Until</label>
                   <p class="mt-1 text-sm text-on-surface">
-                    {DateTime.to_string(@selected_cert.not_after)}
+                    {DateTime.to_string(@selected_cert.valid_until)}
                   </p>
                 </div>
               </div>
@@ -640,6 +730,49 @@ defmodule SecretHub.Web.PKIManagementLive do
                 </p>
               </div>
 
+              <div class="grid grid-cols-1 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-on-surface-variant">Issuer:</label>
+                  <p class="mt-1 text-sm font-mono text-on-surface break-all">
+                    {@selected_cert.issuer}
+                  </p>
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-on-surface-variant">Subject:</label>
+                  <p class="mt-1 text-sm font-mono text-on-surface break-all">
+                    {@selected_cert.subject}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium text-on-surface-variant mb-2">
+                  X509v3 extensions:
+                </label>
+                <div class="bg-surface-container-low p-4 rounded-md border border-outline-variant">
+                  <%= case x509_extensions(@selected_cert) do %>
+                    <% [] -> %>
+                      <p class="text-sm text-on-surface-variant">No X509v3 extensions found.</p>
+                    <% extensions -> %>
+                      <dl class="space-y-3">
+                        <%= for extension <- extensions do %>
+                          <div>
+                            <dt class="text-xs font-semibold text-on-surface">
+                              {extension.name}
+                              <%= if extension.critical do %>
+                                <span class="ml-2 text-error">critical</span>
+                              <% end %>
+                            </dt>
+                            <dd class="mt-1 text-xs font-mono text-on-surface-variant break-all">
+                              {extension.value}
+                            </dd>
+                          </div>
+                        <% end %>
+                      </dl>
+                  <% end %>
+                </div>
+              </div>
+
               <div>
                 <label class="block text-sm font-medium text-on-surface-variant mb-2">
                   Certificate PEM
@@ -650,11 +783,99 @@ defmodule SecretHub.Web.PKIManagementLive do
           </div>
         </div>
       <% end %>
+      <!-- Remove Certificate Confirmation Modal -->
+      <%= if @remove_cert do %>
+        <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 z-50 flex items-center justify-center p-4">
+          <div class="bg-surface-container rounded-lg shadow-xl max-w-2xl w-full">
+            <div class="px-6 py-4 border-b border-outline-variant">
+              <h3 class="text-lg font-medium text-error">Remove Certificate</h3>
+            </div>
+
+            <form phx-submit="remove_certificate" class="px-6 py-4 space-y-4">
+              <p class="text-sm text-on-surface">
+                Removing {@remove_cert.common_name} permanently deletes the certificate record and may break certificate chains, mTLS authentication, and dependent services.
+              </p>
+              <p class="text-sm text-on-surface-variant">
+                Type this exact text to continue:
+              </p>
+              <pre class="bg-surface-container-low p-3 rounded-md text-xs font-mono border border-outline-variant whitespace-pre-wrap">{@remove_confirmation_text}</pre>
+              <input
+                type="text"
+                name="remove[confirmation]"
+                autocomplete="off"
+                class="block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-error focus:border-error sm:text-sm"
+              />
+
+              <%= if !Enum.empty?(@validation_errors) do %>
+                <div class="bg-error/5 border-l-4 border-error p-4">
+                  <ul class="text-sm text-error list-disc list-inside">
+                    <%= for error <- @validation_errors do %>
+                      <li>{error}</li>
+                    <% end %>
+                  </ul>
+                </div>
+              <% end %>
+
+              <div class="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  phx-click="cancel_remove_certificate"
+                  class="inline-flex items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="inline-flex items-center px-4 py-2 border border-error text-sm font-medium rounded-md shadow-sm text-error bg-surface-container hover:bg-error/5"
+                >
+                  Remove Certificate
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end
 
   # Private functions
+
+  defp remove_certificate(socket, nil) do
+    socket =
+      socket
+      |> assign(:remove_cert, nil)
+      |> put_flash(:error, "Failed to remove certificate")
+
+    {:noreply, socket}
+  end
+
+  defp remove_certificate(socket, certificate) do
+    case CA.delete_certificate(certificate.id) do
+      {:ok, _certificate} ->
+        certificates = list_certificates()
+        stats = get_pki_stats(certificates)
+
+        socket =
+          socket
+          |> assign(:certificates, certificates)
+          |> assign(:stats, stats)
+          |> assign(:selected_cert, nil)
+          |> assign(:remove_cert, nil)
+          |> assign(:validation_errors, [])
+          |> put_flash(:info, "Certificate removed successfully")
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        socket =
+          socket
+          |> assign(:validation_errors, ["Failed to remove certificate: #{inspect(reason)}"])
+          |> put_flash(:error, "Failed to remove certificate")
+
+        {:noreply, socket}
+    end
+  end
 
   defp generate_root_ca(socket, ca_params) do
     ttl_days = String.to_integer(ca_params["ttl_days"])
@@ -712,17 +933,38 @@ defmodule SecretHub.Web.PKIManagementLive do
         _ -> :rsa
       end
 
-    # TODO: Get root CA certificate ID from database
-    root_ca_cert_id = nil
+    case ca_params["parent_ca_id"] do
+      parent_ca_id when parent_ca_id in [nil, ""] ->
+        socket =
+          socket
+          |> assign(:validation_errors, [
+            "Select a Parent CA before generating an Intermediate CA"
+          ])
+          |> put_flash(:error, "Failed to generate Intermediate CA")
 
+        {:noreply, socket}
+
+      parent_ca_id ->
+        do_generate_intermediate_ca(socket, ca_params, parent_ca_id, key_type, key_bits, ttl_days)
+    end
+  end
+
+  defp do_generate_intermediate_ca(
+         socket,
+         ca_params,
+         root_ca_cert_id,
+         key_type,
+         key_bits,
+         ttl_days
+       ) do
     case CA.generate_intermediate_ca(
            ca_params["common_name"],
            ca_params["organization"],
            root_ca_cert_id,
            country: ca_params["country"],
            key_type: key_type,
-           key_bits: key_bits,
-           ttl_days: ttl_days
+           key_size: key_bits,
+           validity_days: ttl_days
          ) do
       {:ok, _certificate} ->
         certificates = list_certificates()
@@ -748,6 +990,19 @@ defmodule SecretHub.Web.PKIManagementLive do
 
         {:noreply, socket}
     end
+  end
+
+  defp active_parent_cas(certificates) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    certificates
+    |> Enum.filter(&active_ca?(&1, now))
+    |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
+  end
+
+  defp active_ca?(cert, now) do
+    cert.cert_type in [:root_ca, :intermediate_ca] and not cert.revoked and
+      DateTime.compare(cert.valid_until, now) == :gt
   end
 
   defp list_certificates do
@@ -826,6 +1081,89 @@ defmodule SecretHub.Web.PKIManagementLive do
 
   defp format_ca_error(reason) when is_binary(reason), do: reason
   defp format_ca_error(reason), do: inspect(reason)
+
+  defp x509_extensions(cert) do
+    case :public_key.pem_decode(cert.certificate_pem) do
+      [{:Certificate, der, _} | _] ->
+        der
+        |> :public_key.der_decode(:Certificate)
+        |> then(&elem(&1, 1))
+        |> then(&elem(&1, 10))
+        |> format_extensions()
+
+      _ ->
+        []
+    end
+  rescue
+    _ -> []
+  end
+
+  defp format_extensions(:asn1_NOVALUE), do: []
+
+  defp format_extensions(extensions) when is_list(extensions) do
+    Enum.map(extensions, fn {:Extension, oid, critical, value} ->
+      name = extension_name(oid)
+
+      %{
+        name: name,
+        critical: critical,
+        value: extension_value(name, value)
+      }
+    end)
+  end
+
+  defp format_extensions(_), do: []
+
+  defp extension_name({2, 5, 29, 14}), do: "X509v3 Subject Key Identifier"
+  defp extension_name({2, 5, 29, 15}), do: "X509v3 Key Usage"
+  defp extension_name({2, 5, 29, 19}), do: "X509v3 Basic Constraints"
+  defp extension_name(oid), do: "OID #{format_oid(oid)}"
+
+  defp extension_value("X509v3 Basic Constraints", {:BasicConstraints, true, _}) do
+    "CA:TRUE"
+  end
+
+  defp extension_value("X509v3 Basic Constraints", {:BasicConstraints, false, _}) do
+    "CA:FALSE"
+  end
+
+  defp extension_value("X509v3 Basic Constraints", value) when is_binary(value) do
+    case :public_key.der_decode(:BasicConstraints, value) do
+      {:BasicConstraints, ca?, _} -> "CA:#{String.upcase(to_string(ca?))}"
+      _ -> format_extension_binary(value)
+    end
+  rescue
+    _ -> format_extension_binary(value)
+  end
+
+  defp extension_value("X509v3 Key Usage", <<3, 2, 1, 6>>) do
+    "Certificate Sign, CRL Sign"
+  end
+
+  defp extension_value("X509v3 Key Usage", <<3, 2, 5, 160>>) do
+    "Digital Signature, Key Encipherment"
+  end
+
+  defp extension_value("X509v3 Subject Key Identifier", <<4, 20, key_id::binary-size(20)>>) do
+    format_extension_binary(key_id)
+  end
+
+  defp extension_value(_name, value) when is_binary(value), do: format_extension_binary(value)
+  defp extension_value(_name, value), do: inspect(value)
+
+  defp format_oid(oid) when is_tuple(oid) do
+    oid
+    |> Tuple.to_list()
+    |> Enum.join(".")
+  end
+
+  defp format_extension_binary(value) do
+    value
+    |> Base.encode16(case: :lower)
+    |> String.graphemes()
+    |> Enum.chunk_every(2)
+    |> Enum.join(":")
+  end
 
   defp cert_type_badge_color(:root_ca), do: "bg-tertiary/10 text-tertiary"
   defp cert_type_badge_color(:intermediate_ca), do: "bg-secondary/10 text-secondary"

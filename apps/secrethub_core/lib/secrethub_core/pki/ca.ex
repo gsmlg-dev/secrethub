@@ -168,7 +168,8 @@ defmodule SecretHub.Core.PKI.CA do
              common_name,
              organization,
              validity_days,
-             root_ca_cert_id
+             root_ca_cert_id,
+             root_ca.subject
            ) do
       Logger.info("Intermediate CA generated successfully: #{common_name}")
       {:ok, %{certificate: cert_pem, private_key: key_pem, cert_record: cert_record}}
@@ -601,7 +602,8 @@ defmodule SecretHub.Core.PKI.CA do
          common_name,
          organization,
          _validity_days,
-         issuer_id \\ nil
+         issuer_id \\ nil,
+         issuer_subject \\ nil
        ) do
     with {:ok, encrypted_key} <- encrypt_private_key(key_pem),
          {:ok, cert_der} <- pem_to_der(cert_pem, :certificate) do
@@ -618,7 +620,7 @@ defmodule SecretHub.Core.PKI.CA do
         certificate_pem: cert_pem,
         private_key_encrypted: encrypted_key,
         subject: build_subject_string(common_name, organization),
-        issuer: build_subject_string(common_name, organization),
+        issuer: issuer_subject || build_subject_string(common_name, organization),
         common_name: common_name,
         organization: organization,
         valid_from: not_before,
@@ -728,7 +730,8 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp fetch_ca_certificate(cert_id) do
-    case Repo.get(Certificate, cert_id) do
+    case cert_id && Repo.get(Certificate, cert_id) do
+      nil when is_nil(cert_id) -> {:error, "Root CA certificate is required"}
       nil -> {:error, "CA certificate not found"}
       cert when cert.cert_type in [:root_ca, :intermediate_ca] -> {:ok, cert}
       _ -> {:error, "Certificate is not a CA"}
@@ -1024,6 +1027,20 @@ defmodule SecretHub.Core.PKI.CA do
         revocation_reason: "manual_revocation"
       })
       |> Repo.update()
+    else
+      :error -> {:error, :not_found}
+      nil -> {:error, :not_found}
+    end
+  end
+
+  @doc """
+  Permanently delete a certificate.
+  """
+  @spec delete_certificate(binary()) :: {:ok, Certificate.t()} | {:error, term()}
+  def delete_certificate(cert_id) do
+    with {:ok, uuid} <- Ecto.UUID.cast(cert_id),
+         %Certificate{} = cert <- Repo.get(Certificate, uuid) do
+      Repo.delete(cert)
     else
       :error -> {:error, :not_found}
       nil -> {:error, :not_found}
