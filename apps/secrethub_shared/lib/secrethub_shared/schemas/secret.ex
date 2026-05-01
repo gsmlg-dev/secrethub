@@ -80,7 +80,7 @@ defmodule SecretHub.Shared.Schemas.Secret do
       :status
     ])
     |> put_secret_defaults()
-    |> validate_required([:name, :secret_path, :rotator_id])
+    |> validate_required([:name, :secret_path])
     |> validate_secret_path()
     |> validate_format(:name, ~r/^[a-zA-Z0-9\s\-_]+$/,
       message: "must contain only letters, numbers, spaces, hyphens, and underscores"

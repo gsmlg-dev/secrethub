@@ -9,7 +9,7 @@ defmodule SecretHub.Core.RotationManager do
   require Logger
 
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{RotationHistory, RotationSchedule}
+  alias SecretHub.Shared.Schemas.{RotationHistory, RotationSchedule, SecretRotator}
 
   ## Rotation Schedule Management
 
@@ -102,6 +102,25 @@ defmodule SecretHub.Core.RotationManager do
   end
 
   @doc """
+  Gets per-secret rotators that are due for scheduled rotation.
+  """
+  def get_due_rotators do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    query =
+      from(r in SecretRotator,
+        where: not is_nil(r.secret_id),
+        where: r.enabled == true,
+        where: r.trigger_mode == :scheduled,
+        where: is_nil(r.next_rotation_at) or r.next_rotation_at <= ^now,
+        preload: [:secret, :engine_configuration],
+        order_by: [asc: r.next_rotation_at]
+      )
+
+    Repo.all(query)
+  end
+
+  @doc """
   Calculates the next rotation time for a schedule based on its cron expression.
   """
   def calculate_next_rotation(schedule) do
@@ -138,12 +157,13 @@ defmodule SecretHub.Core.RotationManager do
   - `:limit` - Maximum number of records (default: 100)
   - `:status` - Filter by status
   """
-  def list_history(schedule_id, opts \\ []) do
+  def list_history(rotation_target_id, opts \\ []) do
     limit = Keyword.get(opts, :limit, 100)
 
     query =
       from(h in RotationHistory,
-        where: h.rotation_schedule_id == ^schedule_id,
+        where:
+          h.rotation_schedule_id == ^rotation_target_id or h.rotator_id == ^rotation_target_id,
         order_by: [desc: h.started_at],
         limit: ^limit
       )
@@ -179,10 +199,11 @@ defmodule SecretHub.Core.RotationManager do
   @doc """
   Gets rotation statistics for a schedule.
   """
-  def get_rotation_stats(schedule_id) do
+  def get_rotation_stats(rotation_target_id) do
     query =
       from(h in RotationHistory,
-        where: h.rotation_schedule_id == ^schedule_id,
+        where:
+          h.rotation_schedule_id == ^rotation_target_id or h.rotator_id == ^rotation_target_id,
         select: %{
           total: count(h.id),
           successful: fragment("COUNT(CASE WHEN ? = 'success' THEN 1 END)", h.status),
@@ -216,7 +237,9 @@ defmodule SecretHub.Core.RotationManager do
   @doc """
   Performs a rotation for the given schedule.
   """
-  def perform_rotation(schedule, opts \\ []) do
+  def perform_rotation(rotation_target, opts \\ [])
+
+  def perform_rotation(%RotationSchedule{} = schedule, opts) do
     # Create history record
     {:ok, history} =
       create_history(%{
@@ -289,6 +312,109 @@ defmodule SecretHub.Core.RotationManager do
     end
   end
 
+  def perform_rotation(%SecretRotator{} = rotator, opts) do
+    {:ok, history} =
+      create_history(%{
+        rotator_id: rotator.id,
+        started_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        status: :in_progress,
+        metadata: %{}
+      })
+
+    start_time = System.monotonic_time(:millisecond)
+
+    result =
+      try do
+        engine_module = get_rotator_engine(rotator)
+        engine_module.rotate(rotator, opts)
+      rescue
+        e ->
+          {:error, Exception.message(e)}
+      end
+
+    duration_ms = System.monotonic_time(:millisecond) - start_time
+
+    case result do
+      {:ok, rotation_result} ->
+        {:ok, history} =
+          update_history(history, %{
+            completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            status: :success,
+            old_version: rotation_result.old_version,
+            new_version: rotation_result.new_version,
+            duration_ms: duration_ms,
+            metadata: rotation_result[:metadata] || %{}
+          })
+
+        {:ok, rotator} =
+          update_rotator(rotator, %{
+            last_rotation_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            last_rotation_status: :success,
+            last_rotation_error: nil,
+            rotation_count: rotator.rotation_count + 1
+          })
+
+        update_next_rotator_rotation(rotator)
+
+        {:ok, history}
+
+      {:error, reason} ->
+        {:ok, history} =
+          update_history(history, %{
+            completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            status: :failed,
+            error_message: to_string(reason),
+            duration_ms: duration_ms
+          })
+
+        update_rotator(rotator, %{
+          last_rotation_at: DateTime.utc_now() |> DateTime.truncate(:second),
+          last_rotation_status: :failed,
+          last_rotation_error: to_string(reason)
+        })
+
+        {:error, reason, history}
+    end
+  end
+
+  def update_rotator(%SecretRotator{} = rotator, attrs) do
+    rotator
+    |> SecretRotator.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def update_next_rotator_rotation(%SecretRotator{schedule_cron: nil}), do: {:ok, nil}
+  def update_next_rotator_rotation(%SecretRotator{schedule_cron: ""}), do: {:ok, nil}
+
+  def update_next_rotator_rotation(%SecretRotator{} = rotator) do
+    case Crontab.Scheduler.get_next_run_date(rotator.schedule_cron) do
+      {:ok, next_run} ->
+        next_rotation_at = DateTime.from_naive!(next_run, "Etc/UTC")
+        update_rotator(rotator, %{next_rotation_at: next_rotation_at})
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  rescue
+    _ -> {:error, "Failed to calculate next rotation time"}
+  end
+
   defp get_rotation_engine(:database_password), do: SecretHub.Core.Rotation.DatabasePassword
   defp get_rotation_engine(type), do: raise("Unknown rotation type: #{type}")
+
+  defp get_rotator_engine(%SecretRotator{rotator_type: :manual}) do
+    raise "Manual web UI rotators are rotated by updating the secret value"
+  end
+
+  defp get_rotator_engine(%SecretRotator{engine_configuration: %{engine_type: :postgresql}}) do
+    SecretHub.Core.Rotation.DatabasePassword
+  end
+
+  defp get_rotator_engine(%SecretRotator{config: %{"rotation_type" => "database_password"}}) do
+    SecretHub.Core.Rotation.DatabasePassword
+  end
+
+  defp get_rotator_engine(%SecretRotator{} = rotator) do
+    raise "Unknown rotator engine for #{rotator.id}"
+  end
 end

@@ -2,6 +2,7 @@
 
 alias SecretHub.Core.Repo
 alias SecretHub.Core.Secrets
+alias SecretHub.Shared.Schemas.SecretRotator
 
 import SecretHub.Shared.Schemas.{Secret, Policy, Role}
 import Ecto.UUID
@@ -20,7 +21,6 @@ Repo.delete_all(SecretHub.Shared.Schemas.Role)
 Repo.delete_all(SecretHub.Shared.Schemas.Lease)
 
 Secrets.ensure_default_rotators()
-{:ok, manual_rotator_id} = Secrets.rotator_id_for_slug("manual-web-ui")
 
 # Create sample secrets
 secrets = [
@@ -28,7 +28,6 @@ secrets = [
     name: "postgres-auth-password",
     secret_path: "dev.db.postgres.auth.password",
     secret_type: :static,
-    rotator_id: manual_rotator_id,
     ttl_seconds: 0,
     encrypted_data: "encrypted_pg_password_123",
     description: "PostgreSQL auth database password",
@@ -40,7 +39,6 @@ secrets = [
     name: "payment-gateway-apikey",
     secret_path: "dev.api.payment-gateway.apikey",
     secret_type: :static,
-    rotator_id: manual_rotator_id,
     ttl_seconds: 0,
     encrypted_data: "encrypted_payment_api_key_456",
     description: "Payment gateway API key",
@@ -52,7 +50,6 @@ secrets = [
     secret_path: "dev.db.redis.cache.role",
     secret_type: :dynamic,
     engine_type: "redis",
-    rotator_id: manual_rotator_id,
     ttl_seconds: 0,
     encrypted_data: "redis_cache_role_template",
     description: "Redis cache access role",
@@ -66,6 +63,26 @@ created_secrets =
       %SecretHub.Shared.Schemas.Secret{}
       |> SecretHub.Shared.Schemas.Secret.changeset(secret_attrs)
       |> Repo.insert()
+
+    {:ok, rotator} =
+      %SecretRotator{}
+      |> SecretRotator.changeset(%{
+        slug: "manual-web-ui-#{secret.id}",
+        name: "Manual Web UI",
+        description: "Manual secret updates from the admin web UI.",
+        rotator_type: :manual,
+        config: %{},
+        enabled: true,
+        secret_id: secret.id,
+        trigger_mode: :manual,
+        schedule_cron: secret.rotation_schedule
+      })
+      |> Repo.insert()
+
+    {:ok, secret} =
+      secret
+      |> SecretHub.Shared.Schemas.Secret.changeset(%{rotator_id: rotator.id})
+      |> Repo.update()
 
     secret
   end)

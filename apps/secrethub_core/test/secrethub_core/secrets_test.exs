@@ -3,7 +3,7 @@ defmodule SecretHub.Core.SecretsTest do
 
   alias SecretHub.Core.{Policies, Secrets}
   alias SecretHub.Core.Vault.SealState
-  alias SecretHub.Shared.Schemas.Secret
+  alias SecretHub.Shared.Schemas.{Secret, SecretRotator}
 
   # Helper: initialize vault and unseal it so master key is available.
   defp unseal_vault do
@@ -88,8 +88,6 @@ defmodule SecretHub.Core.SecretsTest do
     test "creates simplified secret with value, default ttl, and manual rotator" do
       unseal_vault()
 
-      assert {:ok, manual_rotator_id} = Secrets.rotator_id_for_slug("manual-web-ui")
-
       assert {:ok, secret} =
                Secrets.create_secret(%{
                  "name" => "Simple Secret",
@@ -98,7 +96,11 @@ defmodule SecretHub.Core.SecretsTest do
                })
 
       assert secret.ttl_seconds == 0
-      assert secret.rotator_id == manual_rotator_id
+
+      rotator = Repo.get!(SecretRotator, secret.rotator_id)
+      assert rotator.secret_id == secret.id
+      assert rotator.rotator_type == :manual
+      assert rotator.name == "Manual Web UI"
 
       assert {:ok, %{"value" => "plain-value"}, _secret} =
                Secrets.read_decrypted("test.simple.value")
@@ -279,8 +281,13 @@ defmodule SecretHub.Core.SecretsTest do
                  created_by: "admin-test"
                )
 
-      assert updated.rotator_id == api_rotator_id
+      refute updated.rotator_id == api_rotator_id
       assert updated.ttl_seconds == 3600
+
+      rotator = Repo.get!(SecretRotator, updated.rotator_id)
+      assert rotator.secret_id == secret.id
+      assert rotator.rotator_type == :api
+      assert rotator.name == "API Rotator"
 
       assert {:ok, %{"value" => "new"}, _secret} =
                Secrets.read_decrypted("test.rotator.update")

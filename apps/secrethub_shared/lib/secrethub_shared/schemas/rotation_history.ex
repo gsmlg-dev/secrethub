@@ -9,7 +9,7 @@ defmodule SecretHub.Shared.Schemas.RotationHistory do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias SecretHub.Shared.Schemas.RotationSchedule
+  alias SecretHub.Shared.Schemas.{RotationSchedule, SecretRotator}
 
   @rotation_statuses [:success, :failed, :in_progress, :rolled_back]
 
@@ -18,6 +18,7 @@ defmodule SecretHub.Shared.Schemas.RotationHistory do
 
   schema "rotation_history" do
     belongs_to(:rotation_schedule, RotationSchedule)
+    belongs_to(:rotator, SecretRotator)
 
     field(:started_at, :utc_datetime)
     field(:completed_at, :utc_datetime)
@@ -35,6 +36,7 @@ defmodule SecretHub.Shared.Schemas.RotationHistory do
     rotation_history
     |> cast(attrs, [
       :rotation_schedule_id,
+      :rotator_id,
       :started_at,
       :completed_at,
       :status,
@@ -45,9 +47,22 @@ defmodule SecretHub.Shared.Schemas.RotationHistory do
       :duration_ms,
       :metadata
     ])
-    |> validate_required([:rotation_schedule_id, :started_at, :status])
+    |> validate_required([:started_at, :status])
+    |> validate_rotation_target()
     |> validate_inclusion(:status, @rotation_statuses)
     |> validate_number(:duration_ms, greater_than_or_equal_to: 0)
     |> foreign_key_constraint(:rotation_schedule_id)
+    |> foreign_key_constraint(:rotator_id)
+  end
+
+  defp validate_rotation_target(changeset) do
+    schedule_id = get_field(changeset, :rotation_schedule_id)
+    rotator_id = get_field(changeset, :rotator_id)
+
+    if schedule_id || rotator_id do
+      changeset
+    else
+      add_error(changeset, :rotator_id, "or rotation schedule is required")
+    end
   end
 end

@@ -14,12 +14,13 @@ defmodule SecretHub.Core.Workers.RotationWorker do
 
   ## Job Arguments
 
-  - `schedule_id` - The ID of the rotation schedule to execute
+  - `rotator_id` - The ID of the per-secret rotator to execute
+  - `schedule_id` - Legacy rotation schedule ID, still accepted during migration
 
   ## Example
 
       # Enqueue a rotation job
-      %{schedule_id: schedule.id}
+      %{rotator_id: rotator.id}
       |> RotationWorker.new()
       |> Oban.insert()
 
@@ -43,6 +44,47 @@ defmodule SecretHub.Core.Workers.RotationWorker do
   require Logger
 
   alias SecretHub.Core.RotationManager
+  alias SecretHub.Shared.Schemas.{RotationSchedule, SecretRotator}
+
+  @impl Oban.Worker
+  def perform(%Oban.Job{args: %{"rotator_id" => rotator_id}}) do
+    Logger.info("Starting rotator job", rotator_id: rotator_id)
+
+    with {:ok, rotator} <- SecretHub.Core.Secrets.get_secret_rotator(rotator_id),
+         :ok <- validate_rotator_enabled(rotator),
+         {:ok, _history} <- RotationManager.perform_rotation(rotator, []) do
+      Logger.info("Rotator job completed successfully",
+        rotator_id: rotator_id,
+        rotator_name: rotator.name
+      )
+
+      :ok
+    else
+      {:error, :not_found} ->
+        Logger.warning("Rotator not found", rotator_id: rotator_id)
+        {:discard, :rotator_not_found}
+
+      {:error, :rotator_disabled} ->
+        Logger.warning("Rotator is disabled", rotator_id: rotator_id)
+        {:discard, :rotator_disabled}
+
+      {:error, reason, _history} ->
+        Logger.error("Rotator job failed",
+          rotator_id: rotator_id,
+          reason: inspect(reason)
+        )
+
+        {:error, reason}
+
+      {:error, reason} ->
+        Logger.error("Rotator job failed",
+          rotator_id: rotator_id,
+          reason: inspect(reason)
+        )
+
+        {:error, reason}
+    end
+  end
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"schedule_id" => schedule_id}}) do
@@ -91,11 +133,28 @@ defmodule SecretHub.Core.Workers.RotationWorker do
   end
 
   @doc """
-  Schedules a rotation for the given schedule.
+  Schedules a rotation for the given per-secret rotator or legacy schedule.
 
   Returns `{:ok, job}` on success or `{:error, changeset}` on failure.
   """
-  def schedule_rotation(schedule, opts \\ []) do
+  def schedule_rotation(rotation_target, opts \\ [])
+
+  def schedule_rotation(%SecretRotator{} = rotator, opts) do
+    scheduled_at = Keyword.get(opts, :scheduled_at)
+
+    args = %{rotator_id: rotator.id}
+
+    job =
+      if scheduled_at do
+        new(args, scheduled_at: scheduled_at)
+      else
+        new(args)
+      end
+
+    Oban.insert(job)
+  end
+
+  def schedule_rotation(%RotationSchedule{} = schedule, opts) do
     scheduled_at = Keyword.get(opts, :scheduled_at)
 
     args = %{schedule_id: schedule.id}
@@ -119,13 +178,15 @@ defmodule SecretHub.Core.Workers.RotationWorker do
   Returns the number of jobs scheduled.
   """
   def schedule_due_rotations do
+    due_rotators = RotationManager.get_due_rotators()
     due_schedules = RotationManager.get_due_schedules()
+    due_targets = due_rotators ++ due_schedules
 
-    Logger.info("Scheduling due rotations", count: length(due_schedules))
+    Logger.info("Scheduling due rotations", count: length(due_targets))
 
     results =
-      Enum.map(due_schedules, fn schedule ->
-        schedule_rotation(schedule)
+      Enum.map(due_targets, fn target ->
+        schedule_rotation(target)
       end)
 
     success_count =
@@ -135,12 +196,20 @@ defmodule SecretHub.Core.Workers.RotationWorker do
       end)
 
     Logger.info("Scheduled rotations",
-      total: length(due_schedules),
+      total: length(due_targets),
       successful: success_count,
-      failed: length(due_schedules) - success_count
+      failed: length(due_targets) - success_count
     )
 
     success_count
+  end
+
+  defp validate_rotator_enabled(rotator) do
+    if rotator.enabled do
+      :ok
+    else
+      {:error, :rotator_disabled}
+    end
   end
 
   defp validate_schedule_enabled(schedule) do

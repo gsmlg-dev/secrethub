@@ -50,6 +50,7 @@ defmodule SecretHub.Web.AdminLayoutHook do
   # Data-driven mapping from URL path segments to nav keys
   @nav_segments %{
     "secrets" => :secrets,
+    "rotators" => :rotators,
     "engines" => :engines,
     "rotations" => :rotations,
     "leases" => :leases,
@@ -70,8 +71,9 @@ defmodule SecretHub.Web.AdminLayoutHook do
   @nav_titles %{
     dashboard: "Dashboard",
     secrets: "Secret Management",
+    rotators: "Secret Rotators",
     engines: "Secret Engines",
-    rotations: "Rotation Schedule",
+    rotations: "Rotation Logs",
     leases: "Lease Management",
     policies: "Policy Management",
     approles: "AppRole Management",

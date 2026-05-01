@@ -86,6 +86,8 @@ defmodule SecretHub.Web.Router do
       live "/agents/:id", AgentMonitoringLive, :show
       live "/secrets", SecretManagementLive, :index
       live "/secrets/:id/versions", SecretVersionHistoryLive, :index
+      live "/rotators", SecretRotatorLive, :index
+      live "/rotators/:id", SecretRotatorLive, :show
       live "/policies", PolicyManagementLive, :index
       live "/policies/new", PolicyEditorLive, :new
       live "/policies/templates", PolicyTemplatesLive, :index

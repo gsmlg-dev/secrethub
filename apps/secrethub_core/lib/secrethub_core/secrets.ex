@@ -81,10 +81,44 @@ defmodule SecretHub.Core.Secrets do
     ensure_default_rotators()
 
     from(r in SecretRotator,
-      where: r.enabled == true,
+      where: r.enabled == true and is_nil(r.secret_id),
       order_by: [asc: r.name]
     )
     |> Repo.all()
+  end
+
+  @doc """
+  Lists per-secret rotators used to configure and execute secret rotation.
+  """
+  def list_secret_rotators(opts \\ []) do
+    query =
+      from(r in SecretRotator,
+        where: not is_nil(r.secret_id),
+        preload: [:secret, :engine_configuration],
+        order_by: [desc: r.inserted_at]
+      )
+
+    query =
+      if Keyword.get(opts, :enabled_only, false) do
+        where(query, [r], r.enabled == true)
+      else
+        query
+      end
+
+    Repo.all(query)
+  end
+
+  def get_secret_rotator(rotator_id) do
+    case Repo.get(SecretRotator, rotator_id) do
+      nil -> {:error, :not_found}
+      rotator -> {:ok, Repo.preload(rotator, [:secret, :engine_configuration])}
+    end
+  end
+
+  def update_secret_rotator(%SecretRotator{} = rotator, attrs) do
+    rotator
+    |> SecretRotator.changeset(attrs)
+    |> Repo.update()
   end
 
   def get_rotator(rotator_id), do: Repo.get(SecretRotator, rotator_id)
@@ -128,16 +162,23 @@ defmodule SecretHub.Core.Secrets do
     attrs = normalize_secret_attrs(attrs, :create)
 
     with {:ok, master_key} <- SealState.get_master_key(),
-         {:ok, rotator_id} <- ensure_rotator_id(attrs, @manual_rotator_slug),
-         attrs = Map.put(attrs, "rotator_id", rotator_id),
+         {:ok, rotator_template} <- ensure_rotator_template(attrs, @manual_rotator_slug),
          {:ok, encrypted_data} <- encrypt_secret_data(attrs["secret_data"] || %{}, master_key) do
       attrs = Map.put(attrs, "encrypted_data", encrypted_data)
 
-      %Secret{}
-      |> Secret.changeset(attrs)
-      |> Repo.insert()
+      Multi.new()
+      |> Multi.insert(:secret, Secret.changeset(%Secret{}, Map.delete(attrs, "rotator_id")))
+      |> Multi.insert(:rotator, fn %{secret: secret} ->
+        secret
+        |> default_rotator_attrs(rotator_template)
+        |> then(&SecretRotator.changeset(%SecretRotator{}, &1))
+      end)
+      |> Multi.update(:secret_with_rotator, fn %{secret: secret, rotator: rotator} ->
+        Secret.changeset(secret, %{"rotator_id" => rotator.id})
+      end)
+      |> Repo.transaction()
       |> case do
-        {:ok, secret} = result ->
+        {:ok, %{secret_with_rotator: secret}} ->
           Logger.info("Secret created", secret_id: secret.id, secret_path: secret.secret_path)
 
           agent_id = Map.get(attrs, "created_by") || Map.get(attrs, :created_by)
@@ -155,10 +196,10 @@ defmodule SecretHub.Core.Secrets do
             }
           })
 
-          result
+          {:ok, secret}
 
-        error ->
-          error
+        {:error, _step, reason, _changes} ->
+          {:error, reason}
       end
     else
       {:error, reason} ->
@@ -197,7 +238,7 @@ defmodule SecretHub.Core.Secrets do
         {:error, "Secret not found"}
 
       secret ->
-        with {:ok, rotator_id} <- update_rotator_id(secret, attrs, opts),
+        with {:ok, rotator_id} <- resolve_rotator_for_update(secret, attrs, opts),
              {:ok, master_key} <- SealState.get_master_key(),
              {:ok, encrypted_attrs} <- maybe_encrypt_secret_data(attrs, master_key) do
           encrypted_attrs = put_rotator_id(encrypted_attrs, rotator_id)
@@ -525,34 +566,61 @@ defmodule SecretHub.Core.Secrets do
     end
   end
 
-  defp ensure_rotator_id(attrs, default_slug) do
+  defp ensure_rotator_template(attrs, default_slug) do
     case Map.get(attrs, "rotator_id") do
       rotator_id when not is_nil(rotator_id) and rotator_id != "" ->
-        {:ok, rotator_id}
+        case get_rotator(rotator_id) do
+          nil -> {:error, :rotator_not_found}
+          rotator -> {:ok, rotator}
+        end
 
       _ ->
         attrs
         |> Map.get("rotator_slug", default_slug)
-        |> rotator_id_for_slug()
+        |> get_rotator_by_slug()
+        |> case do
+          nil -> {:error, :rotator_not_found}
+          rotator -> {:ok, rotator}
+        end
     end
   end
 
-  defp update_rotator_id(secret, attrs, opts) do
+  defp default_rotator_attrs(secret, %SecretRotator{} = template) do
+    %{
+      "slug" => "#{template.slug}-#{secret.id}",
+      "name" => template.name,
+      "description" => template.description,
+      "rotator_type" => template.rotator_type,
+      "config" => template.config || %{},
+      "enabled" => true,
+      "secret_id" => secret.id,
+      "trigger_mode" => "manual",
+      "schedule_cron" => secret.rotation_schedule,
+      "grace_period_seconds" => 300,
+      "metadata" => %{}
+    }
+  end
+
+  defp resolve_rotator_for_update(secret, attrs, opts) do
     cond do
       not blank?(Keyword.get(opts, :via_rotator_id)) ->
-        {:ok, Keyword.fetch!(opts, :via_rotator_id)}
+        apply_rotator_template(secret, Keyword.fetch!(opts, :via_rotator_id))
 
       not blank?(Keyword.get(opts, :rotator_id)) ->
-        {:ok, Keyword.fetch!(opts, :rotator_id)}
+        apply_rotator_template(secret, Keyword.fetch!(opts, :rotator_id))
 
       not blank?(Keyword.get(opts, :via_rotator_slug)) ->
-        rotator_id_for_slug(Keyword.fetch!(opts, :via_rotator_slug))
+        with {:ok, rotator_id} <- rotator_id_for_slug(Keyword.fetch!(opts, :via_rotator_slug)) do
+          apply_rotator_template(secret, rotator_id)
+        end
 
       not blank?(Map.get(attrs, "rotator_id")) ->
-        {:ok, Map.fetch!(attrs, "rotator_id")}
+        apply_rotator_template(secret, Map.fetch!(attrs, "rotator_id"))
 
       not blank?(Map.get(attrs, "rotator_slug")) ->
-        rotator_id_for_slug(Map.fetch!(attrs, "rotator_slug"))
+        with {:ok, rotator_id} <- rotator_id_for_slug(Map.fetch!(attrs, "rotator_slug")) do
+          apply_rotator_template(secret, rotator_id)
+        end
 
       not blank?(secret.rotator_id) ->
         {:ok, secret.rotator_id}
@@ -562,14 +630,48 @@ defmodule SecretHub.Core.Secrets do
     end
   end
 
-  defp put_rotator_id(attrs, rotator_id) do
-    case Map.get(attrs, "rotator_id") do
-      rotator_id_in_attrs when not is_nil(rotator_id_in_attrs) and rotator_id_in_attrs != "" ->
-        attrs
+  defp apply_rotator_template(secret, rotator_id) do
+    case get_rotator(rotator_id) do
+      nil ->
+        {:error, :rotator_not_found}
 
-      _ ->
-        Map.put(attrs, "rotator_id", rotator_id)
+      %SecretRotator{secret_id: secret_id} when secret_id == secret.id ->
+        {:ok, rotator_id}
+
+      %SecretRotator{secret_id: nil} = template ->
+        upsert_secret_rotator_from_template(secret, template)
+
+      %SecretRotator{} ->
+        {:error, :rotator_not_available}
     end
+  end
+
+  defp upsert_secret_rotator_from_template(secret, template) do
+    attrs = default_rotator_attrs(secret, template)
+
+    rotator =
+      from(r in SecretRotator, where: r.secret_id == ^secret.id)
+      |> Repo.one()
+
+    case rotator do
+      nil ->
+        %SecretRotator{}
+        |> SecretRotator.changeset(attrs)
+        |> Repo.insert()
+
+      %SecretRotator{} = rotator ->
+        rotator
+        |> SecretRotator.changeset(Map.delete(attrs, "slug"))
+        |> Repo.update()
+    end
+    |> case do
+      {:ok, rotator} -> {:ok, rotator.id}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp put_rotator_id(attrs, rotator_id) do
+    Map.put(attrs, "rotator_id", rotator_id)
   end
 
   defp maybe_encrypt_secret_data(attrs, master_key) do
