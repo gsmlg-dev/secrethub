@@ -68,7 +68,7 @@ defmodule SecretHub.Web.AdminAuthController do
   Handle admin login with certificate validation or dev password.
   """
   def login(conn, params) do
-    if Mix.env() == :dev do
+    if dev_mode?() do
       handle_dev_login(conn, params)
     else
       handle_cert_login(conn)
@@ -195,7 +195,7 @@ defmodule SecretHub.Web.AdminAuthController do
   end
 
   defp verify_admin_certificate(cert) do
-    if Mix.env() == :dev do
+    if dev_mode?() do
       verify_dev_certificate(cert)
     else
       verify_prod_certificate(cert)
@@ -252,5 +252,9 @@ defmodule SecretHub.Web.AdminAuthController do
   defp dev_admin_id do
     # Mock admin ID for development
     "dev-admin-001"
+  end
+
+  defp dev_mode? do
+    Application.get_env(:secrethub_web, :dev_mode, false)
   end
 end

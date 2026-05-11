@@ -23,7 +23,8 @@ config :secrethub_core,
 config :secrethub_web,
   namespace: SecretHub.Web,
   generators: [timestamp_type: :utc_datetime],
-  ecto_repos: [SecretHub.Core.Repo]
+  ecto_repos: [SecretHub.Core.Repo],
+  dev_mode: false
 
 # Configures the endpoint
 config :secrethub_web, SecretHub.Web.Endpoint,

@@ -80,7 +80,7 @@
         </div>
         
 <!-- Development Mode Login -->
-        <%= if Mix.env() == :dev do %>
+        <%= if @dev_mode do %>
           <div class="border-l-4 border-warning bg-warning-container text-on-warning-container p-4 mb-4">
             <div class="flex">
               <div class="flex-shrink-0">
