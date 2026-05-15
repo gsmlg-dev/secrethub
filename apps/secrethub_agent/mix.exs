@@ -19,7 +19,7 @@ defmodule SecretHub.Agent.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :ssh, :ssl, :public_key],
       mod: {SecretHub.Agent.Application, []}
     ]
   end
@@ -31,6 +31,7 @@ defmodule SecretHub.Agent.MixProject do
       {:websocket_client, "~> 1.5"},
       {:jason, "~> 1.4"},
       {:httpoison, "~> 2.2"},
+      {:x509, "~> 0.9.2"},
       {:secrethub_shared, in_umbrella: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

@@ -15,6 +15,7 @@ defmodule SecretHub.Core.Agents do
   import Ecto.Query
 
   alias SecretHub.Core.{Audit, Repo}
+  alias SecretHub.Core.Agents.ConnectionManager
   alias SecretHub.Shared.Schemas.{Agent, Certificate, Lease, Policy}
 
   @type result :: {:ok, term()} | {:error, term()}
@@ -93,6 +94,7 @@ defmodule SecretHub.Core.Agents do
         |> Repo.update()
 
         revoke_agent_cert_if_exists(agent.certificate_id, "Agent suspended")
+        disconnect_if_running(agent_id, "suspended")
         cancel_agent_leases(agent_id)
         audit_agent_action(agent_id, "agent_suspended", false, %{reason: reason})
 
@@ -115,6 +117,7 @@ defmodule SecretHub.Core.Agents do
         |> Repo.update()
 
         revoke_agent_cert_if_exists(agent.certificate_id, "Agent revoked")
+        disconnect_if_running(agent_id, reason || "revoked")
         cancel_agent_leases(agent_id)
         audit_agent_action(agent_id, "agent_revoked", false, %{reason: reason})
 
@@ -346,6 +349,7 @@ defmodule SecretHub.Core.Agents do
           |> Repo.update()
 
         revoke_agent_cert_if_exists(agent.certificate_id, reason || "Agent certificate revoked")
+        disconnect_if_running(agent.agent_id, reason || "certificate_revoked")
 
         result
     end
@@ -492,6 +496,14 @@ defmodule SecretHub.Core.Agents do
       certificate ->
         Certificate.revoke_changeset(certificate, reason)
         |> Repo.update()
+    end
+  end
+
+  defp disconnect_if_running(agent_id, reason) do
+    if Process.whereis(ConnectionManager) do
+      ConnectionManager.disconnect_agent(agent_id, reason)
+    else
+      :ok
     end
   end
 

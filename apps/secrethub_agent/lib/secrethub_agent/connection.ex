@@ -60,6 +60,10 @@ defmodule SecretHub.Agent.Connection do
           cert_path: String.t() | nil,
           key_path: String.t() | nil,
           ca_path: String.t() | nil,
+          cert_pem: binary() | nil,
+          private_key: tuple() | nil,
+          ca_pem: binary() | nil,
+          expected_server_name: String.t() | nil,
           connection_status: :disconnected | :connecting | :connected,
           reconnect_timer: reference() | nil,
           retry_count: non_neg_integer()
@@ -82,6 +86,15 @@ defmodule SecretHub.Agent.Connection do
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
+
+  @doc false
+  def runtime_topic, do: "agent:runtime"
+
+  @doc false
+  def runtime_event(:get_static_secret), do: "secret:read"
+  def runtime_event(:get_dynamic_secret), do: "secret:read"
+  def runtime_event(:renew_lease), do: "secret:lease_renew"
+  def runtime_event(:heartbeat), do: "agent:heartbeat"
 
   @doc """
   Request a static secret from Core.
@@ -171,6 +184,10 @@ defmodule SecretHub.Agent.Connection do
     cert_path = Keyword.get(opts, :cert_path)
     key_path = Keyword.get(opts, :key_path)
     ca_path = Keyword.get(opts, :ca_path)
+    cert_pem = Keyword.get(opts, :cert_pem)
+    private_key = Keyword.get(opts, :private_key)
+    ca_pem = Keyword.get(opts, :ca_pem)
+    expected_server_name = Keyword.get(opts, :expected_server_name)
 
     state = %{
       socket: nil,
@@ -180,6 +197,10 @@ defmodule SecretHub.Agent.Connection do
       cert_path: cert_path,
       key_path: key_path,
       ca_path: ca_path,
+      cert_pem: cert_pem,
+      private_key: private_key,
+      ca_pem: ca_pem,
+      expected_server_name: expected_server_name,
       connection_status: :disconnected,
       reconnect_timer: nil,
       retry_count: 0
@@ -197,7 +218,7 @@ defmodule SecretHub.Agent.Connection do
   def handle_call({:get_static_secret, path}, from, state) do
     case state.connection_status do
       :connected ->
-        send_request(state, from, "secrets:get_static", %{"path" => path})
+        send_request(state, from, runtime_event(:get_static_secret), %{"path" => path})
 
       _ ->
         {:reply, {:error, :not_connected}, state}
@@ -208,7 +229,10 @@ defmodule SecretHub.Agent.Connection do
   def handle_call({:get_dynamic_secret, role, ttl}, from, state) do
     case state.connection_status do
       :connected ->
-        send_request(state, from, "secrets:get_dynamic", %{"role" => role, "ttl" => ttl})
+        send_request(state, from, runtime_event(:get_dynamic_secret), %{
+          "path" => role,
+          "ttl" => ttl
+        })
 
       _ ->
         {:reply, {:error, :not_connected}, state}
@@ -219,7 +243,7 @@ defmodule SecretHub.Agent.Connection do
   def handle_call({:renew_lease, lease_id}, from, state) do
     case state.connection_status do
       :connected ->
-        send_request(state, from, "lease:renew", %{"lease_id" => lease_id})
+        send_request(state, from, runtime_event(:renew_lease), %{"lease_id" => lease_id})
 
       _ ->
         {:reply, {:error, :not_connected}, state}
@@ -269,7 +293,7 @@ defmodule SecretHub.Agent.Connection do
         {:ok, channel} ->
           Logger.info("Successfully connected to Core",
             agent_id: state.agent_id,
-            channel: "agent:#{state.agent_id}"
+            channel: runtime_topic()
           )
 
           {:noreply, %{state | channel: channel, connection_status: :connected, retry_count: 0}}
@@ -362,7 +386,6 @@ defmodule SecretHub.Agent.Connection do
     base_opts = [
       url: url,
       json_library: Jason,
-      headers: [{"x-agent-id", state.agent_id}],
       heartbeat_interval: 30_000,
       reconnect_interval: 5_000
     ]
@@ -370,14 +393,13 @@ defmodule SecretHub.Agent.Connection do
     # Add mTLS options if certificates are configured and exist
     if should_use_mtls?(state) do
       Logger.info("Connecting with mTLS authentication",
-        agent_id: state.agent_id,
-        cert: state.cert_path
+        agent_id: state.agent_id
       )
 
       transport_opts = build_mtls_transport_opts(state)
       Keyword.put(base_opts, :transport_opts, transport_opts)
     else
-      Logger.info("Connecting without mTLS (using AppRole authentication)",
+      Logger.info("Connecting without mTLS certificate material",
         agent_id: state.agent_id
       )
 
@@ -386,32 +408,46 @@ defmodule SecretHub.Agent.Connection do
   end
 
   defp should_use_mtls?(state) do
-    # Check if certificate files are configured and exist
-    state.cert_path != nil and state.key_path != nil and state.ca_path != nil and
-      File.exists?(state.cert_path) and File.exists?(state.key_path) and
-      File.exists?(state.ca_path)
+    file_mtls? =
+      state.cert_path != nil and state.key_path != nil and state.ca_path != nil and
+        File.exists?(state.cert_path) and File.exists?(state.key_path) and
+        File.exists?(state.ca_path)
+
+    memory_mtls? =
+      is_binary(state.cert_pem) and not is_nil(state.private_key) and is_binary(state.ca_pem)
+
+    file_mtls? or memory_mtls?
   end
 
   defp build_mtls_transport_opts(state) do
-    [
-      # Client certificate for authentication
-      certfile: to_charlist(state.cert_path),
-      # Client private key
-      keyfile: to_charlist(state.key_path),
-      # CA certificate chain to verify server
-      cacertfile: to_charlist(state.ca_path),
-      # Verify server certificate
+    common_opts = [
       verify: :verify_peer,
-      # Use strong cipher suites
       versions: [:"tlsv1.2", :"tlsv1.3"],
-      # Server name for SNI
-      server_name_indication: extract_hostname(state.core_url),
-      # Customize verification
+      server_name_indication: expected_server_name(state),
       customize_hostname_check: [
         match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
       ]
     ]
+
+    if is_binary(state.cert_pem) and not is_nil(state.private_key) and is_binary(state.ca_pem) do
+      [
+        certs_keys: [%{cert: pem_entry_der(state.cert_pem, :Certificate), key: state.private_key}],
+        cacerts: pem_entries_der(state.ca_pem, :Certificate)
+      ] ++ common_opts
+    else
+      [
+        certfile: to_charlist(state.cert_path),
+        keyfile: to_charlist(state.key_path),
+        cacertfile: to_charlist(state.ca_path)
+      ] ++ common_opts
+    end
   end
+
+  defp expected_server_name(%{expected_server_name: server_name}) when is_binary(server_name) do
+    to_charlist(server_name)
+  end
+
+  defp expected_server_name(state), do: extract_hostname(state.core_url)
 
   defp extract_hostname(url) do
     url
@@ -420,8 +456,8 @@ defmodule SecretHub.Agent.Connection do
     |> to_charlist()
   end
 
-  defp join_channel(socket, agent_id) do
-    topic = "agent:#{agent_id}"
+  defp join_channel(socket, _agent_id) do
+    topic = runtime_topic()
 
     Logger.debug("Joining channel", topic: topic)
 
@@ -432,6 +468,24 @@ defmodule SecretHub.Agent.Connection do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp pem_entry_der(pem, type) do
+    pem
+    |> :public_key.pem_decode()
+    |> Enum.find_value(fn
+      {^type, der, _} -> der
+      _entry -> nil
+    end)
+  end
+
+  defp pem_entries_der(pem, type) do
+    pem
+    |> :public_key.pem_decode()
+    |> Enum.flat_map(fn
+      {^type, der, _} -> [der]
+      _entry -> []
+    end)
   end
 
   defp send_request(state, _from, event, payload) do

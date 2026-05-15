@@ -52,6 +52,15 @@ config :secrethub_web, SecretHub.Web.Endpoint,
     encryption_salt: "X0zGN5sTlLjPo7yB"
   ]
 
+config :secrethub_web, SecretHub.Web.AgentEndpoint,
+  url: [host: "localhost"],
+  adapter: Bandit.PhoenixAdapter,
+  server: false,
+  pubsub_server: SecretHub.Web.PubSub
+
+config :secrethub_web,
+  agent_trusted_endpoint: "wss://localhost:4665/agent/socket/websocket"
+
 # Configures the mailer
 #
 # By default it uses the "Local" adapter which stores the emails

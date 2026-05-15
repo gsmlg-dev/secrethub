@@ -47,6 +47,15 @@ defmodule SecretHub.Web.Router do
       scope: :auth
   end
 
+  pipeline :agent_enrollment_api do
+    plug :api
+
+    plug SecretHub.Web.Plugs.RateLimiter,
+      max_requests: 30,
+      window_ms: 60_000,
+      scope: :agent_enrollment
+  end
+
   scope "/", SecretHub.Web do
     pipe_through :browser
 
@@ -83,6 +92,8 @@ defmodule SecretHub.Web.Router do
       layout: {SecretHub.Web.Layouts, :admin} do
       live "/dashboard", AdminDashboardLive, :index
       live "/agents", AgentMonitoringLive, :index
+      live "/agents/pending", AgentPendingLive, :index
+      live "/agents/pending/:id", AgentPendingLive, :show
       live "/agents/:id", AgentMonitoringLive, :show
       live "/secrets", SecretManagementLive, :index
       live "/secrets/:id/versions", SecretVersionHistoryLive, :index
@@ -186,6 +197,17 @@ defmodule SecretHub.Web.Router do
     get "/data/*path", SecretApiController, :read
     delete "/data/*path", SecretApiController, :delete
     get "/metadata/*path", SecretApiController, :metadata
+  end
+
+  # Agent certificate operations (token-authenticated)
+  scope "/v1/agent", SecretHub.Web do
+    pipe_through :agent_enrollment_api
+
+    post "/enrollments", AgentEnrollmentController, :create
+    get "/enrollments/:id/status", AgentEnrollmentController, :status
+    post "/enrollments/:id/csr", AgentEnrollmentController, :submit_csr
+    get "/enrollments/:id/connect-info", AgentEnrollmentController, :connect_info
+    post "/enrollments/:id/finalize", AgentEnrollmentController, :finalize
   end
 
   # Agent certificate operations (token-authenticated)

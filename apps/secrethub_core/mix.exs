@@ -43,6 +43,7 @@ defmodule SecretHub.Core.MixProject do
       {:ex_aws_sts, "~> 2.3"},
       {:phoenix, "~> 1.8"},
       {:hackney, "~> 1.20"},
+      {:x509, "~> 0.9.2"},
       {:secrethub_shared, in_umbrella: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

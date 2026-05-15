@@ -53,6 +53,9 @@
           <:menu id="agents" to={~p"/admin/agents"}>
             <.dm_mdi name="server" class="w-5 h-5" /> Agents
           </:menu>
+          <:menu id="agents" to={~p"/admin/agents/pending"}>
+            <.dm_mdi name="server-plus" class="w-5 h-5" /> Pending Agents
+          </:menu>
         </.dm_left_menu_group>
 
         <.dm_left_menu_group active={to_string(@active_nav)}>
