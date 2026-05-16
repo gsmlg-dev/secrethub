@@ -51,6 +51,8 @@ defmodule SecretHub.Shared.Schemas.Certificate do
 
     # Issuer reference (for chain building)
     field(:issuer_id, :binary_id)
+    field(:enrollment_id, :binary_id)
+    field(:ssh_host_key_fingerprint, :string)
 
     # Entity binding (who owns this certificate)
     field(:entity_id, :string)
@@ -85,6 +87,8 @@ defmodule SecretHub.Shared.Schemas.Certificate do
       :revoked_at,
       :revocation_reason,
       :issuer_id,
+      :enrollment_id,
+      :ssh_host_key_fingerprint,
       :entity_id,
       :entity_type,
       :metadata

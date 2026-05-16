@@ -29,8 +29,6 @@ defmodule SecretHub.Web.AgentChannel do
   require Logger
 
   alias SecretHub.Core.Agents
-  alias SecretHub.Core.Auth.AppRole
-  alias SecretHub.Core.Repo
   alias SecretHub.Core.Secrets
 
   # 90 seconds (3 missed heartbeats)
@@ -56,77 +54,21 @@ defmodule SecretHub.Web.AgentChannel do
     {:ok, %{status: "connected", authenticated: false}, socket}
   end
 
-  def join("agent:" <> agent_id, _payload, socket) do
-    Logger.info("Agent #{agent_id} attempting to join channel directly")
-
-    # Set up heartbeat monitoring
-    schedule_heartbeat_check()
-
-    # Auto-register or update agent on direct topic join
-    ensure_agent_registered(agent_id)
-
-    socket =
-      socket
-      |> assign(:authenticated, true)
-      |> assign(:agent_id, agent_id)
-      |> assign(:last_heartbeat, DateTime.utc_now() |> DateTime.truncate(:second))
-
-    {:ok, %{status: "connected", authenticated: true, agent_id: agent_id}, socket}
+  def join("agent:" <> agent_id, _payload, _socket) do
+    Logger.warning("Rejected direct agent channel join without mTLS", requested_topic: agent_id)
+    {:error, %{reason: "trusted_runtime_requires_mtls"}}
   end
 
   @doc """
   Handles authentication messages from agents.
 
-  Supports both AppRole (RoleID/SecretID) and certificate-based authentication.
+  Legacy channel authentication is disabled. Trusted runtime traffic must use
+  `SecretHub.Web.AgentTrustedSocket` over the mTLS listener.
   """
   def handle_in(event, payload, socket)
 
-  def handle_in("authenticate", %{"role_id" => role_id, "secret_id" => secret_id}, socket) do
-    source_ip = get_source_ip(socket)
-
-    case AppRole.login(role_id, secret_id, source_ip) do
-      {:ok, auth_result} ->
-        # Create or update agent record
-        case Agents.bootstrap_agent(role_id, secret_id, %{
-               "name" => auth_result.role_name,
-               "ip_address" => source_ip,
-               "user_agent" => "SecretHub Agent v1.0"
-             }) do
-          {:ok, agent} ->
-            socket =
-              socket
-              |> assign(:authenticated, true)
-              |> assign(:agent_id, agent.agent_id)
-              |> assign(:role_name, auth_result.role_name)
-              |> assign(:policies, auth_result.policies)
-              |> assign(:token, auth_result.token)
-              |> assign(:last_heartbeat, DateTime.utc_now() |> DateTime.truncate(:second))
-
-            Logger.info("Agent authenticated: #{agent.agent_id} (#{auth_result.role_name})")
-
-            {:reply,
-             {:ok,
-              %{
-                status: "authenticated",
-                agent_id: agent.agent_id,
-                role_name: auth_result.role_name,
-                policies: auth_result.policies,
-                token: auth_result.token
-              }}, socket}
-
-          {:error, reason} ->
-            Logger.warning("Agent bootstrap failed: #{inspect(reason)}")
-            {:reply, {:error, %{reason: "authentication_failed"}}, socket}
-        end
-
-      {:error, reason} ->
-        Logger.warning("AppRole login failed: #{reason}")
-        {:reply, {:error, %{reason: "invalid_credentials"}}, socket}
-    end
-  end
-
   def handle_in("authenticate", _payload, socket) do
-    {:reply, {:error, %{reason: "invalid_authentication_payload"}}, socket}
+    {:reply, {:error, %{reason: "trusted_runtime_requires_mtls"}}, socket}
   end
 
   # Handles secret request messages from authenticated agents.
@@ -171,36 +113,8 @@ defmodule SecretHub.Web.AgentChannel do
     end
   end
 
-  # Handles CSR submission from agents during bootstrap.
-  # Agents submit CSR after authenticating with AppRole to receive a client certificate.
-  def handle_in("certificate:request", %{"csr" => csr_pem}, socket) do
-    if socket.assigns.authenticated do
-      agent_id = socket.assigns.agent_id
-      Logger.info("Agent #{agent_id} requesting certificate signing")
-
-      case sign_agent_csr(csr_pem, agent_id) do
-        {:ok, signed_cert, ca_chain} ->
-          Logger.info("Certificate issued for agent: #{agent_id}")
-
-          {:reply,
-           {:ok,
-            %{
-              certificate: signed_cert,
-              ca_chain: ca_chain,
-              valid_until: extract_validity(signed_cert)
-            }}, socket}
-
-        {:error, reason} ->
-          Logger.error("Failed to sign CSR for agent #{agent_id}: #{inspect(reason)}")
-          {:reply, {:error, %{reason: "certificate_signing_failed"}}, socket}
-      end
-    else
-      {:reply, {:error, %{reason: "not_authenticated"}}, socket}
-    end
-  end
-
   def handle_in("certificate:request", _payload, socket) do
-    {:reply, {:error, %{reason: "invalid_csr_payload"}}, socket}
+    {:reply, {:error, %{reason: "trusted_runtime_requires_mtls"}}, socket}
   end
 
   # Catch-all clause for unknown messages
@@ -297,112 +211,9 @@ defmodule SecretHub.Web.AgentChannel do
     end
   end
 
-  defp get_source_ip(_socket) do
-    # Extract source IP from socket transport
-    # FIXME: Implement proper IP extraction from Phoenix.Socket
-    # Phoenix.Socket doesn't expose get_transport_pid/1, need alternative approach
-    "unknown"
-  end
-
   defp find_secret_by_path(secret_path) do
     # Query secrets by path
     secrets = Secrets.list_secrets()
     Enum.find(secrets, fn secret -> secret.secret_path == secret_path end)
-  end
-
-  defp sign_agent_csr(csr_pem, agent_id) do
-    alias SecretHub.Core.PKI.CA
-
-    with {:ok, agent} <- fetch_agent(agent_id),
-         {:ok, certificate} <- sign_csr_for_agent(csr_pem, agent, agent_id),
-         {:ok, ca_chain} <- fetch_ca_chain() do
-      {:ok, certificate.certificate_pem, ca_chain}
-    end
-  end
-
-  defp fetch_agent(agent_id) do
-    case Agents.get_agent(agent_id) do
-      nil -> {:error, "Agent not found"}
-      agent -> {:ok, agent}
-    end
-  end
-
-  defp sign_csr_for_agent(csr_pem, agent, agent_id) do
-    alias SecretHub.Core.PKI.CA
-
-    # Get the CA certificate ID - for now use nil as placeholder
-    # TODO: Implement proper CA certificate selection
-    ca_cert_id = nil
-
-    CA.sign_csr(
-      csr_pem,
-      ca_cert_id,
-      :agent_client,
-      entity_id: agent.id,
-      entity_type: "agent",
-      common_name: agent_id,
-      organization: "SecretHub Agents",
-      ttl_days: 90
-    )
-  end
-
-  defp fetch_ca_chain do
-    alias SecretHub.Core.PKI.CA
-
-    case CA.get_ca_chain() do
-      {:ok, ca_chain} ->
-        {:ok, ca_chain}
-
-      {:error, reason} = error ->
-        Logger.error("Failed to retrieve CA chain: #{inspect(reason)}")
-        error
-    end
-  end
-
-  defp extract_validity(_cert_pem) do
-    # Parse certificate and extract expiration date
-    # FIXME: Implement actual certificate parsing
-    # For now, return 90 days from now
-    DateTime.utc_now()
-    |> DateTime.truncate(:second)
-    |> DateTime.add(90 * 24 * 3600, :second)
-    |> DateTime.to_iso8601()
-  end
-
-  defp ensure_agent_registered(agent_id) do
-    case Agents.get_agent(agent_id) do
-      nil ->
-        # Auto-register the agent on first connection
-        now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-        %SecretHub.Shared.Schemas.Agent{}
-        |> Ecto.Changeset.change(%{
-          agent_id: agent_id,
-          name: agent_id,
-          status: :active,
-          authenticated_at: now,
-          last_seen_at: now,
-          last_heartbeat_at: now,
-          metadata: %{"auto_registered" => true}
-        })
-        |> Repo.insert(
-          on_conflict: {:replace, [:status, :last_seen_at, :last_heartbeat_at]},
-          conflict_target: :agent_id
-        )
-
-      %{status: :active} = agent ->
-        Agents.update_heartbeat(agent_id)
-        {:ok, agent}
-
-      agent ->
-        # Reactivate disconnected/pending agents
-        agent
-        |> Ecto.Changeset.change(%{
-          status: :active,
-          last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second),
-          last_heartbeat_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
-        |> Repo.update()
-    end
   end
 end

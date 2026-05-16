@@ -14,15 +14,16 @@ defmodule SecretHub.Web.Application do
     # Trap exits to enable graceful shutdown
     Process.flag(:trap_exit, true)
 
-    children = [
-      SecretHub.Web.Telemetry,
-      {DNSCluster, query: Application.get_env(:secrethub_web, :dns_cluster_query) || :ignore},
-      {Phoenix.PubSub, name: SecretHub.Web.PubSub},
-      # Start a worker by calling: SecretHub.Web.Worker.start_link(arg)
-      # {SecretHub.Web.Worker, arg},
-      # Start to serve requests, typically the last entry
-      SecretHub.Web.Endpoint
-    ]
+    children =
+      [
+        SecretHub.Web.Telemetry,
+        {DNSCluster, query: Application.get_env(:secrethub_web, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: SecretHub.Web.PubSub},
+        # Start a worker by calling: SecretHub.Web.Worker.start_link(arg)
+        # {SecretHub.Web.Worker, arg},
+        # Start to serve requests, typically the last entry
+        SecretHub.Web.Endpoint
+      ] ++ agent_endpoint_children()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
@@ -31,6 +32,14 @@ defmodule SecretHub.Web.Application do
 
     Logger.info("SecretHub.Web.Application started")
     result
+  end
+
+  defp agent_endpoint_children do
+    if Application.get_env(:secrethub_web, SecretHub.Web.AgentEndpoint, [])[:server] do
+      [SecretHub.Web.AgentEndpoint]
+    else
+      []
+    end
   end
 
   @impl true

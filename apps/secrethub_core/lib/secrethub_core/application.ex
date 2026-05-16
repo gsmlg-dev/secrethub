@@ -15,7 +15,8 @@ defmodule SecretHub.Core.Application do
       cache_children() ++
         repo_children() ++
         seal_state_children() ++
-        lease_manager_children()
+        lease_manager_children() ++
+        agent_connection_children()
 
     opts = [strategy: :one_for_one, name: SecretHub.Core.Supervisor]
     result = Supervisor.start_link(children, opts)
@@ -72,6 +73,14 @@ defmodule SecretHub.Core.Application do
       []
     else
       [SecretHub.Core.LeaseManager]
+    end
+  end
+
+  defp agent_connection_children do
+    if Application.get_env(:secrethub_core, :env) == :test do
+      []
+    else
+      [SecretHub.Core.Agents.ConnectionManager]
     end
   end
 end

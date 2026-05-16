@@ -14,12 +14,9 @@ defmodule SecretHub.Core.SecretsTest do
   end
 
   setup do
-    case Process.whereis(SealState) do
-      nil -> :ok
-      pid -> GenServer.stop(pid, :normal)
-    end
+    stop_seal_state()
 
-    {:ok, _pid} = start_supervised(SealState)
+    start_seal_state()
     :ok
   end
 
@@ -246,9 +243,8 @@ defmodule SecretHub.Core.SecretsTest do
           "secret_data" => %{"val" => "v1"}
         })
 
-      pid = Process.whereis(SealState)
-      GenServer.stop(pid)
-      start_supervised!(SealState)
+      stop_seal_state()
+      start_seal_state()
 
       assert {:error, :sealed} =
                Secrets.update_secret(secret.id, %{
@@ -503,6 +499,33 @@ defmodule SecretHub.Core.SecretsTest do
                )
 
       assert data["answer"] == "42"
+    end
+  end
+
+  defp stop_seal_state do
+    case Process.whereis(SealState) do
+      nil ->
+        :ok
+
+      pid ->
+        GenServer.stop(pid, :normal)
+        wait_until_unregistered(SealState)
+    end
+  end
+
+  defp start_seal_state do
+    case SealState.start_link([]) do
+      {:ok, pid} -> pid
+      {:error, {:already_started, pid}} -> pid
+    end
+  end
+
+  defp wait_until_unregistered(name) do
+    if Process.whereis(name) do
+      Process.sleep(10)
+      wait_until_unregistered(name)
+    else
+      :ok
     end
   end
 end

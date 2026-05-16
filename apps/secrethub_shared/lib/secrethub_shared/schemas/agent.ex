@@ -32,7 +32,25 @@ defmodule SecretHub.Shared.Schemas.Agent do
 
     # Authentication status
     field(:status, Ecto.Enum,
-      values: [:pending_bootstrap, :active, :disconnected, :suspended, :revoked]
+      values: [
+        :pending_bootstrap,
+        :pending_registered,
+        :approved_waiting_for_csr,
+        :csr_submitted,
+        :certificate_issued,
+        :connect_info_delivered,
+        :trusted_connecting,
+        :trusted_connected,
+        :active,
+        :disconnected,
+        :suspended,
+        :rejected,
+        :csr_invalid,
+        :certificate_issue_failed,
+        :trusted_endpoint_failed,
+        :expired,
+        :revoked
+      ]
     )
 
     field(:authenticated_at, :utc_datetime)
@@ -42,6 +60,10 @@ defmodule SecretHub.Shared.Schemas.Agent do
     # Network information
     field(:ip_address, :string)
     field(:hostname, :string)
+    field(:fqdn, :string)
+    field(:machine_id, :string)
+    field(:ssh_host_key_algorithm, :string)
+    field(:ssh_host_key_fingerprint, :string)
     field(:user_agent, :string)
 
     # Certificate binding
@@ -79,6 +101,10 @@ defmodule SecretHub.Shared.Schemas.Agent do
       :last_heartbeat_at,
       :ip_address,
       :hostname,
+      :fqdn,
+      :machine_id,
+      :ssh_host_key_algorithm,
+      :ssh_host_key_fingerprint,
       :user_agent,
       :certificate_id,
       :config,
@@ -104,7 +130,17 @@ defmodule SecretHub.Shared.Schemas.Agent do
   """
   def registration_changeset(agent, attrs) do
     agent
-    |> cast(attrs, [:agent_id, :name, :description, :metadata])
+    |> cast(attrs, [
+      :agent_id,
+      :name,
+      :description,
+      :hostname,
+      :fqdn,
+      :machine_id,
+      :ssh_host_key_algorithm,
+      :ssh_host_key_fingerprint,
+      :metadata
+    ])
     |> validate_required([:agent_id, :name])
     |> validate_format(:agent_id, ~r/^[a-z0-9\-]+$/,
       message: "must contain only lowercase letters, numbers, and hyphens"
@@ -113,6 +149,18 @@ defmodule SecretHub.Shared.Schemas.Agent do
     |> validate_length(:description, max: 500)
     |> put_change(:status, :pending_bootstrap)
     |> unique_constraint(:agent_id)
+  end
+
+  def pki_registration_changeset(agent, attrs) do
+    agent
+    |> changeset(Map.put(attrs, :status, attrs[:status] || :approved_waiting_for_csr))
+    |> validate_required([
+      :agent_id,
+      :name,
+      :status,
+      :ssh_host_key_algorithm,
+      :ssh_host_key_fingerprint
+    ])
   end
 
   @doc """

@@ -20,6 +20,41 @@ if System.get_env("PHX_SERVER") do
   config :secrethub_web, SecretHub.Web.Endpoint, server: true
 end
 
+if System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) do
+  agent_host = System.get_env("SECRET_HUB_AGENT_ENDPOINT_HOST") || "localhost"
+  agent_port = String.to_integer(System.get_env("SECRET_HUB_AGENT_ENDPOINT_PORT") || "4665")
+
+  agent_certfile =
+    System.get_env("SECRET_HUB_AGENT_ENDPOINT_CERT_PATH") ||
+      raise "SECRET_HUB_AGENT_ENDPOINT_CERT_PATH is required when the trusted Agent endpoint is enabled"
+
+  agent_keyfile =
+    System.get_env("SECRET_HUB_AGENT_ENDPOINT_KEY_PATH") ||
+      raise "SECRET_HUB_AGENT_ENDPOINT_KEY_PATH is required when the trusted Agent endpoint is enabled"
+
+  agent_cacertfile =
+    System.get_env("SECRET_HUB_AGENT_ENDPOINT_CA_CERT_PATH") ||
+      raise "SECRET_HUB_AGENT_ENDPOINT_CA_CERT_PATH is required when the trusted Agent endpoint is enabled"
+
+  config :secrethub_web, SecretHub.Web.AgentEndpoint,
+    server: true,
+    url: [host: agent_host, port: agent_port],
+    https: [
+      ip: {0, 0, 0, 0, 0, 0, 0, 0},
+      port: agent_port,
+      cipher_suite: :strong,
+      certfile: agent_certfile,
+      keyfile: agent_keyfile,
+      cacertfile: agent_cacertfile,
+      verify: :verify_peer,
+      fail_if_no_peer_cert: true,
+      versions: [:"tlsv1.2", :"tlsv1.3"]
+    ]
+
+  config :secrethub_web,
+    agent_trusted_endpoint: "wss://#{agent_host}:#{agent_port}/agent/socket/websocket"
+end
+
 # Asset tool paths (MIX_BUN_PATH, MIX_TAILWIND_PATH) are configured
 # in config.exs via System.get_env so they apply at compile time
 # when mix bun/tailwind tasks run.
