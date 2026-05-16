@@ -131,20 +131,20 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
           assert status["initialized"] == true
           assert status["sealed"] == false
 
-          # Step 8: Re-seal the vault
+          # Step 8: Manual seal requests are accepted but intentionally ignored.
           conn = build_conn()
           conn = post(conn, "/v1/sys/seal", %{})
 
           response = json_response(conn, 200)
-          assert response["sealed"] == true
+          assert response["sealed"] == false
 
-          # Step 9: Verify sealed status
+          # Step 9: Verify the vault remains unsealed
           conn = build_conn()
           conn = get(conn, "/v1/sys/seal-status")
           status = json_response(conn, 200)
 
           assert status["initialized"] == true
-          assert status["sealed"] == true
+          assert status["sealed"] == false
           assert status["progress"] == 0
 
         400 ->

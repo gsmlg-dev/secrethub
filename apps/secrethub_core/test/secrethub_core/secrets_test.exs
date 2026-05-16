@@ -16,7 +16,7 @@ defmodule SecretHub.Core.SecretsTest do
   setup do
     stop_seal_state()
 
-    {:ok, _pid} = start_supervised(SealState)
+    start_seal_state()
     :ok
   end
 
@@ -244,7 +244,7 @@ defmodule SecretHub.Core.SecretsTest do
         })
 
       stop_seal_state()
-      start_supervised!(SealState)
+      start_seal_state()
 
       assert {:error, :sealed} =
                Secrets.update_secret(secret.id, %{
@@ -510,6 +510,13 @@ defmodule SecretHub.Core.SecretsTest do
       pid ->
         GenServer.stop(pid, :normal)
         wait_until_unregistered(SealState)
+    end
+  end
+
+  defp start_seal_state do
+    case SealState.start_link([]) do
+      {:ok, pid} -> pid
+      {:error, {:already_started, pid}} -> pid
     end
   end
 

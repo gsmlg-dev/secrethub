@@ -25,7 +25,7 @@ defmodule SecretHub.Core.Vault.SealStateTest do
     stop_seal_state()
 
     # Start fresh SealState for this test
-    {:ok, _pid} = start_supervised(SealState)
+    start_seal_state()
     :ok
   end
 
@@ -254,8 +254,11 @@ defmodule SecretHub.Core.Vault.SealStateTest do
     end
 
     test "returns error when sealed" do
-      {:ok, _shares} = SealState.initialize(3, 2)
+      unless SealState.initialized?() do
+        {:ok, _shares} = SealState.initialize(3, 2)
+      end
 
+      assert SealState.sealed?()
       assert {:error, :sealed} = SealState.get_master_key()
     end
 
@@ -501,6 +504,13 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       pid ->
         GenServer.stop(pid, :normal)
         wait_until_unregistered(SealState)
+    end
+  end
+
+  defp start_seal_state do
+    case SealState.start_link([]) do
+      {:ok, pid} -> pid
+      {:error, {:already_started, pid}} -> pid
     end
   end
 
