@@ -22,10 +22,7 @@ defmodule SecretHub.Core.Vault.SealStateTest do
   # Start SealState for these tests (it's disabled in test mode by default)
   setup do
     # Stop any existing SealState
-    case Process.whereis(SealState) do
-      nil -> :ok
-      pid -> GenServer.stop(pid, :normal)
-    end
+    stop_seal_state()
 
     # Start fresh SealState for this test
     {:ok, _pid} = start_supervised(SealState)
@@ -257,7 +254,8 @@ defmodule SecretHub.Core.Vault.SealStateTest do
     end
 
     test "returns error when sealed" do
-      SealState.seal()
+      {:ok, _shares} = SealState.initialize(3, 2)
+
       assert {:error, :sealed} = SealState.get_master_key()
     end
 
@@ -492,6 +490,26 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       # Should still be able to decrypt
       {:ok, decrypted2} = Encryption.decrypt(encrypted, master_key2)
       assert decrypted2 == plaintext
+    end
+  end
+
+  defp stop_seal_state do
+    case Process.whereis(SealState) do
+      nil ->
+        :ok
+
+      pid ->
+        GenServer.stop(pid, :normal)
+        wait_until_unregistered(SealState)
+    end
+  end
+
+  defp wait_until_unregistered(name) do
+    if Process.whereis(name) do
+      Process.sleep(10)
+      wait_until_unregistered(name)
+    else
+      :ok
     end
   end
 end

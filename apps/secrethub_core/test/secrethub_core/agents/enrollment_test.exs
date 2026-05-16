@@ -64,7 +64,10 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
 
       expired =
         enrollment
-        |> Ecto.Changeset.change(expires_at: DateTime.add(DateTime.utc_now(), -60, :second))
+        |> Ecto.Changeset.change(
+          expires_at:
+            DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.truncate(:second)
+        )
         |> Repo.update!()
 
       assert {:error, :expired} = Enrollment.status(expired.id, pending_token)
