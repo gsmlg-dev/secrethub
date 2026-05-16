@@ -15,10 +15,11 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   import Phoenix.ChannelTest
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias SecretHub.Core.Agents.ConnectionManager
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.E2E.Helpers
-  alias SecretHub.Web.{AgentChannel, UserSocket}
+  alias SecretHub.Web.{AgentChannel, AgentRuntimeChannel, AgentTrustedSocket, UserSocket}
 
   @endpoint SecretHub.Web.Endpoint
 
@@ -36,9 +37,19 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
         {:error, {:already_started, pid}} -> pid
       end
 
+    connection_manager_pid =
+      case ConnectionManager.start_link(name: ConnectionManager) do
+        {:ok, pid} -> pid
+        {:error, {:already_started, pid}} -> pid
+      end
+
     on_exit(fn ->
       # Stop SealState
       if Process.alive?(seal_state_pid), do: GenServer.stop(seal_state_pid, :normal)
+
+      if Process.alive?(connection_manager_pid),
+        do: GenServer.stop(connection_manager_pid, :normal)
+
       Sandbox.stop_owner(pid)
     end)
 
@@ -130,51 +141,33 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
   # ─── Scenario 4: Agent WebSocket ───────────────────────────
 
-  test "S4: agent connects via WebSocket and communicates", %{agent_id: agent_id} do
+  test "S4: legacy agent WebSocket rejects direct runtime joins", %{agent_id: agent_id} do
     # Flush any leftover messages from HTTP calls in previous tests
     flush_mailbox()
 
-    # Connect socket (auth happens at channel level)
+    # Connect socket (auth happens at trusted runtime socket level now)
     {:ok, socket} = connect(UserSocket, %{})
 
-    # Join with the agent's ID — the channel auto-registers and marks authenticated
-    {:ok, reply, socket} =
-      subscribe_and_join(socket, AgentChannel, "agent:#{agent_id}", %{})
-
-    assert reply.status == "connected"
-    assert reply.authenticated == true
-    assert reply.agent_id == agent_id
-
-    # Send heartbeat to verify bidirectional communication
-    ref = push(socket, "heartbeat", %{})
-    assert_reply ref, :ok, heartbeat_reply, 5_000
-    assert heartbeat_reply.status == "alive"
-    assert Map.has_key?(heartbeat_reply, :timestamp)
-
-    # Verify unauthenticated-only features still get proper error responses
-    ref = push(socket, "unknown:event", %{})
-    assert_reply ref, :error, %{reason: "unknown_event"}, 5_000
-
-    # Clean up without triggering exit signal to the test process
-    Process.flag(:trap_exit, true)
-    leave(socket)
-    flush_mailbox()
-    Process.flag(:trap_exit, false)
+    assert {:error, %{reason: "trusted_runtime_requires_mtls"}} =
+             subscribe_and_join(socket, AgentChannel, "agent:#{agent_id}", %{})
   end
 
   # ─── Scenario 5: Reconnection ──────────────────────────────
 
-  test "S5: agent recovers from disconnection", %{agent_id: agent_id} do
+  test "S5: trusted runtime agent recovers from disconnection", %{agent_id: agent_id} do
     flush_mailbox()
     Process.flag(:trap_exit, true)
 
     # First connection
-    {:ok, socket1} = connect(UserSocket, %{})
+    socket1 = trusted_agent_socket(agent_id, "serial-1")
 
-    {:ok, _reply, socket1} =
-      subscribe_and_join(socket1, AgentChannel, "agent:#{agent_id}", %{})
+    {:ok, reply, socket1} =
+      subscribe_and_join(socket1, AgentRuntimeChannel, "agent:runtime", %{})
 
-    ref = push(socket1, "heartbeat", %{})
+    assert reply.status == "accepted"
+    assert reply.agent_id == agent_id
+
+    ref = push(socket1, "agent:heartbeat", %{})
     assert_reply ref, :ok, %{status: "alive"}, 5_000
 
     # Disconnect
@@ -183,16 +176,16 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     Process.sleep(200)
 
     # Reconnect
-    {:ok, socket2} = connect(UserSocket, %{})
+    socket2 = trusted_agent_socket(agent_id, "serial-2")
 
     {:ok, reply, socket2} =
-      subscribe_and_join(socket2, AgentChannel, "agent:#{agent_id}", %{})
+      subscribe_and_join(socket2, AgentRuntimeChannel, "agent:runtime", %{})
 
-    assert reply.status == "connected"
-    assert reply.authenticated == true
+    assert reply.status == "accepted"
+    assert reply.agent_id == agent_id
 
     # Verify still works after reconnection
-    ref = push(socket2, "heartbeat", %{})
+    ref = push(socket2, "agent:heartbeat", %{})
     assert_reply ref, :ok, %{status: "alive"}, 5_000
 
     leave(socket2)
@@ -260,5 +253,13 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     after
       0 -> :ok
     end
+  end
+
+  defp trusted_agent_socket(agent_id, certificate_serial) do
+    socket(AgentTrustedSocket, "agent:test", %{
+      agent_id: agent_id,
+      certificate_serial: certificate_serial,
+      certificate_fingerprint: "fingerprint-#{certificate_serial}"
+    })
   end
 end
