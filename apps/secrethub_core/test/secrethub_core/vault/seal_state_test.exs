@@ -254,6 +254,9 @@ defmodule SecretHub.Core.Vault.SealStateTest do
     end
 
     test "returns error when sealed" do
+      stop_seal_state()
+      start_seal_state()
+
       unless SealState.initialized?() do
         {:ok, _shares} = SealState.initialize(3, 2)
       end
