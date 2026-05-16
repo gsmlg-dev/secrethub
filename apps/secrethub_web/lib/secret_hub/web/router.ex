@@ -62,6 +62,13 @@ defmodule SecretHub.Web.Router do
     get "/", PageController, :home
   end
 
+  # Root-level health check (no pipeline needed)
+  scope "/", SecretHub.Web do
+    pipe_through :api
+
+    get "/health", SysController, :health
+  end
+
   # Vault management routes (no auth required - needed for initial setup)
   scope "/vault", SecretHub.Web do
     pipe_through :browser

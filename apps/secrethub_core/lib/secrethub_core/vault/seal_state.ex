@@ -206,8 +206,14 @@ defmodule SecretHub.Core.Vault.SealState do
   def handle_call({:unseal, share}, _from, state) do
     case state.status do
       :unsealed ->
-        {:reply, {:ok, %{sealed: false, progress: state.threshold, threshold: state.threshold}},
-         state}
+        {:reply,
+         {:ok,
+          %{
+            initialized: true,
+            sealed: false,
+            progress: state.threshold,
+            threshold: state.threshold
+          }}, state}
 
       :sealed ->
         process_unseal_share(share, state)
@@ -274,7 +280,9 @@ defmodule SecretHub.Core.Vault.SealState do
       else
         new_state = %{state | unseal_shares: new_shares, unseal_progress: new_progress}
 
-        {:reply, {:ok, %{sealed: true, progress: new_progress, threshold: state.threshold}},
+        {:reply,
+         {:ok,
+          %{initialized: true, sealed: true, progress: new_progress, threshold: state.threshold}},
          new_state}
       end
     else
@@ -297,8 +305,14 @@ defmodule SecretHub.Core.Vault.SealState do
         Logger.info("Vault unsealed successfully")
         audit_event("vault_unsealed", :unsealed)
 
-        {:reply, {:ok, %{sealed: false, progress: state.threshold, threshold: state.threshold}},
-         new_state}
+        {:reply,
+         {:ok,
+          %{
+            initialized: true,
+            sealed: false,
+            progress: state.threshold,
+            threshold: state.threshold
+          }}, new_state}
 
       {:error, reason} ->
         Logger.error("Failed to reconstruct master key: #{reason}")

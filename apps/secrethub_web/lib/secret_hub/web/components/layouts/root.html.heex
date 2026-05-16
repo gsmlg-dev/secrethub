@@ -11,8 +11,12 @@
     <script>
       // Set theme before page loads to prevent flash
       (function() {
-        const theme = localStorage.getItem("dm-theme") || "sunshine";
-        document.documentElement.setAttribute("data-theme", theme);
+        const theme = localStorage.getItem("theme") || "sunshine";
+        if (theme && theme !== "default") {
+          document.documentElement.setAttribute("data-theme", theme);
+        } else {
+          document.documentElement.removeAttribute("data-theme");
+        }
       })();
     </script>
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>

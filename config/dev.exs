@@ -1,5 +1,8 @@
 import Config
 
+# Enable dev mode for admin login with password
+config :secrethub_web, dev_mode: true
+
 # Configure the database.
 #
 # devenv exposes PostgreSQL over a Unix socket. Prefer PGHOST when the shell

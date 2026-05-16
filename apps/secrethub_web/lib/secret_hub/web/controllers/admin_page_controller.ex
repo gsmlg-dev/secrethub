@@ -19,6 +19,7 @@ defmodule SecretHub.Web.AdminPageController do
   def login_form(conn, _params) do
     conn
     |> put_layout(false)
+    |> assign(:dev_mode, Application.get_env(:secrethub_web, :dev_mode, false))
     |> render(:login)
   end
 end
