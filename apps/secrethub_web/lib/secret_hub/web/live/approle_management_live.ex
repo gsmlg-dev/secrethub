@@ -185,7 +185,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                     id="role_name"
                     required
                     value={@new_role_name}
-                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                     placeholder="e.g., production-app, staging-agent"
                   />
                 </div>
@@ -200,7 +200,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                     multiple
                     size={policy_select_size(@available_policies)}
                     disabled={Enum.empty?(@available_policies)}
-                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                    class="select mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <%= for policy <- @available_policies do %>
                       <option
@@ -313,7 +313,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                               type="text"
                               readonly
                               value={value}
-                              class="min-w-0 flex-1 bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none"
+                              class="input min-w-0 flex-1 bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none"
                             />
                             <button
                               type="button"
@@ -399,7 +399,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                       type="text"
                       readonly
                       value={@selected_role.role_id}
-                      class="min-w-0 flex-1 bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none"
+                      class="input min-w-0 flex-1 bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none"
                     />
                     <button
                       type="button"

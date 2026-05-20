@@ -41,8 +41,49 @@ defmodule SecretHub.Web.AgentMonitoringLive do
   @impl true
   def handle_info(:refresh_agents, socket) do
     agents = fetch_agents()
-    socket = assign(socket, :agents, agents)
+
+    selected_agent =
+      if socket.assigns.selected_agent do
+        Enum.find(agents, &(&1.id == socket.assigns.selected_agent.id))
+      end
+
+    socket =
+      socket
+      |> assign(:agents, agents)
+      |> assign(:selected_agent, selected_agent)
+
     {:noreply, socket}
+  end
+
+  def handle_info({:remove_agent, agent_id}, socket) do
+    Logger.info("Removing agent: #{agent_id}")
+
+    case Agents.delete_agent(agent_id) do
+      {:ok, _agent} ->
+        Endpoint.broadcast("agent:#{agent_id}", "disconnect", %{
+          reason: "admin_remove"
+        })
+
+        agents = fetch_agents()
+
+        socket =
+          socket
+          |> assign(:agents, agents)
+          |> assign(:selected_agent, nil)
+          |> put_flash(:info, "Agent removed successfully")
+          |> push_patch(to: "/admin/agents")
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        Logger.warning("Failed to remove agent #{agent_id}: #{inspect(reason)}")
+
+        socket =
+          socket
+          |> put_flash(:error, "Failed to remove agent")
+
+        {:noreply, socket}
+    end
   end
 
   @impl true
@@ -118,7 +159,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
           <div class="flex items-center space-x-2">
             <label class="text-sm font-medium text-on-surface">Status:</label>
             <select
-              class="form-select"
+              class="select form-select"
               phx-change="filter_agents"
               name="status"
               value={@filter_status}
@@ -134,7 +175,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
             <label class="text-sm font-medium text-on-surface">Search:</label>
             <input
               type="text"
-              class="form-input flex-1"
+              class="input form-input flex-1"
               placeholder="Search agents by name or IP..."
               phx-change="search_agents"
               name="query"

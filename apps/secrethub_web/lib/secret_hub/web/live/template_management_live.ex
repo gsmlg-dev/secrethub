@@ -292,7 +292,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                   type="text"
                   name="template[name]"
                   value={@template_form.data["name"]}
-                  class="w-full border rounded px-3 py-2"
+                  class="input w-full border rounded px-3 py-2"
                   required
                 />
               </div>
@@ -335,7 +335,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
 
               <div>
                 <label class="block text-sm font-medium mb-1">Status</label>
-                <select name="template[status]" class="w-full border rounded px-3 py-2">
+                <select name="template[status]" class="select w-full border rounded px-3 py-2">
                   <option value="active" selected={@template_form.data["status"] == "active"}>
                     Active
                   </option>
@@ -384,7 +384,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                   type="text"
                   name="sink[name]"
                   value={@sink_form.data["name"]}
-                  class="w-full border rounded px-3 py-2"
+                  class="input w-full border rounded px-3 py-2"
                   required
                 />
               </div>
@@ -395,7 +395,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
                   type="text"
                   name="sink[file_path]"
                   value={@sink_form.data["file_path"]}
-                  class="w-full border rounded px-3 py-2"
+                  class="input w-full border rounded px-3 py-2"
                   placeholder="/etc/myapp/config.conf"
                   required
                 />
@@ -441,7 +441,7 @@ defmodule SecretHub.Web.TemplateManagementLive do
 
               <div>
                 <label class="block text-sm font-medium mb-1">Status</label>
-                <select name="sink[status]" class="w-full border rounded px-3 py-2">
+                <select name="sink[status]" class="select w-full border rounded px-3 py-2">
                   <option value="active" selected={@sink_form.data["status"] == "active"}>
                     Active
                   </option>

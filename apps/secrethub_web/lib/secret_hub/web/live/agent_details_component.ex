@@ -6,9 +6,17 @@ defmodule SecretHub.Web.AgentDetailsComponent do
   use SecretHub.Web, :live_component
   require Logger
 
+  @remove_confirmation_text "I know this is dangerous"
+
   @impl true
   def update(assigns, socket) do
-    socket = assign(socket, assigns)
+    socket =
+      socket
+      |> assign(assigns)
+      |> assign_new(:show_remove_modal, fn -> false end)
+      |> assign_new(:remove_validation_errors, fn -> [] end)
+      |> assign_new(:remove_confirmation_text, fn -> @remove_confirmation_text end)
+
     {:ok, socket}
   end
 
@@ -26,10 +34,10 @@ defmodule SecretHub.Web.AgentDetailsComponent do
           </p>
         </div>
         <div class="flex space-x-2">
-          <button class="btn-secondary btn-sm">
+          <button class="btn btn-secondary btn-sm">
             View Logs
           </button>
-          <button class="btn-primary btn-sm">
+          <button class="btn btn-primary btn-sm">
             Edit Config
           </button>
         </div>
@@ -143,7 +151,7 @@ defmodule SecretHub.Web.AgentDetailsComponent do
             phx-click="restart_agent"
             phx-value-id={@agent.id}
             phx-target={@myself}
-            class="btn-secondary"
+            class="btn btn-secondary"
             phx-confirm="Are you sure you want to restart this agent?"
           >
             Restart Agent
@@ -153,21 +161,85 @@ defmodule SecretHub.Web.AgentDetailsComponent do
             phx-click="disconnect_agent"
             phx-value-id={@agent.id}
             phx-target={@myself}
-            class="btn-danger"
+            class="btn btn-danger"
             phx-confirm="Are you sure you want to disconnect this agent?"
           >
             Force Disconnect
           </button>
 
-          <button class="btn-secondary">
+          <button class="btn btn-secondary">
             Download Logs
           </button>
 
-          <button class="btn-secondary">
+          <button class="btn btn-secondary">
             View Configuration
+          </button>
+
+          <button
+            id="remove-agent-action"
+            phx-click="show_remove_agent_modal"
+            phx-value-id={@agent.id}
+            phx-target={@myself}
+            class="btn btn-danger"
+          >
+            Remove Agent
           </button>
         </div>
       </div>
+
+      <%= if @show_remove_modal do %>
+        <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 z-50 flex items-center justify-center p-4">
+          <div class="bg-surface-container rounded-lg shadow-xl max-w-2xl w-full">
+            <div class="px-6 py-4 border-b border-outline-variant">
+              <h3 class="text-lg font-medium text-error">Remove Agent</h3>
+            </div>
+
+            <form
+              phx-submit="confirm_remove_agent"
+              phx-target={@myself}
+              class="px-6 py-4 space-y-4"
+            >
+              <p class="text-sm text-on-surface">
+                Removing {@agent.name} permanently deletes the agent registration and disconnects the agent from SecretHub Core.
+              </p>
+              <p class="text-sm text-on-surface-variant">
+                Type this exact text to continue:
+              </p>
+              <pre class="bg-surface-container-low p-3 rounded-md text-xs font-mono border border-outline-variant whitespace-pre-wrap">{@remove_confirmation_text}</pre>
+              <input
+                type="text"
+                name="remove[confirmation]"
+                autocomplete="off"
+                class="input block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-error focus:border-error sm:text-sm"
+              />
+
+              <%= if !Enum.empty?(@remove_validation_errors) do %>
+                <div class="bg-error/5 border-l-4 border-error p-4">
+                  <ul class="text-sm text-error list-disc list-inside">
+                    <%= for error <- @remove_validation_errors do %>
+                      <li>{error}</li>
+                    <% end %>
+                  </ul>
+                </div>
+              <% end %>
+
+              <div class="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  phx-click="cancel_remove_agent"
+                  phx-target={@myself}
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" class="btn btn-danger">
+                  Remove Agent
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -196,6 +268,53 @@ defmodule SecretHub.Web.AgentDetailsComponent do
       socket
       |> put_flash(:info, "Agent disconnected successfully")
       |> push_patch(to: "/admin/agents")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("show_remove_agent_modal", _params, socket) do
+    socket =
+      socket
+      |> assign(:show_remove_modal, true)
+      |> assign(:remove_validation_errors, [])
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("cancel_remove_agent", _params, socket) do
+    socket =
+      socket
+      |> assign(:show_remove_modal, false)
+      |> assign(:remove_validation_errors, [])
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event(
+        "confirm_remove_agent",
+        %{"remove" => %{"confirmation" => @remove_confirmation_text}},
+        socket
+      ) do
+    agent_id = socket.assigns.agent.id
+    Logger.info("Removing agent: #{agent_id}")
+    send(self(), {:remove_agent, agent_id})
+
+    socket =
+      socket
+      |> assign(:show_remove_modal, false)
+      |> assign(:remove_validation_errors, [])
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("confirm_remove_agent", _params, socket) do
+    socket =
+      socket
+      |> assign(:remove_validation_errors, ["Confirmation text does not match"])
 
     {:noreply, socket}
   end

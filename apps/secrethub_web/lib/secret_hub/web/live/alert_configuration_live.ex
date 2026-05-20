@@ -153,7 +153,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                 type="text"
                 name="name"
                 value={@form_data.name}
-                class="w-full px-3 py-2 border rounded-md"
+                class="input w-full px-3 py-2 border rounded-md"
                 required
               />
             </div>
@@ -162,7 +162,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
               <label class="block text-sm font-medium text-on-surface mb-2">
                 Channel Type
               </label>
-              <select name="channel_type" class="w-full px-3 py-2 border rounded-md" required>
+              <select name="channel_type" class="select w-full px-3 py-2 border rounded-md" required>
                 <option value="email" selected={@form_data.channel_type == :email}>Email</option>
                 <option value="slack" selected={@form_data.channel_type == :slack}>Slack</option>
                 <option value="webhook" selected={@form_data.channel_type == :webhook}>
@@ -186,7 +186,7 @@ defmodule SecretHub.Web.AlertConfigurationLive do
                 name="severity_filter"
                 value={Enum.join(@form_data.severity_filter, ",")}
                 placeholder="critical,high,medium,low,info"
-                class="w-full px-3 py-2 border rounded-md"
+                class="input w-full px-3 py-2 border rounded-md"
               />
               <p class="text-sm text-on-surface-variant mt-1">
                 Leave empty to receive all severity levels

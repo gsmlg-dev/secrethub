@@ -107,7 +107,7 @@ defmodule SecretHub.Web.PolicySimulatorLive do
                 phx-change="update_field"
                 phx-value-field="entity_id"
                 value={@entity_id}
-                class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 placeholder="agent-001"
                 required
               />
@@ -123,7 +123,7 @@ defmodule SecretHub.Web.PolicySimulatorLive do
                 phx-change="update_field"
                 phx-value-field="secret_path"
                 value={@secret_path}
-                class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 placeholder="prod.db.postgres"
                 required
               />
@@ -138,7 +138,7 @@ defmodule SecretHub.Web.PolicySimulatorLive do
                 phx-change="update_field"
                 phx-value-field="operation"
                 value={@operation}
-                class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                class="select mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
               >
                 <option value="read">Read</option>
                 <option value="write">Write</option>
@@ -155,7 +155,7 @@ defmodule SecretHub.Web.PolicySimulatorLive do
                 phx-change="update_field"
                 phx-value-field="ip_address"
                 value={@ip_address}
-                class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 placeholder="192.168.1.100"
               />
               <p class="mt-1 text-xs text-on-surface-variant">For IP-based restrictions</p>
@@ -170,7 +170,7 @@ defmodule SecretHub.Web.PolicySimulatorLive do
                 phx-change="update_field"
                 phx-value-field="requested_ttl"
                 value={@requested_ttl}
-                class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 placeholder="3600"
               />
               <p class="mt-1 text-xs text-on-surface-variant">For TTL-based restrictions</p>
@@ -196,7 +196,7 @@ defmodule SecretHub.Web.PolicySimulatorLive do
                   phx-change="update_field"
                   phx-value-field="custom_timestamp"
                   value={@custom_timestamp}
-                  class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                  class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 />
                 <p class="mt-1 text-xs text-on-surface-variant">
                   For testing time-based restrictions

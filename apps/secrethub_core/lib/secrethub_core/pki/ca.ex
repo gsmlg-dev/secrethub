@@ -672,20 +672,7 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp encrypt_private_key(key_pem) do
-    # Get master encryption key from SealState
-    # Use fallback key for tests when SealState isn't running
-    master_key =
-      case Process.whereis(SealState) do
-        nil ->
-          # SealState not running (test mode) - use a fixed test key
-          :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
-
-        _pid ->
-          case SealState.get_master_key() do
-            {:ok, key} -> key
-            {:error, _} -> nil
-          end
-      end
+    master_key = pki_master_key()
 
     if is_binary(master_key) do
       Encryption.encrypt_to_blob(key_pem, master_key)
@@ -695,20 +682,7 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp decrypt_private_key(encrypted_key) do
-    # Get master encryption key from SealState
-    # Use fallback key for tests when SealState isn't running
-    master_key =
-      case Process.whereis(SealState) do
-        nil ->
-          # SealState not running (test mode) - use same test key
-          :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
-
-        _pid ->
-          case SealState.get_master_key() do
-            {:ok, key} -> key
-            {:error, _reason} -> nil
-          end
-      end
+    master_key = pki_master_key()
 
     if is_binary(master_key) do
       case Encryption.decrypt_from_blob(encrypted_key, master_key) do
@@ -727,6 +701,27 @@ defmodule SecretHub.Core.PKI.CA do
   rescue
     e ->
       {:error, "Failed to decrypt private key: #{inspect(e)}"}
+  end
+
+  defp pki_master_key do
+    case Process.whereis(SealState) do
+      nil ->
+        dev_fallback_key()
+
+      _pid ->
+        case SealState.get_master_key() do
+          {:ok, key} -> key
+          {:error, _reason} -> if(dev_pki_unsealed_fallback?(), do: dev_fallback_key())
+        end
+    end
+  end
+
+  defp dev_pki_unsealed_fallback? do
+    Application.get_env(:secrethub_core, :dev_pki_unsealed_fallback, false)
+  end
+
+  defp dev_fallback_key do
+    :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
   end
 
   defp fetch_ca_certificate(cert_id) do

@@ -32,7 +32,7 @@ defmodule SecretHub.Core.PKI.CSR do
   def ssh_fingerprint(public_key) do
     public_key
     |> ssh_public_key_blob()
-    |> :crypto.hash(:sha256)
+    |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode64(padding: false)
     |> then(&"SHA256:#{&1}")
   end

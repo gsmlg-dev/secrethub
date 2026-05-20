@@ -344,34 +344,8 @@ defmodule SecretHub.Core.EngineConfigurations do
   end
 
   defp check_aws_sts_health(config) do
-    connection = config["connection"] || %{}
-
-    aws_config = [
-      region: connection["region"] || "us-east-1"
-    ]
-
-    aws_config =
-      if connection["access_key_id"] && connection["secret_access_key"] do
-        Keyword.merge(aws_config,
-          access_key_id: connection["access_key_id"],
-          secret_access_key: connection["secret_access_key"]
-        )
-      else
-        aws_config
-      end
-
-    # Test AWS STS by calling GetCallerIdentity
-    case ExAws.STS.get_caller_identity()
-         |> ExAws.request(aws_config) do
-      {:ok, _response} ->
-        {:ok, :healthy}
-
-      {:error, {:http_error, _status, _response}} ->
-        {:error, "AWS STS API call failed"}
-
-      {:error, reason} ->
-        {:error, inspect(reason)}
-    end
+    _ = config
+    {:error, "AWS STS engine is not available in this build"}
   rescue
     e ->
       Logger.error("AWS STS health check failed: #{Exception.message(e)}")
@@ -394,9 +368,6 @@ defmodule SecretHub.Core.EngineConfigurations do
   end
 
   defp test_aws_sts_connection(config) do
-    case check_aws_sts_health(config) do
-      {:ok, :healthy} -> :ok
-      {:error, reason} -> {:error, reason}
-    end
+    check_aws_sts_health(config)
   end
 end

@@ -6,29 +6,65 @@ config :secrethub_web, dev_mode: true
 # Configure the database.
 #
 # devenv exposes PostgreSQL over a Unix socket. Prefer PGHOST when the shell
-# exports it, fall back to $DEVENV_STATE/postgres, then TCP for non-devenv use.
+# exports it, fall back to $DEVENV_STATE/postgres, then this repo's devenv
+# socket directory before using TCP for non-devenv use.
+project_socket_dir = Path.expand("../.devenv/state/postgres", __DIR__)
+
+socket_port = fn socket_dir ->
+  configured_port =
+    Path.join(socket_dir, "postgresql.conf")
+    |> File.read()
+    |> case do
+      {:ok, contents} ->
+        Regex.run(~r/^port\s*=\s*(\d+)/m, contents, capture: :all_but_first)
+
+      {:error, _reason} ->
+        nil
+    end
+    |> case do
+      [port] -> port
+      _ -> nil
+    end
+
+  socket_file_port =
+    socket_dir
+    |> Path.join(".s.PGSQL.*")
+    |> Path.wildcard()
+    |> List.first()
+    |> case do
+      nil -> nil
+      path -> Path.basename(path) |> String.replace_prefix(".s.PGSQL.", "")
+    end
+
+  (configured_port || socket_file_port || System.get_env("PGPORT") || "5432")
+  |> String.to_integer()
+end
+
+socket_config = fn socket_dir ->
+  [
+    username: System.get_env("PGUSER", "secrethub"),
+    password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
+    database: System.get_env("PGDATABASE", "secrethub_dev"),
+    socket_dir: socket_dir,
+    port: socket_port.(socket_dir)
+  ]
+end
+
 db_config =
   cond do
     socket_dir = System.get_env("PGHOST") ->
-      [
-        username: System.get_env("PGUSER", "secrethub"),
-        password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
-        database: System.get_env("PGDATABASE", "secrethub_dev"),
-        socket_dir: socket_dir
-      ]
+      socket_config.(socket_dir)
 
     devenv_state = System.get_env("DEVENV_STATE") ->
-      [
-        username: System.get_env("PGUSER", "secrethub"),
-        password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
-        database: System.get_env("PGDATABASE", "secrethub_dev"),
-        socket_dir: Path.join(devenv_state, "postgres")
-      ]
+      socket_config.(Path.join(devenv_state, "postgres"))
+
+    File.dir?(project_socket_dir) ->
+      socket_config.(project_socket_dir)
 
     true ->
       [
-        username: System.get_env("PGUSER", System.get_env("USER", "postgres")),
-        password: System.get_env("PGPASSWORD"),
+        username: System.get_env("PGUSER", "secrethub"),
+        password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
         database: System.get_env("PGDATABASE", "secrethub_dev"),
         hostname: System.get_env("DATABASE_HOST", "localhost"),
         port: String.to_integer(System.get_env("DATABASE_PORT", "5432"))
@@ -42,18 +78,20 @@ db_config =
 
 config :secrethub_core, SecretHub.Core.Repo, db_config
 
+config :secrethub_core,
+  dev_pki_unsealed_fallback: true
+
 # For development, we disable any cache and enable
 # debugging and code reloading.
 #
-# The watchers configuration can be used to run external
-# watchers to your application. For example, we can use it
-# to bundle .js and .css sources.
+live_reload_enabled? = System.find_executable("inotifywait") != nil
+
 config :secrethub_web, SecretHub.Web.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4664")],
   check_origin: false,
-  code_reloader: true,
+  code_reloader: live_reload_enabled?,
   debug_errors: true,
   secret_key_base: "vAPoEmgczs3B5WPFpsHw8tV5a+VV79FjDI7umvmAt1YdlBvpz1J9sXW+/mb5Tj5A",
   watchers: [
@@ -85,15 +123,21 @@ config :secrethub_web, SecretHub.Web.Endpoint,
 # different ports.
 
 # Watch static and templates for browser reloading.
-config :secrethub_web, SecretHub.Web.Endpoint,
-  live_reload: [
-    web_console_logger: true,
-    patterns: [
-      ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$",
-      ~r"priv/gettext/.*(po)$",
-      ~r"lib/secrethub_web_web/(?:controllers|live|components|router)/?.*\.(ex|heex)$"
+live_reload =
+  if live_reload_enabled? do
+    [
+      web_console_logger: true,
+      patterns: [
+        ~r"priv/static/(?!uploads/).*(js|css|png|jpeg|jpg|gif|svg)$",
+        ~r"priv/gettext/.*(po)$",
+        ~r"lib/secrethub_web_web/(?:controllers|live|components|router)/?.*\.(ex|heex)$"
+      ]
     ]
-  ]
+  else
+    false
+  end
+
+config :secrethub_web, SecretHub.Web.Endpoint, live_reload: live_reload
 
 # Enable dev routes for dashboard and mailbox
 config :secrethub_web, dev_routes: true
@@ -120,11 +164,12 @@ config :phoenix_live_view,
 config :swoosh, :api_client, false
 
 # Agent configuration (for development)
-# Enable agent to auto-connect to Core via WebSocket
+# The agent runtime requires mTLS certificate material, so keep it opt-in for
+# normal Phoenix development.
 config :secrethub_agent,
-  enabled: true,
+  enabled: System.get_env("SECRET_HUB_AGENT_ENABLED") in ["1", "true", "TRUE"],
   agent_id: "agent-dev-01",
-  core_url: "ws://localhost:4664",
+  core_url: System.get_env("SECRET_HUB_AGENT_CORE_URL", "ws://localhost:4664"),
   # Use /tmp for socket in development (no root permissions needed)
   socket_path: "/tmp/secrethub_dev_agent.sock",
   # TLS certificates (will be used in production with wss://)

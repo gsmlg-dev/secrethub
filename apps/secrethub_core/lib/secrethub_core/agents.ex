@@ -85,6 +85,28 @@ defmodule SecretHub.Core.Agents do
   end
 
   @doc """
+  Mark agent as connected through the trusted mTLS runtime endpoint.
+  """
+  def mark_trusted_connected(agent_id) do
+    case Repo.get_by(Agent, agent_id: agent_id) do
+      %Agent{} = agent ->
+        now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+        agent
+        |> Ecto.Changeset.change(%{
+          status: :trusted_connected,
+          authenticated_at: agent.authenticated_at || now,
+          last_seen_at: now,
+          last_heartbeat_at: now
+        })
+        |> Repo.update()
+
+      nil ->
+        {:error, "Agent not found"}
+    end
+  end
+
+  @doc """
   Suspend an agent (temporary disable).
   """
   def suspend_agent(agent_id, reason \\ nil) do
@@ -124,6 +146,33 @@ defmodule SecretHub.Core.Agents do
         Logger.info("Revoked agent: #{agent_id}")
 
         {:ok, agent}
+
+      nil ->
+        {:error, "Agent not found"}
+    end
+  end
+
+  @doc """
+  Delete an agent registration.
+
+  The agent is disconnected first and active leases are expired before the
+  registration row is removed. Historical audit and lease rows keep the string
+  agent identifier for traceability.
+  """
+  def delete_agent(agent_id) do
+    case Repo.get_by(Agent, agent_id: agent_id) do
+      %Agent{} = agent ->
+        disconnect_if_running(agent_id, "removed")
+        cancel_agent_leases(agent_id)
+
+        case Repo.delete(agent) do
+          {:ok, deleted_agent} ->
+            Logger.info("Deleted agent: #{agent_id}")
+            {:ok, deleted_agent}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
 
       nil ->
         {:error, "Agent not found"}

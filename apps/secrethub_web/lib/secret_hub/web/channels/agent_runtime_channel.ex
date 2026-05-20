@@ -20,6 +20,7 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
       }
 
       :ok = ConnectionManager.register_connection(agent_id, cert_serial, self(), metadata)
+      Agents.mark_trusted_connected(agent_id)
 
       {:ok, %{status: "accepted", agent_id: agent_id}, socket}
     else

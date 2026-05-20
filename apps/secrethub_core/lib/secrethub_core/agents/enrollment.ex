@@ -10,6 +10,10 @@ defmodule SecretHub.Core.Agents.Enrollment do
   alias SecretHub.Shared.Schemas.{Agent, AgentEnrollment}
 
   @pending_ttl_seconds 24 * 60 * 60
+  @default_presence_timeout_ms 10_000
+  @presence_statuses [:pending_registered, :approved_waiting_for_csr]
+  @stale_cleanup_statuses [:pending_registered]
+  @pending_list_statuses [:pending_registered]
 
   def create_pending(attrs, source_ip \\ nil) do
     pending_token = new_pending_token()
@@ -43,6 +47,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
   def status(enrollment_id, pending_token) do
     with {:ok, enrollment} <- authorize(enrollment_id, pending_token),
          :ok <- verify_not_expired(enrollment) do
+      enrollment = touch_presence(enrollment)
       {:ok, status_payload(enrollment)}
     end
   end
@@ -51,6 +56,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
     with %AgentEnrollment{} = enrollment <- Repo.get(AgentEnrollment, enrollment_id),
          :ok <- verify_not_expired(enrollment),
          :ok <- verify_status(enrollment, [:pending_registered]),
+         {:ok, _ca} <- PKI.Issuer.active_signing_ca(),
          {:ok, agent} <- create_or_reuse_agent(enrollment),
          required_fields <- required_csr_fields(enrollment, agent.agent_id) do
       enrollment
@@ -168,8 +174,11 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
   def finalize(_enrollment_id, _pending_token, _payload), do: {:error, :invalid_finalize_payload}
 
-  def list_pending do
+  def list_pending(opts \\ []) do
+    cleanup_stale_pending(opts)
+
     AgentEnrollment
+    |> where([e], e.status in ^@pending_list_statuses)
     |> order_by([e], desc: e.inserted_at)
     |> Repo.all()
   end
@@ -184,6 +193,8 @@ defmodule SecretHub.Core.Agents.Enrollment do
       {:ok, updated} ->
         case PKI.Issuer.issue_agent_certificate_from_csr(updated, csr) do
           {:ok, certificate} ->
+            bind_agent_certificate(updated.agent_id, certificate.id)
+
             updated
             |> AgentEnrollment.changeset(%{
               status: :certificate_issued,
@@ -203,11 +214,23 @@ defmodule SecretHub.Core.Agents.Enrollment do
             })
             |> Repo.update()
 
-            {:error, :certificate_issue_failed}
+            {:error, {:certificate_issue_failed, reason}}
         end
 
       error ->
         error
+    end
+  end
+
+  defp bind_agent_certificate(agent_id, certificate_id) do
+    case Repo.get_by(Agent, agent_id: agent_id) do
+      %Agent{} = agent ->
+        agent
+        |> Agent.changeset(%{status: :certificate_issued, certificate_id: certificate_id})
+        |> Repo.update()
+
+      nil ->
+        {:error, :agent_not_found}
     end
   end
 
@@ -314,6 +337,43 @@ defmodule SecretHub.Core.Agents.Enrollment do
         {:error, :not_found}
     end
   end
+
+  defp cleanup_stale_pending(opts) do
+    stale_after_ms =
+      Keyword.get(
+        opts,
+        :stale_after_ms,
+        Application.get_env(
+          :secrethub_core,
+          :agent_pending_presence_timeout_ms,
+          @default_presence_timeout_ms
+        )
+      )
+
+    cutoff =
+      DateTime.utc_now()
+      |> DateTime.add(-stale_after_ms, :millisecond)
+      |> DateTime.truncate(:second)
+
+    AgentEnrollment
+    |> where([e], e.status in ^@stale_cleanup_statuses)
+    |> where([e], e.updated_at < ^cutoff)
+    |> Repo.delete_all()
+  end
+
+  defp touch_presence(%AgentEnrollment{status: status} = enrollment)
+       when status in @presence_statuses do
+    enrollment
+    |> Ecto.Changeset.change()
+    |> Ecto.Changeset.force_change(:updated_at, now())
+    |> Repo.update()
+    |> case do
+      {:ok, updated} -> updated
+      {:error, _changeset} -> enrollment
+    end
+  end
+
+  defp touch_presence(enrollment), do: enrollment
 
   defp verify_token(%AgentEnrollment{pending_token_hash: hash}, pending_token)
        when is_binary(hash) and is_binary(pending_token) do

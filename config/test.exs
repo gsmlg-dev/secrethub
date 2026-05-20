@@ -16,10 +16,42 @@ db_config = [
   pool_size: System.schedulers_online() * 2
 ]
 
+socket_port = fn socket_dir ->
+  configured_port =
+    Path.join(socket_dir, "postgresql.conf")
+    |> File.read()
+    |> case do
+      {:ok, contents} ->
+        Regex.run(~r/^port\s*=\s*(\d+)/m, contents, capture: :all_but_first)
+
+      {:error, _reason} ->
+        nil
+    end
+    |> case do
+      [port] -> port
+      _ -> nil
+    end
+
+  socket_file_port =
+    socket_dir
+    |> Path.join(".s.PGSQL.*")
+    |> Path.wildcard()
+    |> List.first()
+    |> case do
+      nil -> nil
+      path -> Path.basename(path) |> String.replace_prefix(".s.PGSQL.", "")
+    end
+
+  (configured_port || socket_file_port || System.get_env("PGPORT") || "5432")
+  |> String.to_integer()
+end
+
 db_config =
   if socket_dir = System.get_env("PGHOST") do
     # Use Unix domain socket (devenv local development)
-    Keyword.put(db_config, :socket_dir, socket_dir)
+    db_config
+    |> Keyword.put(:socket_dir, socket_dir)
+    |> Keyword.put(:port, socket_port.(socket_dir))
   else
     # Use TCP connection (CI environment)
     db_config

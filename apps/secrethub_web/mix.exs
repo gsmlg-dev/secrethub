@@ -46,7 +46,8 @@ defmodule SecretHub.Web.MixProject do
     [
       {:phoenix, "~> 1.8.1"},
       {:phoenix_html, "~> 4.1"},
-      {:phoenix_live_reload, "~> 1.2", only: :dev},
+      {:phoenix_live_reload, "~> 1.2",
+       only: :dev, runtime: System.find_executable("inotifywait") != nil},
       {:phoenix_live_view, "~> 1.1.0"},
       {:phoenix_ecto, "~> 4.6"},
       {:lazy_html, ">= 0.1.0", only: :test},

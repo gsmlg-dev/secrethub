@@ -164,6 +164,20 @@ defmodule SecretHub.Core.AgentsTest do
     end
   end
 
+  describe "delete_agent/1" do
+    test "removes an existing agent registration" do
+      {:ok, agent} = register()
+
+      assert {:ok, deleted} = Agents.delete_agent(agent.agent_id)
+      assert deleted.id == agent.id
+      assert nil == Agents.get_agent(agent.agent_id)
+    end
+
+    test "returns error for unknown agent" do
+      assert {:error, "Agent not found"} = Agents.delete_agent("agent-ghost-xyz")
+    end
+  end
+
   describe "list_agents/1" do
     test "returns all agents without filter" do
       {:ok, a1} = register()

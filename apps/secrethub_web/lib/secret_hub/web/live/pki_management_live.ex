@@ -396,7 +396,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                   <select
                     name="ca[parent_ca_id]"
                     required
-                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    class="select mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   >
                     <option value="" selected={@ca_form_data["parent_ca_id"] in [nil, ""]}>
                       Select parent CA
@@ -420,7 +420,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                   name="ca[common_name]"
                   value={@ca_form_data["common_name"]}
                   required
-                  class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                  class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 />
               </div>
 
@@ -432,7 +432,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                     name="ca[organization]"
                     value={@ca_form_data["organization"]}
                     required
-                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   />
                 </div>
 
@@ -444,7 +444,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                     value={@ca_form_data["country"]}
                     maxlength="2"
                     required
-                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   />
                 </div>
               </div>
@@ -454,7 +454,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                   <label class="block text-sm font-medium text-on-surface">Key Type</label>
                   <select
                     name="ca[key_type]"
-                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    class="select mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   >
                     <option value="rsa" selected={@ca_form_data["key_type"] == "rsa"}>RSA</option>
                     <option value="ecdsa" selected={@ca_form_data["key_type"] == "ecdsa"}>
@@ -467,7 +467,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                   <label class="block text-sm font-medium text-on-surface">Key Bits</label>
                   <select
                     name="ca[key_bits]"
-                    class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    class="select mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   >
                     <option value="2048" selected={@ca_form_data["key_bits"] == "2048"}>
                       2048
@@ -488,7 +488,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                   name="ca[ttl_days]"
                   value={@ca_form_data["ttl_days"]}
                   required
-                  class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                  class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                 />
               </div>
 
@@ -530,7 +530,7 @@ defmodule SecretHub.Web.PKIManagementLive do
             <select
               phx-change="filter_certificates"
               name="filter_type"
-              class="form-select rounded-md border-outline-variant"
+              class="select form-select rounded-md border-outline-variant"
             >
               <option value="all">All</option>
               <option value="root_ca">Root CA</option>
@@ -549,7 +549,7 @@ defmodule SecretHub.Web.PKIManagementLive do
               name="query"
               value={@search_query}
               placeholder="Search by common name or serial..."
-              class="form-input flex-1 rounded-md border-outline-variant"
+              class="input form-input flex-1 rounded-md border-outline-variant"
             />
           </div>
         </div>
@@ -803,7 +803,7 @@ defmodule SecretHub.Web.PKIManagementLive do
                 type="text"
                 name="remove[confirmation]"
                 autocomplete="off"
-                class="block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-error focus:border-error sm:text-sm"
+                class="input block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-error focus:border-error sm:text-sm"
               />
 
               <%= if !Enum.empty?(@validation_errors) do %>

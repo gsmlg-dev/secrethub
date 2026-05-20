@@ -38,6 +38,7 @@ if System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) do
 
   config :secrethub_web, SecretHub.Web.AgentEndpoint,
     server: true,
+    pubsub_server: SecretHub.Web.PubSub,
     url: [host: agent_host, port: agent_port],
     https: [
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
@@ -45,10 +46,14 @@ if System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) do
       cipher_suite: :strong,
       certfile: agent_certfile,
       keyfile: agent_keyfile,
-      cacertfile: agent_cacertfile,
-      verify: :verify_peer,
-      fail_if_no_peer_cert: true,
-      versions: [:"tlsv1.2", :"tlsv1.3"]
+      thousand_island_options: [
+        transport_options: [
+          cacertfile: String.to_charlist(agent_cacertfile),
+          verify: :verify_peer,
+          fail_if_no_peer_cert: true,
+          versions: [:"tlsv1.2", :"tlsv1.3"]
+        ]
+      ]
     ]
 
   config :secrethub_web,

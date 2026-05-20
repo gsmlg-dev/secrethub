@@ -161,7 +161,7 @@ defmodule SecretHub.Web.AuditLogLive do
         </div>
         <div class="flex space-x-4">
           <button
-            class="btn-secondary"
+            class="btn btn-secondary"
             phx-click="export_logs"
           >
             <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -193,7 +193,7 @@ defmodule SecretHub.Web.AuditLogLive do
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label class="block text-sm font-medium text-on-surface mb-1">Event Type</label>
-              <select name="filters[event_type]" class="form-select w-full">
+              <select name="filters[event_type]" class="select form-select w-full">
                 <option value="all" selected={@filters.event_type == "all"}>All Events</option>
                 <%= for type <- @event_types do %>
                   <option
@@ -208,7 +208,7 @@ defmodule SecretHub.Web.AuditLogLive do
 
             <div>
               <label class="block text-sm font-medium text-on-surface mb-1">Access Status</label>
-              <select name="filters[access_granted]" class="form-select w-full">
+              <select name="filters[access_granted]" class="select form-select w-full">
                 <option value="all" selected={@filters.access_granted == "all"}>All Status</option>
                 <option value="true" selected={@filters.access_granted == "true"}>Granted</option>
                 <option value="false" selected={@filters.access_granted == "false"}>Denied</option>
@@ -221,7 +221,7 @@ defmodule SecretHub.Web.AuditLogLive do
                 type="text"
                 name="filters[agent_id]"
                 value={@filters.agent_id}
-                class="form-input w-full"
+                class="input form-input w-full"
                 placeholder="agent-prod-01"
               />
             </div>
@@ -232,7 +232,7 @@ defmodule SecretHub.Web.AuditLogLive do
                 type="text"
                 name="filters[secret_path]"
                 value={@filters.secret_path}
-                class="form-input w-full"
+                class="input form-input w-full"
                 placeholder="prod/db/postgres"
               />
             </div>
@@ -243,7 +243,7 @@ defmodule SecretHub.Web.AuditLogLive do
                 type="datetime-local"
                 name="filters[date_from]"
                 value={@filters.date_from}
-                class="form-input w-full"
+                class="input form-input w-full"
               />
             </div>
 
@@ -253,7 +253,7 @@ defmodule SecretHub.Web.AuditLogLive do
                 type="datetime-local"
                 name="filters[date_to]"
                 value={@filters.date_to}
-                class="form-input w-full"
+                class="input form-input w-full"
               />
             </div>
           </div>
@@ -264,7 +264,7 @@ defmodule SecretHub.Web.AuditLogLive do
               type="text"
               name="query"
               value={@search_query}
-              class="form-input w-full"
+              class="input form-input w-full"
               placeholder="Search by IP address, policy, or correlation ID..."
               phx-change="search_logs"
             />

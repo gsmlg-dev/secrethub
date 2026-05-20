@@ -6,30 +6,54 @@ defmodule SecretHub.Web.AgentPendingLive do
   use SecretHub.Web, :live_view
 
   alias SecretHub.Core.Agents.Enrollment
+  @refresh_interval_ms 2_500
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, assign(socket, enrollments: [], selected: nil)}
+    if connected?(socket), do: schedule_refresh()
+
+    {:ok, assign(socket, enrollments: [], selected: nil, active_ca?: false, approval_notice: nil)}
   end
 
   @impl true
   def handle_params(%{"id" => id}, _uri, socket) do
+    enrollments = Enrollment.list_pending()
+
     {:noreply,
      assign(socket,
-       enrollments: Enrollment.list_pending(),
-       selected: Enrollment.get_enrollment(id)
+       enrollments: enrollments,
+       active_ca?: active_ca?(),
+       selected: selected_enrollment(id, enrollments)
      )}
   end
 
   def handle_params(_params, _uri, socket) do
-    {:noreply, assign(socket, enrollments: Enrollment.list_pending(), selected: nil)}
+    {:noreply,
+     assign(socket,
+       enrollments: Enrollment.list_pending(),
+       active_ca?: active_ca?(),
+       selected: nil
+     )}
   end
 
   @impl true
   def handle_event("approve", %{"id" => id}, socket) do
     case Enrollment.approve(id, "admin") do
       {:ok, _enrollment} ->
-        {:noreply, reload(socket) |> put_flash(:info, "Agent approved")}
+        {:noreply,
+         socket
+         |> clear_approval_notice()
+         |> reload()
+         |> put_flash(:info, "Agent approved")}
+
+      {:error, reason} when reason in [:no_active_ca, :ca_private_key_unavailable] ->
+        {:noreply,
+         assign(socket,
+           approval_notice: %{
+             id: id,
+             message: "Create an active Root CA before approving agents."
+           }
+         )}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Approve failed: #{inspect(reason)}")}
@@ -67,7 +91,13 @@ defmodule SecretHub.Web.AgentPendingLive do
   end
 
   def handle_event("select", %{"id" => id}, socket) do
-    {:noreply, push_patch(socket, to: ~p"/admin/agents/pending/#{id}")}
+    {:noreply, push_patch(socket, to: ~p"/admin/pending-agents/#{id}")}
+  end
+
+  @impl true
+  def handle_info(:refresh_pending, socket) do
+    schedule_refresh()
+    {:noreply, reload(socket)}
   end
 
   @impl true
@@ -81,8 +111,35 @@ defmodule SecretHub.Web.AgentPendingLive do
             Review host identity before certificate issuance.
           </p>
         </div>
-        <.link navigate={~p"/admin/agents"} class="btn-secondary">Active Agents</.link>
+        <.link navigate={~p"/admin/agents"} class="btn btn-secondary">Active Agents</.link>
       </div>
+
+      <%= if @approval_notice do %>
+        <div
+          id="pending-agent-ca-required"
+          class="rounded-lg border border-warning bg-warning-container p-4 text-on-warning-container"
+        >
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p class="text-sm font-medium">{@approval_notice.message}</p>
+            <.link navigate={~p"/admin/pki"} class="btn btn-primary btn-sm">
+              Create Root CA
+            </.link>
+          </div>
+        </div>
+      <% end %>
+
+      <%= unless @active_ca? do %>
+        <div class="rounded-lg border border-outline-variant bg-surface-container-low p-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p class="text-sm text-on-surface-variant">
+              Agent approval requires an active Root CA for certificate issuance.
+            </p>
+            <.link navigate={~p"/admin/pki"} class="btn btn-secondary btn-sm">
+              PKI Management
+            </.link>
+          </div>
+        </div>
+      <% end %>
 
       <div class="overflow-x-auto bg-surface-container rounded-lg shadow">
         <table class="min-w-full divide-y divide-outline-variant">
@@ -113,20 +170,24 @@ defmodule SecretHub.Web.AgentPendingLive do
                 <td class="px-4 py-3 text-sm">
                   <div class="flex gap-2">
                     <button
-                      class="btn-primary btn-sm"
+                      class="btn btn-primary btn-sm"
                       phx-click="approve"
                       phx-value-id={enrollment.id}
                     >
                       Approve
                     </button>
                     <button
-                      class="btn-secondary btn-sm"
+                      class="btn btn-secondary btn-sm"
                       phx-click="select"
                       phx-value-id={enrollment.id}
                     >
                       Details
                     </button>
-                    <button class="btn-danger btn-sm" phx-click="reject" phx-value-id={enrollment.id}>
+                    <button
+                      class="btn btn-danger btn-sm"
+                      phx-click="reject"
+                      phx-value-id={enrollment.id}
+                    >
                       Reject
                     </button>
                   </div>
@@ -144,10 +205,10 @@ defmodule SecretHub.Web.AgentPendingLive do
               {@selected.hostname || @selected.id}
             </h3>
             <div class="flex gap-2">
-              <button class="btn-secondary btn-sm" phx-click="reset" phx-value-id={@selected.id}>
+              <button class="btn btn-secondary btn-sm" phx-click="reset" phx-value-id={@selected.id}>
                 Reset Enrollment
               </button>
-              <button class="btn-secondary btn-sm" phx-click="expire" phx-value-id={@selected.id}>
+              <button class="btn btn-secondary btn-sm" phx-click="expire" phx-value-id={@selected.id}>
                 Expire
               </button>
             </div>
@@ -163,7 +224,29 @@ defmodule SecretHub.Web.AgentPendingLive do
     """
   end
 
-  defp reload(socket), do: assign(socket, enrollments: Enrollment.list_pending())
+  defp reload(socket) do
+    enrollments = Enrollment.list_pending()
+    selected = selected_enrollment(socket.assigns.selected, enrollments)
+
+    assign(socket, enrollments: enrollments, active_ca?: active_ca?(), selected: selected)
+  end
+
+  defp clear_approval_notice(socket), do: assign(socket, approval_notice: nil)
+
+  defp active_ca? do
+    match?({:ok, _ca}, SecretHub.Core.PKI.Issuer.active_signing_ca())
+  end
+
+  defp schedule_refresh do
+    Process.send_after(self(), :refresh_pending, @refresh_interval_ms)
+  end
+
+  defp selected_enrollment(nil, _enrollments), do: nil
+
+  defp selected_enrollment(id, enrollments) when is_binary(id),
+    do: Enum.find(enrollments, &(&1.id == id))
+
+  defp selected_enrollment(%{id: id}, enrollments), do: selected_enrollment(id, enrollments)
 
   defp details(enrollment) do
     Map.take(enrollment, [

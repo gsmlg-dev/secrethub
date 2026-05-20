@@ -42,8 +42,9 @@ defmodule SecretHub.Core.PKI.Verifier do
     end
   end
 
-  defp verify_agent_active(%Agent{status: status}) when status in [:active, :trusted_connected],
-    do: :ok
+  defp verify_agent_active(%Agent{status: status})
+       when status in [:certificate_issued, :connect_info_delivered, :active, :trusted_connected],
+       do: :ok
 
   defp verify_agent_active(_), do: {:error, :agent_not_active}
 

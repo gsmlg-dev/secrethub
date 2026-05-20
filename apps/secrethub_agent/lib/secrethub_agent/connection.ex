@@ -289,11 +289,11 @@ defmodule SecretHub.Agent.Connection do
 
   def handle_info({:try_join, attempts}, state) do
     if state.socket && SocketClient.connected?(state.socket) do
-      case join_channel(state.socket, state.agent_id) do
+      case join_channel(state.socket, state) do
         {:ok, channel} ->
           Logger.info("Successfully connected to Core",
             agent_id: state.agent_id,
-            channel: runtime_topic()
+            channel: connection_topic(state)
           )
 
           {:noreply, %{state | channel: channel, connection_status: :connected, retry_count: 0}}
@@ -397,7 +397,10 @@ defmodule SecretHub.Agent.Connection do
       )
 
       transport_opts = build_mtls_transport_opts(state)
-      Keyword.put(base_opts, :transport_opts, transport_opts)
+
+      base_opts
+      |> Keyword.put(:transport, SecretHub.Agent.MTLSWebSocketTransport)
+      |> Keyword.put(:transport_opts, transport_opts)
     else
       Logger.info("Connecting without mTLS certificate material",
         agent_id: state.agent_id
@@ -421,7 +424,6 @@ defmodule SecretHub.Agent.Connection do
 
   defp build_mtls_transport_opts(state) do
     common_opts = [
-      verify: :verify_peer,
       versions: [:"tlsv1.2", :"tlsv1.3"],
       server_name_indication: expected_server_name(state),
       customize_hostname_check: [
@@ -431,15 +433,25 @@ defmodule SecretHub.Agent.Connection do
 
     if is_binary(state.cert_pem) and not is_nil(state.private_key) and is_binary(state.ca_pem) do
       [
-        certs_keys: [%{cert: pem_entry_der(state.cert_pem, :Certificate), key: state.private_key}],
-        cacerts: pem_entries_der(state.ca_pem, :Certificate)
-      ] ++ common_opts
+        ssl_verify: :verify_peer,
+        socket_opts:
+          [
+            certs_keys: [
+              %{cert: pem_entry_der(state.cert_pem, :Certificate), key: state.private_key}
+            ],
+            cacerts: pem_entries_der(state.ca_pem, :Certificate)
+          ] ++ common_opts
+      ]
     else
       [
-        certfile: to_charlist(state.cert_path),
-        keyfile: to_charlist(state.key_path),
-        cacertfile: to_charlist(state.ca_path)
-      ] ++ common_opts
+        ssl_verify: :verify_peer,
+        socket_opts:
+          [
+            certfile: to_charlist(state.cert_path),
+            keyfile: to_charlist(state.key_path),
+            cacertfile: to_charlist(state.ca_path)
+          ] ++ common_opts
+      ]
     end
   end
 
@@ -456,17 +468,43 @@ defmodule SecretHub.Agent.Connection do
     |> to_charlist()
   end
 
-  defp join_channel(socket, _agent_id) do
-    topic = runtime_topic()
+  defp join_channel(socket, state) do
+    topic = connection_topic(state)
 
     Logger.debug("Joining channel", topic: topic)
 
-    case Channel.join(socket, topic) do
+    case Channel.join(socket, topic, join_payload(state)) do
       {:ok, _response, channel} ->
         {:ok, channel}
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp connection_topic(_state), do: runtime_topic()
+
+  defp join_payload(state) do
+    %{
+      "agent_id" => state.agent_id,
+      "name" => state.agent_id,
+      "hostname" => local_hostname(),
+      "version" => app_version(),
+      "mode" => if(should_use_mtls?(state), do: "trusted_runtime", else: "local_dev")
+    }
+  end
+
+  defp local_hostname do
+    case :inet.gethostname() do
+      {:ok, hostname} -> to_string(hostname)
+      {:error, _reason} -> "localhost"
+    end
+  end
+
+  defp app_version do
+    case Application.spec(:secrethub_agent, :vsn) do
+      nil -> "unknown"
+      version -> to_string(version)
     end
   end
 

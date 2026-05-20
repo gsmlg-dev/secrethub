@@ -19,11 +19,12 @@ defmodule SecretHub.Agent.Enrollment do
 
     with {:ok, host_key} <- host_key(opts),
          {:ok, pending} <- create_pending(core_url, host_key, opts),
+         :ok <- notify_pending(pending, opts),
          {:ok, approved} <- wait_for_approval(core_url, pending, opts),
          {:ok, csr_pem} <- HostKey.csr_pem(host_key, approved["required_csr_fields"]),
          {:ok, issued} <- submit_csr(core_url, pending, csr_pem),
          {:ok, connect_info} <- connect_info(core_url, pending),
-         :ok <- store_material(storage_dir, pending, issued, connect_info) do
+         :ok <- store_material(storage_dir, pending, issued, connect_info, host_key) do
       {:ok,
        %{
          agent_id: issued["agent_id"] || approved["agent_id"],
@@ -47,7 +48,7 @@ defmodule SecretHub.Agent.Enrollment do
 
   def wait_for_approval(core_url, pending, opts \\ []) do
     timeout_ms = Keyword.get(opts, :approval_timeout_ms, @default_timeout_ms)
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
+    deadline = approval_deadline(timeout_ms)
 
     poll_until_approved(core_url, pending, deadline)
   end
@@ -98,9 +99,10 @@ defmodule SecretHub.Agent.Enrollment do
     }
   end
 
-  def store_material(storage_dir, pending, issued, connect_info) do
+  def store_material(storage_dir, pending, issued, connect_info, host_key \\ nil) do
     with :ok <- File.mkdir_p(storage_dir),
          :ok <- File.write(Path.join(storage_dir, "agent-cert.pem"), issued["certificate_pem"]),
+         :ok <- write_agent_key(storage_dir, host_key),
          :ok <- File.write(Path.join(storage_dir, "ca-chain.pem"), issued["ca_chain_pem"] || ""),
          :ok <-
            File.write(Path.join(storage_dir, "connect-info.json"), Jason.encode!(connect_info)),
@@ -108,6 +110,15 @@ defmodule SecretHub.Agent.Enrollment do
       :ok
     end
   end
+
+  defp write_agent_key(_storage_dir, nil), do: :ok
+
+  defp write_agent_key(storage_dir, %HostKey{private_key_pem: private_key_pem})
+       when is_binary(private_key_pem) do
+    File.write(Path.join(storage_dir, "agent-key.pem"), private_key_pem)
+  end
+
+  defp write_agent_key(_storage_dir, %HostKey{}), do: {:error, :missing_tls_private_key_pem}
 
   def delete_pending_token(storage_dir) do
     pending_path = Path.join(storage_dir, "pending.json")
@@ -125,7 +136,7 @@ defmodule SecretHub.Agent.Enrollment do
         {:error, {:enrollment_rejected, payload}}
 
       {:ok, payload} ->
-        if System.monotonic_time(:millisecond) >= deadline do
+        if approval_deadline_expired?(deadline) do
           {:error, :approval_timeout}
         else
           Process.sleep(payload["poll_interval_ms"] || @default_poll_interval_ms)
@@ -137,10 +148,26 @@ defmodule SecretHub.Agent.Enrollment do
     end
   end
 
+  defp approval_deadline(:infinity), do: :infinity
+  defp approval_deadline(timeout_ms), do: System.monotonic_time(:millisecond) + timeout_ms
+
+  defp approval_deadline_expired?(:infinity), do: false
+
+  defp approval_deadline_expired?(deadline) do
+    System.monotonic_time(:millisecond) >= deadline
+  end
+
   defp host_key(opts) do
     case Keyword.fetch(opts, :host_key) do
       {:ok, %HostKey{} = host_key} -> {:ok, host_key}
       :error -> HostKey.discover(opts)
+    end
+  end
+
+  defp notify_pending(pending, opts) do
+    case Keyword.get(opts, :on_pending) do
+      callback when is_function(callback, 1) -> callback.(pending)
+      _other -> :ok
     end
   end
 
@@ -165,29 +192,42 @@ defmodule SecretHub.Agent.Enrollment do
   defp post_json(url, payload, headers) do
     headers = [{"content-type", "application/json"} | headers]
 
-    case HTTPoison.post(url, Jason.encode!(payload), headers) do
-      {:ok, %{status_code: code, body: body}} when code in 200..299 -> decode_json(body)
-      {:ok, %{status_code: code, body: body}} -> {:error, {:http_error, code, decode_body(body)}}
-      {:error, reason} -> {:error, reason}
+    case Req.post(url, body: Jason.encode!(payload), headers: headers) do
+      {:ok, %Req.Response{status: code, body: body}} when code in 200..299 ->
+        decode_json(body)
+
+      {:ok, %Req.Response{status: code, body: body}} ->
+        {:error, {:http_error, code, decode_body(body)}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   defp get_json(url, headers) do
-    case HTTPoison.get(url, headers) do
-      {:ok, %{status_code: code, body: body}} when code in 200..299 -> decode_json(body)
-      {:ok, %{status_code: code, body: body}} -> {:error, {:http_error, code, decode_body(body)}}
-      {:error, reason} -> {:error, reason}
+    case Req.get(url, headers: headers) do
+      {:ok, %Req.Response{status: code, body: body}} when code in 200..299 ->
+        decode_json(body)
+
+      {:ok, %Req.Response{status: code, body: body}} ->
+        {:error, {:http_error, code, decode_body(body)}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
-  defp decode_json(body), do: Jason.decode(body)
+  defp decode_json(body) when is_binary(body), do: Jason.decode(body)
+  defp decode_json(body), do: {:ok, body}
 
-  defp decode_body(body) do
+  defp decode_body(body) when is_binary(body) do
     case Jason.decode(body) do
       {:ok, decoded} -> decoded
       {:error, _} -> body
     end
   end
+
+  defp decode_body(body), do: body
 
   defp hostname do
     case :inet.gethostname() do

@@ -161,7 +161,7 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
             <select
               phx-change="select_version_a"
               name="version"
-              class="w-full px-3 py-2 border rounded-md"
+              class="select w-full px-3 py-2 border rounded-md"
             >
               <option value="">Select version...</option>
               <%= for version <- @versions do %>
@@ -184,7 +184,7 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
             <select
               phx-change="select_version_b"
               name="version"
-              class="w-full px-3 py-2 border rounded-md"
+              class="select w-full px-3 py-2 border rounded-md"
             >
               <option value="">Select version...</option>
               <%= for version <- @versions do %>

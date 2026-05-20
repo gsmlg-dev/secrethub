@@ -19,7 +19,7 @@ defmodule SecretHub.Agent.Application do
     # Get core endpoints from configuration
     core_endpoints =
       Application.get_env(:secrethub_agent, :core_endpoints) ||
-        [Application.get_env(:secrethub_agent, :core_url, "http://localhost:4000")]
+        [Application.get_env(:secrethub_agent, :core_url, "ws://localhost:4664")]
 
     agent_id =
       Application.get_env(

@@ -381,7 +381,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
           phx-blur="update_field"
           phx-value-field="name"
           value={@form_data["name"]}
-          class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+          class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
           placeholder="e.g., database-readonly"
           required
         />
@@ -443,7 +443,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
           <input
             type="text"
             id="new-pattern-input"
-            class="flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+            class="input flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
             placeholder="e.g., prod.db.*, *.password"
           />
           <button
@@ -556,7 +556,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
               type="time"
               id="start-time"
               value={extract_time_range(@form_data["conditions"], :start)}
-              class="block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+              class="input block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
             />
           </div>
           <div>
@@ -568,7 +568,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
               phx-blur="update_condition"
               phx-value-condition="time_of_day"
               phx-value-value={build_time_range("start-time", "end-time")}
-              class="block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+              class="input block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
             />
           </div>
         </div>
@@ -601,7 +601,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
             <input
               type="date"
               id="start-date"
-              class="block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+              class="input block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
             />
           </div>
           <div>
@@ -612,7 +612,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
               phx-blur="update_condition"
               phx-value-condition="date_range"
               phx-value-value={build_date_range("start-date", "end-date")}
-              class="block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+              class="input block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
             />
           </div>
         </div>
@@ -642,7 +642,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
           phx-blur="update_condition"
           phx-value-condition="max_ttl_seconds"
           value={Map.get(@form_data["conditions"], "max_ttl_seconds", "")}
-          class="block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+          class="input block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
           placeholder="3600"
         />
         <p class="mt-1 text-xs text-on-surface-variant">
@@ -665,7 +665,7 @@ defmodule SecretHub.Web.PolicyEditorLive do
         <div class="flex gap-2 mb-3">
           <select
             id="entity-select"
-            class="flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+            class="select flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
           >
             <option value="">Select an agent...</option>
             <%= for agent <- @agents do %>

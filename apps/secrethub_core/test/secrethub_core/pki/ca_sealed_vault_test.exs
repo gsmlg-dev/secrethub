@@ -10,6 +10,7 @@ defmodule SecretHub.Core.PKI.CASealedVaultTest do
       GenServer.stop(pid)
     end
 
+    Repo.delete_all(Certificate)
     Repo.delete_all(VaultConfig)
 
     start_supervised!(SealState)

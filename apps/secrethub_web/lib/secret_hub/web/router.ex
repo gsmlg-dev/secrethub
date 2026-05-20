@@ -99,8 +99,8 @@ defmodule SecretHub.Web.Router do
       layout: {SecretHub.Web.Layouts, :admin} do
       live "/dashboard", AdminDashboardLive, :index
       live "/agents", AgentMonitoringLive, :index
-      live "/agents/pending", AgentPendingLive, :index
-      live "/agents/pending/:id", AgentPendingLive, :show
+      live "/pending-agents", AgentPendingLive, :index
+      live "/pending-agents/:id", AgentPendingLive, :show
       live "/agents/:id", AgentMonitoringLive, :show
       live "/secrets", SecretManagementLive, :index
       live "/secrets/:id/versions", SecretVersionHistoryLive, :index

@@ -392,7 +392,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   phx-blur="update_form"
                   phx-value-field="name"
                   value={@form_data["name"]}
-                  class="mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                  class="input mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   placeholder="e.g., database-readonly"
                   required
                 />
@@ -433,7 +433,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   <input
                     type="text"
                     id="new-pattern"
-                    class="flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    class="input flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                     placeholder="e.g., prod.db.*, *.password"
                   />
                   <button
@@ -491,7 +491,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                 <div class="flex gap-2 mb-2">
                   <select
                     id="entity-select"
-                    class="flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
+                    class="select flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
                   >
                     <option value="">Select an agent...</option>
                     <%= for agent <- @agents do %>
@@ -590,7 +590,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                     type="text"
                     name="entity_id"
                     value={@test_entity_id}
-                    class="mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
+                    class="input mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
                     placeholder="agent-001"
                   />
                 </div>
@@ -600,7 +600,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                     type="text"
                     name="secret_path"
                     value={@test_secret_path}
-                    class="mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
+                    class="input mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
                     placeholder="prod.db.postgres"
                   />
                 </div>
@@ -609,7 +609,7 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   <select
                     name="operation"
                     value={@test_operation}
-                    class="mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
+                    class="select mt-1 block w-full border border-warning rounded-md shadow-sm py-1 px-2 text-sm"
                   >
                     <option value="read">Read</option>
                     <option value="write">Write</option>

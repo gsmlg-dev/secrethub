@@ -60,6 +60,7 @@ defmodule SecretHub.Web.AgentEnrollmentController do
 
   def connect_info(conn, %{"id" => id}) do
     with {:ok, token} <- bearer_token(conn),
+         :ok <- SecretHub.Web.AgentEndpointManager.ensure_started(),
          {:ok, payload} <- Enrollment.connect_info(id, token) do
       json(conn, payload)
     else
@@ -92,8 +93,18 @@ defmodule SecretHub.Web.AgentEnrollmentController do
   defp enrollment_error(conn, :invalid_pending_token),
     do: conn |> put_status(:unauthorized) |> json(%{error: "invalid_pending_token"})
 
+  defp enrollment_error(conn, {:certificate_issue_failed, reason}) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "certificate_issue_failed", reason: format_reason(reason)})
+  end
+
   defp enrollment_error(conn, reason),
-    do: conn |> put_status(:bad_request) |> json(%{error: inspect(reason)})
+    do: conn |> put_status(:bad_request) |> json(%{error: format_reason(reason)})
+
+  defp format_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp format_reason(reason) when is_binary(reason), do: reason
+  defp format_reason(reason), do: inspect(reason)
 
   defp ca_chain_pem do
     case SecretHub.Core.PKI.CA.get_ca_chain() do

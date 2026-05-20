@@ -156,7 +156,7 @@ defmodule SecretHub.Web.AdminCertificateLive do
                   name="admin_email"
                   id="admin_email"
                   required
-                  class="mt-1 block w-full rounded-md border-outline-variant shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+                  class="input mt-1 block w-full rounded-md border-outline-variant shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
                   placeholder="admin@example.com"
                 />
               </div>

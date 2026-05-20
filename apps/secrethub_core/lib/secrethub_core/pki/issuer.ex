@@ -6,9 +6,42 @@ defmodule SecretHub.Core.PKI.Issuer do
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Certificate
 
+  def active_signing_ca do
+    with {:ok, ca, _ca_key} <- active_signing_ca_with_key() do
+      {:ok, ca}
+    end
+  end
+
+  def issue_server_certificate(common_name, dns_names) do
+    with {:ok, ca, ca_key} <- active_signing_ca_with_key() do
+      private_key = X509.PrivateKey.new_rsa(2048)
+
+      cert =
+        X509.Certificate.new(
+          X509.PublicKey.derive(private_key),
+          "/O=SecretHub/CN=#{common_name}",
+          X509.Certificate.from_pem!(ca.certificate_pem),
+          ca_key,
+          extensions: [
+            subject_alt_name:
+              X509.Certificate.Extension.subject_alt_name(server_subject_alt_names(dns_names)),
+            ext_key_usage: X509.Certificate.Extension.ext_key_usage([:serverAuth])
+          ],
+          validity: 365
+        )
+
+      {:ok,
+       %{
+         certificate_pem: X509.Certificate.to_pem(cert),
+         private_key_pem: X509.PrivateKey.to_pem(private_key),
+         ca_certificate_pem: ca.certificate_pem,
+         ca_fingerprint: ca.fingerprint
+       }}
+    end
+  end
+
   def issue_agent_certificate_from_csr(enrollment, csr) do
-    with {:ok, ca} <- SecretHub.Core.PKI.RootCA.active_ca(),
-         {:ok, ca_key} <- decrypt_private_key(ca.private_key_encrypted),
+    with {:ok, ca, ca_key} <- active_signing_ca_with_key(),
          cert <- build_certificate(enrollment, csr, ca, ca_key),
          cert_pem <- X509.Certificate.to_pem(cert),
          {:ok, attrs} <- Certificate.from_pem(cert_pem) do
@@ -37,6 +70,16 @@ defmodule SecretHub.Core.PKI.Issuer do
         }
       })
       |> Repo.insert()
+    end
+  end
+
+  defp active_signing_ca_with_key do
+    with {:ok, ca} <- SecretHub.Core.PKI.RootCA.active_ca(),
+         {:ok, ca_key} <- decrypt_private_key(ca.private_key_encrypted) do
+      {:ok, ca, ca_key}
+    else
+      {:error, :no_active_ca} -> {:error, :no_active_ca}
+      {:error, _reason} -> {:error, :ca_private_key_unavailable}
     end
   end
 
@@ -82,18 +125,38 @@ defmodule SecretHub.Core.PKI.Issuer do
   defp master_key do
     case Process.whereis(SecretHub.Core.Vault.SealState) do
       nil ->
-        :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
+        dev_fallback_key()
 
       _pid ->
         case SecretHub.Core.Vault.SealState.get_master_key() do
           {:ok, key} -> key
-          {:error, _reason} -> :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
+          {:error, _reason} -> if(dev_pki_unsealed_fallback?(), do: dev_fallback_key())
         end
     end
+  end
+
+  defp dev_pki_unsealed_fallback? do
+    Application.get_env(:secrethub_core, :dev_pki_unsealed_fallback, false)
+  end
+
+  defp dev_fallback_key do
+    :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
   end
 
   defp validity_days do
     Application.get_env(:secrethub_core, :agent_certificate_ttl_seconds, 90 * 24 * 60 * 60)
     |> div(86_400)
+  end
+
+  defp server_subject_alt_names(dns_names) do
+    dns_names
+    |> List.wrap()
+    |> Enum.flat_map(fn
+      "127.0.0.1" -> [{:iPAddress, {127, 0, 0, 1}}]
+      "::1" -> [{:iPAddress, {0, 0, 0, 0, 0, 0, 0, 1}}]
+      name when is_binary(name) -> [name]
+      _other -> []
+    end)
+    |> Enum.uniq()
   end
 end

@@ -416,14 +416,14 @@ defmodule SecretHub.Agent.EndpointManager do
       |> URI.merge("/v1/sys/health")
       |> URI.to_string()
 
-    case HTTPoison.get(health_url, [], recv_timeout: 3000, connect_timeout: 3000) do
-      {:ok, %{status_code: code}} when code in 200..299 ->
+    case Req.get(health_url, receive_timeout: 3000) do
+      {:ok, %Req.Response{status: code}} when code in 200..299 ->
         :ok
 
-      {:ok, %{status_code: code}} ->
+      {:ok, %Req.Response{status: code}} ->
         {:error, {:unhealthy_status, code}}
 
-      {:error, %HTTPoison.Error{reason: reason}} ->
+      {:error, reason} ->
         {:error, reason}
     end
   rescue

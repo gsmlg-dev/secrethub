@@ -221,16 +221,16 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
     <!-- Actions -->
         <div class="px-6 py-4 border-t border-outline-variant flex justify-end space-x-4">
           <button
-            class="btn-secondary"
+            class="btn btn-secondary"
             phx-click="close"
             phx-target={@myself}
           >
             Close
           </button>
-          <button class="btn-secondary">
+          <button class="btn btn-secondary">
             Export Event
           </button>
-          <button class="btn-secondary">
+          <button class="btn btn-secondary">
             View Related Events
           </button>
         </div>

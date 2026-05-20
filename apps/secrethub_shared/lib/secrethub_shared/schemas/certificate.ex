@@ -158,18 +158,21 @@ defmodule SecretHub.Shared.Schemas.Certificate do
       [{:Certificate, der, _} | _] ->
         cert = :public_key.der_decode(:Certificate, der)
         tbs = elem(cert, 1)
+        subject = tbs_subject(tbs)
+        issuer = tbs_issuer(tbs)
+        {valid_from, valid_until} = tbs_validity(tbs)
 
         {:ok,
          %{
            serial_number: extract_serial_number(tbs),
            fingerprint: fingerprint_from_der(der),
-           subject: format_dn(elem(tbs, 5)),
-           issuer: format_dn(elem(tbs, 3)),
-           common_name: extract_rdn_value(elem(tbs, 5), {2, 5, 4, 3}),
-           organization: extract_rdn_value(elem(tbs, 5), {2, 5, 4, 10}),
-           organizational_unit: extract_rdn_value(elem(tbs, 5), {2, 5, 4, 11}),
-           valid_from: parse_validity_time(elem(elem(tbs, 4), 1)),
-           valid_until: parse_validity_time(elem(elem(tbs, 4), 2)),
+           subject: format_dn(subject),
+           issuer: format_dn(issuer),
+           common_name: extract_rdn_value(subject, {2, 5, 4, 3}),
+           organization: extract_rdn_value(subject, {2, 5, 4, 10}),
+           organizational_unit: extract_rdn_value(subject, {2, 5, 4, 11}),
+           valid_from: parse_validity_time(valid_from),
+           valid_until: parse_validity_time(valid_until),
            key_usage: extract_key_usage(tbs),
            certificate_pem: pem_string
          }}
@@ -217,15 +220,54 @@ defmodule SecretHub.Shared.Schemas.Certificate do
     |> Enum.join(":")
   end
 
-  defp extract_serial_number(tbs) do
-    serial = elem(tbs, 1)
+  defp extract_serial_number(
+         {:TBSCertificate, _version, serial, _signature, _issuer, _validity, _subject, _spki,
+          _issuer_uid, _subject_uid, _extensions}
+       ) do
+    format_serial_number(serial)
+  end
 
+  defp extract_serial_number(tbs) do
+    tbs
+    |> elem(1)
+    |> format_serial_number()
+  end
+
+  defp format_serial_number(serial) when is_integer(serial) do
     serial
     |> :binary.encode_unsigned()
     |> Base.encode16(case: :lower)
     |> String.graphemes()
     |> Enum.chunk_every(2)
     |> Enum.join(":")
+  end
+
+  defp tbs_issuer(
+         {:TBSCertificate, _version, _serial, _signature, issuer, _validity, _subject, _spki,
+          _issuer_uid, _subject_uid, _extensions}
+       ),
+       do: issuer
+
+  defp tbs_issuer(tbs), do: elem(tbs, 3)
+
+  defp tbs_subject(
+         {:TBSCertificate, _version, _serial, _signature, _issuer, _validity, subject, _spki,
+          _issuer_uid, _subject_uid, _extensions}
+       ),
+       do: subject
+
+  defp tbs_subject(tbs), do: elem(tbs, 5)
+
+  defp tbs_validity(
+         {:TBSCertificate, _version, _serial, _signature, _issuer,
+          {:Validity, valid_from, valid_until}, _subject, _spki, _issuer_uid, _subject_uid,
+          _extensions}
+       ),
+       do: {valid_from, valid_until}
+
+  defp tbs_validity(tbs) do
+    validity = elem(tbs, 4)
+    {elem(validity, 1), elem(validity, 2)}
   end
 
   defp format_dn({:rdnSequence, rdn_sequence}) do
@@ -253,6 +295,13 @@ defmodule SecretHub.Shared.Schemas.Certificate do
   defp decode_attr_value({:printableString, value}), do: to_string(value)
   defp decode_attr_value({:ia5String, value}), do: to_string(value)
   defp decode_attr_value({:teletexString, value}), do: to_string(value)
+
+  defp decode_attr_value(<<tag, rest::binary>>) when tag in [0x0C, 0x13, 0x16, 0x14] do
+    rest
+    |> decode_asn1_string_value()
+    |> to_string()
+  end
+
   defp decode_attr_value(value) when is_binary(value), do: value
   defp decode_attr_value(value) when is_list(value), do: to_string(value)
   defp decode_attr_value(value), do: inspect(value)
@@ -296,6 +345,18 @@ defmodule SecretHub.Shared.Schemas.Certificate do
   end
 
   defp parse_validity_time(_), do: nil
+
+  defp decode_asn1_string_value(<<length, value::binary-size(length), _rest::binary>>)
+       when length < 128,
+       do: value
+
+  defp decode_asn1_string_value(<<0x81, length, value::binary-size(length), _rest::binary>>),
+    do: value
+
+  defp decode_asn1_string_value(<<0x82, length::16, value::binary-size(length), _rest::binary>>),
+    do: value
+
+  defp decode_asn1_string_value(value), do: value
 
   defp extract_key_usage(tbs) do
     # Extensions are the last element of TBSCertificate

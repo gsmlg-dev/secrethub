@@ -34,6 +34,10 @@ in
   languages.javascript.bun.enable = true;
   languages.javascript.bun.package = pkgs-stable.bun;
 
+  processes.secrethub-core = {
+    exec = "mix phx.server";
+  };
+
   # Development services
   services = {
     # PostgreSQL - Main database
@@ -175,11 +179,6 @@ in
 
     assets-build.exec = ''
       mix bun secrethub_web
-    '';
-    
-    # Development server
-    server.exec = ''
-      mix phx.server
     '';
     
     # Testing (MIX_ENV must be overridden since devenv sets it to "dev")

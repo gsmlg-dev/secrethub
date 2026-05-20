@@ -86,8 +86,9 @@ defmodule SecretHub.Agent.HostKey do
   end
 
   def fingerprint(public_key) do
-    :sha256
-    |> :crypto.hash(:ssh_file.encode(public_key, :ssh2_pubkey))
+    public_key
+    |> :ssh_file.encode(:ssh2_pubkey)
+    |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode64(padding: false)
     |> then(&"SHA256:#{&1}")
   end
@@ -129,6 +130,7 @@ defmodule SecretHub.Agent.HostKey do
     with {:ok, pem} <- File.read(path),
          {:ok, private_key} <- decode_private_key(pem),
          :ok <- ensure_algorithm(private_key, algorithm),
+         private_key <- normalize_private_key(private_key),
          public_key <- :ssh_file.extract_public_key(private_key) do
       {:ok,
        %__MODULE__{
@@ -173,11 +175,38 @@ defmodule SecretHub.Agent.HostKey do
   defp ensure_algorithm({:ECPrivateKey, _, _, {:namedCurve, _}, _, _}, :ecdsa), do: :ok
   defp ensure_algorithm(_private_key, algorithm), do: {:error, {:unexpected_host_key, algorithm}}
 
+  defp normalize_private_key(
+         {:RSAPrivateKey, version, modulus, public_exponent, private_exponent, prime1, prime2,
+          :undefined, :undefined, coefficient, other_prime_infos}
+       ) do
+    exponent1 = rem(private_exponent, prime1 - 1)
+    exponent2 = rem(private_exponent, prime2 - 1)
+
+    {:RSAPrivateKey, version, modulus, public_exponent, private_exponent, prime1, prime2,
+     exponent1, exponent2, coefficient, other_prime_infos}
+  end
+
+  defp normalize_private_key(private_key), do: private_key
+
   defp private_key_pem(private_key) do
     X509.PrivateKey.to_pem(private_key, wrap: true)
   rescue
-    _e -> nil
+    _e -> legacy_private_key_pem(private_key)
   end
+
+  defp legacy_private_key_pem({:RSAPrivateKey, _, _, _, _, _, _, _, _, _, _} = private_key) do
+    :public_key.pem_encode([
+      {:RSAPrivateKey, :public_key.der_encode(:RSAPrivateKey, private_key), :not_encrypted}
+    ])
+  end
+
+  defp legacy_private_key_pem({:ECPrivateKey, _, _, _, _, _} = private_key) do
+    :public_key.pem_encode([
+      {:ECPrivateKey, :public_key.der_encode(:ECPrivateKey, private_key), :not_encrypted}
+    ])
+  end
+
+  defp legacy_private_key_pem(_private_key), do: nil
 
   defp escape_rdn(value) when is_binary(value) do
     String.replace(value, "/", "\\/")

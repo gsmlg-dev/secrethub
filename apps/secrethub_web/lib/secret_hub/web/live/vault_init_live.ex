@@ -137,7 +137,7 @@ defmodule SecretHub.Web.VaultInitLive do
                       min="1"
                       max="255"
                       phx-change="update_total_shares"
-                      class="w-full px-4 py-2 border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      class="input w-full px-4 py-2 border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
                     <p class="mt-2 text-sm text-on-surface-variant">
                       Number of key shares to generate (recommended: 5)
@@ -155,7 +155,7 @@ defmodule SecretHub.Web.VaultInitLive do
                       min="1"
                       max={@total_shares}
                       phx-change="update_threshold"
-                      class="w-full px-4 py-2 border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      class="input w-full px-4 py-2 border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
                     <p class="mt-2 text-sm text-on-surface-variant">
                       Number of shares required to unseal (recommended: 3)
