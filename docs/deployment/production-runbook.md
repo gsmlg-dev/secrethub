@@ -144,7 +144,7 @@ On each Core instance, create `/opt/secrethub/secrethub.env`:
 SECRET_KEY_BASE=<generated-secret>
 PHX_SERVER=true
 PHX_HOST=secrethub.company.com
-PORT=4000
+PORT=4664
 
 # Database
 DATABASE_URL=postgresql://secrethub:PASSWORD@db.internal:5432/secrethub_prod
@@ -212,7 +212,7 @@ sudo journalctl -u secrethub-core -f
 **Expected Log Output:**
 ```
 [info] SecretHub.Core.Application started
-[info] Running SecretHub.WebWeb.Endpoint with Bandit on http://0.0.0.0:4000
+[info] Running SecretHub.WebWeb.Endpoint with Bandit on http://0.0.0.0:4664
 ```
 
 ---
@@ -224,7 +224,7 @@ sudo journalctl -u secrethub-core -f
 ```yaml
 Health Check Configuration:
   Protocol: HTTP
-  Port: 4000
+  Port: 4664
   Path: /v1/sys/health
   Interval: 10 seconds
   Timeout: 5 seconds
@@ -237,13 +237,13 @@ Health Check Configuration:
 ```
 Target Group:
   Protocol: HTTP
-  Port: 4000
+  Port: 4664
   Health Check: /v1/sys/health
 
   Targets:
-    - core-1:4000
-    - core-2:4000
-    - core-3:4000
+    - core-1:4664
+    - core-2:4664
+    - core-3:4664
 ```
 
 #### 3.3 Configure SSL/TLS
@@ -314,13 +314,13 @@ Unseal each Core instance separately:
 
 ```bash
 # Unseal core-1 (requires 3 of 5 keys)
-curl -X POST https://core-1.internal:4000/v1/sys/unseal \
+curl -X POST https://core-1.internal:4664/v1/sys/unseal \
   -d '{"key": "key1..."}'
 
-curl -X POST https://core-1.internal:4000/v1/sys/unseal \
+curl -X POST https://core-1.internal:4664/v1/sys/unseal \
   -d '{"key": "key2..."}'
 
-curl -X POST https://core-1.internal:4000/v1/sys/unseal \
+curl -X POST https://core-1.internal:4664/v1/sys/unseal \
   -d '{"key": "key3..."}'
 
 # Repeat for core-2 and core-3
@@ -453,20 +453,7 @@ Configure your monitoring stack to scrape SecretHub Core's telemetry endpoints a
 
 ### Phase 7: Agent Deployment
 
-#### 7.1 Create AppRole for Agents
-
-```bash
-# Create agent AppRole
-curl -X POST https://secrethub.company.com/v1/auth/approle/role/agents \
-  -H "X-Vault-Token: s.XXXXXXXXXXX" \
-  -d '{
-    "role_name": "agents",
-    "policies": ["agent-policy"],
-    "token_ttl": 3600
-  }'
-```
-
-#### 7.2 Deploy Agent
+#### 7.1 Deploy Agent
 
 On application hosts:
 
@@ -476,28 +463,34 @@ curl -L https://releases.secrethub.io/agent/latest/secrethub-agent-linux-amd64 \
   -o /usr/local/bin/secrethub-agent
 chmod +x /usr/local/bin/secrethub-agent
 
-# Configure agent
-cat > /etc/secrethub/agent.toml <<EOF
-[agent]
-id = "agent-prod-01"
-core_url = "wss://secrethub.company.com"
+# Configure persistent trusted runtime state
+sudo install -d -m 0700 -o secrethub -g secrethub /var/lib/secrethub-agent
 
-[auth]
-role_id = "<role-id>"
-secret_id = "<secret-id>"
+cat > /etc/systemd/system/secrethub-agent.service <<EOF
+[Unit]
+Description=SecretHub Agent
+After=network-online.target
 
-[cache]
-enabled = true
-ttl = 300
+[Service]
+Type=simple
+User=secrethub
+Group=secrethub
+Environment=SECRET_HUB_AGENT_CORE_URL=https://secrethub.company.com:4664
+Environment=SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent
+ExecStart=/usr/local/bin/secrethub-agent
+Restart=always
+RestartSec=5
 
-[templates]
-enabled = true
-directory = "/etc/secrethub/templates"
+[Install]
+WantedBy=multi-user.target
 EOF
 
 # Start agent
-secrethub-agent start
+sudo systemctl daemon-reload
+sudo systemctl enable --now secrethub-agent
 ```
+
+Approve the pending enrollment in the Core Admin UI, then verify the Agent reaches the Connected state.
 
 ---
 
@@ -509,7 +502,7 @@ secrethub-agent start
 # Check all Core instances
 for host in core-1 core-2 core-3; do
   echo "Checking $host..."
-  curl -s https://$host.internal:4000/v1/sys/health | jq
+  curl -s https://$host.internal:4664/v1/sys/health | jq
 done
 
 # Expected: All should show unsealed
@@ -654,8 +647,8 @@ curl https://secrethub.company.com/v1/sys/health
 # Check agent logs
 journalctl -u secrethub-agent -f
 
-# Verify Role ID and Secret ID
-# Check network connectivity and firewall rules
+# Verify the pending enrollment is approved and the SSH host-key fingerprint matches
+# Check SECRET_HUB_AGENT_CORE_URL, network connectivity, and firewall rules
 ```
 
 ---

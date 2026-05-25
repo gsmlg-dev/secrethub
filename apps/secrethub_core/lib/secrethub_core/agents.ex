@@ -19,6 +19,14 @@ defmodule SecretHub.Core.Agents do
   alias SecretHub.Shared.Schemas.{Agent, Certificate, Lease, Policy}
 
   @type result :: {:ok, term()} | {:error, term()}
+  @runtime_connectable_statuses [
+    :certificate_issued,
+    :connect_info_delivered,
+    :active,
+    :trusted_connected,
+    :disconnected
+  ]
+  @runtime_authorized_statuses [:active, :trusted_connected]
 
   @doc """
   Bootstrap a new agent using RoleID/SecretID authentication.
@@ -71,13 +79,17 @@ defmodule SecretHub.Core.Agents do
   """
   def mark_disconnected(agent_id) do
     case Repo.get_by(Agent, agent_id: agent_id) do
-      %Agent{} = agent ->
+      %Agent{status: status} = agent
+      when status in [:active, :trusted_connected, :connect_info_delivered] ->
         agent
         |> Ecto.Changeset.change(%{
           status: :disconnected,
           last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second)
         })
         |> Repo.update()
+
+      %Agent{} = agent ->
+        {:ok, agent}
 
       nil ->
         {:error, "Agent not found"}
@@ -87,22 +99,54 @@ defmodule SecretHub.Core.Agents do
   @doc """
   Mark agent as connected through the trusted mTLS runtime endpoint.
   """
-  def mark_trusted_connected(agent_id) do
-    case Repo.get_by(Agent, agent_id: agent_id) do
-      %Agent{} = agent ->
-        now = DateTime.utc_now() |> DateTime.truncate(:second)
+  def mark_trusted_connected(agent_id), do: mark_trusted_connected(agent_id, nil)
 
-        agent
-        |> Ecto.Changeset.change(%{
-          status: :trusted_connected,
-          authenticated_at: agent.authenticated_at || now,
-          last_seen_at: now,
-          last_heartbeat_at: now
-        })
-        |> Repo.update()
+  def mark_trusted_connected(agent_id, certificate_id) do
+    with {:ok, certificate_id} <- cast_certificate_id(certificate_id) do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-      nil ->
-        {:error, "Agent not found"}
+      query =
+        from(a in Agent,
+          join: c in Certificate,
+          on: c.id == a.certificate_id,
+          where:
+            a.agent_id == ^agent_id and
+              a.certificate_id == ^certificate_id and
+              a.status in ^@runtime_connectable_statuses and
+              c.id == ^certificate_id and
+              c.cert_type == ^:agent_client and
+              c.entity_id == ^agent_id and
+              c.revoked == false and
+              c.valid_until > ^now
+        )
+
+      case Repo.update_all(query,
+             set: [
+               status: :trusted_connected,
+               authenticated_at: now,
+               last_seen_at: now,
+               last_heartbeat_at: now
+             ]
+           ) do
+        {1, _} ->
+          {:ok, Repo.get_by!(Agent, agent_id: agent_id)}
+
+        {0, _} ->
+          runtime_authorization_error(agent_id, certificate_id, @runtime_connectable_statuses)
+      end
+    end
+  end
+
+  @doc """
+  Authorize an already-joined trusted runtime request against current Core state.
+  """
+  def authorize_runtime(agent_id, certificate_id) do
+    with {:ok, certificate_id} <- cast_certificate_id(certificate_id),
+         {:ok, agent, certificate} <- runtime_agent_and_certificate(agent_id, certificate_id),
+         :ok <- verify_runtime_agent_status(agent, @runtime_authorized_statuses),
+         :ok <- verify_runtime_certificate_binding(agent, certificate),
+         :ok <- verify_runtime_certificate(certificate, agent_id) do
+      :ok
     end
   end
 
@@ -523,6 +567,63 @@ defmodule SecretHub.Core.Agents do
 
   defp verify_agent_active(agent) do
     if Agent.active?(agent), do: :ok, else: {:error, "Agent is not active"}
+  end
+
+  defp cast_certificate_id(certificate_id) when is_binary(certificate_id) do
+    case Ecto.UUID.cast(certificate_id) do
+      {:ok, uuid} -> {:ok, uuid}
+      :error -> {:error, :invalid_certificate_id}
+    end
+  end
+
+  defp cast_certificate_id(nil), do: {:error, :missing_certificate_id}
+  defp cast_certificate_id(_certificate_id), do: {:error, :invalid_certificate_id}
+
+  defp runtime_authorization_error(agent_id, certificate_id, allowed_statuses) do
+    with {:ok, agent, certificate} <- runtime_agent_and_certificate(agent_id, certificate_id),
+         :ok <- verify_runtime_agent_status(agent, allowed_statuses),
+         :ok <- verify_runtime_certificate_binding(agent, certificate) do
+      verify_runtime_certificate(certificate, agent_id)
+    end
+  end
+
+  defp runtime_agent_and_certificate(agent_id, certificate_id) do
+    case {Repo.get_by(Agent, agent_id: agent_id), Repo.get(Certificate, certificate_id)} do
+      {nil, _certificate} -> {:error, :agent_not_found}
+      {_agent, nil} -> {:error, :certificate_not_found}
+      {%Agent{} = agent, %Certificate{} = certificate} -> {:ok, agent, certificate}
+    end
+  end
+
+  defp verify_runtime_agent_status(%Agent{status: status}, allowed_statuses) do
+    if status in allowed_statuses do
+      :ok
+    else
+      {:error, :agent_not_active}
+    end
+  end
+
+  defp verify_runtime_certificate_binding(agent, certificate) do
+    cond do
+      agent.certificate_id != certificate.id -> {:error, :certificate_mismatch}
+      certificate.entity_id != agent.agent_id -> {:error, :certificate_entity_mismatch}
+      true -> :ok
+    end
+  end
+
+  defp verify_runtime_certificate(%Certificate{revoked: true}, _agent_id),
+    do: {:error, :certificate_revoked}
+
+  defp verify_runtime_certificate(%Certificate{cert_type: cert_type}, _agent_id)
+       when cert_type != :agent_client,
+       do: {:error, :invalid_certificate_type}
+
+  defp verify_runtime_certificate(%Certificate{valid_until: valid_until}, _agent_id) do
+    if DateTime.compare(DateTime.utc_now(), valid_until) == :gt do
+      {:error, :certificate_expired}
+    else
+      :ok
+    end
   end
 
   defp fetch_active_agent(agent_id) do

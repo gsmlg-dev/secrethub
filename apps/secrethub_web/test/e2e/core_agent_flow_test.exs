@@ -15,13 +15,28 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   import Phoenix.ChannelTest
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias SecretHub.Core.Agents.ConnectionManager
+  alias SecretHub.Core.Agents.{ConnectionManager, Enrollment}
+  alias SecretHub.Core.{Policies, Secrets}
+  alias SecretHub.Core.PKI.CSR
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.E2E.Helpers
+  alias SecretHub.Shared.Crypto.AgentCSRProof
+  alias SecretHub.Shared.Schemas.Certificate
   alias SecretHub.Web.{AgentChannel, AgentRuntimeChannel, AgentTrustedSocket, UserSocket}
 
   @endpoint SecretHub.Web.Endpoint
+
+  @pending_attrs %{
+    hostname: "e2e-runtime-01",
+    fqdn: "e2e-runtime-01.internal.example",
+    machine_id: "e2e-runtime-machine",
+    os: "linux",
+    arch: "x86_64",
+    agent_version: "1.2.3",
+    ssh_host_key_algorithm: "rsa",
+    capabilities: %{"templates" => true}
+  }
 
   # ─── Setup ─────────────────────────────────────────────────
 
@@ -29,6 +44,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     # Ensure Ecto sandbox is in shared mode for all E2E tests.
     # This allows the endpoint and channel processes to see test data.
     pid = Sandbox.start_owner!(Repo, shared: true)
+    Repo.delete_all(Certificate)
 
     # Start SealState GenServer (disabled in test config)
     seal_state_pid =
@@ -145,27 +161,38 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     # Flush any leftover messages from HTTP calls in previous tests
     flush_mailbox()
 
-    # Connect socket (auth happens at trusted runtime socket level now)
+    # Connect through the legacy socket. Runtime joins belong on AgentTrustedSocket.
     {:ok, socket} = connect(UserSocket, %{})
 
     assert {:error, %{reason: "trusted_runtime_requires_mtls"}} =
-             subscribe_and_join(socket, AgentChannel, "agent:#{agent_id}", %{})
+             subscribe_and_join(socket, AgentChannel, "agent:runtime", %{
+               "agent_id" => agent_id
+             })
   end
 
   # ─── Scenario 5: Reconnection ──────────────────────────────
 
-  test "S5: trusted runtime agent recovers from disconnection", %{agent_id: agent_id} do
+  test "S5: trusted runtime agent recovers from disconnection" do
     flush_mailbox()
     Process.flag(:trap_exit, true)
 
+    %{certificate: certificate, cert_der: cert_der, enrollment: enrollment} =
+      issue_valid_agent_certificate!()
+
+    agent_id = enrollment.agent_id
+
     # First connection
-    socket1 = trusted_agent_socket(agent_id, "serial-1")
+    socket1 = trusted_agent_socket(cert_der)
 
     {:ok, reply, socket1} =
       subscribe_and_join(socket1, AgentRuntimeChannel, "agent:runtime", %{})
 
     assert reply.status == "accepted"
     assert reply.agent_id == agent_id
+    assert reply.certificate_serial == certificate.serial_number
+    assert reply.certificate_fingerprint == certificate.fingerprint
+    assert reply.certificate_id == certificate.id
+    assert socket1.assigns.agent_id == agent_id
 
     ref = push(socket1, "agent:heartbeat", %{})
     assert_reply ref, :ok, %{status: "alive"}, 5_000
@@ -176,13 +203,17 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     Process.sleep(200)
 
     # Reconnect
-    socket2 = trusted_agent_socket(agent_id, "serial-2")
+    socket2 = trusted_agent_socket(cert_der)
 
     {:ok, reply, socket2} =
       subscribe_and_join(socket2, AgentRuntimeChannel, "agent:runtime", %{})
 
     assert reply.status == "accepted"
     assert reply.agent_id == agent_id
+    assert reply.certificate_serial == certificate.serial_number
+    assert reply.certificate_fingerprint == certificate.fingerprint
+    assert reply.certificate_id == certificate.id
+    assert socket2.assigns.agent_id == agent_id
 
     # Verify still works after reconnection
     ref = push(socket2, "agent:heartbeat", %{})
@@ -193,9 +224,40 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     Process.flag(:trap_exit, false)
   end
 
-  # ─── Scenario 6: Audit Trail ───────────────────────────────
+  # ─── Scenario 6: Trusted Runtime Data Transfer ─────────────
 
-  test "S6: audit log records operations with hash chain" do
+  test "S6: trusted runtime transfers secret data over mTLS channel" do
+    flush_mailbox()
+
+    %{cert_der: cert_der, enrollment: enrollment} = issue_valid_agent_certificate!()
+    secret_path = "e2e.runtime.transfer.#{System.unique_integer([:positive])}"
+
+    secret_data = %{
+      "username" => "runtime-user",
+      "password" => "runtime-pass",
+      "token" => "runtime-token-#{System.unique_integer([:positive])}"
+    }
+
+    create_runtime_readable_secret!(enrollment.agent_id, secret_path, secret_data)
+
+    socket = trusted_agent_socket(cert_der)
+
+    {:ok, reply, socket} =
+      subscribe_and_join(socket, AgentRuntimeChannel, "agent:runtime", %{})
+
+    assert reply.status == "accepted"
+    assert reply.agent_id == enrollment.agent_id
+
+    ref = push(socket, "secret:read", %{"path" => secret_path})
+    assert_reply ref, :ok, %{path: ^secret_path, data: ^secret_data}, 5_000
+
+    leave(socket)
+    flush_mailbox()
+  end
+
+  # ─── Scenario 7: Audit Trail ───────────────────────────────
+
+  test "S7: audit log records operations with hash chain" do
     # Query all audit logs generated during this E2E run
     logs = Helpers.query_audit_logs()
 
@@ -231,9 +293,9 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     end
   end
 
-  # ─── Scenario 7: Health Endpoints ──────────────────────────
+  # ─── Scenario 8: Health Endpoints ──────────────────────────
 
-  test "S7: health endpoints respond" do
+  test "S8: health endpoints respond" do
     {status, resp} = Helpers.check_health("/v1/sys/health")
     assert status == 200
     assert is_map(resp)
@@ -255,11 +317,123 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     end
   end
 
-  defp trusted_agent_socket(agent_id, certificate_serial) do
-    socket(AgentTrustedSocket, "agent:test", %{
-      agent_id: agent_id,
-      certificate_serial: certificate_serial,
-      certificate_fingerprint: "fingerprint-#{certificate_serial}"
-    })
+  defp trusted_agent_socket(cert_der) do
+    assert {:ok, socket} =
+             Phoenix.ChannelTest.connect(AgentTrustedSocket, %{},
+               connect_info: %{peer_data: %{ssl_cert: cert_der}}
+             )
+
+    socket
+  end
+
+  defp issue_valid_agent_certificate! do
+    ssh_private_key = :public_key.generate_key({:rsa, 2048, 65_537})
+    ssh_public_key = :ssh_file.extract_public_key(ssh_private_key)
+    tls_private_key = :public_key.generate_key({:rsa, 2048, 65_537})
+    fingerprint = CSR.ssh_fingerprint(ssh_public_key)
+
+    generate_active_ca!()
+
+    {:ok, %{enrollment: enrollment, pending_token: pending_token}} =
+      @pending_attrs
+      |> Map.put(:machine_id, "e2e-runtime-#{System.unique_integer([:positive])}")
+      |> Map.put(:ssh_host_key_fingerprint, fingerprint)
+      |> Map.put(:ssh_host_public_key, openssh_public_key(ssh_public_key))
+      |> Enrollment.create_pending("203.0.113.10")
+
+    {:ok, approved} = Enrollment.approve(enrollment.id, "operator-1")
+    csr_pem = csr_pem_for_required_fields(tls_private_key, approved.required_csr_fields)
+
+    proof =
+      AgentCSRProof.sign(ssh_private_key, %{
+        enrollment_id: approved.id,
+        challenge: approved.required_csr_fields["challenge"],
+        csr_pem: csr_pem
+      })
+
+    {:ok, %{certificate: certificate, enrollment: issued}} =
+      Enrollment.submit_csr(approved.id, pending_token, %{
+        "csr_pem" => csr_pem,
+        "ssh_proof" => proof
+      })
+
+    [{:Certificate, cert_der, :not_encrypted}] =
+      :public_key.pem_decode(certificate.certificate_pem)
+
+    %{certificate: certificate, cert_der: cert_der, enrollment: issued}
+  end
+
+  defp create_runtime_readable_secret!(agent_id, secret_path, secret_data) do
+    {:ok, _secret} =
+      Secrets.create_secret(%{
+        "name" => "E2E Runtime Secret #{System.unique_integer([:positive])}",
+        "secret_path" => secret_path,
+        "secret_type" => "static",
+        "secret_data" => secret_data,
+        "created_by" => agent_id
+      })
+
+    {:ok, _policy} =
+      Policies.create_policy(%{
+        name: "e2e-runtime-read-#{System.unique_integer([:positive])}",
+        description: "Allow E2E runtime channel secret read",
+        policy_document: %{
+          "version" => "1.0",
+          "allowed_secrets" => [secret_path],
+          "allowed_operations" => ["read"]
+        },
+        entity_bindings: [agent_id]
+      })
+
+    :ok
+  end
+
+  defp generate_active_ca! do
+    {:ok, %{cert_record: cert}} =
+      SecretHub.Core.PKI.CA.generate_root_ca(
+        "Core Agent E2E Test Root CA #{System.unique_integer([:positive])}",
+        "SecretHub Test",
+        key_size: 2048
+      )
+
+    cert
+  end
+
+  defp openssh_public_key(public_key) do
+    [{public_key, []}]
+    |> :ssh_file.encode(:openssh_key)
+    |> IO.iodata_to_binary()
+    |> String.trim()
+  end
+
+  defp csr_pem_for_required_fields(private_key, required_fields) do
+    required_fields
+    |> csr_for_required_fields(private_key)
+    |> X509.CSR.to_pem()
+  end
+
+  defp csr_for_required_fields(required_fields, private_key) do
+    subject = required_fields["subject"]
+    sans = required_fields["san"] || %{}
+
+    uri_sans =
+      sans
+      |> Map.get("uri", [])
+      |> List.wrap()
+      |> Enum.map(&{:uniformResourceIdentifier, to_charlist(&1)})
+
+    dns_sans =
+      sans
+      |> Map.get("dns", [])
+      |> List.wrap()
+      |> Enum.map(&{:dNSName, to_charlist(&1)})
+
+    X509.CSR.new(private_key, [{"O", subject["O"]}, {"CN", subject["CN"]}],
+      extension_request: [
+        X509.Certificate.Extension.subject_alt_name(uri_sans ++ dns_sans),
+        X509.Certificate.Extension.key_usage([:digitalSignature]),
+        X509.Certificate.Extension.ext_key_usage([:clientAuth])
+      ]
+    )
   end
 end

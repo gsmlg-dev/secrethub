@@ -29,11 +29,33 @@ defmodule SecretHub.Agent.HostKeyTest do
   end
 
   @tag :tmp_dir
+  test "exports trimmed OpenSSH public key text that Erlang SSH can decode", %{tmp_dir: tmp_dir} do
+    rsa = generate_key!(tmp_dir, "ssh_host_rsa_key", "rsa")
+
+    assert {:ok, host_key} = HostKey.discover(paths: [rsa: rsa])
+
+    openssh_public_key = HostKey.public_key_openssh(host_key)
+
+    assert String.starts_with?(openssh_public_key, "ssh-rsa ")
+    refute String.ends_with?(openssh_public_key, "\n")
+    assert [{decoded_public_key, []}] = :ssh_file.decode(openssh_public_key, :public_key)
+    assert decoded_public_key == host_key.public_key
+  end
+
+  @tag :tmp_dir
   test "rejects Ed25519 host keys in v1", %{tmp_dir: tmp_dir} do
     ed25519 = generate_key!(tmp_dir, "ssh_host_ed25519_key", "ed25519")
 
     assert {:error, {:unsupported_host_key_algorithm, "ed25519"}} =
              HostKey.discover(paths: [ed25519: ed25519])
+  end
+
+  @tag :tmp_dir
+  test "rejects Ed25519 private keys configured as ECDSA host keys", %{tmp_dir: tmp_dir} do
+    ed25519 = generate_key!(tmp_dir, "ssh_host_ecdsa_key", "ed25519")
+
+    assert {:error, reason} = HostKey.discover(paths: [ecdsa: ed25519])
+    assert reason in [{:unexpected_host_key, :ecdsa}, :no_supported_ssh_host_key]
   end
 
   test "does not generate fallback keys when no supported host key exists" do

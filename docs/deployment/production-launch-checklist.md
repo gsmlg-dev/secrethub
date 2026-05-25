@@ -186,9 +186,9 @@ Next Milestone: Complete infrastructure setup
   ```bash
   # Unseal all 3 instances
   for pod in $(kubectl get pods -n secrethub -l app=secrethub-core -o name); do
-    kubectl exec -n secrethub $pod -- curl -X POST http://localhost:4000/v1/sys/unseal -d '{"key": "KEY1"}'
-    kubectl exec -n secrethub $pod -- curl -X POST http://localhost:4000/v1/sys/unseal -d '{"key": "KEY2"}'
-    kubectl exec -n secrethub $pod -- curl -X POST http://localhost:4000/v1/sys/unseal -d '{"key": "KEY3"}'
+    kubectl exec -n secrethub $pod -- curl -X POST http://localhost:4664/v1/sys/unseal -d '{"key": "KEY1"}'
+    kubectl exec -n secrethub $pod -- curl -X POST http://localhost:4664/v1/sys/unseal -d '{"key": "KEY2"}'
+    kubectl exec -n secrethub $pod -- curl -X POST http://localhost:4664/v1/sys/unseal -d '{"key": "KEY3"}'
   done
   ```
   - [ ] All instances unsealed: **YES**

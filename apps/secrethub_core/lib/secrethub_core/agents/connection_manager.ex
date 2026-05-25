@@ -35,6 +35,14 @@ defmodule SecretHub.Core.Agents.ConnectionManager do
     GenServer.call(server, {:unregister, agent_id, reason})
   end
 
+  def unregister_connection_for_pid(agent_id, socket_pid, reason \\ :normal) do
+    unregister_connection_for_pid(__MODULE__, agent_id, socket_pid, reason)
+  end
+
+  def unregister_connection_for_pid(server, agent_id, socket_pid, reason) do
+    GenServer.call(server, {:unregister, agent_id, socket_pid, reason})
+  end
+
   def heartbeat(agent_id), do: heartbeat(__MODULE__, agent_id)
   def heartbeat(server, agent_id), do: GenServer.call(server, {:heartbeat, agent_id})
 
@@ -90,6 +98,11 @@ defmodule SecretHub.Core.Agents.ConnectionManager do
 
   def handle_call({:unregister, agent_id, _reason}, _from, state) do
     {:reply, :ok, remove_connection(state, agent_id)}
+  end
+
+  def handle_call({:unregister, agent_id, socket_pid, _reason}, _from, state) do
+    {reply, state} = remove_connection_for_pid(state, agent_id, socket_pid)
+    {:reply, reply, state}
   end
 
   def handle_call({:heartbeat, agent_id}, _from, state) do
@@ -193,6 +206,14 @@ defmodule SecretHub.Core.Agents.ConnectionManager do
         monitors: monitors,
         refs_by_agent: refs_by_agent
     }
+  end
+
+  defp remove_connection_for_pid(state, agent_id, socket_pid) do
+    case Map.fetch(state.connections, agent_id) do
+      {:ok, %{socket_pid: ^socket_pid}} -> {:ok, remove_connection(state, agent_id)}
+      {:ok, _different_pid} -> {:stale, state}
+      :error -> {:missing, state}
+    end
   end
 
   defp normalize_metadata(metadata) when is_map(metadata), do: metadata

@@ -64,6 +64,7 @@ defmodule SecretHub.Agent.Connection do
           private_key: tuple() | nil,
           ca_pem: binary() | nil,
           expected_server_name: String.t() | nil,
+          on_runtime_accepted: (map() -> term()) | nil,
           connection_status: :disconnected | :connecting | :connected,
           reconnect_timer: reference() | nil,
           retry_count: non_neg_integer()
@@ -188,6 +189,7 @@ defmodule SecretHub.Agent.Connection do
     private_key = Keyword.get(opts, :private_key)
     ca_pem = Keyword.get(opts, :ca_pem)
     expected_server_name = Keyword.get(opts, :expected_server_name)
+    on_runtime_accepted = Keyword.get(opts, :on_runtime_accepted)
 
     state = %{
       socket: nil,
@@ -201,6 +203,7 @@ defmodule SecretHub.Agent.Connection do
       private_key: private_key,
       ca_pem: ca_pem,
       expected_server_name: expected_server_name,
+      on_runtime_accepted: on_runtime_accepted,
       connection_status: :disconnected,
       reconnect_timer: nil,
       retry_count: 0
@@ -290,13 +293,18 @@ defmodule SecretHub.Agent.Connection do
   def handle_info({:try_join, attempts}, state) do
     if state.socket && SocketClient.connected?(state.socket) do
       case join_channel(state.socket, state) do
-        {:ok, channel} ->
+        {:ok, response, channel} ->
           Logger.info("Successfully connected to Core",
             agent_id: state.agent_id,
             channel: connection_topic(state)
           )
 
-          {:noreply, %{state | channel: channel, connection_status: :connected, retry_count: 0}}
+          next_state =
+            state
+            |> Map.merge(%{channel: channel, connection_status: :connected, retry_count: 0})
+            |> notify_runtime_accepted(response)
+
+          {:noreply, next_state}
 
         {:error, reason} ->
           Logger.error("Failed to join channel",
@@ -474,13 +482,38 @@ defmodule SecretHub.Agent.Connection do
     Logger.debug("Joining channel", topic: topic)
 
     case Channel.join(socket, topic, join_payload(state)) do
-      {:ok, _response, channel} ->
-        {:ok, channel}
+      {:ok, response, channel} ->
+        {:ok, response, channel}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
+
+  @doc false
+  def notify_runtime_accepted(%{on_runtime_accepted: callback} = state, payload)
+      when is_function(callback, 1) do
+    try do
+      callback.(payload)
+    rescue
+      error ->
+        Logger.error("Runtime accepted callback failed",
+          error: Exception.message(error),
+          payload: inspect(payload)
+        )
+    catch
+      kind, reason ->
+        Logger.error("Runtime accepted callback failed",
+          kind: kind,
+          reason: inspect(reason),
+          payload: inspect(payload)
+        )
+    end
+
+    %{state | on_runtime_accepted: nil}
+  end
+
+  def notify_runtime_accepted(state, _payload), do: state
 
   defp connection_topic(_state), do: runtime_topic()
 

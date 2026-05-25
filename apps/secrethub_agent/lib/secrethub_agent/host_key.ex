@@ -33,6 +33,11 @@ defmodule SecretHub.Agent.HostKey do
 
   @preferred [:ecdsa, :rsa, :ed25519, :dsa]
   @supported [:ecdsa, :rsa]
+  @ecdsa_named_curves [
+    {1, 2, 840, 10045, 3, 1, 7},
+    {1, 3, 132, 0, 34},
+    {1, 3, 132, 0, 35}
+  ]
 
   @doc """
   Finds the first usable SSH host key, preferring ECDSA and then RSA.
@@ -91,6 +96,13 @@ defmodule SecretHub.Agent.HostKey do
     |> then(&:crypto.hash(:sha256, &1))
     |> Base.encode64(padding: false)
     |> then(&"SHA256:#{&1}")
+  end
+
+  def public_key_openssh(%__MODULE__{public_key: public_key}) do
+    [{public_key, []}]
+    |> :ssh_file.encode(:openssh_key)
+    |> IO.iodata_to_binary()
+    |> String.trim()
   end
 
   defp discover_first([], []), do: {:error, :no_supported_ssh_host_key}
@@ -172,7 +184,11 @@ defmodule SecretHub.Agent.HostKey do
   defp private_key?(_), do: false
 
   defp ensure_algorithm({:RSAPrivateKey, _, _, _, _, _, _, _, _, _, _}, :rsa), do: :ok
-  defp ensure_algorithm({:ECPrivateKey, _, _, {:namedCurve, _}, _, _}, :ecdsa), do: :ok
+
+  defp ensure_algorithm({:ECPrivateKey, _, _, {:namedCurve, curve}, _, _}, :ecdsa)
+       when curve in @ecdsa_named_curves,
+       do: :ok
+
   defp ensure_algorithm(_private_key, algorithm), do: {:error, {:unexpected_host_key, algorithm}}
 
   defp normalize_private_key(

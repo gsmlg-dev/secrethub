@@ -157,11 +157,11 @@ end
 
 **Security Strengths** ✅
 - Internal PKI with root CA and intermediate CAs
-- Short-lived certificates (24h default)
+- Short-lived Agent certificates (30-day default, 90-day maximum)
 - Certificate includes agent identity in SAN
 - CRL for revocation tracking
 - Certificate pinning on agent side
-- Automatic renewal before expiry
+- Renewal design is scoped to the mTLS trust surface, but automatic certificate renewal is not implemented in the first trusted-connection slice
 
 **Security Concerns** ⚠️
 1. **Root CA Key Protection**: Root CA private key storage
@@ -561,7 +561,7 @@ SecretHub's authentication flows provide a **solid foundation for MVP deployment
 
 - ✅ Multiple authentication methods (AppRole, K8s SA)
 - ✅ mTLS for all agent communication
-- ✅ Short-lived certificates with automatic renewal
+- ✅ Short-lived Agent certificates with monitored replacement before expiry
 - ✅ Comprehensive audit logging
 - ✅ Policy-based access control
 

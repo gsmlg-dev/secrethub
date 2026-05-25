@@ -14,7 +14,7 @@ defmodule SecretHub.Web.AgentChannel do
   ### From Agent to Core
   - `authenticate` - Initial authentication with RoleID/SecretID or certificate
   - `secret:request` - Request a secret by path
-  - `secret:renew` - Renew a lease for a secret
+  - `secret:lease_renew` - Renew a lease for a secret
   - `heartbeat` - Keep-alive message
 
   ### From Core to Agent
@@ -96,7 +96,7 @@ defmodule SecretHub.Web.AgentChannel do
   end
 
   # Handles lease renewal requests.
-  def handle_in("secret:renew", %{"lease_id" => lease_id}, socket) do
+  def handle_in("secret:lease_renew", %{"lease_id" => lease_id}, socket) do
     if socket.assigns.authenticated do
       # FIXME: Implement lease renewal logic
       Logger.info("Lease renewal requested: #{lease_id}")

@@ -42,8 +42,8 @@ defmodule SecretHub.Web.AgentChannelTest do
       assert_reply ref, :error, %{reason: "not_authenticated"}
     end
 
-    test "rejects secret:renew without authentication", %{socket: socket} do
-      ref = push(socket, "secret:renew", %{"lease_id" => "test-lease"})
+    test "rejects secret:lease_renew without authentication", %{socket: socket} do
+      ref = push(socket, "secret:lease_renew", %{"lease_id" => "test-lease"})
       assert_reply ref, :error, %{reason: "not_authenticated"}
     end
 
