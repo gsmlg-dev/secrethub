@@ -97,6 +97,14 @@ defmodule SecretHub.Agent.Connection do
   def runtime_event(:renew_lease), do: "secret:lease_renew"
   def runtime_event(:heartbeat), do: "agent:heartbeat"
 
+  @doc false
+  def in_memory_certs_key(cert_pem, private_key) do
+    %{
+      cert: pem_entry_der(cert_pem, :Certificate),
+      key: private_key_der_entry(private_key)
+    }
+  end
+
   @doc """
   Request a static secret from Core.
 
@@ -444,9 +452,7 @@ defmodule SecretHub.Agent.Connection do
         ssl_verify: :verify_peer,
         socket_opts:
           [
-            certs_keys: [
-              %{cert: pem_entry_der(state.cert_pem, :Certificate), key: state.private_key}
-            ],
+            certs_keys: [in_memory_certs_key(state.cert_pem, state.private_key)],
             cacerts: pem_entries_der(state.ca_pem, :Certificate)
           ] ++ common_opts
       ]
@@ -557,6 +563,11 @@ defmodule SecretHub.Agent.Connection do
       {^type, der, _} -> [der]
       _entry -> []
     end)
+  end
+
+  defp private_key_der_entry(private_key) when is_tuple(private_key) do
+    type = elem(private_key, 0)
+    {type, :public_key.der_encode(type, private_key)}
   end
 
   defp send_request(state, _from, event, payload) do

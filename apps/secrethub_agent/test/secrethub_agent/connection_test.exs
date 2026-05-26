@@ -83,6 +83,26 @@ defmodule SecretHub.Agent.ConnectionTest do
     end
   end
 
+  describe "mTLS socket options" do
+    test "in-memory mTLS material DER-encodes the private key for :ssl" do
+      private_key = :public_key.generate_key({:rsa, 2048, 65_537})
+
+      certificate_pem =
+        private_key
+        |> X509.Certificate.self_signed("/CN=agent-test-06")
+        |> X509.Certificate.to_pem()
+
+      assert %{cert: cert_der, key: {:RSAPrivateKey, key_der}} =
+               Connection.in_memory_certs_key(certificate_pem, private_key)
+
+      assert is_binary(cert_der)
+      assert is_binary(key_der)
+
+      assert {:RSAPrivateKey, _, _, _, _, _, _, _, _, _, _} =
+               :public_key.der_decode(:RSAPrivateKey, key_der)
+    end
+  end
+
   describe "exponential backoff" do
     test "backoff delay increases with retry count" do
       # Each retry should produce a longer base delay than the previous

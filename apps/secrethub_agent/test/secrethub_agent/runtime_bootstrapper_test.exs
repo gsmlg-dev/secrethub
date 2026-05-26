@@ -263,6 +263,51 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     refute File.exists?(Path.join(state_dir, "pending.json"))
   end
 
+  test "trusted runtime start failure keeps pending token and schedules retry", %{
+    tmp_dir: tmp_dir
+  } do
+    Req.Test.verify_on_exit!()
+
+    state_dir = Path.join(tmp_dir, "agent-state")
+
+    pending = %{
+      "enrollment_id" => "enrollment-1",
+      "pending_token" => "pending-token",
+      "enrollment_core_url" => "https://core.example:4664"
+    }
+
+    material =
+      valid_material(%{
+        "trusted_websocket_endpoint" => "wss://127.0.0.1:1",
+        "expected_core_server_name" => "localhost",
+        "connect_timeout_ms" => 10_000
+      })
+      |> Map.put(:private_key_pem, "not a private key")
+
+    assert :ok = IdentityStore.write(state_dir, material)
+    assert :ok = File.write(Path.join(state_dir, "pending.json"), Jason.encode!(pending))
+
+    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+
+    on_exit(fn ->
+      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+    end)
+
+    assert {:noreply, retry_state} =
+             RuntimeBootstrapper.handle_continue(:start_runtime, %RuntimeBootstrapper{
+               core_url: "https://fallback-core.example",
+               state_dir: state_dir,
+               legacy_connection_opts: []
+             })
+
+    assert retry_state.runtime_pid == nil
+    assert retry_state.pending_finalization.phase == :runtime_start_retry
+    assert retry_state.pending_finalization.retry_count == 1
+    assert File.exists?(Path.join(state_dir, "pending.json"))
+
+    Process.cancel_timer(retry_state.pending_finalization.timer)
+  end
+
   test "runtime accept timeout finalizes enrollment failure", %{tmp_dir: tmp_dir} do
     Req.Test.verify_on_exit!()
 

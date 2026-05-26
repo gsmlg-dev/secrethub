@@ -204,9 +204,58 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
   def handle_info(:runtime_finalize_success_retry, state), do: {:noreply, state}
 
+  def handle_info(:runtime_start_retry, %{pending_finalization: nil} = state) do
+    {:noreply, state}
+  end
+
+  def handle_info(
+        :runtime_start_retry,
+        %{pending_finalization: %{phase: :runtime_start_retry} = finalization} = state
+      ) do
+    cancel_timer(finalization.timer)
+
+    case start_runtime_process(finalization.material, finalization.callback) do
+      {:ok, pid} ->
+        {:noreply,
+         %{
+           state
+           | runtime_pid: pid,
+             pending_finalization: schedule_runtime_accept_timeout(finalization)
+         }}
+
+      {:error, {:already_started, pid}} ->
+        {:noreply,
+         %{
+           state
+           | runtime_pid: pid,
+             pending_finalization: schedule_runtime_accept_timeout(finalization)
+         }}
+
+      {:error, reason} ->
+        retry =
+          schedule_runtime_start_retry(
+            finalization,
+            finalization.material,
+            finalization.callback,
+            reason
+          )
+
+        {:noreply, %{state | pending_finalization: retry}}
+    end
+  end
+
+  def handle_info(:runtime_start_retry, state), do: {:noreply, state}
+
   def handle_info(
         :runtime_accept_timeout,
         %{pending_finalization: %{phase: :finalize_success_retry}} = state
+      ) do
+    {:noreply, state}
+  end
+
+  def handle_info(
+        :runtime_accept_timeout,
+        %{pending_finalization: %{phase: :runtime_start_retry}} = state
       ) do
     {:noreply, state}
   end
@@ -285,8 +334,8 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
       {:error, reason} ->
         cancel_timer(finalization.timer)
-        finalize_start_failure(finalization, state.state_dir, reason)
-        {:stop, reason, %{state | pending_finalization: nil}}
+        retry = schedule_runtime_start_retry(finalization, material, callback, reason)
+        {:noreply, %{state | pending_finalization: retry}}
     end
   end
 
@@ -355,6 +404,14 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     }
   end
 
+  defp schedule_runtime_accept_timeout(finalization) do
+    %{
+      finalization
+      | phase: :waiting_for_runtime,
+        timer: Process.send_after(self(), :runtime_accept_timeout, finalization.timeout_ms)
+    }
+  end
+
   defp finalize_success(core_url, pending, state_dir) do
     case Enrollment.finalize_success(core_url, pending, state_dir) do
       {:ok, _finalized} ->
@@ -396,14 +453,25 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     |> min(@finalize_retry_max_ms)
   end
 
-  defp finalize_start_failure(finalization, state_dir, reason) do
-    error = %{
-      "phase" => "trusted_runtime_start",
-      "message" => "failed to start trusted runtime connection",
-      "reason" => inspect(reason)
-    }
+  defp schedule_runtime_start_retry(finalization, material, callback, reason) do
+    retry_count = Map.get(finalization, :retry_count, 0) + 1
+    delay_ms = finalize_retry_delay_ms(retry_count)
 
-    finalize_failure_terminal(finalization.core_url, finalization.pending, state_dir, error)
+    Logger.warning("Retrying trusted Agent runtime start",
+      enrollment_id: finalization.pending["enrollment_id"],
+      retry_count: retry_count,
+      delay_ms: delay_ms,
+      reason: inspect(reason)
+    )
+
+    Map.merge(finalization, %{
+      material: material,
+      callback: callback,
+      phase: :runtime_start_retry,
+      retry_count: retry_count,
+      last_start_error: reason,
+      timer: Process.send_after(self(), :runtime_start_retry, delay_ms)
+    })
   end
 
   defp finalize_failure_terminal(core_url, pending, state_dir, error) do
