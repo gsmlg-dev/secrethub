@@ -142,7 +142,7 @@ Create a complete set of policies for an application:
 Specify policies during application registration:
 
 ```bash
-curl -X POST http://localhost:4000/v1/apps \
+curl -X POST http://localhost:4664/v1/apps \
   -H "Content-Type: application/json" \
   -d '{
     "name": "payment-service",
@@ -171,15 +171,15 @@ Add policies to existing applications:
 
 ```bash
 # Bind policy
-curl -X POST http://localhost:4000/v1/apps/{app_id}/policies \
+curl -X POST http://localhost:4664/v1/apps/{app_id}/policies \
   -H "Content-Type: application/json" \
   -d '{"policy_id": "policy-uuid"}'
 
 # List app policies
-curl http://localhost:4000/v1/apps/{app_id}/policies
+curl http://localhost:4664/v1/apps/{app_id}/policies
 
 # Unbind policy
-curl -X DELETE http://localhost:4000/v1/apps/{app_id}/policies/{policy_id}
+curl -X DELETE http://localhost:4664/v1/apps/{app_id}/policies/{policy_id}
 ```
 
 ---

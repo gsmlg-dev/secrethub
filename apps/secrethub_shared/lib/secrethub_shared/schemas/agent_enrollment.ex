@@ -41,6 +41,7 @@ defmodule SecretHub.Shared.Schemas.AgentEnrollment do
     field(:agent_version, :string)
     field(:ssh_host_key_algorithm, :string)
     field(:ssh_host_key_fingerprint, :string)
+    field(:ssh_host_public_key, :string)
     field(:source_ip, :string)
     field(:capabilities, :map, default: %{})
 
@@ -71,6 +72,7 @@ defmodule SecretHub.Shared.Schemas.AgentEnrollment do
       :agent_version,
       :ssh_host_key_algorithm,
       :ssh_host_key_fingerprint,
+      :ssh_host_public_key,
       :source_ip,
       :capabilities,
       :pending_token_hash,
@@ -79,6 +81,7 @@ defmodule SecretHub.Shared.Schemas.AgentEnrollment do
     |> validate_required([
       :ssh_host_key_algorithm,
       :ssh_host_key_fingerprint,
+      :ssh_host_public_key,
       :pending_token_hash,
       :expires_at
     ])
@@ -99,6 +102,7 @@ defmodule SecretHub.Shared.Schemas.AgentEnrollment do
       :agent_version,
       :ssh_host_key_algorithm,
       :ssh_host_key_fingerprint,
+      :ssh_host_public_key,
       :source_ip,
       :capabilities,
       :pending_token_hash,

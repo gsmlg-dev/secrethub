@@ -34,9 +34,10 @@ defmodule SecretHub.Web.AgentEnrollmentController do
     end
   end
 
-  def submit_csr(conn, %{"id" => id, "csr_pem" => csr_pem}) do
+  def submit_csr(conn, %{"id" => id, "csr_pem" => _csr_pem} = params) do
     with {:ok, token} <- bearer_token(conn),
-         {:ok, result} <- Enrollment.submit_csr(id, token, csr_pem) do
+         {:ok, result} <-
+           Enrollment.submit_csr(id, token, Map.take(params, ["csr_pem", "ssh_proof"])) do
       certificate = result.certificate
 
       json(conn, %{

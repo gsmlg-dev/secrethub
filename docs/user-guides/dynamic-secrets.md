@@ -673,7 +673,8 @@ DATABASE_URL=postgresql://secrethub:password@localhost:5432/secrethub_dev
 LEASE_CLEANUP_INTERVAL=10000  # milliseconds
 
 # Agent
-SECRETHUB_CORE_URL=https://core.secrethub.example.com
+SECRET_HUB_AGENT_CORE_URL=https://core.secrethub.example.com
+SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent
 LEASE_RENEWAL_THRESHOLD=0.33  # Renew at 33% remaining TTL
 LEASE_RENEWAL_RETRIES=5
 ```

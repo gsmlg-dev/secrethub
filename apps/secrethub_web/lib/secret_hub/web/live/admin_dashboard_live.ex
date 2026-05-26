@@ -478,6 +478,7 @@ defmodule SecretHub.Web.AdminDashboardLive do
 
   defp map_agent_status(:active), do: :connected
   defp map_agent_status(:connected), do: :connected
+  defp map_agent_status(:trusted_connected), do: :connected
   defp map_agent_status(:disconnected), do: :disconnected
   defp map_agent_status(:suspended), do: :error
   defp map_agent_status(:revoked), do: :error

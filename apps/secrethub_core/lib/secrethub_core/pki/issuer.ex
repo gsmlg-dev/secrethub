@@ -6,6 +6,9 @@ defmodule SecretHub.Core.PKI.Issuer do
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Certificate
 
+  @default_agent_certificate_ttl_seconds 30 * 24 * 60 * 60
+  @default_agent_certificate_max_ttl_seconds 90 * 24 * 60 * 60
+
   def active_signing_ca do
     with {:ok, ca, _ca_key} <- active_signing_ca_with_key() do
       {:ok, ca}
@@ -66,7 +69,8 @@ defmodule SecretHub.Core.PKI.Issuer do
         entity_type: "agent",
         metadata: %{
           "san_uri" => get_in(enrollment.required_csr_fields, ["san", "uri"]) || [],
-          "san_dns" => get_in(enrollment.required_csr_fields, ["san", "dns"]) || []
+          "san_dns" => get_in(enrollment.required_csr_fields, ["san", "dns"]) || [],
+          "extended_key_usage" => ["clientAuth"]
         }
       })
       |> Repo.insert()
@@ -143,10 +147,34 @@ defmodule SecretHub.Core.PKI.Issuer do
     :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
   end
 
-  defp validity_days do
-    Application.get_env(:secrethub_core, :agent_certificate_ttl_seconds, 90 * 24 * 60 * 60)
+  def validity_days do
+    agent_certificate_ttl_seconds()
     |> div(86_400)
   end
+
+  def agent_certificate_ttl_seconds do
+    ttl_seconds =
+      Application.get_env(
+        :secrethub_core,
+        :agent_certificate_ttl_seconds,
+        @default_agent_certificate_ttl_seconds
+      )
+
+    max_ttl_seconds =
+      Application.get_env(
+        :secrethub_core,
+        :agent_certificate_max_ttl_seconds,
+        @default_agent_certificate_max_ttl_seconds
+      )
+
+    ttl_seconds
+    |> min(max_ttl_seconds)
+    |> ceil_days()
+    |> Kernel.*(86_400)
+  end
+
+  defp ceil_days(seconds) when seconds <= 86_400, do: 1
+  defp ceil_days(seconds), do: ceil(seconds / 86_400)
 
   defp server_subject_alt_names(dns_names) do
     dns_names

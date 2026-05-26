@@ -86,20 +86,22 @@ defmodule SecretHub.MixProject do
     core_url =
       System.get_env("SECRET_HUB_AGENT_CORE_URL") ||
         Application.get_env(:secrethub_agent, :core_url) ||
-        "ws://localhost:4664"
+        "https://localhost:4664"
 
-    enrollment_url = enrollment_http_url(core_url)
-    storage_dir = System.get_env("SECRET_HUB_AGENT_STORAGE_DIR") || "priv/cert"
+    state_dir =
+      System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
+        System.get_env("SECRET_HUB_AGENT_STORAGE_DIR") ||
+        Application.get_env(:secrethub_agent, :state_dir) ||
+        "priv/cert"
 
-    {:ok, _apps} = Application.ensure_all_started(:req)
-    {:ok, _apps} = Application.ensure_all_started(:x509)
+    Application.put_env(:secrethub_agent, :enabled, true)
+    Application.put_env(:secrethub_agent, :core_url, core_url)
+    Application.put_env(:secrethub_agent, :state_dir, state_dir)
 
-    Mix.shell().info("SecretHub agent requesting pending enrollment at #{enrollment_url}")
-
-    enrollment_opts =
+    Application.put_env(
+      :secrethub_agent,
+      :enrollment_opts,
       [
-        core_url: enrollment_url,
-        storage_dir: storage_dir,
         approval_timeout_ms: agent_approval_timeout(),
         on_pending: fn pending ->
           Mix.shell().info(
@@ -109,38 +111,13 @@ defmodule SecretHub.MixProject do
 
           :ok
         end
-      ] ++ host_key_opts(storage_dir)
+      ] ++ host_key_opts(state_dir)
+    )
 
-    case SecretHub.Agent.Enrollment.enroll(enrollment_opts) do
-      {:ok, enrolled} ->
-        Mix.shell().info(
-          "SecretHub agent approved as #{enrolled.agent_id}; connecting to trusted runtime"
-        )
-
-        {:ok, _apps} = start_enrolled_agent(enrolled)
-        finalize_runtime_connection(enrollment_url, enrolled)
-
-      {:error, reason} ->
-        Mix.raise("SecretHub agent enrollment failed: #{inspect(reason)}")
-    end
+    Mix.shell().info("SecretHub agent starting with state directory #{state_dir}")
+    {:ok, _apps} = Application.ensure_all_started(:secrethub_agent)
 
     Process.sleep(:infinity)
-  end
-
-  defp enrollment_http_url(core_url) do
-    core_url
-    |> URI.parse()
-    |> then(fn uri ->
-      scheme =
-        case uri.scheme do
-          "ws" -> "http"
-          "wss" -> "https"
-          other -> other || "http"
-        end
-
-      %{uri | scheme: scheme, path: nil, query: nil}
-    end)
-    |> URI.to_string()
   end
 
   defp agent_approval_timeout do
@@ -179,77 +156,6 @@ defmodule SecretHub.MixProject do
           "-f",
           path
         ])
-    end
-  end
-
-  defp start_enrolled_agent(enrolled) do
-    trusted_endpoint =
-      Map.get(enrolled.connect_info, "trusted_websocket_endpoint") ||
-        Map.fetch!(enrolled.connect_info, :trusted_websocket_endpoint)
-
-    Application.put_env(:secrethub_agent, :enabled, true)
-    Application.put_env(:secrethub_agent, :agent_id, enrolled.agent_id)
-    Application.put_env(:secrethub_agent, :core_url, trusted_endpoint)
-    Application.put_env(:secrethub_agent, :core_endpoints, [trusted_endpoint])
-
-    Application.put_env(
-      :secrethub_agent,
-      :cert_path,
-      Path.join(enrolled.storage_dir, "agent-cert.pem")
-    )
-
-    Application.put_env(
-      :secrethub_agent,
-      :key_path,
-      Path.join(enrolled.storage_dir, "agent-key.pem")
-    )
-
-    Application.put_env(
-      :secrethub_agent,
-      :ca_path,
-      Path.join(enrolled.storage_dir, "ca-chain.pem")
-    )
-
-    Application.ensure_all_started(:secrethub_agent)
-  end
-
-  defp finalize_runtime_connection(enrollment_url, enrolled) do
-    case wait_for_runtime_connection(10_000) do
-      :ok ->
-        SecretHub.Agent.Enrollment.finalize_success(
-          enrollment_url,
-          enrolled.pending,
-          enrolled.storage_dir
-        )
-
-        Mix.shell().info("SecretHub agent trusted runtime connected")
-
-      {:error, :timeout} ->
-        error = %{
-          "phase" => "trusted_runtime_connect",
-          "message" => "timed out waiting for trusted runtime connection"
-        }
-
-        SecretHub.Agent.Enrollment.finalize_failure(enrollment_url, enrolled.pending, error)
-        Mix.raise("SecretHub agent trusted runtime did not connect")
-    end
-  end
-
-  defp wait_for_runtime_connection(timeout_ms) do
-    deadline = System.monotonic_time(:millisecond) + timeout_ms
-    wait_for_runtime_connection_until(deadline)
-  end
-
-  defp wait_for_runtime_connection_until(deadline) do
-    if SecretHub.Agent.ConnectionManager.status() == :connected do
-      :ok
-    else
-      if System.monotonic_time(:millisecond) >= deadline do
-        {:error, :timeout}
-      else
-        Process.sleep(100)
-        wait_for_runtime_connection_until(deadline)
-      end
     end
   end
 

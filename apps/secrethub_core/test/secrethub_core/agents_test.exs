@@ -133,6 +133,18 @@ defmodule SecretHub.Core.AgentsTest do
       assert disconnected.status == :disconnected
     end
 
+    test "does not overwrite revoked or suspended states" do
+      {:ok, revoked_agent} = register()
+      assert {:ok, _} = Agents.revoke_agent(revoked_agent.agent_id, "compromised")
+      assert {:ok, revoked} = Agents.mark_disconnected(revoked_agent.agent_id)
+      assert revoked.status == :revoked
+
+      {:ok, suspended_agent} = register()
+      assert {:ok, _} = Agents.suspend_agent(suspended_agent.agent_id, "maintenance")
+      assert {:ok, suspended} = Agents.mark_disconnected(suspended_agent.agent_id)
+      assert suspended.status == :suspended
+    end
+
     test "returns error for unknown agent" do
       assert {:error, "Agent not found"} = Agents.mark_disconnected("agent-ghost-xyz")
     end

@@ -64,6 +64,7 @@ defmodule SecretHub.Shared.Schemas.Agent do
     field(:machine_id, :string)
     field(:ssh_host_key_algorithm, :string)
     field(:ssh_host_key_fingerprint, :string)
+    field(:ssh_host_public_key, :string)
     field(:user_agent, :string)
 
     # Certificate binding
@@ -105,6 +106,7 @@ defmodule SecretHub.Shared.Schemas.Agent do
       :machine_id,
       :ssh_host_key_algorithm,
       :ssh_host_key_fingerprint,
+      :ssh_host_public_key,
       :user_agent,
       :certificate_id,
       :config,
@@ -139,6 +141,7 @@ defmodule SecretHub.Shared.Schemas.Agent do
       :machine_id,
       :ssh_host_key_algorithm,
       :ssh_host_key_fingerprint,
+      :ssh_host_public_key,
       :metadata
     ])
     |> validate_required([:agent_id, :name])
@@ -159,7 +162,8 @@ defmodule SecretHub.Shared.Schemas.Agent do
       :name,
       :status,
       :ssh_host_key_algorithm,
-      :ssh_host_key_fingerprint
+      :ssh_host_key_fingerprint,
+      :ssh_host_public_key
     ])
   end
 

@@ -494,7 +494,7 @@ START_TIME=$(date +%s)
 # Manually seal vault on all instances
 for pod in $(kubectl get pods -n secrethub -l app=secrethub-core -o name); do
   kubectl exec -n secrethub $pod -- \
-    curl -X POST http://localhost:4000/v1/sys/seal \
+    curl -X POST http://localhost:4664/v1/sys/seal \
     -H "X-Vault-Token: $ADMIN_TOKEN"
 done
 
@@ -530,17 +530,17 @@ for pod in $(kubectl get pods -n secrethub -l app=secrethub-core -o name); do
 
   # Key 1
   kubectl exec -n secrethub $pod -- \
-    curl -X POST http://localhost:4000/v1/sys/unseal \
+    curl -X POST http://localhost:4664/v1/sys/unseal \
     -d "{\"key\": \"$UNSEAL_KEY_1\"}"
 
   # Key 2
   kubectl exec -n secrethub $pod -- \
-    curl -X POST http://localhost:4000/v1/sys/unseal \
+    curl -X POST http://localhost:4664/v1/sys/unseal \
     -d "{\"key\": \"$UNSEAL_KEY_2\"}"
 
   # Key 3 (should unseal)
   kubectl exec -n secrethub $pod -- \
-    curl -X POST http://localhost:4000/v1/sys/unseal \
+    curl -X POST http://localhost:4664/v1/sys/unseal \
     -d "{\"key\": \"$UNSEAL_KEY_3\"}"
 done
 

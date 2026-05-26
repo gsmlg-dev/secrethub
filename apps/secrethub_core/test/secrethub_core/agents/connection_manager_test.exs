@@ -80,4 +80,79 @@ defmodule SecretHub.Core.Agents.ConnectionManagerTest do
     refute ConnectionManager.connected?(:connection_manager_test, "agent-123")
     assert_receive {:secrethub_agent_disconnect, :revoked}
   end
+
+  test "pid-scoped unregister ignores stale channel termination after reconnect" do
+    first = spawn(fn -> Process.sleep(:infinity) end)
+    second = spawn(fn -> Process.sleep(:infinity) end)
+
+    assert :ok =
+             ConnectionManager.register_connection(
+               :connection_manager_test,
+               "agent-123",
+               "serial-old",
+               first,
+               %{}
+             )
+
+    assert :ok =
+             ConnectionManager.register_connection(
+               :connection_manager_test,
+               "agent-123",
+               "serial-new",
+               second,
+               %{}
+             )
+
+    assert :stale =
+             ConnectionManager.unregister_connection_for_pid(
+               :connection_manager_test,
+               "agent-123",
+               first,
+               :normal
+             )
+
+    assert {:ok, connection} =
+             ConnectionManager.get_connection(:connection_manager_test, "agent-123")
+
+    assert connection.socket_pid == second
+    assert connection.cert_serial == "serial-new"
+
+    assert :ok =
+             ConnectionManager.unregister_connection_for_pid(
+               :connection_manager_test,
+               "agent-123",
+               second,
+               :normal
+             )
+
+    refute ConnectionManager.connected?(:connection_manager_test, "agent-123")
+  end
+
+  test "pid-scoped unregister reports missing when manager already removed the connection" do
+    assert :ok =
+             ConnectionManager.register_connection(
+               :connection_manager_test,
+               "agent-123",
+               "serial-abc",
+               self(),
+               %{}
+             )
+
+    assert :ok =
+             ConnectionManager.disconnect_agent(
+               :connection_manager_test,
+               "agent-123",
+               :operator_disconnect
+             )
+
+    assert_receive {:secrethub_agent_disconnect, :operator_disconnect}
+
+    assert :missing =
+             ConnectionManager.unregister_connection_for_pid(
+               :connection_manager_test,
+               "agent-123",
+               self(),
+               :normal
+             )
+  end
 end

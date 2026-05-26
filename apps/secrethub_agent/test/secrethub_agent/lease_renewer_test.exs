@@ -7,9 +7,11 @@ defmodule SecretHub.Agent.LeaseRenewerTest do
     # Stop LeaseRenewer from the application supervisor to prevent restart conflicts
     sup = SecretHub.Agent.Supervisor
 
-    case Supervisor.terminate_child(sup, LeaseRenewer) do
-      :ok -> Supervisor.delete_child(sup, LeaseRenewer)
-      {:error, :not_found} -> :ok
+    if Process.whereis(sup) do
+      case Supervisor.terminate_child(sup, LeaseRenewer) do
+        :ok -> Supervisor.delete_child(sup, LeaseRenewer)
+        {:error, :not_found} -> :ok
+      end
     end
 
     # Also ensure no lingering process with the name

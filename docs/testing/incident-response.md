@@ -95,7 +95,7 @@ kubectl get pods -n secrethub -l app=secrethub-core -o wide
 for pod in $(kubectl get pods -n secrethub -l app=secrethub-core -o name); do
   echo "Checking $pod..."
   kubectl exec -n secrethub $pod -- \
-    curl -s http://localhost:4000/v1/sys/seal-status | jq '.sealed'
+    curl -s http://localhost:4664/v1/sys/seal-status | jq '.sealed'
 done
 
 # 3. Contact key custodians
@@ -113,15 +113,15 @@ Can you provide it via secure channel?
 # 5. Unseal each instance
 for pod in $(kubectl get pods -n secrethub -l app=secrethub-core -o name); do
   kubectl exec -n secrethub $pod -- \
-    curl -X POST http://localhost:4000/v1/sys/unseal \
+    curl -X POST http://localhost:4664/v1/sys/unseal \
     -d '{"key": "KEY1"}'
 
   kubectl exec -n secrethub $pod -- \
-    curl -X POST http://localhost:4000/v1/sys/unseal \
+    curl -X POST http://localhost:4664/v1/sys/unseal \
     -d '{"key": "KEY2"}'
 
   kubectl exec -n secrethub $pod -- \
-    curl -X POST http://localhost:4000/v1/sys/unseal \
+    curl -X POST http://localhost:4664/v1/sys/unseal \
     -d '{"key": "KEY3"}'
 done
 
@@ -271,7 +271,7 @@ done
 ```bash
 # 1. IMMEDIATELY seal vault
 kubectl exec -n secrethub $(kubectl get pod -n secrethub -l app=secrethub-core -o jsonpath='{.items[0].metadata.name}') \
-  -- curl -X POST http://localhost:4000/v1/sys/seal \
+  -- curl -X POST http://localhost:4664/v1/sys/seal \
   -H "X-Vault-Token: $ADMIN_TOKEN"
 
 # 2. Isolate affected systems

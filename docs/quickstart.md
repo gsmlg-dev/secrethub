@@ -31,7 +31,7 @@ docker-compose logs -f secrethub-core
 
 ```bash
 # Initialize the vault (returns unseal keys and root token)
-curl -X POST http://localhost:4000/v1/sys/init \
+curl -X POST http://localhost:4664/v1/sys/init \
   -H "Content-Type: application/json" \
   -d '{
     "secret_shares": 5,
@@ -56,24 +56,24 @@ Unseal with 3 of 5 keys:
 
 ```bash
 # Unseal with key 1
-curl -X POST http://localhost:4000/v1/sys/unseal \
+curl -X POST http://localhost:4664/v1/sys/unseal \
   -H "Content-Type: application/json" \
   -d '{"key": "key1..."}'
 
 # Unseal with key 2
-curl -X POST http://localhost:4000/v1/sys/unseal \
+curl -X POST http://localhost:4664/v1/sys/unseal \
   -H "Content-Type: application/json" \
   -d '{"key": "key2..."}'
 
 # Unseal with key 3 (vault is now unsealed)
-curl -X POST http://localhost:4000/v1/sys/unseal \
+curl -X POST http://localhost:4664/v1/sys/unseal \
   -H "Content-Type: application/json" \
   -d '{"key": "key3..."}'
 ```
 
 ### 4. Access Web UI
 
-Open [http://localhost:4000](http://localhost:4000) in your browser.
+Open [http://localhost:4664](http://localhost:4664) in your browser.
 
 **Login:**
 - Navigate to `/admin/auth/login`
@@ -121,7 +121,7 @@ mix phx.server
 server
 ```
 
-Server will be available at [http://localhost:4000](http://localhost:4000).
+Server will be available at [http://localhost:4664](http://localhost:4664).
 
 ### 4. Initialize Vault
 
@@ -137,7 +137,7 @@ AppRoles provide authentication for applications and agents.
 
 ```bash
 # Create an AppRole for your application
-curl -X POST http://localhost:4000/v1/auth/approle/role/myapp \
+curl -X POST http://localhost:4664/v1/auth/approle/role/myapp \
   -H "X-Vault-Token: s.XXXXXXXXXXX" \
   -H "Content-Type: application/json" \
   -d '{
@@ -147,11 +147,11 @@ curl -X POST http://localhost:4000/v1/auth/approle/role/myapp \
   }'
 
 # Get Role ID
-curl http://localhost:4000/v1/auth/approle/role/myapp/role-id \
+curl http://localhost:4664/v1/auth/approle/role/myapp/role-id \
   -H "X-Vault-Token: s.XXXXXXXXXXX"
 
 # Generate Secret ID
-curl -X POST http://localhost:4000/v1/auth/approle/role/myapp/secret-id \
+curl -X POST http://localhost:4664/v1/auth/approle/role/myapp/secret-id \
   -H "X-Vault-Token: s.XXXXXXXXXXX"
 ```
 
@@ -159,7 +159,7 @@ curl -X POST http://localhost:4000/v1/auth/approle/role/myapp/secret-id \
 
 ```bash
 # Store a static secret
-curl -X POST http://localhost:4000/v1/secrets/static/prod/db/postgres \
+curl -X POST http://localhost:4664/v1/secrets/static/prod/db/postgres \
   -H "X-Vault-Token: s.XXXXXXXXXXX" \
   -H "Content-Type: application/json" \
   -d '{
@@ -172,7 +172,7 @@ curl -X POST http://localhost:4000/v1/secrets/static/prod/db/postgres \
   }'
 
 # Read the secret back
-curl http://localhost:4000/v1/secrets/static/prod/db/postgres \
+curl http://localhost:4664/v1/secrets/static/prod/db/postgres \
   -H "X-Vault-Token: s.XXXXXXXXXXX"
 ```
 
@@ -182,13 +182,12 @@ curl http://localhost:4000/v1/secrets/static/prod/db/postgres \
 # Deploy agent with Docker
 docker run -d \
   --name secrethub-agent \
-  -e AGENT_ID=agent-01 \
-  -e CORE_URL=ws://secrethub-core:4000 \
-  -e ROLE_ID=<your-role-id> \
-  -e SECRET_ID=<your-secret-id> \
+  -e SECRET_HUB_AGENT_CORE_URL=https://secrethub-core:4664 \
+  -e SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent \
+  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
   secrethub/agent:latest
 
-# Check agent connection in Web UI
+# Approve the pending enrollment in the Web UI, then check connection status
 # Navigate to /admin/agents
 ```
 
@@ -196,7 +195,7 @@ docker run -d \
 
 ```bash
 # Create a policy that grants read access to production secrets
-curl -X POST http://localhost:4000/v1/policies \
+curl -X POST http://localhost:4664/v1/policies \
   -H "X-Vault-Token: s.XXXXXXXXXXX" \
   -H "Content-Type: application/json" \
   -d '{
@@ -211,7 +210,7 @@ curl -X POST http://localhost:4000/v1/policies \
   }'
 
 # Assign policy to AppRole
-curl -X PUT http://localhost:4000/v1/auth/approle/role/myapp \
+curl -X PUT http://localhost:4664/v1/auth/approle/role/myapp \
   -H "X-Vault-Token: s.XXXXXXXXXXX" \
   -H "Content-Type: application/json" \
   -d '{
@@ -241,7 +240,7 @@ Configure and authenticate:
 
 ```bash
 # Configure CLI
-secrethub config set-url http://localhost:4000
+secrethub config set-url http://localhost:4664
 secrethub auth login --role-id <role-id> --secret-id <secret-id>
 
 # Read a secret
@@ -303,17 +302,17 @@ secrethub secret create dev/api/key \
 
 ```bash
 # Health check
-curl http://localhost:4000/v1/sys/health
+curl http://localhost:4664/v1/sys/health
 
 # Seal status
-curl http://localhost:4000/v1/sys/seal-status
+curl http://localhost:4664/v1/sys/seal-status
 ```
 
 ### Rotate a Secret
 
 ```bash
 # Update secret (creates new version)
-curl -X POST http://localhost:4000/v1/secrets/static/prod/db/postgres \
+curl -X POST http://localhost:4664/v1/secrets/static/prod/db/postgres \
   -H "X-Vault-Token: s.XXXXXXXXXXX" \
   -H "Content-Type: application/json" \
   -d '{
@@ -333,7 +332,7 @@ curl -X POST http://localhost:4000/v1/secrets/static/prod/db/postgres \
 ```bash
 # Via Web UI: /admin/audit
 # Or via API:
-curl http://localhost:4000/admin/api/dashboard/audit \
+curl http://localhost:4664/admin/api/dashboard/audit \
   -H "X-Vault-Token: s.XXXXXXXXXXX"
 ```
 
@@ -348,10 +347,10 @@ curl http://localhost:4000/admin/api/dashboard/audit \
 **Solution:**
 ```bash
 # Check seal status
-curl http://localhost:4000/v1/sys/seal-status
+curl http://localhost:4664/v1/sys/seal-status
 
 # Unseal if needed (requires 3 of 5 keys)
-curl -X POST http://localhost:4000/v1/sys/unseal \
+curl -X POST http://localhost:4664/v1/sys/unseal \
   -d '{"key": "key1..."}'
 ```
 
@@ -360,8 +359,8 @@ curl -X POST http://localhost:4000/v1/sys/unseal \
 **Problem:** Agent logs show "Connection refused"
 
 **Solution:**
-1. Check Core is running: `curl http://localhost:4000/v1/sys/health`
-2. Verify agent config: `CORE_URL`, `ROLE_ID`, `SECRET_ID`
+1. Check Core is running: `curl http://localhost:4664/v1/sys/health`
+2. Verify agent config: `SECRET_HUB_AGENT_CORE_URL` and `SECRET_HUB_AGENT_STATE_DIR`
 3. Check network connectivity
 4. Check firewall rules
 

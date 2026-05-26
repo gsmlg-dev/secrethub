@@ -83,6 +83,77 @@ defmodule SecretHub.Agent.ConnectionTest do
     end
   end
 
+  describe "mTLS socket options" do
+    test "in-memory mTLS material DER-encodes the private key for :ssl" do
+      private_key = :public_key.generate_key({:rsa, 2048, 65_537})
+
+      certificate_pem =
+        private_key
+        |> X509.Certificate.self_signed("/CN=agent-test-06")
+        |> X509.Certificate.to_pem()
+
+      assert %{cert: cert_der, key: {:RSAPrivateKey, key_der}} =
+               Connection.in_memory_certs_key(certificate_pem, private_key)
+
+      assert is_binary(cert_der)
+      assert is_binary(key_der)
+
+      assert {:RSAPrivateKey, _, _, _, _, _, _, _, _, _, _} =
+               :public_key.der_decode(:RSAPrivateKey, key_der)
+    end
+
+    test "in-memory mTLS material completes an SSL client-certificate handshake" do
+      suite = X509.Test.Suite.new(key_type: {:rsa, 2048})
+
+      server_opts = [
+        :binary,
+        active: false,
+        packet: 0,
+        reuseaddr: true,
+        verify: :verify_peer,
+        fail_if_no_peer_cert: true,
+        cert: X509.Certificate.to_der(suite.valid),
+        key: {:PrivateKeyInfo, X509.PrivateKey.to_der(suite.server_key, wrap: true)},
+        cacerts: suite.cacerts ++ suite.chain
+      ]
+
+      {:ok, listener} = :ssl.listen(0, server_opts)
+      on_exit(fn -> :ssl.close(listener) end)
+
+      {:ok, {_address, port}} = :ssl.sockname(listener)
+
+      server_task =
+        Task.async(fn ->
+          with {:ok, accepted} <- :ssl.transport_accept(listener, 5_000),
+               {:ok, socket} <- :ssl.handshake(accepted, 5_000),
+               {:ok, peer_cert} <- :ssl.peercert(socket) do
+            :ssl.close(socket)
+            {:ok, peer_cert}
+          end
+        end)
+
+      client_opts = [
+        :binary,
+        active: false,
+        verify: :verify_peer,
+        server_name_indication: ~c"localhost",
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ],
+        certs_keys: [
+          Connection.in_memory_certs_key(X509.Certificate.to_pem(suite.client), suite.client_key)
+        ],
+        cacerts: suite.cacerts ++ suite.chain
+      ]
+
+      assert {:ok, client_socket} = :ssl.connect(~c"localhost", port, client_opts, 5_000)
+      assert {:ok, _server_cert} = :ssl.peercert(client_socket)
+      :ssl.close(client_socket)
+
+      assert {:ok, _client_cert} = Task.await(server_task, 5_000)
+    end
+  end
+
   describe "exponential backoff" do
     test "backoff delay increases with retry count" do
       # Each retry should produce a longer base delay than the previous

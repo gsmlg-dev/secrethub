@@ -93,9 +93,8 @@ for i in {1..10}; do
   kubectl run test-agent-$i \
     --image=secrethub/agent:latest \
     --restart=Never \
-    --env="SECRETHUB_ADDR=http://secrethub-core-lb:4000" \
-    --env="ROLE_ID=test-role-id" \
-    --env="SECRET_ID=test-secret-id-$i" \
+    --env="SECRET_HUB_AGENT_CORE_URL=https://secrethub-core-lb:4664" \
+    --env="SECRET_HUB_AGENT_STATE_DIR=/tmp/secrethub-agent-$i" \
     -n secrethub-test
 done
 
@@ -335,34 +334,16 @@ EOF
 ### Phase 1: Configure Agent Failover
 
 ```bash
-# Deploy agents with multiple endpoints
-cat > /tmp/agent-config.yaml <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: agent-failover-config
-  namespace: secrethub-test
-data:
-  config.yaml: |
-    core_addresses:
-      - http://secrethub-core-lb:4000  # Primary (load balancer)
-      - http://core-pod-1.secrethub-core:4000  # Direct pod 1
-      - http://core-pod-2.secrethub-core:4000  # Direct pod 2
-      - http://core-pod-3.secrethub-core:4000  # Direct pod 3
-    failover_strategy: round_robin
-    connection_timeout: 5s
-    max_retries: 3
-EOF
-
-kubectl apply -f /tmp/agent-config.yaml
-
-# Deploy test agents with failover config
+# Deploy test agents with multiple Core enrollment endpoints.
+# The Agent reads these values from environment/application config;
+# it does not load YAML config files at startup.
 kubectl run test-agent-failover \
   --image=secrethub/agent:latest \
   --restart=Never \
   -n secrethub-test \
-  --env="CONFIG_FILE=/config/config.yaml" \
-  --volume="agent-failover-config:/config"
+  --env="SECRET_HUB_AGENT_CORE_URL=https://secrethub-core-lb:4664" \
+  --env="SECRET_HUB_AGENT_CORE_ENDPOINTS=https://secrethub-core-lb:4664,https://core-pod-1.secrethub-core:4664,https://core-pod-2.secrethub-core:4664,https://core-pod-3.secrethub-core:4664" \
+  --env="SECRET_HUB_AGENT_STATE_DIR=/tmp/secrethub-agent-failover"
 ```
 
 ### Phase 2: Simulate Load Balancer Failure

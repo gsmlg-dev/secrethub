@@ -48,10 +48,11 @@ This guide covers deploying the SecretHub MVP for evaluation and testing purpose
 
 ### Network Requirements
 
-- Core requires inbound access on port 4000 (HTTP) or 4001 (HTTPS with mTLS)
+- Core requires inbound access on port 4664 (HTTP)
+- The trusted Agent endpoint uses mTLS on port 4665 when enabled
 - PostgreSQL access from Core (default port 5432)
 - Agents need outbound access to Core
-- Admin UI access via web browser to Core port 4000
+- Admin UI access via web browser to Core port 4664
 
 ---
 
@@ -169,7 +170,7 @@ SECRET_KEY_BASE=$(openssl rand -base64 48)
 
 # Core Configuration
 PHX_HOST=localhost
-PHX_PORT=4000
+PORT=4664
 
 # Security (generate with: openssl rand -hex 32)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
@@ -186,7 +187,7 @@ docker-compose up -d
 ```
 
 This starts:
-- SecretHub Core (port 4000)
+- SecretHub Core (port 4664)
 - PostgreSQL 16
 - Redis (optional)
 
@@ -198,7 +199,7 @@ docker-compose exec secrethub_core bin/secrethub_core eval "SecretHub.Core.Relea
 
 ### Step 5: Initialize Vault
 
-Open browser to `http://localhost:4000/vault/init`
+Open browser to `http://localhost:4664/vault/init`
 
 1. Configure Shamir Secret Sharing:
    - Total shares: 5
@@ -208,7 +209,7 @@ Open browser to `http://localhost:4000/vault/init`
 
 ### Step 6: Unseal Vault
 
-Navigate to `http://localhost:4000/vault/unseal`
+Navigate to `http://localhost:4664/vault/unseal`
 
 1. Enter any 3 of the 5 unseal keys
 2. Vault will transition to "unsealed" state
@@ -216,7 +217,7 @@ Navigate to `http://localhost:4000/vault/unseal`
 
 ### Step 7: Access Admin UI
 
-1. Navigate to `http://localhost:4000/admin/auth/login`
+1. Navigate to `http://localhost:4664/admin/auth/login`
 2. For MVP: Use development bypass (if enabled)
 3. For production: Upload admin client certificate
 
@@ -377,32 +378,12 @@ After unsealing the vault:
 ### Method 1: Docker
 
 ```bash
-# Create agent configuration
-cat > agent-config.yaml <<EOF
-core:
-  url: "wss://secrethub-core.example.com:4001"
-  ca_cert_path: "/etc/secrethub/ca-chain.pem"
-
-auth:
-  role_id: "your-role-id-from-step-3"
-  secret_id: "your-secret-id-from-step-3"
-
-cache:
-  ttl: 300
-  max_size: 1000
-  fallback_enabled: true
-
-secrets:
-  - path: "prod.db.postgres.password"
-    dest: "/var/secrets/db_password"
-    template: "{{ .Value }}"
-EOF
-
-# Run agent
 docker run -d \
   --name secrethub-agent \
   --network host \
-  -v $(pwd)/agent-config.yaml:/etc/secrethub/config.yaml:ro \
+  -e SECRET_HUB_AGENT_CORE_URL=https://secrethub-core.example.com \
+  -e SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent \
+  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
   -v /var/run/secrethub:/var/run/secrethub \
   secrethub/agent:latest
 ```
@@ -410,12 +391,8 @@ docker run -d \
 ### Method 2: Kubernetes DaemonSet
 
 ```bash
-# Create ConfigMap with agent configuration
-kubectl create configmap agent-config \
-  --from-file=config.yaml=agent-config.yaml \
-  -n secrethub
-
-# Deploy agent
+# Deploy agent with the supported SECRET_HUB_AGENT_* environment variables.
+# See docs/deployment/agent-deployment-guide.md for the full DaemonSet shape.
 kubectl apply -f infrastructure/kubernetes/agent-daemonset.yaml -n secrethub
 ```
 
@@ -430,7 +407,7 @@ See [Agent Deployment Guide](./agent-deployment-guide.md) for detailed systemd s
 ### 1. Verify Core Health
 
 ```bash
-curl http://localhost:4000/v1/sys/health
+curl http://localhost:4664/v1/sys/health
 ```
 
 Expected response:
@@ -466,10 +443,9 @@ docker logs secrethub-agent
 
 Look for:
 ```
-[info] Agent bootstrap successful
-[info] Connected to SecretHub Core
-[info] Certificate obtained, switching to mTLS
-[info] Heartbeat established
+[info] Trusted Agent material missing; starting enrollment
+[info] Starting trusted Agent runtime connection
+[info] Trusted runtime accepted by Core
 ```
 
 Check Core UI:
@@ -522,8 +498,8 @@ docker-compose logs secrethub_core
    - Add to `.env` file
 
 3. Port already in use
-   - Check: `netstat -tulpn | grep 4000`
-   - Change PHX_PORT in `.env`
+   - Check: `netstat -tulpn | grep 4664`
+   - Change PORT in `.env`
 
 ### Vault Remains Sealed
 
@@ -541,12 +517,13 @@ docker-compose logs secrethub_core
 **Check:**
 1. Core URL is accessible from agent
    ```bash
-   curl http://secrethub-core:4000/v1/sys/health
+   curl http://secrethub-core:4664/v1/sys/health
    ```
 
-2. AppRole credentials are valid
-   - Verify RoleID and SecretID in agent config
-   - Check role exists in `/admin/approles`
+2. Enrollment state is valid
+   - Verify the pending Agent enrollment is approved in `/admin/agents/pending`
+   - Verify the SSH host-key fingerprint shown in Core matches the host
+   - Check `SECRET_HUB_AGENT_CORE_URL` and `SECRET_HUB_AGENT_STATE_DIR`
 
 3. Network connectivity
    - Check firewall rules
@@ -735,16 +712,16 @@ services:
       DATABASE_URL: postgresql://secrethub:secrethub_password@postgres:5432/secrethub_prod
       SECRET_KEY_BASE: ${SECRET_KEY_BASE}
       PHX_HOST: ${PHX_HOST:-localhost}
-      PHX_PORT: ${PHX_PORT:-4000}
+      PORT: ${PORT:-4664}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY}
       REDIS_URL: redis://redis:6379
     ports:
-      - "4000:4000"
+      - "4664:4664"
     volumes:
       - secrethub_data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/v1/sys/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4664/v1/sys/health"]
       interval: 30s
       timeout: 10s
       retries: 3

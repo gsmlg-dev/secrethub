@@ -83,7 +83,7 @@ COPY --from=builder --chown=secrethub:secrethub /app/_build/prod/rel/secrethub_c
 
 # Set environment
 ENV HOME=/app
-ENV PORT=4000
+ENV PORT=4664
 ENV MIX_ENV=prod
 ENV RELEASE_COOKIE=change-me-in-production
 
@@ -93,11 +93,11 @@ RUN mkdir -p /app/var/log && \
     chown -R secrethub:secrethub /app
 
 # Expose port
-EXPOSE 4000
+EXPOSE 4664
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:4000/health || exit 1
+    CMD curl -f http://localhost:4664/health || exit 1
 
 # Switch to non-root user
 USER secrethub

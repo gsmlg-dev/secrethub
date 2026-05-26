@@ -5,7 +5,8 @@ This guide explains how to deploy and configure SecretHub Agents to enable secur
 ## Overview
 
 SecretHub Agents are lightweight daemons that run alongside your applications to:
-- Authenticate with SecretHub Core using AppRole or mTLS
+- Enroll with SecretHub Core using host identity and a Core-issued challenge
+- Authenticate runtime traffic with a Core-issued mTLS client certificate
 - Maintain persistent WebSocket connections to Core
 - Fetch and cache secrets locally
 - Render secrets into configuration files
@@ -27,11 +28,10 @@ docker run -d \
   --name secrethub-agent \
   --restart unless-stopped \
   -v /app/config:/app/config \
+  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
   -v /var/run/secrethub:/var/run/secrethub \
-  -e AGENT_ID=production-app-01 \
-  -e CORE_URL=wss://secrethub.example.com:4001 \
-  -e ROLE_ID=<your-role-id> \
-  -e SECRET_ID=<your-secret-id> \
+  -e SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com \
+  -e SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent \
   secrethub/agent:latest
 ```
 
@@ -56,31 +56,25 @@ spec:
       - name: agent
         image: secrethub/agent:latest
         env:
-        - name: AGENT_ID
-          valueFrom:
-            fieldRef:
-              fieldPath: spec.nodeName
-        - name: CORE_URL
-          value: "wss://secrethub-core.secrethub.svc.cluster.local:4001"
-        - name: ROLE_ID
-          valueFrom:
-            secretKeyRef:
-              name: secrethub-agent-credentials
-              key: role_id
-        - name: SECRET_ID
-          valueFrom:
-            secretKeyRef:
-              name: secrethub-agent-credentials
-              key: secret_id
+        - name: SECRET_HUB_AGENT_CORE_URL
+          value: "https://secrethub-core.secrethub.svc.cluster.local"
+        - name: SECRET_HUB_AGENT_STATE_DIR
+          value: /var/lib/secrethub-agent
         volumeMounts:
         - name: config
           mountPath: /app/config
+        - name: state
+          mountPath: /var/lib/secrethub-agent
         - name: secrets
           mountPath: /var/run/secrethub
       volumes:
       - name: config
         configMap:
           name: secrethub-agent-config
+      - name: state
+        hostPath:
+          path: /var/lib/secrethub-agent
+          type: DirectoryOrCreate
       - name: secrets
         emptyDir: {}
 ```
@@ -103,10 +97,8 @@ After=network.target
 Type=simple
 User=secrethub
 Group=secrethub
-Environment="AGENT_ID=production-app-01"
-Environment="CORE_URL=wss://secrethub.example.com:4001"
-Environment="ROLE_ID=<your-role-id>"
-Environment="SECRET_ID=<your-secret-id>"
+Environment="SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com"
+Environment="SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent"
 ExecStart=/usr/local/bin/secrethub-agent
 Restart=always
 RestartSec=5
@@ -127,138 +119,100 @@ sudo systemctl start secrethub-agent
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `AGENT_ID` | Yes | Unique identifier for this agent |
-| `CORE_URL` | Yes | WebSocket URL of SecretHub Core (wss://host:port) |
-| `ROLE_ID` | Yes* | AppRole Role ID for initial bootstrap |
-| `SECRET_ID` | Yes* | AppRole Secret ID for initial bootstrap |
-| `CERT_PATH` | No | Path to client certificate (for mTLS) |
-| `KEY_PATH` | No | Path to client private key (for mTLS) |
-| `CA_PATH` | No | Path to CA certificate chain |
-| `LOG_LEVEL` | No | Logging level (debug, info, warn, error) - default: info |
-| `CONFIG_PATH` | No | Path to configuration file - default: /app/config/agent.yml |
+| `SECRET_HUB_AGENT_CORE_URL` | Yes | HTTPS URL of SecretHub Core for enrollment; trusted WebSocket details come from `connect-info.json` |
+| `SECRET_HUB_AGENT_CORE_ENDPOINTS` | No | Comma-separated Core enrollment endpoints for startup failover; defaults to `SECRET_HUB_AGENT_CORE_URL` |
+| `SECRET_HUB_AGENT_STATE_DIR` | No | Directory for trusted runtime material; default: `/var/lib/secrethub-agent` |
+| `SECRET_HUB_AGENT_ID` | Optional | Unique identifier for legacy explicit certificate-path mode |
+| `SECRET_HUB_AGENT_CERT_PATH` | No | Legacy override path to client certificate |
+| `SECRET_HUB_AGENT_KEY_PATH` | No | Legacy override path to client private key |
+| `SECRET_HUB_AGENT_CA_PATH` | No | Legacy override path to CA certificate chain |
 
-\* Required for initial bootstrap; optional if mTLS certificates exist
+Trusted enrollment no longer uses AppRole credentials for runtime authorization. AppRole values may exist for older deployments, but new Agents should use the pending enrollment flow.
 
-### Configuration File
+### Configuration Sources
 
-Create `/app/config/agent.yml`:
+The Agent reads the supported `SECRET_HUB_AGENT_*` environment variables at application startup. Elixir release configuration may also set the matching application keys directly under `:secrethub_agent` (`:core_url`, `:state_dir`, `:agent_id`, `:cert_path`, `:key_path`, and `:ca_path`). Environment variables take precedence over application config.
 
-```yaml
-agent:
-  id: production-app-01
-  core_url: wss://secrethub.example.com:4001
-  log_level: info
+### Local State and Startup Modes
 
-authentication:
-  # Initial bootstrap with AppRole
-  approle:
-    role_id: ${ROLE_ID}
-    secret_id: ${SECRET_ID}
+`RuntimeBootstrapper` selects the startup mode from local state and configuration:
 
-  # mTLS configuration (after initial bootstrap)
-  mtls:
-    cert_path: /app/config/certs/agent-cert.pem
-    key_path: /app/config/certs/agent-key.pem
-    ca_path: /app/config/certs/ca-chain.pem
+- `trusted_runtime`: `IdentityStore` loads trusted material from `state_dir` and starts the mTLS runtime.
+- `enrollment`: trusted material is missing, so the Agent creates a pending enrollment, waits for approval, receives certificate material, and then starts trusted runtime.
+- `legacy_certificate_paths`: explicit `SECRET_HUB_AGENT_ID`, `SECRET_HUB_AGENT_CERT_PATH`, `SECRET_HUB_AGENT_KEY_PATH`, and `SECRET_HUB_AGENT_CA_PATH` are configured for older deployments.
 
-secrets:
-  # Secret templates to render
-  - name: database-credentials
-    path: prod.db.postgres.readonly
-    destination: /app/config/database.yml
-    template: |
-      database:
-        host: {{ .host }}
-        port: {{ .port }}
-        username: {{ .username }}
-        password: {{ .password }}
-        database: {{ .database }}
+The default `state_dir` is `/var/lib/secrethub-agent`. Development can override it with `SECRET_HUB_AGENT_STATE_DIR`.
 
-  - name: api-keys
-    path: prod.api.keys
-    destination: /app/config/api-keys.env
-    template: |
-      STRIPE_API_KEY={{ .stripe_key }}
-      SENDGRID_API_KEY={{ .sendgrid_key }}
-      AWS_ACCESS_KEY_ID={{ .aws_access_key }}
-      AWS_SECRET_ACCESS_KEY={{ .aws_secret_key }}
-
-cache:
-  enabled: true
-  ttl: 300  # 5 minutes
-  fallback: true  # Use cached secrets if Core is unavailable
-```
+| File | Purpose | Permissions |
+|------|---------|------|
+| `agent-cert.pem` | Core-issued Agent client certificate | `0644` |
+| `agent-key.pem` | TLS client private key generated by `TLSIdentity` | `0600` |
+| `ca-chain.pem` | CA chain used to verify the trusted Core endpoint | `0644` |
+| `connect-info.json` | Trusted WebSocket endpoint, expected server name, heartbeat, and timeout settings | `0644` |
+| `identity.json` | Agent ID, certificate metadata, SSH host-key fingerprint, and host metadata | `0644` |
+| `pending.json` | Pending enrollment token and enrollment URL kept until runtime acceptance is finalized | `0600` |
 
 ## Bootstrap Process
 
-### Step 1: Create AppRole in SecretHub Core
+### Step 1: Start Agent Enrollment
 
-1. Log in to SecretHub Admin UI
-2. Navigate to **AppRole Management** (`/admin/approles`)
-3. Click **Create New AppRole**
-4. Enter role name (e.g., "production-app")
-5. Add policies: `secret-read,lease-renew`
-6. Click **Create AppRole**
-7. **Save the RoleID and SecretID** - they will only be shown once!
+Start the Agent with `SECRET_HUB_AGENT_CORE_URL` and a writable `state_dir`. On first boot, `RuntimeBootstrapper` enters enrollment mode because trusted material is not present.
 
-### Step 2: Deploy Agent with AppRole Credentials
+### Step 2: Pending Enrollment
 
-Deploy the agent with the RoleID and SecretID from Step 1.
+The Agent discovers its SSH host key, hostname, FQDN, and machine identity, then creates a pending enrollment. The enrollment request includes `ssh_host_public_key`; the private SSH host key never leaves the host.
 
 ```bash
 docker run -d \
   --name secrethub-agent \
-  -e AGENT_ID=production-app-01 \
-  -e CORE_URL=wss://secrethub.example.com:4001 \
-  -e ROLE_ID=a1b2c3d4-e5f6-... \
-  -e SECRET_ID=z9y8x7w6-v5u4-... \
+  -e SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com \
+  -e SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent \
+  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
   secrethub/agent:latest
 ```
 
-### Step 3: Agent Automatic Bootstrap
+An operator approves the pending enrollment in Core.
 
-On first run, the agent will:
+### Step 3: CSR, SSH Proof, and Runtime Material
 
-1. Connect to Core via WebSocket
-2. Authenticate using RoleID/SecretID (AppRole)
-3. Generate RSA-2048 key pair
-4. Create Certificate Signing Request (CSR)
-5. Submit CSR to Core for signing
-6. Receive signed certificate and CA chain
-7. Store certificate in `/app/config/certs/`
-8. Reconnect using mTLS authentication
+After approval, the Agent will:
 
-After successful bootstrap, the agent no longer needs RoleID/SecretID.
+1. Generate a separate TLS keypair with `TLSIdentity`
+2. Create a CSR using the required subject and SAN fields from Core
+3. Sign an `AgentCSRProof` over the CSR, enrollment ID, and Core challenge with the SSH host private key
+4. Submit the CSR and `ssh_proof` to Core
+5. Core verifies `ssh_proof` against the stored `ssh_host_public_key`
+6. Core issues a clientAuth Agent certificate with Agent and host-key SANs
+7. The Agent stores `agent-cert.pem`, `agent-key.pem`, `ca-chain.pem`, `connect-info.json`, `identity.json`, and `pending.json` under `state_dir`
+8. The Agent connects to the trusted runtime endpoint with the Core-issued mTLS certificate
 
-### Step 4: Verify Agent Connection
+`pending.json` remains until the runtime WebSocket is accepted.
+
+### Step 4: Runtime Acceptance and Finalization
+
+The Agent joins `agent:runtime` over `AgentTrustedSocket`. Core derives `agent_id`, `certificate_serial`, `certificate_fingerprint`, and `certificate_id` from the verified certificate and returns them in the accepted join reply. The Agent's `on_runtime_accepted` callback finalizes enrollment and deletes `pending.json` only after that accepted reply.
+
+### Step 5: Verify Agent Connection
 
 Check agent status in SecretHub Admin UI:
 - Navigate to **Agent Monitoring** (`/admin/agents`)
 - Find your agent by ID
-- Verify status is "Active" with green indicator
+- Verify status is "Connected" with green indicator
 - Check last heartbeat timestamp
 
 ## Certificate Management
 
 ### Certificate Lifecycle
 
-- **Initial issuance**: During bootstrap (90-day validity)
-- **Automatic renewal**: 7 days before expiration
+- **Initial issuance**: During enrollment, after Core verifies `ssh_proof`
+- **Default validity**: 30 days
+- **Maximum validity**: 90 days
+- **Renewal**: Not implemented in this slice; monitor expiry and re-enroll before expiration
 - **Revocation**: Manual via Admin UI if needed
 
-### Manual Certificate Renewal
+### Certificate Replacement
 
-If needed, trigger manual renewal:
-
-```bash
-# Via agent CLI
-secrethub-agent renew-certificate
-
-# Via Core API
-curl -X POST https://secrethub.example.com/v1/pki/certificates/renew \
-  -H "Authorization: Bearer <agent-token>" \
-  -d '{"agent_id": "production-app-01"}'
-```
+Automatic and manual certificate renewal endpoints are not part of this first trusted-connection slice. Until renewal is implemented, replace an expiring Agent certificate by creating and approving a new enrollment for the host. Treat unexpected replacement requests as suspicious and verify the SSH host-key fingerprint before approval.
 
 ### Certificate Revocation
 
@@ -274,17 +228,7 @@ If an agent is compromised:
 
 ### Requesting Secrets
 
-Agents automatically request secrets configured in `agent.yml`:
-
-```yaml
-secrets:
-  - name: my-secret
-    path: prod.app.database  # Secret path in SecretHub
-    destination: /app/config/db.yml  # Where to write
-    template: |  # Template for rendering
-      host: {{ .host }}
-      password: {{ .password }}
-```
+Applications request secrets through the local Agent Unix Domain Socket. The Agent runtime uses the `secret:read` channel event for both static secret reads and dynamic role reads.
 
 ### Secret Caching
 
@@ -329,18 +273,20 @@ docker logs -f secrethub-agent
 ### Common Issues
 
 **Agent fails to connect to Core:**
-- Verify `CORE_URL` is correct and accessible
+- Verify `SECRET_HUB_AGENT_CORE_URL` is correct and accessible
 - Check network connectivity: `ping secrethub.example.com`
-- Verify firewall rules allow outbound WebSocket (port 4001)
+- Verify firewall rules allow outbound HTTPS to Core and outbound WebSocket to the trusted Agent endpoint from `connect-info.json`
 
 **Authentication failed:**
-- Verify RoleID and SecretID are correct
-- Check if SecretID has already been used (single-use by default)
-- Generate new SecretID from Admin UI
+- Verify the pending enrollment is approved and not expired
+- Check that `ssh_host_public_key` matches the host key fingerprint shown in Core
+- Verify `ssh_proof` was generated from the SSH host key and current TLS CSR
+- Re-enroll if the local certificate fingerprint is unknown to Core
 
 **Certificate errors:**
 - Verify CA certificate chain is valid
 - Check certificate expiration: `openssl x509 -in agent-cert.pem -noout -dates`
+- Confirm the certificate has `clientAuth` EKU and Agent/host-key URI SANs
 - Ensure system time is synchronized (NTP)
 
 **Secrets not updating:**
@@ -351,16 +297,7 @@ docker logs -f secrethub-agent
 
 ### Debug Logging
 
-Enable debug logging:
-
-```bash
-# Environment variable
-export LOG_LEVEL=debug
-
-# Configuration file
-agent:
-  log_level: debug
-```
+Configure Logger level through the Elixir release/runtime configuration. The Agent does not currently read an Agent-specific logging environment variable.
 
 ### Metrics & Observability
 
@@ -384,23 +321,25 @@ secrethub_agent_certificate_expiry_timestamp_seconds 1706541432
 
 ### Credential Management
 
-1. **Never commit credentials to version control**
-   - Use environment variables or secrets management
-   - Rotate SecretIDs regularly
+1. **Never commit trusted material to version control**
+   - Keep `state_dir` outside application source trees
+   - Protect `agent-key.pem` and `pending.json` with `0600` permissions
 
-2. **Limit SecretID usage**
-   - Use single-use SecretIDs when possible
-   - Set short TTLs for SecretIDs (10-15 minutes)
+2. **Protect enrollment state**
+   - Treat `pending.json` as an enrollment credential until finalization
+   - Delete stale pending enrollments instead of reusing them
 
 3. **Rotate certificates**
-   - Default 90-day validity is recommended
+   - Default validity is 30 days
+   - Core caps Agent certificates at 90 days
    - Monitor certificate expiration
 
 ### Network Security
 
 1. **Use mTLS for all connections**
-   - Initial AppRole bootstrap only
-   - Switch to mTLS after certificate issuance
+   - Enrollment uses HTTPS with Core server verification
+   - Runtime uses the trusted Agent endpoint with Core-issued mTLS material
+   - Plain HTTP bootstrap is development-only and must be explicit
 
 2. **Restrict network access**
    - Agent should only connect to Core (outbound)
@@ -427,7 +366,8 @@ Before deploying to production:
 - [ ] Core is deployed with HA configuration
 - [ ] Vault is initialized and unsealed
 - [ ] Root CA and Intermediate CA generated
-- [ ] AppRole created with appropriate policies
+- [ ] Trusted Agent endpoint configured with server certificate material
+- [ ] Agent `state_dir` is persistent, owned by the Agent user, and mode `0700`
 - [ ] Agent configuration tested in staging
 - [ ] Certificate expiration monitoring configured
 - [ ] Agent metrics collection enabled

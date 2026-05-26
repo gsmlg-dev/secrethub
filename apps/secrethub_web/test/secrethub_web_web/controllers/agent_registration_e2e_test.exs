@@ -18,10 +18,12 @@ defmodule SecretHub.Web.AgentRegistrationE2ETest do
   alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Shared.Schemas.Certificate
 
   setup do
     # Use shared mode for database access across processes
     Sandbox.mode(Repo, {:shared, self()})
+    Repo.delete_all(Certificate)
 
     # Start SealState for E2E tests
     {:ok, _pid} = start_supervised(SealState)

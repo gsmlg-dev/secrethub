@@ -175,23 +175,12 @@ defmodule SecretHub.Agent.ConnectionManager do
           ca_path: state.ca_path
         ]
 
-        case Connection.start_link(connection_opts) do
+        case GenServer.start(Connection, connection_opts, name: Connection) do
           {:ok, pid} ->
-            # Monitor the connection process
-            Process.monitor(pid)
+            adopt_connection(pid, endpoint, state)
 
-            # Report success to endpoint manager
-            EndpointManager.report_success(endpoint)
-
-            Logger.info("Connected to #{endpoint}")
-
-            {:noreply,
-             %{
-               state
-               | connection_pid: pid,
-                 current_endpoint: endpoint,
-                 reconnect_attempts: 0
-             }}
+          {:error, {:already_started, pid}} ->
+            adopt_connection(pid, endpoint, state)
 
           {:error, reason} ->
             Logger.error("Failed to connect to #{endpoint}: #{inspect(reason)}")
@@ -240,6 +229,21 @@ defmodule SecretHub.Agent.ConnectionManager do
   end
 
   ## Private Functions
+
+  defp adopt_connection(pid, endpoint, state) do
+    Process.monitor(pid)
+    EndpointManager.report_success(endpoint)
+
+    Logger.info("Connected to #{endpoint}")
+
+    {:noreply,
+     %{
+       state
+       | connection_pid: pid,
+         current_endpoint: endpoint,
+         reconnect_attempts: 0
+     }}
+  end
 
   defp schedule_reconnect(state) do
     # Exponential backoff with jitter to prevent thundering herd.

@@ -57,9 +57,9 @@ SecretHub implements a **two-tier architecture** with a central Core service and
 │  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐       │
 │  │ Bootstrap │  │Connection │  │   Cache   │  │  Sinker   │       │
 │  │           │  │  Manager  │  │   Layer   │  │           │       │
-│  │ • AppRole │  │           │  │           │  │ • Atomic  │       │
+│  │ • Enroll  │  │           │  │           │  │ • Atomic  │       │
 │  │ • CSR Gen │  │ • Reconn  │  │ • TTL     │  │   Write   │       │
-│  │ • Cert    │  │ • Backoff │  │ • LRU     │  │ • Reload  │       │
+│  │ • mTLS ID │  │ • Backoff │  │ • LRU     │  │ • Reload  │       │
 │  └───────────┘  └───────────┘  └───────────┘  └───────────┘       │
 │                                                                      │
 │  ┌───────────┐  ┌───────────┐  ┌───────────────────────────┐       │
@@ -75,8 +75,8 @@ SecretHub implements a **two-tier architecture** with a central Core service and
 
 ### Agent Lifecycle
 
-1. **Bootstrap Phase**: AppRole auth → RSA-2048 keypair generation → CSR → Certificate issuance
-2. **Operational Phase**: mTLS WebSocket to Core → Secret requests → Local caching
+1. **Enrollment Phase**: Host identity discovery → pending enrollment → operator approval → TLS CSR + SSH host-key proof → certificate issuance
+2. **Operational Phase**: Core-issued mTLS WebSocket identity → Secret requests → Local caching
 3. **Delivery Phase**: EEx template rendering → Atomic file writes → Application reload triggers
 4. **Local Access**: Unix Domain Socket API for application secret retrieval
 
@@ -95,21 +95,21 @@ SecretHub implements a **two-tier architecture** with a central Core service and
 ### Authentication Flow
 
 ```
-┌─────────────┐     RoleID/SecretID      ┌─────────────┐
+┌─────────────┐   pending enrollment     ┌─────────────┐
 │   Agent     │ ─────────────────────────▶│    Core     │
-│  Bootstrap  │                           │   AppRole   │
+│ Enrollment  │   SSH host public key     │  Approval   │
 └─────────────┘                           └─────────────┘
        │                                         │
-       │              CSR Request                │
-       │ ◀───────────────────────────────────────│
-       │                                         │
-       │           Signed Certificate            │
+       │       TLS CSR + SSH proof               │
        │ ────────────────────────────────────────▶
        │                                         │
+       │       Agent client certificate          │
+       │ ◀───────────────────────────────────────│
+       │                                         │
        ▼                                         ▼
-┌─────────────┐      mTLS WebSocket      ┌─────────────┐
+┌─────────────┐   Core-issued mTLS WS    ┌─────────────┐
 │   Agent     │ ◀═══════════════════════▶│    Core     │
-│   Running   │                           │   Running   │
+│   Runtime   │    certificate identity   │   Runtime   │
 └─────────────┘                           └─────────────┘
 ```
 
@@ -163,8 +163,8 @@ server
 ```
 
 **Available at:**
-- **Web UI / Admin Dashboard:** http://localhost:4000/admin
-- **REST API:** http://localhost:4000/v1
+- **Web UI / Admin Dashboard:** http://localhost:4664/admin
+- **REST API:** http://localhost:4664/v1
 ### Quick Commands
 
 ```bash
@@ -216,7 +216,7 @@ secrethub/                              # Elixir Umbrella Application
 │   │
 │   ├── secrethub_agent/                # Distributed Agent Daemon
 │   │   └── lib/secrethub_agent/
-│   │       ├── bootstrap.ex            # AppRole → Certificate flow
+│   │       ├── bootstrap.ex            # Legacy AppRole bootstrap guard
 │   │       ├── connection.ex           # WebSocket client with reconnect
 │   │       ├── cache.ex                # TTL + LRU secret cache
 │   │       ├── sinker.ex               # Atomic file writer
@@ -400,16 +400,17 @@ Pre-built policy templates for common scenarios:
 
 ```bash
 # Core Service
-docker run -d -p 4000:4000 \
+docker run -d -p 4664:4664 \
+  -e PORT=4664 \
   -e DATABASE_URL="postgresql://..." \
   -e SECRET_KEY_BASE="..." \
   ghcr.io/gsmlg-dev/secrethub/core:v1.0.0-rc3
 
 # Agent
 docker run -d \
-  -e SECRETHUB_CORE_URL="wss://core:4000" \
-  -e SECRETHUB_ROLE_ID="..." \
-  -e SECRETHUB_SECRET_ID="..." \
+  -e SECRET_HUB_AGENT_CORE_URL="http://core:4664" \
+  -e SECRET_HUB_AGENT_STATE_DIR="/var/lib/secrethub-agent" \
+  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
   ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc3
 ```
 
@@ -431,9 +432,9 @@ PHX_HOST=secrethub.example.com
 POOL_SIZE=10
 
 # Agent
-SECRETHUB_CORE_URL=wss://core.example.com:4000
-SECRETHUB_ROLE_ID=<role-id>
-SECRETHUB_SECRET_ID=<secret-id>
+SECRET_HUB_AGENT_CORE_URL=https://core.example.com:4664
+SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent
+SECRET_HUB_AGENT_CORE_ENDPOINTS=https://core-1.example.com:4664,https://core-2.example.com:4664
 ```
 
 ---

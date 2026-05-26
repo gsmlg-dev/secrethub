@@ -292,7 +292,7 @@ aws rds reboot-db-instance \
   --force-failover
 
 # 3. Monitor SecretHub health endpoints
-watch -n 1 'kubectl exec secrethub-core-0 -n secrethub -- wget -qO- http://localhost:4000/v1/sys/health/ready'
+watch -n 1 'kubectl exec secrethub-core-0 -n secrethub -- wget -qO- http://localhost:4664/v1/sys/health/ready'
 
 # 4. Verify operations resume after failover
 kubectl exec secrethub-core-0 -n secrethub -- \

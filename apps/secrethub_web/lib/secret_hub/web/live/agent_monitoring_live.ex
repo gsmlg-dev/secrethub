@@ -304,7 +304,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     uptime_hours =
-      if agent.status == :active && agent.authenticated_at do
+      if agent.status in [:active, :trusted_connected] && agent.authenticated_at do
         DateTime.diff(now, agent.authenticated_at, :second) / 3600
       else
         nil
@@ -327,6 +327,7 @@ defmodule SecretHub.Web.AgentMonitoringLive do
   end
 
   defp map_agent_status(:active), do: :connected
+  defp map_agent_status(:trusted_connected), do: :connected
   defp map_agent_status(:disconnected), do: :disconnected
   defp map_agent_status(:pending_bootstrap), do: :disconnected
   defp map_agent_status(:suspended), do: :error

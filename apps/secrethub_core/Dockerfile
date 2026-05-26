@@ -64,7 +64,7 @@ COPY --chown=secrethub:secrethub config config/
 
 # Set environment
 ENV SECRET_HUB_HOME=/app
-ENV PORT=4000
+ENV PORT=4664
 ENV MIX_ENV=prod
 
 # Create necessary directories
@@ -73,11 +73,11 @@ RUN mkdir -p /app/var/log && \
     chown -R secrethub:secrethub /app/var /app/tmp
 
 # Expose port
-EXPOSE 4000
+EXPOSE 4664
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:4000/health || exit 1
+    CMD curl -f http://localhost:4664/health || exit 1
 
 # Switch to non-root user
 USER secrethub

@@ -13,9 +13,12 @@ defmodule SecretHub.Core.PKI.Verifier do
     with %Certificate{} = stored <- Repo.get_by(Certificate, fingerprint: fingerprint),
          :ok <- verify_not_revoked(stored),
          :ok <- verify_not_expired(stored),
+         :ok <- verify_certificate_type(stored),
+         :ok <- verify_client_auth(stored),
          %Agent{} = agent <- Repo.get_by(Agent, agent_id: stored.entity_id),
          :ok <- verify_agent_active(agent),
-         :ok <- verify_agent_uri(stored, agent.agent_id) do
+         :ok <- verify_agent_uri(stored, agent.agent_id),
+         :ok <- verify_host_key_uri(stored, agent) do
       {:ok,
        %{
          agent_id: agent.agent_id,
@@ -31,6 +34,19 @@ defmodule SecretHub.Core.PKI.Verifier do
 
   def verify_agent_certificate(_), do: {:error, :invalid_certificate}
 
+  defp verify_certificate_type(%Certificate{cert_type: :agent_client}), do: :ok
+  defp verify_certificate_type(_certificate), do: {:error, :invalid_certificate_type}
+
+  defp verify_client_auth(certificate) do
+    extended_key_usage = get_in(certificate.metadata || %{}, ["extended_key_usage"]) || []
+
+    if "clientAuth" in extended_key_usage do
+      :ok
+    else
+      {:error, :missing_client_auth}
+    end
+  end
+
   defp verify_not_revoked(%Certificate{revoked: true}), do: {:error, :revoked}
   defp verify_not_revoked(_), do: :ok
 
@@ -43,7 +59,13 @@ defmodule SecretHub.Core.PKI.Verifier do
   end
 
   defp verify_agent_active(%Agent{status: status})
-       when status in [:certificate_issued, :connect_info_delivered, :active, :trusted_connected],
+       when status in [
+              :certificate_issued,
+              :connect_info_delivered,
+              :active,
+              :trusted_connected,
+              :disconnected
+            ],
        do: :ok
 
   defp verify_agent_active(_), do: {:error, :agent_not_active}
@@ -57,6 +79,23 @@ defmodule SecretHub.Core.PKI.Verifier do
       {:error, :missing_agent_san}
     end
   end
+
+  defp verify_host_key_uri(certificate, %Agent{ssh_host_key_fingerprint: fingerprint})
+       when is_binary(fingerprint) do
+    san_uri = get_in(certificate.metadata || %{}, ["san_uri"]) || []
+    expected_uri = "urn:secrethub:hostkey-sha256:#{strip_sha256_prefix(fingerprint)}"
+
+    if expected_uri in san_uri do
+      :ok
+    else
+      {:error, :missing_host_key_san}
+    end
+  end
+
+  defp verify_host_key_uri(_certificate, _agent), do: {:error, :missing_host_key_san}
+
+  defp strip_sha256_prefix("SHA256:" <> fingerprint), do: fingerprint
+  defp strip_sha256_prefix(fingerprint), do: fingerprint
 
   defp der_to_pem(der) do
     :public_key.pem_encode([{:Certificate, der, :not_encrypted}])

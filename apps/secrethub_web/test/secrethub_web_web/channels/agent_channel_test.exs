@@ -85,7 +85,7 @@ defmodule SecretHub.Web.AgentChannelIntegrationTest do
     test "requires authentication before renewing leases" do
       {:ok, _response, socket} = join_lobby()
 
-      ref = push(socket, "secret:renew", %{"lease_id" => "test-lease-id"})
+      ref = push(socket, "secret:lease_renew", %{"lease_id" => "test-lease-id"})
 
       assert_reply ref, :error, %{reason: "not_authenticated"}
     end
