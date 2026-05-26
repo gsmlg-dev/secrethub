@@ -1,7 +1,7 @@
 defmodule SecretHub.Core.Agents.EnrollmentTest do
   use SecretHub.Core.DataCase, async: false
 
-  alias SecretHub.Core.Agents.Enrollment
+  alias SecretHub.Core.Agents.{ConnectionManager, Enrollment}
   alias SecretHub.Core.PKI.{CSR, Issuer, Verifier}
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Crypto.AgentCSRProof
@@ -436,8 +436,16 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
     end
 
     test "trusted connected finalization is idempotent and terminal" do
-      {:ok, %{enrollment: enrollment, pending_token: pending_token}} =
-        Enrollment.create_pending(@pending_attrs, "203.0.113.10")
+      %{certificate: certificate, enrollment: enrollment, pending_token: pending_token} =
+        issue_valid_agent_certificate!()
+
+      agent =
+        enrollment.agent_id
+        |> then(&Repo.get_by!(Agent, agent_id: &1))
+        |> Agent.changeset(%{status: :trusted_connected})
+        |> Repo.update!()
+
+      register_runtime_connection!(agent, certificate)
 
       enrollment =
         enrollment
@@ -471,14 +479,80 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
       assert Repo.get!(AgentEnrollment, enrollment.id).status == :finalized
     end
 
+    test "trusted connected finalization rejects a runtime connection for a different certificate" do
+      %{enrollment: enrollment, pending_token: pending_token} = issue_valid_agent_certificate!()
+
+      agent =
+        enrollment.agent_id
+        |> then(&Repo.get_by!(Agent, agent_id: &1))
+        |> Agent.changeset(%{status: :trusted_connected})
+        |> Repo.update!()
+
+      register_runtime_connection!(agent, %{
+        id: Ecto.UUID.generate(),
+        serial_number: "wrong-cert"
+      })
+
+      enrollment
+      |> Ecto.Changeset.change(status: :connect_info_delivered)
+      |> Repo.update!()
+
+      assert {:error, :runtime_not_connected} =
+               Enrollment.finalize(enrollment.id, pending_token, %{
+                 "status" => "trusted_connected"
+               })
+    end
+
+    test "trusted connected finalization requires a live runtime registry entry" do
+      %{enrollment: enrollment, pending_token: pending_token} = issue_valid_agent_certificate!()
+
+      enrollment.agent_id
+      |> then(&Repo.get_by!(Agent, agent_id: &1))
+      |> Agent.changeset(%{status: :trusted_connected})
+      |> Repo.update!()
+
+      enrollment
+      |> Ecto.Changeset.change(status: :connect_info_delivered)
+      |> Repo.update!()
+
+      assert {:error, :runtime_not_connected} =
+               Enrollment.finalize(enrollment.id, pending_token, %{
+                 "status" => "trusted_connected"
+               })
+    end
+
+    test "trusted connected finalization requires accepted mTLS runtime state" do
+      {:ok, %{enrollment: enrollment, pending_token: pending_token}} =
+        Enrollment.create_pending(@pending_attrs, "203.0.113.10")
+
+      agent = insert_agent!(status: :connect_info_delivered)
+
+      enrollment
+      |> Ecto.Changeset.change(agent_id: agent.agent_id, status: :connect_info_delivered)
+      |> Repo.update!()
+
+      assert {:error, :runtime_not_connected} =
+               Enrollment.finalize(enrollment.id, pending_token, %{
+                 "status" => "trusted_connected"
+               })
+    end
+
     test "trusted endpoint failure is terminal" do
       {:ok, %{enrollment: enrollment, pending_token: pending_token}} =
         Enrollment.create_pending(@pending_attrs, "203.0.113.10")
 
+      agent = insert_agent!(status: :connect_info_delivered)
+
       enrollment =
         enrollment
-        |> Ecto.Changeset.change(status: :connect_info_delivered)
+        |> Ecto.Changeset.change(agent_id: agent.agent_id, status: :connect_info_delivered)
         |> Repo.update!()
+
+      certificate = insert_agent_certificate!(enrollment, agent)
+
+      agent
+      |> Ecto.Changeset.change(certificate_id: certificate.id)
+      |> Repo.update!()
 
       assert {:ok, failed} =
                Enrollment.finalize(enrollment.id, pending_token, %{
@@ -487,11 +561,69 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
                })
 
       assert failed.status == :trusted_endpoint_failed
+      assert Repo.get!(Agent, agent.id).status == :trusted_endpoint_failed
 
       assert {:error, :invalid_status} =
                Enrollment.finalize(enrollment.id, pending_token, %{
                  "status" => "trusted_connected"
                })
+    end
+
+    test "trusted endpoint failure does not downgrade an agent using a newer enrollment certificate" do
+      {:ok, %{enrollment: enrollment, pending_token: pending_token}} =
+        Enrollment.create_pending(@pending_attrs, "203.0.113.10")
+
+      agent = insert_agent!(status: :connect_info_delivered)
+
+      enrollment =
+        enrollment
+        |> Ecto.Changeset.change(agent_id: agent.agent_id, status: :connect_info_delivered)
+        |> Repo.update!()
+
+      {:ok, %{enrollment: newer_enrollment}} =
+        @pending_attrs
+        |> Map.put(:machine_id, "newer-cert-#{System.unique_integer([:positive])}")
+        |> Enrollment.create_pending("203.0.113.10")
+
+      newer_certificate = insert_agent_certificate!(newer_enrollment, agent)
+
+      agent
+      |> Ecto.Changeset.change(certificate_id: newer_certificate.id)
+      |> Repo.update!()
+
+      assert {:ok, failed} =
+               Enrollment.finalize(enrollment.id, pending_token, %{
+                 "status" => "trusted_endpoint_failed",
+                 "error" => %{"message" => "stale failure"}
+               })
+
+      assert failed.status == :trusted_endpoint_failed
+      assert Repo.get!(Agent, agent.id).status == :connect_info_delivered
+    end
+
+    test "trusted endpoint failure does not downgrade a revoked agent" do
+      {:ok, %{enrollment: enrollment, pending_token: pending_token}} =
+        Enrollment.create_pending(@pending_attrs, "203.0.113.10")
+
+      agent = insert_agent!(status: :connect_info_delivered)
+
+      enrollment =
+        enrollment
+        |> Ecto.Changeset.change(agent_id: agent.agent_id, status: :connect_info_delivered)
+        |> Repo.update!()
+
+      agent
+      |> Ecto.Changeset.change(status: :revoked)
+      |> Repo.update!()
+
+      assert {:ok, failed} =
+               Enrollment.finalize(enrollment.id, pending_token, %{
+                 "status" => "trusted_endpoint_failed",
+                 "error" => %{"message" => "handshake failed"}
+               })
+
+      assert failed.status == :trusted_endpoint_failed
+      assert Repo.get!(Agent, agent.id).status == :revoked
     end
 
     test "trusted endpoint failure finalization is idempotent" do
@@ -647,6 +779,150 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
              )
     end
 
+    test "refuses stale CSR from older enrollment after newer certificate is bound" do
+      generate_active_ca!()
+      ssh_private_key = :public_key.generate_key({:rsa, 2048, 65_537})
+      ssh_public_key = public_key_from_private_key(ssh_private_key)
+      fingerprint = CSR.ssh_fingerprint(ssh_public_key)
+
+      attrs =
+        @pending_attrs
+        |> Map.put(:ssh_host_key_fingerprint, fingerprint)
+        |> Map.put(:ssh_host_public_key, openssh_public_key(ssh_public_key))
+
+      {:ok, %{enrollment: older, pending_token: older_token}} =
+        attrs
+        |> Map.put(:machine_id, "stale-older-#{System.unique_integer([:positive])}")
+        |> Enrollment.create_pending("203.0.113.10")
+
+      {:ok, older_approved} = Enrollment.approve(older.id, "operator-1")
+
+      {:ok, %{enrollment: newer, pending_token: newer_token}} =
+        attrs
+        |> Map.put(:machine_id, "stale-newer-#{System.unique_integer([:positive])}")
+        |> Enrollment.create_pending("203.0.113.10")
+
+      {:ok, newer_approved} = Enrollment.approve(newer.id, "operator-1")
+
+      newer_tls_private_key = tls_private_key()
+
+      newer_csr_pem =
+        csr_pem_for_required_fields(newer_tls_private_key, newer_approved.required_csr_fields)
+
+      newer_proof =
+        AgentCSRProof.sign(ssh_private_key, %{
+          enrollment_id: newer_approved.id,
+          challenge: newer_approved.required_csr_fields["challenge"],
+          csr_pem: newer_csr_pem
+        })
+
+      assert {:ok, %{certificate: newer_certificate}} =
+               Enrollment.submit_csr(newer_approved.id, newer_token, %{
+                 "csr_pem" => newer_csr_pem,
+                 "ssh_proof" => newer_proof
+               })
+
+      assert %Agent{certificate_id: newer_certificate_id} =
+               Repo.get_by!(Agent, agent_id: newer_approved.agent_id)
+
+      assert newer_certificate_id == newer_certificate.id
+
+      older_tls_private_key = tls_private_key()
+
+      older_csr_pem =
+        csr_pem_for_required_fields(older_tls_private_key, older_approved.required_csr_fields)
+
+      older_proof =
+        AgentCSRProof.sign(ssh_private_key, %{
+          enrollment_id: older_approved.id,
+          challenge: older_approved.required_csr_fields["challenge"],
+          csr_pem: older_csr_pem
+        })
+
+      assert {:error, {:certificate_issue_failed, :agent_certificate_bind_conflict}} =
+               Enrollment.submit_csr(older_approved.id, older_token, %{
+                 "csr_pem" => older_csr_pem,
+                 "ssh_proof" => older_proof
+               })
+
+      assert Repo.get_by!(Agent, agent_id: newer_approved.agent_id).certificate_id ==
+               newer_certificate.id
+
+      assert Repo.get!(AgentEnrollment, older_approved.id).status == :certificate_issue_failed
+
+      refute Repo.get_by(Certificate,
+               cert_type: :agent_client,
+               enrollment_id: older_approved.id
+             )
+    end
+
+    test "allows newer enrollment to replace an older certificate for the same agent" do
+      generate_active_ca!()
+      ssh_private_key = :public_key.generate_key({:rsa, 2048, 65_537})
+      ssh_public_key = public_key_from_private_key(ssh_private_key)
+      fingerprint = CSR.ssh_fingerprint(ssh_public_key)
+
+      attrs =
+        @pending_attrs
+        |> Map.put(:ssh_host_key_fingerprint, fingerprint)
+        |> Map.put(:ssh_host_public_key, openssh_public_key(ssh_public_key))
+
+      {:ok, %{enrollment: older, pending_token: older_token}} =
+        attrs
+        |> Map.put(:machine_id, "replace-older-#{System.unique_integer([:positive])}")
+        |> Enrollment.create_pending("203.0.113.10")
+
+      {:ok, older_approved} = Enrollment.approve(older.id, "operator-1")
+
+      older_tls_private_key = tls_private_key()
+
+      older_csr_pem =
+        csr_pem_for_required_fields(older_tls_private_key, older_approved.required_csr_fields)
+
+      older_proof =
+        AgentCSRProof.sign(ssh_private_key, %{
+          enrollment_id: older_approved.id,
+          challenge: older_approved.required_csr_fields["challenge"],
+          csr_pem: older_csr_pem
+        })
+
+      assert {:ok, %{certificate: older_certificate}} =
+               Enrollment.submit_csr(older_approved.id, older_token, %{
+                 "csr_pem" => older_csr_pem,
+                 "ssh_proof" => older_proof
+               })
+
+      {:ok, %{enrollment: newer, pending_token: newer_token}} =
+        attrs
+        |> Map.put(:machine_id, "replace-newer-#{System.unique_integer([:positive])}")
+        |> Enrollment.create_pending("203.0.113.10")
+
+      {:ok, newer_approved} = Enrollment.approve(newer.id, "operator-1")
+
+      newer_tls_private_key = tls_private_key()
+
+      newer_csr_pem =
+        csr_pem_for_required_fields(newer_tls_private_key, newer_approved.required_csr_fields)
+
+      newer_proof =
+        AgentCSRProof.sign(ssh_private_key, %{
+          enrollment_id: newer_approved.id,
+          challenge: newer_approved.required_csr_fields["challenge"],
+          csr_pem: newer_csr_pem
+        })
+
+      assert {:ok, %{certificate: newer_certificate}} =
+               Enrollment.submit_csr(newer_approved.id, newer_token, %{
+                 "csr_pem" => newer_csr_pem,
+                 "ssh_proof" => newer_proof
+               })
+
+      assert older_certificate.id != newer_certificate.id
+
+      assert Repo.get_by!(Agent, agent_id: newer_approved.agent_id).certificate_id ==
+               newer_certificate.id
+    end
+
     test "verifier rejects issued certificates missing clientAuth metadata" do
       %{certificate: certificate, cert_der: cert_der} = issue_valid_agent_certificate!()
 
@@ -776,7 +1052,8 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
       ca: ca,
       certificate: certificate,
       cert_der: cert_der,
-      enrollment: issued
+      enrollment: issued,
+      pending_token: pending_token
     }
   end
 
@@ -822,6 +1099,68 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
   defp public_key_from_private_key(private_key), do: :ssh_file.extract_public_key(private_key)
 
   defp tls_private_key, do: :public_key.generate_key({:rsa, 2048, 65_537})
+
+  defp insert_agent!(attrs) do
+    status = Keyword.fetch!(attrs, :status)
+
+    %Agent{}
+    |> Agent.pki_registration_changeset(%{
+      agent_id: "agent-#{System.unique_integer([:positive])}",
+      name: "test-agent",
+      ssh_host_key_algorithm: "rsa",
+      ssh_host_key_fingerprint: @ssh_host_key_fingerprint,
+      ssh_host_public_key: @ssh_host_public_key,
+      status: status
+    })
+    |> Repo.insert!()
+  end
+
+  defp insert_agent_certificate!(enrollment, agent) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    suffix = System.unique_integer([:positive])
+
+    %Certificate{}
+    |> Certificate.changeset(%{
+      serial_number: "test-agent-serial-#{suffix}",
+      fingerprint: "test-agent-fingerprint-#{suffix}",
+      certificate_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n",
+      subject: "CN=#{agent.agent_id},O=SecretHub Agents",
+      issuer: "CN=Test Root CA,O=SecretHub Test",
+      common_name: agent.agent_id,
+      organization: "SecretHub Agents",
+      valid_from: now,
+      valid_until: DateTime.add(now, 3600, :second),
+      cert_type: :agent_client,
+      enrollment_id: enrollment.id,
+      entity_id: agent.agent_id,
+      entity_type: "agent",
+      revoked: false
+    })
+    |> Repo.insert!()
+  end
+
+  defp register_runtime_connection!(agent, certificate) do
+    ensure_connection_manager_started!()
+    certificate_id = certificate && certificate.id
+    certificate_serial = (certificate && certificate.serial_number) || "test-cert"
+
+    assert :ok =
+             ConnectionManager.register_connection(
+               agent.agent_id,
+               "#{certificate_serial}-#{System.unique_integer([:positive])}",
+               self(),
+               %{certificate_id: certificate_id}
+             )
+  end
+
+  defp ensure_connection_manager_started! do
+    if Process.whereis(ConnectionManager) do
+      :ok
+    else
+      start_supervised!({ConnectionManager, name: ConnectionManager})
+      :ok
+    end
+  end
 
   defp csr_pem_for_required_fields(private_key, required_fields) do
     required_fields

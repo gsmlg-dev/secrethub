@@ -18,7 +18,9 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
          {:ok, cert_id} <- fetch_assign(socket, :certificate_id),
          {:ok, _agent} <- Agents.mark_trusted_connected(agent_id, cert_id) do
       metadata = %{
+        certificate_id: cert_id,
         certificate_fingerprint: cert_fingerprint,
+        certificate_serial: cert_serial,
         peer: socket.assigns[:peer]
       }
 

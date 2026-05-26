@@ -49,6 +49,22 @@ defmodule SecretHub.Agent.IdentityStoreTest do
     assert {:error, :missing_trusted_material} = IdentityStore.load(tmp_dir)
   end
 
+  test "load rejects broad private-key permissions", %{tmp_dir: tmp_dir} do
+    state_dir = Path.join(tmp_dir, "agent-state")
+    assert :ok = IdentityStore.write(state_dir, valid_material())
+    assert :ok = File.chmod(Path.join(state_dir, "agent-key.pem"), 0o644)
+
+    assert {:error, {:insecure_permissions, :private_key_pem}} = IdentityStore.load(state_dir)
+  end
+
+  test "load rejects broad state directory permissions", %{tmp_dir: tmp_dir} do
+    state_dir = Path.join(tmp_dir, "agent-state")
+    assert :ok = IdentityStore.write(state_dir, valid_material())
+    assert :ok = File.chmod(state_dir, 0o755)
+
+    assert {:error, {:insecure_permissions, :state_dir}} = IdentityStore.load(state_dir)
+  end
+
   test "write rejects wrong trusted material field types before filesystem writes", %{
     tmp_dir: tmp_dir
   } do

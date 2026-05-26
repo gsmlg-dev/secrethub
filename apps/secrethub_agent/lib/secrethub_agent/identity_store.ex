@@ -52,6 +52,7 @@ defmodule SecretHub.Agent.IdentityStore do
   @spec load(Path.t()) :: {:ok, t()} | {:error, :missing_trusted_material | term()}
   def load(state_dir) do
     with :ok <- ensure_trusted_files(state_dir),
+         :ok <- ensure_secure_permissions(state_dir),
          {:ok, certificate_pem} <- read_text(state_dir, :certificate_pem),
          {:ok, private_key_pem} <- read_text(state_dir, :private_key_pem),
          {:ok, ca_chain_pem} <- read_text(state_dir, :ca_chain_pem),
@@ -68,6 +69,22 @@ defmodule SecretHub.Agent.IdentityStore do
          identity: identity
        }}
     end
+  end
+
+  @doc """
+  Deletes trusted runtime material from the Agent state directory.
+  """
+  @spec delete_trusted_material(Path.t()) :: :ok | {:error, term()}
+  def delete_trusted_material(state_dir) do
+    Enum.reduce_while(@trusted_files, :ok, fn {_key, {file, _mode}}, :ok ->
+      path = Path.join(state_dir, file)
+
+      case File.rm(path) do
+        :ok -> {:cont, :ok}
+        {:error, :enoent} -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, {:delete_failed, path, reason}}}
+      end
+    end)
   end
 
   defp trusted_material(material) do
@@ -140,6 +157,29 @@ defmodule SecretHub.Agent.IdentityStore do
       :ok
     else
       {:error, :missing_trusted_material}
+    end
+  end
+
+  defp ensure_secure_permissions(state_dir) do
+    with :ok <- verify_owner_only_mode(state_dir, 0o700, :state_dir) do
+      {private_key_file, _mode} = Map.fetch!(@trusted_files, :private_key_pem)
+      verify_owner_only_mode(Path.join(state_dir, private_key_file), 0o600, :private_key_pem)
+    end
+  end
+
+  defp verify_owner_only_mode(path, expected_mode, key) do
+    case File.stat(path) do
+      {:ok, %{mode: mode}} ->
+        actual_mode = Bitwise.band(mode, 0o777)
+
+        if actual_mode == expected_mode do
+          :ok
+        else
+          {:error, {:insecure_permissions, key}}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

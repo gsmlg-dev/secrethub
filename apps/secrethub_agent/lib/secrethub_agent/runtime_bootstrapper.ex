@@ -21,6 +21,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   @default_connect_timeout_ms 10_000
   @finalize_retry_base_ms 1_000
   @finalize_retry_max_ms 60_000
+  @allow_insecure_enrollment_default Mix.env() in [:dev, :test]
 
   defstruct [
     :core_url,
@@ -63,22 +64,56 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   end
 
   @doc false
-  @spec enrollment_core_url(binary()) :: binary()
+  @spec enrollment_core_url(binary()) ::
+          {:ok, binary()} | {:error, :invalid_enrollment_url | :insecure_enrollment_url}
   def enrollment_core_url(core_url) when is_binary(core_url) do
     core_url
-    |> URI.parse()
-    |> then(fn uri ->
-      scheme =
-        case uri.scheme do
-          "ws" -> "http"
-          "wss" -> "https"
-          nil -> "https"
-          other -> other
-        end
+    |> enrollment_uri()
+    |> normalize_enrollment_uri()
+    |> validate_enrollment_core_url()
+  end
 
-      %{uri | scheme: scheme, path: nil, query: nil, fragment: nil}
-    end)
-    |> URI.to_string()
+  defp enrollment_uri(core_url) do
+    uri = URI.parse(core_url)
+
+    if is_nil(uri.scheme) and is_nil(uri.host) and binary_present?(uri.path) do
+      URI.parse("https://#{core_url}")
+    else
+      uri
+    end
+  end
+
+  defp normalize_enrollment_uri(%URI{} = uri) do
+    scheme =
+      case uri.scheme do
+        "ws" -> "http"
+        "wss" -> "https"
+        nil -> "https"
+        other -> other
+      end
+
+    %{uri | scheme: scheme, path: nil, query: nil, fragment: nil}
+  end
+
+  defp validate_enrollment_core_url(%URI{scheme: scheme, host: host} = uri)
+       when scheme in ["http", "https"] and is_binary(host) and host != "" do
+    url = URI.to_string(uri)
+
+    cond do
+      scheme == "https" -> {:ok, url}
+      allow_insecure_enrollment?() -> {:ok, url}
+      true -> {:error, :insecure_enrollment_url}
+    end
+  end
+
+  defp validate_enrollment_core_url(_uri), do: {:error, :invalid_enrollment_url}
+
+  defp allow_insecure_enrollment? do
+    Application.get_env(
+      :secrethub_agent,
+      :allow_insecure_enrollment,
+      @allow_insecure_enrollment_default
+    )
   end
 
   @doc false
@@ -129,11 +164,20 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
         start_runtime(material, nil, state)
 
       {:ok, :ready_for_runtime, material, pending} ->
-        finalization =
-          pending_enrollment_core_url(pending, state)
-          |> pending_finalization(pending, material.connect_info)
+        case pending_enrollment_core_url(pending, state) do
+          {:ok, core_url} ->
+            finalization = pending_finalization(core_url, pending, material.connect_info)
 
-        start_enrolled_runtime(material, runtime_accepted_callback(self()), finalization, state)
+            start_enrolled_runtime(
+              material,
+              runtime_accepted_callback(self()),
+              finalization,
+              state
+            )
+
+          {:error, reason} ->
+            {:stop, reason, state}
+        end
 
       {:ok, :ready_for_legacy_runtime, legacy_opts} ->
         start_legacy_runtime(legacy_opts, state)
@@ -279,33 +323,43 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
   defp enroll_and_start_runtime(state) do
     endpoint = enrollment_endpoint(state)
-    enrollment_url = enrollment_core_url(endpoint)
 
-    Logger.info("Trusted Agent material missing; starting enrollment",
-      core_url: enrollment_url,
-      state_dir: state.state_dir
-    )
+    with {:ok, enrollment_url} <- enrollment_core_url(endpoint) do
+      Logger.info("Trusted Agent material missing; starting enrollment",
+        core_url: enrollment_url,
+        state_dir: state.state_dir
+      )
 
-    enrollment_opts =
-      state.enrollment_opts
-      |> Keyword.put(:core_url, enrollment_url)
-      |> Keyword.put(:storage_dir, state.state_dir)
+      enrollment_opts =
+        state.enrollment_opts
+        |> Keyword.put(:core_url, enrollment_url)
+        |> Keyword.put(:storage_dir, state.state_dir)
 
-    case Enrollment.enroll(enrollment_opts) do
-      {:ok, enrolled} ->
-        report_endpoint_success(endpoint)
+      case Enrollment.enroll(enrollment_opts) do
+        {:ok, enrolled} ->
+          report_endpoint_success(endpoint)
 
-        with {:ok, material} <- IdentityStore.load(state.state_dir) do
-          finalization =
-            pending_finalization(enrollment_url, enrolled.pending, material.connect_info)
+          with {:ok, material} <- IdentityStore.load(state.state_dir) do
+            finalization =
+              pending_finalization(enrollment_url, enrolled.pending, material.connect_info)
 
-          start_enrolled_runtime(material, runtime_accepted_callback(self()), finalization, state)
-        else
-          {:error, reason} ->
-            report_endpoint_failure(endpoint)
-            {:stop, reason, state}
-        end
+            start_enrolled_runtime(
+              material,
+              runtime_accepted_callback(self()),
+              finalization,
+              state
+            )
+          else
+            {:error, reason} ->
+              report_endpoint_failure(endpoint)
+              {:stop, reason, state}
+          end
 
+        {:error, reason} ->
+          report_endpoint_failure(endpoint)
+          {:stop, reason, state}
+      end
+    else
       {:error, reason} ->
         report_endpoint_failure(endpoint)
         {:stop, reason, state}
@@ -490,8 +544,15 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
       end
 
     case result do
-      :ok -> Enrollment.delete_pending_token(state_dir)
+      :ok -> delete_enrollment_state(state_dir)
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp delete_enrollment_state(state_dir) do
+    with :ok <- Enrollment.delete_pending_token(state_dir),
+         :ok <- IdentityStore.delete_trusted_material(state_dir) do
+      :ok
     end
   end
 
@@ -508,7 +569,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
   defp pending_enrollment_core_url(pending, state) do
     case Map.get(pending, "enrollment_core_url") || Map.get(pending, :enrollment_core_url) do
-      core_url when is_binary(core_url) and core_url != "" -> core_url
+      core_url when is_binary(core_url) and core_url != "" -> enrollment_core_url(core_url)
       _missing -> state |> enrollment_endpoint() |> enrollment_core_url()
     end
   end

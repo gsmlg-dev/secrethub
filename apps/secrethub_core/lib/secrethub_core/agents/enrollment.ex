@@ -5,10 +5,11 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
   import Ecto.Query
 
+  alias SecretHub.Core.Agents.ConnectionManager
   alias SecretHub.Core.PKI
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Crypto.AgentCSRProof
-  alias SecretHub.Shared.Schemas.{Agent, AgentEnrollment}
+  alias SecretHub.Shared.Schemas.{Agent, AgentEnrollment, Certificate}
 
   @pending_ttl_seconds 24 * 60 * 60
   @default_presence_timeout_ms 10_000
@@ -17,6 +18,11 @@ defmodule SecretHub.Core.Agents.Enrollment do
   @stale_cleanup_statuses [:pending_registered]
   @pending_list_statuses [:pending_registered]
   @blocked_reenrollment_agent_statuses [:revoked, :suspended]
+  @agent_finalize_failure_statuses [
+    :certificate_issued,
+    :connect_info_delivered,
+    :trusted_connecting
+  ]
   @finalize_success_statuses [
     :certificate_issued,
     :connect_info_delivered,
@@ -203,20 +209,28 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
   def get_enrollment(id), do: Repo.get(AgentEnrollment, id)
 
-  defp finalize_success(%AgentEnrollment{id: enrollment_id}) do
-    case guarded_finalize_update(enrollment_id, @finalize_success_statuses,
-           status: :finalized,
-           last_error: nil
-         ) do
-      {:ok, enrollment} ->
-        {:ok, enrollment}
+  defp finalize_success(%AgentEnrollment{status: :finalized} = enrollment), do: {:ok, enrollment}
 
-      {:error, :invalid_status} ->
-        case Repo.get(AgentEnrollment, enrollment_id) do
-          %AgentEnrollment{status: :finalized} = enrollment -> {:ok, enrollment}
-          %AgentEnrollment{} -> {:error, :invalid_status}
-          nil -> {:error, :not_found}
-        end
+  defp finalize_success(%AgentEnrollment{status: status})
+       when status not in @finalize_success_statuses,
+       do: {:error, :invalid_status}
+
+  defp finalize_success(%AgentEnrollment{id: enrollment_id} = enrollment) do
+    with :ok <- verify_runtime_connected(enrollment) do
+      case guarded_finalize_update(enrollment_id, @finalize_success_statuses,
+             status: :finalized,
+             last_error: nil
+           ) do
+        {:ok, enrollment} ->
+          {:ok, enrollment}
+
+        {:error, :invalid_status} ->
+          case Repo.get(AgentEnrollment, enrollment_id) do
+            %AgentEnrollment{status: :finalized} = enrollment -> {:ok, enrollment}
+            %AgentEnrollment{} -> {:error, :invalid_status}
+            nil -> {:error, :not_found}
+          end
+      end
     end
   end
 
@@ -226,6 +240,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
            last_error: error
          ) do
       {:ok, enrollment} ->
+        mark_agent_trusted_endpoint_failed(enrollment)
         {:ok, enrollment}
 
       {:error, :invalid_status} ->
@@ -236,6 +251,98 @@ defmodule SecretHub.Core.Agents.Enrollment do
         end
     end
   end
+
+  defp verify_runtime_connected(%AgentEnrollment{id: enrollment_id, agent_id: agent_id})
+       when is_binary(agent_id) do
+    case Repo.get_by(Agent, agent_id: agent_id) do
+      %Agent{status: :trusted_connected, certificate_id: certificate_id}
+      when is_binary(certificate_id) ->
+        with {:ok, connection} <- runtime_connection(agent_id),
+             :ok <- verify_runtime_connection_certificate(connection, certificate_id),
+             :ok <- verify_enrollment_certificate(enrollment_id, agent_id, certificate_id) do
+          :ok
+        end
+
+      %Agent{} ->
+        {:error, :runtime_not_connected}
+
+      nil ->
+        {:error, :agent_not_found}
+    end
+  end
+
+  defp verify_runtime_connected(_enrollment), do: {:error, :runtime_not_connected}
+
+  defp runtime_connection(agent_id) do
+    if Process.whereis(ConnectionManager) do
+      case ConnectionManager.get_connection(agent_id) do
+        {:ok, connection} -> {:ok, connection}
+        {:error, :not_connected} -> {:error, :runtime_not_connected}
+      end
+    else
+      {:error, :runtime_not_connected}
+    end
+  catch
+    :exit, _reason -> {:error, :runtime_not_connected}
+  end
+
+  defp verify_runtime_connection_certificate(
+         %ConnectionManager{metadata: metadata},
+         certificate_id
+       ) do
+    if metadata_value(metadata, :certificate_id) == certificate_id do
+      :ok
+    else
+      {:error, :runtime_not_connected}
+    end
+  end
+
+  defp verify_enrollment_certificate(enrollment_id, agent_id, certificate_id) do
+    case Repo.get(Certificate, certificate_id) do
+      %Certificate{
+        cert_type: :agent_client,
+        enrollment_id: ^enrollment_id,
+        entity_id: ^agent_id,
+        revoked: false,
+        valid_until: valid_until
+      } ->
+        if DateTime.compare(valid_until, now()) == :gt do
+          :ok
+        else
+          {:error, :runtime_not_connected}
+        end
+
+      %Certificate{} ->
+        {:error, :runtime_not_connected}
+
+      nil ->
+        {:error, :runtime_not_connected}
+    end
+  end
+
+  defp metadata_value(metadata, key) when is_map(metadata) do
+    Map.get(metadata, key) || Map.get(metadata, Atom.to_string(key))
+  end
+
+  defp mark_agent_trusted_endpoint_failed(%AgentEnrollment{id: enrollment_id, agent_id: agent_id})
+       when is_binary(agent_id) do
+    certificate_ids =
+      Certificate
+      |> where([c], c.enrollment_id == ^enrollment_id)
+      |> where([c], c.entity_id == ^agent_id)
+      |> where([c], c.cert_type == ^:agent_client)
+      |> select([c], c.id)
+
+    Agent
+    |> where([a], a.agent_id == ^agent_id)
+    |> where([a], a.status in ^@agent_finalize_failure_statuses)
+    |> where([a], a.certificate_id in subquery(certificate_ids))
+    |> Repo.update_all(set: [status: :trusted_endpoint_failed, updated_at: now()])
+
+    :ok
+  end
+
+  defp mark_agent_trusted_endpoint_failed(_enrollment), do: :ok
 
   defp guarded_finalize_update(enrollment_id, allowed_statuses, attrs) do
     updates = Keyword.put(attrs, :updated_at, now())
@@ -260,7 +367,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
       {:ok, updated} ->
         case PKI.Issuer.issue_agent_certificate_from_csr(updated, csr) do
           {:ok, certificate} ->
-            case bind_agent_certificate(updated.agent_id, certificate.id) do
+            case bind_agent_certificate(updated.agent_id, certificate.id, updated.id) do
               {:ok, _agent} ->
                 updated
                 |> AgentEnrollment.changeset(%{
@@ -287,15 +394,36 @@ defmodule SecretHub.Core.Agents.Enrollment do
     end
   end
 
-  defp bind_agent_certificate(agent_id, certificate_id) do
+  defp bind_agent_certificate(agent_id, certificate_id, enrollment_id) do
+    {count, _} =
+      Agent
+      |> where([a], a.agent_id == ^agent_id)
+      |> where([a], a.status not in ^@blocked_reenrollment_agent_statuses)
+      |> where([a], fragment("?->>? = ?", a.metadata, "current_enrollment_id", ^enrollment_id))
+      |> Repo.update_all(
+        set: [
+          status: :certificate_issued,
+          certificate_id: certificate_id,
+          updated_at: now()
+        ]
+      )
+
+    case count do
+      1 ->
+        {:ok, Repo.get_by!(Agent, agent_id: agent_id)}
+
+      0 ->
+        certificate_bind_error(agent_id)
+    end
+  end
+
+  defp certificate_bind_error(agent_id) do
     case Repo.get_by(Agent, agent_id: agent_id) do
       %Agent{status: status} when status in @blocked_reenrollment_agent_statuses ->
         {:error, :agent_reenrollment_blocked}
 
-      %Agent{} = agent ->
-        agent
-        |> Agent.changeset(%{status: :certificate_issued, certificate_id: certificate_id})
-        |> Repo.update()
+      %Agent{} ->
+        {:error, :agent_certificate_bind_conflict}
 
       nil ->
         {:error, :agent_not_found}
@@ -453,7 +581,10 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
       %Agent{} = agent ->
         agent
-        |> Ecto.Changeset.change(ssh_host_public_key: enrollment.ssh_host_public_key)
+        |> Ecto.Changeset.change(
+          ssh_host_public_key: enrollment.ssh_host_public_key,
+          metadata: current_enrollment_metadata(agent.metadata, enrollment)
+        )
         |> Repo.update()
 
       nil ->
@@ -473,12 +604,21 @@ defmodule SecretHub.Core.Agents.Enrollment do
             "os" => enrollment.os,
             "arch" => enrollment.arch,
             "agent_version" => enrollment.agent_version,
-            "capabilities" => enrollment.capabilities || %{}
+            "capabilities" => enrollment.capabilities || %{},
+            "current_enrollment_id" => enrollment.id
           },
           status: :approved_waiting_for_csr
         })
         |> Repo.insert()
     end
+  end
+
+  defp current_enrollment_metadata(metadata, enrollment) when is_map(metadata) do
+    Map.put(metadata, "current_enrollment_id", enrollment.id)
+  end
+
+  defp current_enrollment_metadata(_metadata, enrollment) do
+    %{"current_enrollment_id" => enrollment.id}
   end
 
   defp verify_agent_can_receive_certificate(agent_id) do

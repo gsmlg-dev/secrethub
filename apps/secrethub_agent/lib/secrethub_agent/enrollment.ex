@@ -13,6 +13,7 @@ defmodule SecretHub.Agent.Enrollment do
 
   @default_poll_interval_ms 2_500
   @default_timeout_ms 300_000
+  @allow_insecure_enrollment_default Mix.env() in [:dev, :test]
 
   def enroll(opts) do
     core_url = Keyword.fetch!(opts, :core_url)
@@ -275,31 +276,60 @@ defmodule SecretHub.Agent.Enrollment do
 
   defp post_json(url, payload, headers) do
     headers = [{"content-type", "application/json"} | headers]
-    opts = [body: Jason.encode!(payload), headers: headers] ++ req_options()
+    opts = enrollment_req_options(body: Jason.encode!(payload), headers: headers)
 
-    case Req.post(url, opts) do
-      {:ok, %Req.Response{status: code, body: body}} when code in 200..299 ->
-        decode_json(body)
+    with :ok <- verify_enrollment_request_url(url) do
+      case Req.post(url, opts) do
+        {:ok, %Req.Response{status: code, body: body}} when code in 200..299 ->
+          decode_json(body)
 
-      {:ok, %Req.Response{status: code, body: body}} ->
-        {:error, {:http_error, code, decode_body(body)}}
+        {:ok, %Req.Response{status: code, body: body}} ->
+          {:error, {:http_error, code, decode_body(body)}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 
   defp get_json(url, headers) do
-    case Req.get(url, [headers: headers] ++ req_options()) do
-      {:ok, %Req.Response{status: code, body: body}} when code in 200..299 ->
-        decode_json(body)
+    with :ok <- verify_enrollment_request_url(url) do
+      case Req.get(url, enrollment_req_options(headers: headers)) do
+        {:ok, %Req.Response{status: code, body: body}} when code in 200..299 ->
+          decode_json(body)
 
-      {:ok, %Req.Response{status: code, body: body}} ->
-        {:error, {:http_error, code, decode_body(body)}}
+        {:ok, %Req.Response{status: code, body: body}} ->
+          {:error, {:http_error, code, decode_body(body)}}
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
+  end
+
+  defp verify_enrollment_request_url(url) do
+    case URI.parse(url) do
+      %URI{scheme: "https", host: host} when is_binary(host) and host != "" ->
+        :ok
+
+      %URI{scheme: "http", host: host} when is_binary(host) and host != "" ->
+        if allow_insecure_enrollment?() do
+          :ok
+        else
+          {:error, :insecure_enrollment_url}
+        end
+
+      _invalid ->
+        {:error, :invalid_enrollment_url}
+    end
+  end
+
+  defp allow_insecure_enrollment? do
+    Application.get_env(
+      :secrethub_agent,
+      :allow_insecure_enrollment,
+      @allow_insecure_enrollment_default
+    )
   end
 
   defp decode_json(body) when is_binary(body), do: Jason.decode(body)
@@ -316,6 +346,12 @@ defmodule SecretHub.Agent.Enrollment do
 
   defp req_options do
     Application.get_env(:secrethub_agent, :enrollment_req_options, [])
+  end
+
+  defp enrollment_req_options(opts) do
+    opts
+    |> Keyword.merge(req_options())
+    |> Keyword.put(:redirect, false)
   end
 
   defp hostname do

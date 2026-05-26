@@ -66,6 +66,10 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
     assert socket.assigns.agent_id == agent_id
     assert socket.assigns.certificate_id == certificate_id
     assert ConnectionManager.connected?(agent_id)
+
+    assert {:ok, connection} = ConnectionManager.get_connection(agent_id)
+    assert connection.metadata.certificate_id == certificate_id
+    assert connection.metadata.certificate_serial == certificate_serial
   end
 
   test "rejects runtime join if agent is revoked after socket connect" do

@@ -106,14 +106,35 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   end
 
   test "converts websocket core URLs to enrollment HTTP URLs" do
-    assert RuntimeBootstrapper.enrollment_core_url("ws://localhost:4664") ==
-             "http://localhost:4664"
+    assert {:ok, "http://localhost:4664"} =
+             RuntimeBootstrapper.enrollment_core_url("ws://localhost:4664")
 
-    assert RuntimeBootstrapper.enrollment_core_url("wss://core.example:4664/socket") ==
-             "https://core.example:4664"
+    assert {:ok, "https://core.example:4664"} =
+             RuntimeBootstrapper.enrollment_core_url("wss://core.example:4664/socket")
 
-    assert RuntimeBootstrapper.enrollment_core_url("https://core.example:4664") ==
-             "https://core.example:4664"
+    assert {:ok, "https://core.example:4664"} =
+             RuntimeBootstrapper.enrollment_core_url("https://core.example:4664")
+  end
+
+  test "rejects insecure enrollment URLs unless explicitly allowed" do
+    original = Application.get_env(:secrethub_agent, :allow_insecure_enrollment)
+
+    on_exit(fn ->
+      restore_env(:allow_insecure_enrollment, original)
+    end)
+
+    Application.put_env(:secrethub_agent, :allow_insecure_enrollment, false)
+
+    assert {:error, :insecure_enrollment_url} =
+             RuntimeBootstrapper.enrollment_core_url("ws://core.example:4664")
+
+    assert {:error, :insecure_enrollment_url} =
+             RuntimeBootstrapper.enrollment_core_url("http://core.example:4664")
+
+    Application.put_env(:secrethub_agent, :allow_insecure_enrollment, true)
+
+    assert {:ok, "http://core.example:4664"} =
+             RuntimeBootstrapper.enrollment_core_url("ws://core.example:4664")
   end
 
   test "builds trusted runtime options from loaded material" do
@@ -314,7 +335,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     state_dir = Path.join(tmp_dir, "agent-state")
     pending = %{"enrollment_id" => "enrollment-1", "pending_token" => "pending-token"}
     timer = Process.send_after(self(), :unused_runtime_accept_timeout, 10_000)
-    assert :ok = File.mkdir_p(state_dir)
+    assert :ok = IdentityStore.write(state_dir, valid_material())
     assert :ok = File.write(Path.join(state_dir, "pending.json"), Jason.encode!(pending))
 
     Req.Test.expect(__MODULE__, fn conn ->
@@ -353,6 +374,11 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
 
     assert next_state.pending_finalization == nil
     refute File.exists?(Path.join(state_dir, "pending.json"))
+    refute File.exists?(Path.join(state_dir, "agent-cert.pem"))
+    refute File.exists?(Path.join(state_dir, "agent-key.pem"))
+    refute File.exists?(Path.join(state_dir, "ca-chain.pem"))
+    refute File.exists?(Path.join(state_dir, "connect-info.json"))
+    refute File.exists?(Path.join(state_dir, "identity.json"))
   end
 
   test "runtime accept timeout clears pending after idempotent failure finalization", %{
@@ -444,4 +470,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
       :exit, _reason -> :ok
     end
   end
+
+  defp restore_env(key, nil), do: Application.delete_env(:secrethub_agent, key)
+  defp restore_env(key, value), do: Application.put_env(:secrethub_agent, key, value)
 end

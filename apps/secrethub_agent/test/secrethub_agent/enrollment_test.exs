@@ -25,6 +25,53 @@ defmodule SecretHub.Agent.EnrollmentTest do
   end
 
   @tag :tmp_dir
+  test "create_pending rejects insecure enrollment URLs when disabled", %{tmp_dir: tmp_dir} do
+    original_allow = Application.get_env(:secrethub_agent, :allow_insecure_enrollment)
+    original_req_options = Application.get_env(:secrethub_agent, :enrollment_req_options)
+
+    on_exit(fn ->
+      restore_env(:allow_insecure_enrollment, original_allow)
+      restore_env(:enrollment_req_options, original_req_options)
+    end)
+
+    Application.put_env(:secrethub_agent, :allow_insecure_enrollment, false)
+    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+
+    Req.Test.stub(__MODULE__, fn _conn ->
+      flunk("insecure enrollment URL must be rejected before an HTTP request")
+    end)
+
+    host_key_path = generate_key!(tmp_dir, "ssh_host_rsa_key", "rsa")
+    {:ok, host_key} = HostKey.discover(paths: [rsa: host_key_path])
+
+    assert {:error, :insecure_enrollment_url} =
+             Enrollment.create_pending("http://core.invalid", host_key)
+  end
+
+  @tag :tmp_dir
+  test "create_pending does not follow enrollment redirects", %{tmp_dir: tmp_dir} do
+    original_req_options = Application.get_env(:secrethub_agent, :enrollment_req_options)
+
+    on_exit(fn ->
+      restore_env(:enrollment_req_options, original_req_options)
+    end)
+
+    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+
+    Req.Test.expect(__MODULE__, fn conn ->
+      conn
+      |> Plug.Conn.put_resp_header("location", "http://core.invalid/v1/agent/enrollments")
+      |> Plug.Conn.resp(302, "redirect")
+    end)
+
+    host_key_path = generate_key!(tmp_dir, "ssh_host_rsa_key", "rsa")
+    {:ok, host_key} = HostKey.discover(paths: [rsa: host_key_path])
+
+    assert {:error, {:http_error, 302, "redirect"}} =
+             Enrollment.create_pending("https://core.example", host_key)
+  end
+
+  @tag :tmp_dir
   test "store_material writes a TLS PEM key separate from the OpenSSH host key", %{
     tmp_dir: tmp_dir
   } do
@@ -272,4 +319,7 @@ defmodule SecretHub.Agent.EnrollmentTest do
     {:ok, stat} = File.stat(path)
     Bitwise.band(stat.mode, 0o777)
   end
+
+  defp restore_env(key, nil), do: Application.delete_env(:secrethub_agent, key)
+  defp restore_env(key, value), do: Application.put_env(:secrethub_agent, key, value)
 end
