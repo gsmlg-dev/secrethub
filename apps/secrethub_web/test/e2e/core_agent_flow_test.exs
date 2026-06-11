@@ -293,6 +293,70 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     end
   end
 
+  # ─── Scenario 9: Real mTLS Transport ───────────────────────
+  #
+  # Unlike S5/S6, which inject peer_data into ChannelTest, this scenario
+  # boots the real AgentEndpoint TLS listener and connects through the
+  # Agent's actual WebSocket client, exercising certificate chain
+  # validation on both sides of a real socket.
+
+  @real_mtls_port 4666
+
+  test "S9: agent connects through the real mTLS endpoint and joins runtime" do
+    flush_mailbox()
+    Process.flag(:trap_exit, true)
+
+    %{certificate: certificate, enrollment: enrollment, tls_private_key: tls_private_key} =
+      issue_valid_agent_certificate!()
+
+    previous_dev_mode = Application.get_env(:secrethub_web, :dev_mode)
+    previous_endpoint = Application.get_env(:secrethub_web, :agent_trusted_endpoint)
+    endpoint_url = "wss://localhost:#{@real_mtls_port}/agent/socket/websocket"
+
+    Application.put_env(:secrethub_web, :dev_mode, true)
+    Application.put_env(:secrethub_web, :agent_trusted_endpoint, endpoint_url)
+
+    on_exit(fn ->
+      Application.put_env(:secrethub_web, :dev_mode, previous_dev_mode || false)
+
+      if previous_endpoint do
+        Application.put_env(:secrethub_web, :agent_trusted_endpoint, previous_endpoint)
+      end
+
+      Supervisor.terminate_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
+      Supervisor.delete_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
+    end)
+
+    assert :ok = SecretHub.Web.AgentEndpointManager.ensure_started()
+
+    {:ok, ca_chain_pem} = SecretHub.Core.PKI.CA.get_ca_chain()
+    test_pid = self()
+
+    {:ok, conn} =
+      SecretHub.Agent.TrustedConnection.start_link(
+        agent_id: enrollment.agent_id,
+        connect_info: %{
+          "trusted_websocket_endpoint" => endpoint_url,
+          "expected_core_server_name" => "localhost",
+          "core_ca_cert_pem" => ca_chain_pem
+        },
+        certificate_pem: certificate.certificate_pem,
+        private_key_pem: X509.PrivateKey.to_pem(tls_private_key),
+        on_runtime_accepted: fn payload -> send(test_pid, {:runtime_accepted, payload}) end
+      )
+
+    assert_receive {:runtime_accepted, payload}, 15_000
+
+    assert payload["status"] == "accepted"
+    assert payload["agent_id"] == enrollment.agent_id
+    assert payload["certificate_serial"] == certificate.serial_number
+    assert payload["certificate_fingerprint"] == certificate.fingerprint
+
+    GenServer.stop(conn)
+    flush_mailbox()
+    Process.flag(:trap_exit, false)
+  end
+
   # ─── Scenario 8: Health Endpoints ──────────────────────────
 
   test "S8: health endpoints respond" do
@@ -360,7 +424,12 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     [{:Certificate, cert_der, :not_encrypted}] =
       :public_key.pem_decode(certificate.certificate_pem)
 
-    %{certificate: certificate, cert_der: cert_der, enrollment: issued}
+    %{
+      certificate: certificate,
+      cert_der: cert_der,
+      enrollment: issued,
+      tls_private_key: tls_private_key
+    }
   end
 
   defp create_runtime_readable_secret!(agent_id, secret_path, secret_data) do
