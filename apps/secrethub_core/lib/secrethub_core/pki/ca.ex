@@ -448,7 +448,7 @@ defmodule SecretHub.Core.PKI.CA do
       :asn1_NOVALUE,
       # subjectUniqueID
       :asn1_NOVALUE,
-      build_extensions(is_ca)
+      build_extensions(public_key, is_ca)
     }
   end
 
@@ -471,56 +471,32 @@ defmodule SecretHub.Core.PKI.CA do
     }
   end
 
-  defp build_extensions(is_ca) do
+  # OTPTBSCertificate extensions must carry decoded extension values; the
+  # X509 helpers produce them in the shape :public_key.pkix_sign/2 expects.
+  # Hand-encoding DER here previously double-wrapped the values, yielding CA
+  # certificates whose KeyUsage decoded without keyCertSign — strict
+  # validators (e.g. OpenSSL) rejected the entire chain.
+  defp build_extensions(public_key, is_ca) do
     extensions = [
-      # Subject Key Identifier
-      {
-        :Extension,
-        # id-ce-subjectKeyIdentifier
-        {2, 5, 29, 14},
-        false,
-        # Random SKI
-        <<4, 20>> <> :crypto.strong_rand_bytes(20)
-      },
-      # Key Usage
-      {
-        :Extension,
-        # id-ce-keyUsage
-        {2, 5, 29, 15},
-        # critical
-        true,
-        if is_ca do
-          # CA: keyCertSign, cRLSign
-          <<3, 2, 1, 6>>
-        else
-          # End entity: digitalSignature, keyEncipherment
-          <<3, 2, 5, 160>>
-        end
-      }
+      X509.Certificate.Extension.subject_key_identifier(ski_public_key(public_key)),
+      if is_ca do
+        X509.Certificate.Extension.key_usage([:keyCertSign, :cRLSign])
+      else
+        X509.Certificate.Extension.key_usage([:digitalSignature, :keyEncipherment])
+      end
     ]
 
-    # Add Basic Constraints extension
-    extensions =
-      if is_ca do
-        # For CA certificates, mark as CA
-        [
-          {
-            :Extension,
-            # id-ce-basicConstraints
-            {2, 5, 29, 19},
-            # critical
-            true,
-            # Pass the tuple directly, not DER-encoded
-            {:BasicConstraints, true, :asn1_NOVALUE}
-          }
-          | extensions
-        ]
-      else
-        extensions
-      end
-
-    extensions
+    if is_ca do
+      [X509.Certificate.Extension.basic_constraints(true) | extensions]
+    else
+      extensions
+    end
   end
+
+  # X509 expects EC public keys as {ec_point, parameters}; this module
+  # carries them as {point_binary, parameters} (see extract_public_key/2).
+  defp ski_public_key({point, params}) when is_binary(point), do: {{:ECPoint, point}, params}
+  defp ski_public_key(public_key), do: public_key
 
   defp format_time({{year, month, day}, {hour, minute, second}}) do
     # UTCTime format for dates before 2050
