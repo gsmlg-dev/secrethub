@@ -136,7 +136,7 @@ defmodule SecretHub.Shared.Crypto.AgentCSRProofTest do
       attrs = Map.put(valid_attrs(), :proof, unsigned_proof())
 
       malformed_public_key =
-        {{:ECPoint, <<4, 1, 2, 3>>}, {:namedCurve, {1, 2, 840, 10045, 3, 1, 7}}}
+        {{:ECPoint, <<4, 1, 2, 3>>}, {:namedCurve, {1, 2, 840, 10_045, 3, 1, 7}}}
 
       assert {:error, :invalid_signature} = AgentCSRProof.verify(malformed_public_key, attrs)
     end

@@ -10,7 +10,7 @@ defmodule SecretHub.Shared.Crypto.AgentCSRProof do
   @context "secrethub-agent-csr-v1"
   @separator <<0>>
   @ecdsa_named_curves [
-    {1, 2, 840, 10045, 3, 1, 7},
+    {1, 2, 840, 10_045, 3, 1, 7},
     {1, 3, 132, 0, 34},
     {1, 3, 132, 0, 35}
   ]
