@@ -69,9 +69,7 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
 
       case Secrets.get_secret_for_entity(agent_id, secret_path, %{}) do
         {:ok, secret_data} ->
-          with_runtime_authorized(socket, fn ->
-            {:reply, {:ok, %{path: secret_path, data: secret_data}}, socket}
-          end)
+          {:reply, {:ok, %{path: secret_path, data: secret_data}}, socket}
 
         {:error, reason} ->
           {:reply, {:error, %{reason: inspect(reason), path: secret_path}}, socket}

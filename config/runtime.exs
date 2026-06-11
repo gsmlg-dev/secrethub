@@ -51,7 +51,9 @@ if System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) do
           cacertfile: String.to_charlist(agent_cacertfile),
           verify: :verify_peer,
           fail_if_no_peer_cert: true,
-          versions: [:"tlsv1.2", :"tlsv1.3"]
+          versions: [:"tlsv1.2", :"tlsv1.3"],
+          # Dual-stack so IPv4-resolving agents can reach the IPv6 wildcard bind
+          ipv6_v6only: false
         ]
       ]
     ]

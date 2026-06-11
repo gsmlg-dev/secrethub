@@ -75,7 +75,9 @@ defmodule SecretHub.Web.AgentEndpointManager do
         pubsub_server: SecretHub.Web.PubSub,
         url: [host: host, port: port],
         https: [
-          ip: {0, 0, 0, 0, 0, 0, 0, 0},
+          # Bind IPv4 in dev: the Agent's Erlang websocket client resolves
+          # "localhost" to 127.0.0.1, which an IPv6-only listener rejects.
+          ip: {0, 0, 0, 0},
           port: port,
           cipher_suite: :strong,
           certfile: paths.certfile,

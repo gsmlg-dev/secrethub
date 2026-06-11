@@ -30,6 +30,10 @@ defmodule SecretHub.Web.Application do
     opts = [strategy: :one_for_one, name: SecretHub.Web.Supervisor]
     result = Supervisor.start_link(children, opts)
 
+    with {:ok, _pid} <- result do
+      maybe_start_dev_agent_endpoint()
+    end
+
     Logger.info("SecretHub.Web.Application started")
     result
   end
@@ -39,6 +43,28 @@ defmodule SecretHub.Web.Application do
       [SecretHub.Web.AgentEndpoint]
     else
       []
+    end
+  end
+
+  # In dev the trusted Agent endpoint is otherwise only booted lazily by the
+  # enrollment connect-info request, which leaves already-enrolled agents
+  # unable to reconnect after a Core restart. Failure here is non-fatal: a
+  # fresh install has no CA yet, and the endpoint will start on first
+  # connect-info once one exists.
+  defp maybe_start_dev_agent_endpoint do
+    if Application.get_env(:secrethub_web, :dev_mode, false) do
+      case SecretHub.Web.AgentEndpointManager.ensure_started() do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          Logger.warning(
+            "Trusted Agent endpoint not started at boot: #{inspect(reason)}. " <>
+              "It will start when an agent fetches connect-info."
+          )
+      end
+    else
+      :ok
     end
   end
 
