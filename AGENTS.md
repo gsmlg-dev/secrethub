@@ -27,13 +27,16 @@ assets-install        # Install frontend dependencies (Bun + Tailwind)
 
 ```bash
 # Development
-server                # Start Phoenix server (http://localhost:4664)
+devenv up             # Start PostgreSQL + Phoenix server (http://localhost:4664)
+mix phx.server        # Start Phoenix server only (PostgreSQL must already be running)
 console               # Start IEx shell with application loaded
+mix agent.run         # Run a local agent against Core (see Trusted Agent Connection below)
 
 # Database
 db-setup              # Create database and run migrations + seeds
 db-reset              # Drop, recreate, migrate, and seed database
 db-migrate            # Run pending migrations only
+db-clean              # Remove stale postgres lock files after unclean shutdown
 
 # Testing (devenv sets MIX_ENV=dev, so use test-all or prefix with MIX_ENV=test)
 test-all                                    # Run all tests (sets MIX_ENV=test)
@@ -93,7 +96,8 @@ apps/
 
 ### Frontend Assets
 - **Bun** for JavaScript bundling (not npm/esbuild)
-- **Tailwind CSS v4.1.7** (installed globally via bun, path: `$HOME/.bun/bin/tailwindcss`)
+- **Tailwind CSS v4** — both bun and tailwindcss are Nix-managed binaries; devenv exports `MIX_BUN_PATH` and `MIX_TAILWIND_PATH` so the Mix hex packages use them
+- Build assets with `assets-build` (runs `mix bun secrethub_web`); install deps with `assets-install` (bun workspaces)
 - **`@duskmoon-dev/core`** — TailwindCSS plugin (CSS/design tokens only)
 - **`phoenix_duskmoon`** — Phoenix component module (Elixir/HEEx components, `dm_*` prefix)
 - **Heroicons** for icons
@@ -110,8 +114,15 @@ apps/
 
 ### Authentication & Security
 - mTLS between Core and Agents; PKI engine manages internal CA
-- Agent bootstrap: AppRole auth (RoleID/SecretID) -> CSR -> Certificate issuance -> mTLS WebSocket
 - Applications connect to local Agent via Unix Domain Sockets
+
+### Trusted Agent Connection
+Full design in `docs/agents/trusted-agent-connection.md` (supersedes older AppRole runtime docs). Key rules:
+- **Runtime identity is the Core-issued client certificate only.** AppRole, pending tokens, and approval state are enrollment mechanisms — they never authorize runtime secret access.
+- Agent runtime uses a dedicated mTLS listener, separate from the normal web/API endpoint.
+- First-boot enrollment flow: discover host identity (SSH host key) -> create pending enrollment via Core API -> operator approves in `/admin/pending-agents` -> submit CSR -> receive certificate -> connect over mTLS and join `agent:runtime` -> finalize.
+- The startup coordinator (`SecretHub.Agent.RuntimeBootstrapper`) owns material loading, enrollment, runtime startup, finalization, and renewal scheduling; `SecretHub.Agent.Connection` is only the low-level socket client.
+- Local dev: `mix agent.run` starts an agent against Core. Env vars: `SECRET_HUB_AGENT_CORE_URL` (default `https://localhost:4664`), `SECRET_HUB_AGENT_STATE_DIR` (default `priv/cert`), `SECRET_HUB_AGENT_HOST_KEY_PATH` (auto-generates a dev RSA key if unset).
 
 ### Background Jobs
 - **Oban** for persistent background tasks (secret rotation, lease cleanup)
@@ -143,6 +154,8 @@ Located in `apps/secrethub_core/lib/secrethub_core/engines/`:
 **CI Workflow** (`ci.yml`) - 4 parallel jobs on every push: compile (`--warnings-as-errors`), format check, credo (strict), dialyzer.
 
 **Test Workflow** (`test.yml`) - On push to main/develop and PRs: full test suite with PostgreSQL 16 + Redis 7 services.
+
+**E2E Workflow** (`e2e.yml`) - On push to main/develop and PRs to main: end-to-end tests.
 
 **Release Workflow** (`release.yml`) - On version tags (`v*.*.*`): builds tar.gz releases + multi-arch Docker images, publishes to `ghcr.io/gsmlg-dev/secrethub/{core,agent}`.
 
