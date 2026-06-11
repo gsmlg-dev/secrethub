@@ -30,7 +30,8 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     :enrollment_opts,
     :legacy_connection_opts,
     :runtime_pid,
-    :pending_finalization
+    :pending_finalization,
+    enrollment_retry_count: 0
   ]
 
   @type state :: %__MODULE__{
@@ -40,7 +41,8 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
           enrollment_opts: keyword(),
           legacy_connection_opts: keyword(),
           runtime_pid: pid() | nil,
-          pending_finalization: map() | nil
+          pending_finalization: map() | nil,
+          enrollment_retry_count: non_neg_integer()
         }
 
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -308,62 +310,103 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     {:noreply, state}
   end
 
+  # The runtime connection has its own reconnect loop; keep the trusted
+  # material and keep waiting rather than wiping state, which would force a
+  # full re-enrollment with operator approval for a transient outage.
   def handle_info(:runtime_accept_timeout, state) do
-    %{core_url: core_url, pending: pending} = state.pending_finalization
+    finalization = state.pending_finalization
+    retry_count = Map.get(finalization, :retry_count, 0) + 1
+    timeout_ms = Map.get(finalization, :timeout_ms, @default_connect_timeout_ms)
 
-    error = %{
-      "phase" => "trusted_runtime_connect",
-      "message" => "timed out waiting for trusted runtime connection"
-    }
+    Logger.warning(
+      "Timed out waiting for trusted runtime acceptance " <>
+        "(enrollment #{finalization.pending["enrollment_id"]}, attempt #{retry_count}); " <>
+        "keeping trusted material and continuing to wait"
+    )
 
-    finalize_failure_terminal(core_url, pending, state.state_dir, error)
+    finalization =
+      Map.merge(finalization, %{
+        phase: :waiting_for_runtime,
+        retry_count: retry_count,
+        timeout_ms: timeout_ms,
+        timer: Process.send_after(self(), :runtime_accept_timeout, timeout_ms)
+      })
 
-    {:stop, :trusted_runtime_connect_timeout, %{state | pending_finalization: nil}}
+    {:noreply, %{state | pending_finalization: finalization}}
   end
+
+  def handle_info(:enrollment_retry, %{runtime_pid: nil} = state) do
+    enroll_and_start_runtime(state)
+  end
+
+  def handle_info(:enrollment_retry, state), do: {:noreply, state}
 
   defp enroll_and_start_runtime(state) do
     endpoint = enrollment_endpoint(state)
 
-    with {:ok, enrollment_url} <- enrollment_core_url(endpoint) do
-      Logger.info("Trusted Agent material missing; starting enrollment",
-        core_url: enrollment_url,
-        state_dir: state.state_dir
-      )
+    case enrollment_core_url(endpoint) do
+      {:ok, enrollment_url} ->
+        Logger.info("Trusted Agent material missing; starting enrollment",
+          core_url: enrollment_url,
+          state_dir: state.state_dir
+        )
 
-      enrollment_opts =
-        state.enrollment_opts
-        |> Keyword.put(:core_url, enrollment_url)
-        |> Keyword.put(:storage_dir, state.state_dir)
+        enrollment_opts =
+          state.enrollment_opts
+          |> Keyword.put(:core_url, enrollment_url)
+          |> Keyword.put(:storage_dir, state.state_dir)
 
-      case Enrollment.enroll(enrollment_opts) do
-        {:ok, enrolled} ->
-          report_endpoint_success(endpoint)
+        case Enrollment.enroll(enrollment_opts) do
+          {:ok, enrolled} ->
+            report_endpoint_success(endpoint)
+            start_runtime_after_enrollment(enrolled, enrollment_url, state)
 
-          with {:ok, material} <- IdentityStore.load(state.state_dir) do
-            finalization =
-              pending_finalization(enrollment_url, enrolled.pending, material.connect_info)
+          {:error, {:enrollment_rejected, _payload} = reason} ->
+            # An operator decision; retrying would spam new pending requests.
+            report_endpoint_failure(endpoint)
+            {:stop, reason, state}
 
-            start_enrolled_runtime(
-              material,
-              runtime_accepted_callback(self()),
-              finalization,
-              state
-            )
-          else
-            {:error, reason} ->
-              report_endpoint_failure(endpoint)
-              {:stop, reason, state}
-          end
+          {:error, reason} ->
+            report_endpoint_failure(endpoint)
+            schedule_enrollment_retry(state, reason)
+        end
 
-        {:error, reason} ->
-          report_endpoint_failure(endpoint)
-          {:stop, reason, state}
-      end
-    else
       {:error, reason} ->
+        # A misconfigured enrollment URL cannot succeed on retry.
         report_endpoint_failure(endpoint)
         {:stop, reason, state}
     end
+  end
+
+  defp start_runtime_after_enrollment(enrolled, enrollment_url, state) do
+    case IdentityStore.load(state.state_dir) do
+      {:ok, material} ->
+        finalization =
+          pending_finalization(enrollment_url, enrolled.pending, material.connect_info)
+
+        start_enrolled_runtime(
+          material,
+          runtime_accepted_callback(self()),
+          finalization,
+          %{state | enrollment_retry_count: 0}
+        )
+
+      {:error, reason} ->
+        schedule_enrollment_retry(state, reason)
+    end
+  end
+
+  defp schedule_enrollment_retry(state, reason) do
+    retry_count = state.enrollment_retry_count + 1
+    delay_ms = finalize_retry_delay_ms(retry_count)
+
+    Logger.warning(
+      "Trusted Agent enrollment failed: #{inspect(reason)}; " <>
+        "retrying in #{delay_ms}ms (attempt #{retry_count})"
+    )
+
+    Process.send_after(self(), :enrollment_retry, delay_ms)
+    {:noreply, %{state | enrollment_retry_count: retry_count}}
   end
 
   defp start_runtime(%IdentityStore{} = material, callback, state) do
@@ -526,34 +569,6 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
       last_start_error: reason,
       timer: Process.send_after(self(), :runtime_start_retry, delay_ms)
     })
-  end
-
-  defp finalize_failure_terminal(core_url, pending, state_dir, error) do
-    result =
-      case Enrollment.finalize_failure(core_url, pending, error) do
-        {:ok, _failed} ->
-          :ok
-
-        {:error, reason} ->
-          Logger.error("Failed to report trusted runtime connection failure",
-            enrollment_id: pending["enrollment_id"],
-            reason: inspect(reason)
-          )
-
-          {:error, reason}
-      end
-
-    case result do
-      :ok -> delete_enrollment_state(state_dir)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp delete_enrollment_state(state_dir) do
-    with :ok <- Enrollment.delete_pending_token(state_dir),
-         :ok <- IdentityStore.delete_trusted_material(state_dir) do
-      :ok
-    end
   end
 
   defp load_pending_token(state_dir) do

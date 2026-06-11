@@ -1,7 +1,7 @@
 defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   use ExUnit.Case, async: false
 
-  alias SecretHub.Agent.{Connection, IdentityStore, RuntimeBootstrapper}
+  alias SecretHub.Agent.{Connection, HostKey, IdentityStore, RuntimeBootstrapper}
 
   @moduletag :tmp_dir
 
@@ -329,7 +329,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     Process.cancel_timer(retry_state.pending_finalization.timer)
   end
 
-  test "runtime accept timeout finalizes enrollment failure", %{tmp_dir: tmp_dir} do
+  test "runtime accept timeout keeps trusted material and reschedules", %{tmp_dir: tmp_dir} do
     Req.Test.verify_on_exit!()
 
     state_dir = Path.join(tmp_dir, "agent-state")
@@ -338,22 +338,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     assert :ok = IdentityStore.write(state_dir, valid_material())
     assert :ok = File.write(Path.join(state_dir, "pending.json"), Jason.encode!(pending))
 
-    Req.Test.expect(__MODULE__, fn conn ->
-      assert conn.method == "POST"
-      assert conn.request_path == "/v1/agent/enrollments/enrollment-1/finalize"
-      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer pending-token"]
-
-      assert conn.body_params == %{
-               "status" => "trusted_endpoint_failed",
-               "error" => %{
-                 "phase" => "trusted_runtime_connect",
-                 "message" => "timed out waiting for trusted runtime connection"
-               }
-             }
-
-      Req.Test.json(conn, %{"status" => "failed"})
-    end)
-
+    # No finalize-failure HTTP call may happen; any request fails the test.
     Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
 
     on_exit(fn ->
@@ -365,61 +350,111 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
       pending_finalization: %{
         core_url: "https://core.example:4664",
         pending: pending,
-        timer: timer
+        timer: timer,
+        timeout_ms: 10_000,
+        phase: :waiting_for_runtime,
+        retry_count: 0
       }
     }
 
-    assert {:stop, :trusted_runtime_connect_timeout, next_state} =
+    assert {:noreply, next_state} =
              RuntimeBootstrapper.handle_info(:runtime_accept_timeout, state)
 
-    assert next_state.pending_finalization == nil
-    refute File.exists?(Path.join(state_dir, "pending.json"))
-    refute File.exists?(Path.join(state_dir, "agent-cert.pem"))
-    refute File.exists?(Path.join(state_dir, "agent-key.pem"))
-    refute File.exists?(Path.join(state_dir, "ca-chain.pem"))
-    refute File.exists?(Path.join(state_dir, "connect-info.json"))
-    refute File.exists?(Path.join(state_dir, "identity.json"))
+    assert next_state.pending_finalization.phase == :waiting_for_runtime
+    assert next_state.pending_finalization.retry_count == 1
+    assert is_reference(next_state.pending_finalization.timer)
+    Process.cancel_timer(next_state.pending_finalization.timer)
+
+    assert File.exists?(Path.join(state_dir, "pending.json"))
+    assert File.exists?(Path.join(state_dir, "agent-cert.pem"))
+    assert File.exists?(Path.join(state_dir, "agent-key.pem"))
+    assert File.exists?(Path.join(state_dir, "ca-chain.pem"))
+    assert File.exists?(Path.join(state_dir, "connect-info.json"))
+    assert File.exists?(Path.join(state_dir, "identity.json"))
   end
 
-  test "runtime accept timeout clears pending after idempotent failure finalization", %{
-    tmp_dir: tmp_dir
-  } do
+  test "enrollment failure schedules a retry instead of stopping", %{tmp_dir: tmp_dir} do
     Req.Test.verify_on_exit!()
 
     state_dir = Path.join(tmp_dir, "agent-state")
-    pending = %{"enrollment_id" => "enrollment-1", "pending_token" => "pending-token"}
-    timer = Process.send_after(self(), :unused_runtime_accept_timeout, 10_000)
-    assert :ok = File.mkdir_p(state_dir)
-    assert :ok = File.write(Path.join(state_dir, "pending.json"), Jason.encode!(pending))
 
     Req.Test.expect(__MODULE__, fn conn ->
       assert conn.method == "POST"
-      assert conn.request_path == "/v1/agent/enrollments/enrollment-1/finalize"
-      assert conn.body_params["status"] == "trusted_endpoint_failed"
+      assert conn.request_path == "/v1/agent/enrollments"
 
-      Req.Test.json(conn, %{"status" => "trusted_endpoint_failed"})
+      conn
+      |> Plug.Conn.put_status(503)
+      |> Req.Test.json(%{"error" => "temporarily unavailable"})
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_req_options,
+      plug: {Req.Test, __MODULE__},
+      retry: false
+    )
 
     on_exit(fn ->
       Application.delete_env(:secrethub_agent, :enrollment_req_options)
     end)
 
     state = %RuntimeBootstrapper{
+      core_url: "https://core.example:4664",
       state_dir: state_dir,
-      pending_finalization: %{
-        core_url: "https://core.example:4664",
-        pending: pending,
-        timer: timer
-      }
+      enrollment_opts: [host_key: test_host_key(tmp_dir)],
+      legacy_connection_opts: []
     }
 
-    assert {:stop, :trusted_runtime_connect_timeout, next_state} =
-             RuntimeBootstrapper.handle_info(:runtime_accept_timeout, state)
+    assert {:noreply, retry_state} =
+             RuntimeBootstrapper.handle_continue(:start_runtime, state)
 
-    assert next_state.pending_finalization == nil
-    refute File.exists?(Path.join(state_dir, "pending.json"))
+    assert retry_state.enrollment_retry_count == 1
+    assert retry_state.runtime_pid == nil
+
+    # The retry message is delivered to the calling process.
+    assert_receive :enrollment_retry, 2_000
+  end
+
+  test "rejected enrollment stops instead of retrying", %{tmp_dir: tmp_dir} do
+    Req.Test.verify_on_exit!()
+
+    state_dir = Path.join(tmp_dir, "agent-state")
+
+    {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+    Req.Test.expect(__MODULE__, 2, fn conn ->
+      case Agent.get_and_update(counter, fn count -> {count, count + 1} end) do
+        0 ->
+          assert conn.request_path == "/v1/agent/enrollments"
+
+          Req.Test.json(conn, %{
+            "enrollment_id" => "enrollment-1",
+            "pending_token" => "pending-token",
+            "status" => "pending"
+          })
+
+        1 ->
+          assert conn.request_path == "/v1/agent/enrollments/enrollment-1/status"
+          Req.Test.json(conn, %{"status" => "rejected"})
+      end
+    end)
+
+    Application.put_env(:secrethub_agent, :enrollment_req_options,
+      plug: {Req.Test, __MODULE__},
+      retry: false
+    )
+
+    on_exit(fn ->
+      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+    end)
+
+    state = %RuntimeBootstrapper{
+      core_url: "https://core.example:4664",
+      state_dir: state_dir,
+      enrollment_opts: [host_key: test_host_key(tmp_dir)],
+      legacy_connection_opts: []
+    }
+
+    assert {:stop, {:enrollment_rejected, _payload}, _state} =
+             RuntimeBootstrapper.handle_continue(:start_runtime, state)
   end
 
   defp valid_material(
@@ -458,6 +493,15 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
       |> X509.Certificate.to_pem()
 
     {private_key_pem, certificate_pem}
+  end
+
+  defp test_host_key(tmp_dir) do
+    path = Path.join(tmp_dir, "ssh_host_rsa_key")
+
+    {_, 0} = System.cmd("ssh-keygen", ["-q", "-t", "rsa", "-N", "", "-f", path])
+
+    {:ok, host_key} = HostKey.discover(paths: [rsa: path])
+    host_key
   end
 
   defp stop_registered_process(name) do

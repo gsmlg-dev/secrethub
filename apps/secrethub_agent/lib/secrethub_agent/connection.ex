@@ -55,6 +55,8 @@ defmodule SecretHub.Agent.Connection do
   @type state :: %{
           socket: pid() | nil,
           channel: pid() | nil,
+          channel_ref: reference() | nil,
+          heartbeat_timer: reference() | nil,
           agent_id: String.t(),
           core_url: String.t(),
           cert_path: String.t() | nil,
@@ -202,6 +204,8 @@ defmodule SecretHub.Agent.Connection do
     state = %{
       socket: nil,
       channel: nil,
+      channel_ref: nil,
+      heartbeat_timer: nil,
       agent_id: agent_id,
       core_url: core_url,
       cert_path: cert_path,
@@ -218,6 +222,11 @@ defmodule SecretHub.Agent.Connection do
     }
 
     Logger.info("Agent Connection initializing", agent_id: agent_id, core_url: core_url)
+
+    # The socket client tree is linked, not supervised. Trap exits so a
+    # transport crash becomes a clean reconnect instead of cascading through
+    # this process and the agent supervision tree.
+    Process.flag(:trap_exit, true)
 
     # Start connection asynchronously
     send(self(), :connect)
@@ -266,9 +275,17 @@ defmodule SecretHub.Agent.Connection do
     {:reply, state.connection_status, state}
   end
 
+  # Application-level heartbeat interval; also acts as a liveness watchdog
+  # for the runtime channel (the socket client does not reliably surface a
+  # server-side channel close to this process).
+  @runtime_heartbeat_interval 30_000
+  @runtime_heartbeat_timeout 10_000
+
   @impl true
   def handle_info(:connect, state) do
     Logger.info("Attempting to connect to Core", agent_id: state.agent_id, url: state.core_url)
+
+    state = stop_socket(state)
 
     case connect_to_core(state) do
       {:ok, socket} ->
@@ -279,8 +296,7 @@ defmodule SecretHub.Agent.Connection do
          %{state | socket: socket, connection_status: :connecting, reconnect_timer: nil}}
 
       {:error, reason} ->
-        Logger.error("Failed to connect to Core",
-          reason: reason,
+        Logger.error("Failed to connect to Core: #{inspect(reason)}",
           agent_id: state.agent_id,
           url: state.core_url
         )
@@ -309,14 +325,19 @@ defmodule SecretHub.Agent.Connection do
 
           next_state =
             state
-            |> Map.merge(%{channel: channel, connection_status: :connected, retry_count: 0})
+            |> Map.merge(%{
+              channel: channel,
+              channel_ref: Process.monitor(channel),
+              heartbeat_timer: schedule_runtime_heartbeat(),
+              connection_status: :connected,
+              retry_count: 0
+            })
             |> notify_runtime_accepted(response)
 
           {:noreply, next_state}
 
         {:error, reason} ->
-          Logger.error("Failed to join channel",
-            reason: inspect(reason),
+          Logger.error("Failed to join channel: #{inspect(reason)}",
             agent_id: state.agent_id
           )
 
@@ -362,9 +383,46 @@ defmodule SecretHub.Agent.Connection do
 
   @impl true
   def handle_info({:chan_close, _channel, reason}, state) do
-    Logger.warning("WebSocket connection closed", reason: reason, agent_id: state.agent_id)
-    schedule_reconnect(%{state | connection_status: :disconnected, socket: nil, channel: nil})
+    Logger.warning("WebSocket connection closed: #{inspect(reason)}", agent_id: state.agent_id)
+    schedule_reconnect(stop_socket(%{state | connection_status: :disconnected}))
   end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{channel_ref: ref} = state) do
+    Logger.warning("Runtime channel terminated: #{inspect(reason)}", agent_id: state.agent_id)
+    schedule_reconnect(stop_socket(%{state | connection_status: :disconnected}))
+  end
+
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:noreply, state}
+
+  @impl true
+  def handle_info(:runtime_heartbeat, %{connection_status: :connected} = state) do
+    # The heartbeat must be acknowledged end-to-end: after a transparent
+    # socket-level reconnect the local channel process can stay alive while
+    # the server-side topic no longer exists, so process liveness alone
+    # cannot detect a dead runtime link.
+    if runtime_link_alive?(state) and heartbeat_acknowledged?(state.channel) do
+      {:noreply, %{state | heartbeat_timer: schedule_runtime_heartbeat()}}
+    else
+      Logger.warning("Runtime connection lost (heartbeat check); reconnecting",
+        agent_id: state.agent_id
+      )
+
+      schedule_reconnect(stop_socket(%{state | connection_status: :disconnected}))
+    end
+  end
+
+  def handle_info(:runtime_heartbeat, state), do: {:noreply, state}
+
+  @impl true
+  def handle_info({:EXIT, pid, reason}, %{socket: pid} = state) do
+    Logger.warning("Socket client exited: #{inspect(reason)}", agent_id: state.agent_id)
+    schedule_reconnect(stop_socket(%{state | socket: nil, connection_status: :disconnected}))
+  end
+
+  # Exits from already-replaced socket trees and other linked helpers are
+  # expected during teardown; the active socket is handled above.
+  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
 
   @impl true
   def handle_info(:reconnect, state) do
@@ -374,6 +432,39 @@ defmodule SecretHub.Agent.Connection do
   end
 
   ## Private Functions
+
+  defp schedule_runtime_heartbeat do
+    Process.send_after(self(), :runtime_heartbeat, @runtime_heartbeat_interval)
+  end
+
+  defp runtime_link_alive?(state) do
+    state.socket != nil and Process.alive?(state.socket) and
+      SocketClient.connected?(state.socket) and
+      state.channel != nil and Process.alive?(state.channel)
+  end
+
+  defp heartbeat_acknowledged?(channel) do
+    case Channel.push(channel, runtime_event(:heartbeat), %{}, @runtime_heartbeat_timeout) do
+      {:ok, _reply} -> true
+      {:error, _reason} -> false
+    end
+  catch
+    :exit, _reason -> false
+  end
+
+  # Tear down the socket supervisor (it is linked, not supervised) so that a
+  # reconnect cannot leak the previous client tree or its monitors.
+  defp stop_socket(state) do
+    if state.heartbeat_timer, do: Process.cancel_timer(state.heartbeat_timer)
+    if state.channel_ref, do: Process.demonitor(state.channel_ref, [:flush])
+
+    if state.socket && Process.alive?(state.socket) do
+      Process.unlink(state.socket)
+      Process.exit(state.socket, :shutdown)
+    end
+
+    %{state | socket: nil, channel: nil, channel_ref: nil, heartbeat_timer: nil}
+  end
 
   defp connect_to_core(state) do
     socket_opts = build_socket_opts(state)
