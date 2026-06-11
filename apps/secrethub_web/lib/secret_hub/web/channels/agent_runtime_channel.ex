@@ -69,7 +69,12 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
 
       case Secrets.get_secret_for_entity(agent_id, secret_path, %{}) do
         {:ok, secret_data} ->
-          {:reply, {:ok, %{path: secret_path, data: secret_data}}, socket}
+          # Deliberate second check: authorization may have been revoked
+          # while the secret was being read; never release decrypted data
+          # past a revocation.
+          with_runtime_authorized(socket, fn ->
+            {:reply, {:ok, %{path: secret_path, data: secret_data}}, socket}
+          end)
 
         {:error, reason} ->
           {:reply, {:error, %{reason: inspect(reason), path: secret_path}}, socket}
