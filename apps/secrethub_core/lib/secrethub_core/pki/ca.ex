@@ -25,6 +25,7 @@ defmodule SecretHub.Core.PKI.CA do
   require Logger
   import Ecto.Query
 
+  alias SecretHub.Core.PKI.Events
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
@@ -104,6 +105,14 @@ defmodule SecretHub.Core.PKI.CA do
              common_name,
              organization,
              validity_days
+           ),
+         :ok <-
+           record_ca_initialized_event(
+             cert_record,
+             key_type,
+             key_size,
+             validity_days,
+             opts
            ) do
       Logger.info("Root CA generated successfully: #{common_name}")
       {:ok, %{certificate: cert_pem, private_key: key_pem, cert_record: cert_record}}
@@ -171,6 +180,14 @@ defmodule SecretHub.Core.PKI.CA do
              validity_days,
              root_ca_cert_id,
              root_ca.subject
+           ),
+         :ok <-
+           record_ca_initialized_event(
+             cert_record,
+             key_type,
+             key_size,
+             validity_days,
+             Keyword.put(opts, :issuer_ca_id, root_ca_cert_id)
            ) do
       Logger.info("Intermediate CA generated successfully: #{common_name}")
       {:ok, %{certificate: cert_pem, private_key: key_pem, cert_record: cert_record}}
@@ -219,7 +236,8 @@ defmodule SecretHub.Core.PKI.CA do
              validity_days,
              ca_cert.id,
              ca_cert.subject
-           ) do
+           ),
+         :ok <- record_certificate_issued_event(cert_record, ca_cert, validity_days, opts) do
       Logger.info("CSR signed successfully for: #{subject_cn}")
       {:ok, %{certificate: cert_pem, cert_record: cert_record}}
     else
@@ -943,6 +961,86 @@ defmodule SecretHub.Core.PKI.CA do
   defp get_key_usage(:intermediate_ca), do: ["keyCertSign", "cRLSign"]
   defp get_key_usage(_), do: ["digitalSignature", "keyEncipherment"]
 
+  defp record_ca_initialized_event(cert_record, key_type, key_size, validity_days, opts) do
+    metadata =
+      %{
+        cert_id: cert_record.id,
+        serial: cert_record.serial_number,
+        fingerprint: cert_record.fingerprint,
+        subject: cert_record.subject,
+        issuer_subject: cert_record.issuer,
+        common_name: cert_record.common_name,
+        organization: cert_record.organization,
+        certificate_type: cert_record.cert_type,
+        key_type: to_string(key_type),
+        key_size: key_size,
+        validity_days: validity_days,
+        not_before: DateTime.to_iso8601(cert_record.valid_from),
+        not_after: DateTime.to_iso8601(cert_record.valid_until)
+      }
+      |> maybe_put(:issuer_ca_id, Keyword.get(opts, :issuer_ca_id))
+
+    append_event(
+      :ca_initialized,
+      metadata,
+      ca_id: cert_record.id,
+      actor: Keyword.get(opts, :actor),
+      correlation_id: Keyword.get(opts, :correlation_id)
+    )
+  end
+
+  defp record_certificate_issued_event(cert_record, ca_cert, validity_days, opts) do
+    append_event(
+      :certificate_issued,
+      %{
+        cert_id: cert_record.id,
+        serial: cert_record.serial_number,
+        fingerprint: cert_record.fingerprint,
+        subject: cert_record.subject,
+        issuer_ca_id: ca_cert.id,
+        issuer_subject: cert_record.issuer,
+        certificate_type: cert_record.cert_type,
+        validity_days: validity_days,
+        not_before: DateTime.to_iso8601(cert_record.valid_from),
+        not_after: DateTime.to_iso8601(cert_record.valid_until)
+      },
+      ca_id: ca_cert.id,
+      actor: Keyword.get(opts, :actor),
+      correlation_id: Keyword.get(opts, :correlation_id)
+    )
+  end
+
+  defp record_certificate_revoked_event(cert_record, reason) do
+    ca_id = cert_record.issuer_id || cert_record.id
+
+    append_event(
+      :certificate_revoked,
+      %{
+        cert_id: cert_record.id,
+        serial: cert_record.serial_number,
+        subject: cert_record.subject,
+        issuer_ca_id: cert_record.issuer_id,
+        issuer_subject: cert_record.issuer,
+        reason: reason,
+        revocation_date: DateTime.to_iso8601(cert_record.revoked_at)
+      },
+      ca_id: ca_id
+    )
+  end
+
+  defp append_event(event_type, metadata, opts) do
+    case Events.append(event_type, metadata, opts) do
+      {:ok, _event} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, "Failed to record PKI event: #{inspect(reason)}"}
+    end
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
   @doc """
   Get the CA certificate chain (root + intermediates) for client verification.
 
@@ -989,16 +1087,21 @@ defmodule SecretHub.Core.PKI.CA do
   Revoke a certificate.
   TODO: Implement proper certificate revocation with CRL updates.
   """
-  def revoke_certificate(cert_id) do
+  def revoke_certificate(cert_id, reason \\ "manual_revocation") do
     with {:ok, uuid} <- Ecto.UUID.cast(cert_id),
          %Certificate{} = cert <- Repo.get(Certificate, uuid) do
       cert
-      |> Ecto.Changeset.change(%{
-        revoked: true,
-        revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
-        revocation_reason: "manual_revocation"
-      })
+      |> Certificate.revoke_changeset(reason)
       |> Repo.update()
+      |> case do
+        {:ok, revoked_cert} ->
+          with :ok <- record_certificate_revoked_event(revoked_cert, reason) do
+            {:ok, revoked_cert}
+          end
+
+        {:error, _reason} = error ->
+          error
+      end
     else
       :error -> {:error, :not_found}
       nil -> {:error, :not_found}

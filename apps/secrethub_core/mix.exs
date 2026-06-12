@@ -39,7 +39,7 @@ defmodule SecretHub.Core.MixProject do
       {:crontab, "~> 1.1"},
       {:redix, "~> 1.5"},
       {:phoenix, "~> 1.8"},
-      {:x509, "~> 0.9.2"},
+      {:x509, in_umbrella: true},
       {:secrethub_shared, in_umbrella: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

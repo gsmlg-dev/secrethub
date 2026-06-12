@@ -396,12 +396,20 @@ defmodule SecretHub.Web.PKIController do
         |> put_status(:bad_request)
         |> json(%{error: "Certificate is already revoked"})
 
-      {:error, changeset} ->
+      {:error, %Ecto.Changeset{} = changeset} ->
         conn
         |> put_status(:internal_server_error)
         |> json(%{
           error: "Failed to revoke certificate",
           details: inspect(changeset.errors)
+        })
+
+      {:error, reason} ->
+        conn
+        |> put_status(:internal_server_error)
+        |> json(%{
+          error: "Failed to revoke certificate",
+          details: inspect(reason)
         })
     end
   end
@@ -422,19 +430,7 @@ defmodule SecretHub.Web.PKIController do
   defp check_not_revoked(%{revoked: true}), do: {:error, :already_revoked}
   defp check_not_revoked(_cert), do: :ok
 
-  defp do_revoke_certificate(cert, reason) do
-    changeset =
-      Certificate.changeset(cert, %{
-        revoked: true,
-        revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
-        revocation_reason: reason
-      })
-
-    case Repo.update(changeset) do
-      {:ok, updated_cert} -> {:ok, updated_cert}
-      {:error, _} = error -> error
-    end
-  end
+  defp do_revoke_certificate(cert, reason), do: CA.revoke_certificate(cert.id, reason)
 
   # Private helper functions
 

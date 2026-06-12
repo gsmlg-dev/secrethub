@@ -31,7 +31,7 @@ defmodule SecretHub.Agent.MixProject do
       {:websocket_client, "~> 1.5"},
       {:jason, "~> 1.4"},
       {:req, "~> 0.5"},
-      {:x509, "~> 0.9.2"},
+      {:x509, in_umbrella: true},
       {:secrethub_shared, in_umbrella: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
