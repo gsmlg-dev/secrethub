@@ -6,6 +6,8 @@ defmodule SecretHub.Agent.HostKey do
   never generates fallback key material.
   """
 
+  alias X509.Certificate.Extension
+
   defstruct [
     :algorithm,
     :path,
@@ -34,7 +36,7 @@ defmodule SecretHub.Agent.HostKey do
   @preferred [:ecdsa, :rsa, :ed25519, :dsa]
   @supported [:ecdsa, :rsa]
   @ecdsa_named_curves [
-    {1, 2, 840, 10045, 3, 1, 7},
+    {1, 2, 840, 10_045, 3, 1, 7},
     {1, 3, 132, 0, 34},
     {1, 3, 132, 0, 35}
   ]
@@ -79,9 +81,9 @@ defmodule SecretHub.Agent.HostKey do
         host_key.private_key,
         "/O=#{escape_rdn(organization)}/CN=#{escape_rdn(cn)}",
         extension_request: [
-          X509.Certificate.Extension.subject_alt_name(uri_sans ++ dns_sans),
-          X509.Certificate.Extension.key_usage([:digitalSignature]),
-          X509.Certificate.Extension.ext_key_usage([:clientAuth])
+          Extension.subject_alt_name(uri_sans ++ dns_sans),
+          Extension.key_usage([:digitalSignature]),
+          Extension.ext_key_usage([:clientAuth])
         ]
       )
 

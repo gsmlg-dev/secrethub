@@ -505,14 +505,12 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   end
 
   defp stop_registered_process(name) do
-    try do
-      case Process.whereis(name) do
-        nil -> :ok
-        pid -> GenServer.stop(pid, :normal, 1000)
-      end
-    catch
-      :exit, _reason -> :ok
+    case Process.whereis(name) do
+      nil -> :ok
+      pid -> GenServer.stop(pid, :normal, 1000)
     end
+  catch
+    :exit, _reason -> :ok
   end
 
   defp restore_env(key, nil), do: Application.delete_env(:secrethub_agent, key)

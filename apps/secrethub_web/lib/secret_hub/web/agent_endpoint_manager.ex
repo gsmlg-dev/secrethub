@@ -5,6 +5,8 @@ defmodule SecretHub.Web.AgentEndpointManager do
 
   require Logger
 
+  alias SecretHub.Core.PKI.Issuer
+
   @cert_dir Path.join([System.tmp_dir!(), "secrethub", "agent_endpoint"])
 
   def ensure_started do
@@ -28,9 +30,8 @@ defmodule SecretHub.Web.AgentEndpointManager do
 
     with {:ok, paths, changed?} <- write_dev_certificate(host),
          :ok <- configure_endpoint(host, port, paths),
-         :ok <- restart_stale_endpoint(changed?),
-         :ok <- start_endpoint() do
-      :ok
+         :ok <- restart_stale_endpoint(changed?) do
+      start_endpoint()
     end
   end
 
@@ -43,7 +44,7 @@ defmodule SecretHub.Web.AgentEndpointManager do
     ca_path = Path.join(@cert_dir, "ca-cert.pem")
 
     with {:ok, material} <-
-           SecretHub.Core.PKI.Issuer.issue_server_certificate(host, [
+           Issuer.issue_server_certificate(host, [
              host,
              "localhost"
            ]) do

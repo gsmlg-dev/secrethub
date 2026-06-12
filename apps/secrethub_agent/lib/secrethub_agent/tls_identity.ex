@@ -7,6 +7,8 @@ defmodule SecretHub.Agent.TLSIdentity do
   embedded in the TLS CSR and later written as the Agent client key.
   """
 
+  alias X509.Certificate.Extension
+
   defstruct [:private_key, :private_key_pem, :csr_pem]
 
   @type t :: %__MODULE__{
@@ -51,8 +53,8 @@ defmodule SecretHub.Agent.TLSIdentity do
     |> san_extension()
     |> List.wrap()
     |> Kernel.++([
-      X509.Certificate.Extension.key_usage([:digitalSignature]),
-      X509.Certificate.Extension.ext_key_usage([:clientAuth])
+      Extension.key_usage([:digitalSignature]),
+      Extension.ext_key_usage([:clientAuth])
     ])
   end
 
@@ -62,7 +64,7 @@ defmodule SecretHub.Agent.TLSIdentity do
 
     case san_values do
       [] -> nil
-      values -> X509.Certificate.Extension.subject_alt_name(values)
+      values -> Extension.subject_alt_name(values)
     end
   end
 

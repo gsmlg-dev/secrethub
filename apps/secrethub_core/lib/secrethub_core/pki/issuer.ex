@@ -3,8 +3,12 @@ defmodule SecretHub.Core.PKI.Issuer do
   Agent certificate issuance from approved CSRs.
   """
 
+  alias SecretHub.Core.PKI.RootCA
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.Certificate
+  alias X509.Certificate.Extension
 
   @default_agent_certificate_ttl_seconds 30 * 24 * 60 * 60
   @default_agent_certificate_max_ttl_seconds 90 * 24 * 60 * 60
@@ -26,9 +30,8 @@ defmodule SecretHub.Core.PKI.Issuer do
           X509.Certificate.from_pem!(ca.certificate_pem),
           ca_key,
           extensions: [
-            subject_alt_name:
-              X509.Certificate.Extension.subject_alt_name(server_subject_alt_names(dns_names)),
-            ext_key_usage: X509.Certificate.Extension.ext_key_usage([:serverAuth])
+            subject_alt_name: Extension.subject_alt_name(server_subject_alt_names(dns_names)),
+            ext_key_usage: Extension.ext_key_usage([:serverAuth])
           ],
           validity: 365
         )
@@ -78,7 +81,7 @@ defmodule SecretHub.Core.PKI.Issuer do
   end
 
   defp active_signing_ca_with_key do
-    with {:ok, ca} <- SecretHub.Core.PKI.RootCA.active_ca(),
+    with {:ok, ca} <- RootCA.active_ca(),
          {:ok, ca_key} <- decrypt_private_key(ca.private_key_encrypted) do
       {:ok, ca, ca_key}
     else
@@ -101,10 +104,10 @@ defmodule SecretHub.Core.PKI.Issuer do
       |> Enum.map(&{:dNSName, to_charlist(&1)})
 
     extensions = [
-      basic_constraints: X509.Certificate.Extension.basic_constraints(false),
-      key_usage: X509.Certificate.Extension.key_usage([:digitalSignature]),
-      ext_key_usage: X509.Certificate.Extension.ext_key_usage([:clientAuth]),
-      subject_alt_name: X509.Certificate.Extension.subject_alt_name(san_uri ++ san_dns)
+      basic_constraints: Extension.basic_constraints(false),
+      key_usage: Extension.key_usage([:digitalSignature]),
+      ext_key_usage: Extension.ext_key_usage([:clientAuth]),
+      subject_alt_name: Extension.subject_alt_name(san_uri ++ san_dns)
     ]
 
     X509.Certificate.new(
@@ -118,7 +121,7 @@ defmodule SecretHub.Core.PKI.Issuer do
   end
 
   defp decrypt_private_key(encrypted_key) do
-    case SecretHub.Shared.Crypto.Encryption.decrypt_from_blob(encrypted_key, master_key()) do
+    case Encryption.decrypt_from_blob(encrypted_key, master_key()) do
       {:ok, key_pem} -> X509.PrivateKey.from_pem(key_pem)
       {:error, reason} -> {:error, reason}
     end
@@ -127,12 +130,12 @@ defmodule SecretHub.Core.PKI.Issuer do
   end
 
   defp master_key do
-    case Process.whereis(SecretHub.Core.Vault.SealState) do
+    case Process.whereis(SealState) do
       nil ->
         dev_fallback_key()
 
       _pid ->
-        case SecretHub.Core.Vault.SealState.get_master_key() do
+        case SealState.get_master_key() do
           {:ok, key} -> key
           {:error, _reason} -> if(dev_pki_unsealed_fallback?(), do: dev_fallback_key())
         end

@@ -25,22 +25,20 @@ defmodule SecretHub.Agent.TrustedConnection do
   end
 
   defp private_key(opts) do
-    case Keyword.get(opts, :private_key_pem) do
-      pem when is_binary(pem) ->
-        private_key_from_pem(pem)
+    pem = Keyword.get(opts, :private_key_pem)
 
-      _missing ->
-        case Keyword.fetch(opts, :private_key) do
-          {:ok, private_key} ->
-            {:ok, private_key}
+    cond do
+      is_binary(pem) -> private_key_from_pem(pem)
+      Keyword.has_key?(opts, :private_key) -> {:ok, Keyword.fetch!(opts, :private_key)}
+      true -> host_key_private_key(opts)
+    end
+  end
 
-          :error ->
-            case Keyword.fetch(opts, :host_key) do
-              {:ok, %HostKey{} = host_key} -> {:ok, host_key.private_key}
-              {:ok, _invalid} -> {:error, :invalid_host_key}
-              :error -> {:error, :missing_private_key}
-            end
-        end
+  defp host_key_private_key(opts) do
+    case Keyword.fetch(opts, :host_key) do
+      {:ok, %HostKey{} = host_key} -> {:ok, host_key.private_key}
+      {:ok, _invalid} -> {:error, :invalid_host_key}
+      :error -> {:error, :missing_private_key}
     end
   end
 

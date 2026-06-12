@@ -124,9 +124,8 @@ defmodule SecretHub.Agent.Enrollment do
 
   def store_material(storage_dir, pending, issued, connect_info, tls_identity \\ nil) do
     with {:ok, material} <- trusted_material(pending, issued, connect_info, tls_identity),
-         :ok <- write_pending_token(storage_dir, pending),
-         :ok <- IdentityStore.write(storage_dir, material) do
-      :ok
+         :ok <- write_pending_token(storage_dir, pending) do
+      IdentityStore.write(storage_dir, material)
     end
   end
 

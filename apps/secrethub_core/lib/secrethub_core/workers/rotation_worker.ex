@@ -43,14 +43,14 @@ defmodule SecretHub.Core.Workers.RotationWorker do
 
   require Logger
 
-  alias SecretHub.Core.RotationManager
+  alias SecretHub.Core.{RotationManager, Secrets}
   alias SecretHub.Shared.Schemas.{RotationSchedule, SecretRotator}
 
   @impl Oban.Worker
   def perform(%Oban.Job{args: %{"rotator_id" => rotator_id}}) do
     Logger.info("Starting rotator job", rotator_id: rotator_id)
 
-    with {:ok, rotator} <- SecretHub.Core.Secrets.get_secret_rotator(rotator_id),
+    with {:ok, rotator} <- Secrets.get_secret_rotator(rotator_id),
          :ok <- validate_rotator_enabled(rotator),
          {:ok, _history} <- RotationManager.perform_rotation(rotator, []) do
       Logger.info("Rotator job completed successfully",

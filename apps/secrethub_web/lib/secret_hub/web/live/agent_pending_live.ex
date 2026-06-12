@@ -6,6 +6,7 @@ defmodule SecretHub.Web.AgentPendingLive do
   use SecretHub.Web, :live_view
 
   alias SecretHub.Core.Agents.Enrollment
+  alias SecretHub.Core.PKI.Issuer
   @refresh_interval_ms 2_500
 
   @impl true
@@ -234,7 +235,7 @@ defmodule SecretHub.Web.AgentPendingLive do
   defp clear_approval_notice(socket), do: assign(socket, approval_notice: nil)
 
   defp active_ca? do
-    match?({:ok, _ca}, SecretHub.Core.PKI.Issuer.active_signing_ca())
+    match?({:ok, _ca}, Issuer.active_signing_ca())
   end
 
   defp schedule_refresh do

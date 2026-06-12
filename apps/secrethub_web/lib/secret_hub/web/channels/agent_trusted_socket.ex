@@ -5,12 +5,14 @@ defmodule SecretHub.Web.AgentTrustedSocket do
 
   use Phoenix.Socket
 
+  alias SecretHub.Core.PKI.Verifier
+
   channel "agent:runtime", SecretHub.Web.AgentRuntimeChannel
 
   @impl true
   def connect(_params, socket, connect_info) do
     with {:ok, cert_der} <- peer_certificate(connect_info),
-         {:ok, identity} <- SecretHub.Core.PKI.Verifier.verify_agent_certificate(cert_der) do
+         {:ok, identity} <- Verifier.verify_agent_certificate(cert_der) do
       socket =
         socket
         |> assign(:agent_id, identity.agent_id)

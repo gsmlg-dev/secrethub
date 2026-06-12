@@ -4,13 +4,15 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
   alias SecretHub.Core.Agents
   alias SecretHub.Core.Agents.ConnectionManager
   alias SecretHub.Core.Agents.Enrollment
-  alias SecretHub.Core.{Policies, Secrets}
+  alias SecretHub.Core.PKI.CA
   alias SecretHub.Core.PKI.CSR
+  alias SecretHub.Core.{Policies, Secrets}
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.AgentCSRProof
   alias SecretHub.Shared.Schemas.{Agent, Certificate}
   alias SecretHub.Web.{AgentRuntimeChannel, AgentTrustedSocket}
+  alias X509.Certificate.Extension
 
   @pending_attrs %{
     hostname: "runtime-channel-01",
@@ -358,7 +360,7 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
 
   defp generate_active_ca! do
     {:ok, %{cert_record: cert}} =
-      SecretHub.Core.PKI.CA.generate_root_ca(
+      CA.generate_root_ca(
         "Agent Runtime Channel Test Root CA #{System.unique_integer([:positive])}",
         "SecretHub Test",
         key_size: 2048
@@ -398,9 +400,9 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
 
     X509.CSR.new(private_key, [{"O", subject["O"]}, {"CN", subject["CN"]}],
       extension_request: [
-        X509.Certificate.Extension.subject_alt_name(uri_sans ++ dns_sans),
-        X509.Certificate.Extension.key_usage([:digitalSignature]),
-        X509.Certificate.Extension.ext_key_usage([:clientAuth])
+        Extension.subject_alt_name(uri_sans ++ dns_sans),
+        Extension.key_usage([:digitalSignature]),
+        Extension.ext_key_usage([:clientAuth])
       ]
     )
   end

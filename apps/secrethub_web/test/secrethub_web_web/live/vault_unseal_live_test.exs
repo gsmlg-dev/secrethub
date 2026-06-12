@@ -81,8 +81,7 @@ defmodule SecretHub.Web.VaultUnsealLiveTest do
     share_input =
       shares
       |> Enum.take(3)
-      |> Enum.map(&Shamir.encode_share/1)
-      |> Enum.join("\n")
+      |> Enum.map_join("\n", &Shamir.encode_share/1)
 
     html =
       view

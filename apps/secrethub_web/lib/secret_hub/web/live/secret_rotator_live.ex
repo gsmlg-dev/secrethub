@@ -333,8 +333,8 @@ defmodule SecretHub.Web.SecretRotatorLive do
   defp blank_to_nil(value), do: value
 
   defp format_errors(changeset) do
-    changeset.errors
-    |> Enum.map(fn {field, {message, _opts}} -> "#{field} #{message}" end)
-    |> Enum.join(", ")
+    Enum.map_join(changeset.errors, ", ", fn {field, {message, _opts}} ->
+      "#{field} #{message}"
+    end)
   end
 end

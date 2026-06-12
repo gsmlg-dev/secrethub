@@ -15,15 +15,18 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   import Phoenix.ChannelTest
 
   alias Ecto.Adapters.SQL.Sandbox
+  alias SecretHub.Agent.TrustedConnection
   alias SecretHub.Core.Agents.{ConnectionManager, Enrollment}
+  alias SecretHub.Core.PKI.{CA, CSR}
   alias SecretHub.Core.{Policies, Secrets}
-  alias SecretHub.Core.PKI.CSR
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.E2E.Helpers
   alias SecretHub.Shared.Crypto.AgentCSRProof
   alias SecretHub.Shared.Schemas.Certificate
   alias SecretHub.Web.{AgentChannel, AgentRuntimeChannel, AgentTrustedSocket, UserSocket}
+  alias SecretHub.Web.AgentEndpointManager
+  alias X509.Certificate.Extension
 
   @endpoint SecretHub.Web.Endpoint
 
@@ -327,13 +330,13 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
       Supervisor.delete_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
     end)
 
-    assert :ok = SecretHub.Web.AgentEndpointManager.ensure_started()
+    assert :ok = AgentEndpointManager.ensure_started()
 
-    {:ok, ca_chain_pem} = SecretHub.Core.PKI.CA.get_ca_chain()
+    {:ok, ca_chain_pem} = CA.get_ca_chain()
     test_pid = self()
 
     {:ok, conn} =
-      SecretHub.Agent.TrustedConnection.start_link(
+      TrustedConnection.start_link(
         agent_id: enrollment.agent_id,
         connect_info: %{
           "trusted_websocket_endpoint" => endpoint_url,
@@ -459,7 +462,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
   defp generate_active_ca! do
     {:ok, %{cert_record: cert}} =
-      SecretHub.Core.PKI.CA.generate_root_ca(
+      CA.generate_root_ca(
         "Core Agent E2E Test Root CA #{System.unique_integer([:positive])}",
         "SecretHub Test",
         key_size: 2048
@@ -499,9 +502,9 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     X509.CSR.new(private_key, [{"O", subject["O"]}, {"CN", subject["CN"]}],
       extension_request: [
-        X509.Certificate.Extension.subject_alt_name(uri_sans ++ dns_sans),
-        X509.Certificate.Extension.key_usage([:digitalSignature]),
-        X509.Certificate.Extension.ext_key_usage([:clientAuth])
+        Extension.subject_alt_name(uri_sans ++ dns_sans),
+        Extension.key_usage([:digitalSignature]),
+        Extension.ext_key_usage([:clientAuth])
       ]
     )
   end

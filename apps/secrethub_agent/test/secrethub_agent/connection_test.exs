@@ -2,6 +2,7 @@ defmodule SecretHub.Agent.ConnectionTest do
   use ExUnit.Case, async: false
 
   alias SecretHub.Agent.Connection
+  alias X509.Test.Suite
 
   # Unit tests that verify Connection behavior without requiring a running Core.
   # Connection starts async and will fail to connect to invalid URLs gracefully.
@@ -103,7 +104,7 @@ defmodule SecretHub.Agent.ConnectionTest do
     end
 
     test "in-memory mTLS material completes an SSL client-certificate handshake" do
-      suite = X509.Test.Suite.new(key_type: {:rsa, 2048})
+      suite = Suite.new(key_type: {:rsa, 2048})
 
       server_opts = [
         :binary,

@@ -600,9 +600,8 @@ defmodule SecretHub.Agent.Connection do
         )
     catch
       kind, reason ->
-        Logger.error("Runtime accepted callback failed",
-          kind: kind,
-          reason: inspect(reason),
+        Logger.error(
+          "Runtime accepted callback failed (#{kind}): #{inspect(reason)}",
           payload: inspect(payload)
         )
     end

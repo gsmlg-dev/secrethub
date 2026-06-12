@@ -7,6 +7,7 @@ defmodule SecretHub.Web.Application do
   require Logger
 
   alias SecretHub.Core.Shutdown
+  alias SecretHub.Web.AgentEndpointManager
   alias SecretHub.Web.Endpoint
 
   @impl true
@@ -53,7 +54,7 @@ defmodule SecretHub.Web.Application do
   # connect-info once one exists.
   defp maybe_start_dev_agent_endpoint do
     if Application.get_env(:secrethub_web, :dev_mode, false) do
-      case SecretHub.Web.AgentEndpointManager.ensure_started() do
+      case AgentEndpointManager.ensure_started() do
         :ok ->
           :ok
 

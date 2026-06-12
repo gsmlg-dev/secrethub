@@ -2,6 +2,8 @@ defmodule SecretHub.Web.AgentEnrollmentController do
   use SecretHub.Web, :controller
 
   alias SecretHub.Core.Agents.Enrollment
+  alias SecretHub.Core.PKI.CA
+  alias SecretHub.Web.AgentEndpointManager
 
   def create(conn, params) do
     source_ip = conn.remote_ip |> :inet.ntoa() |> to_string()
@@ -61,7 +63,7 @@ defmodule SecretHub.Web.AgentEnrollmentController do
 
   def connect_info(conn, %{"id" => id}) do
     with {:ok, token} <- bearer_token(conn),
-         :ok <- SecretHub.Web.AgentEndpointManager.ensure_started(),
+         :ok <- AgentEndpointManager.ensure_started(),
          {:ok, payload} <- Enrollment.connect_info(id, token) do
       json(conn, payload)
     else
@@ -108,7 +110,7 @@ defmodule SecretHub.Web.AgentEnrollmentController do
   defp format_reason(reason), do: inspect(reason)
 
   defp ca_chain_pem do
-    case SecretHub.Core.PKI.CA.get_ca_chain() do
+    case CA.get_ca_chain() do
       {:ok, chain} -> chain
       {:error, _} -> nil
     end

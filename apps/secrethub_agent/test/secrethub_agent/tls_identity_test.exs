@@ -2,6 +2,7 @@ defmodule SecretHub.Agent.TLSIdentityTest do
   use ExUnit.Case, async: true
 
   alias SecretHub.Agent.TLSIdentity
+  alias X509.Certificate.Extension
 
   test "generates a valid CSR whose public key matches the TLS private key" do
     required_fields = required_csr_fields()
@@ -17,7 +18,7 @@ defmodule SecretHub.Agent.TLSIdentityTest do
     assert X509.RDNSequence.get_attr(X509.CSR.subject(csr), "CN") == ["agent-123"]
 
     extensions = X509.CSR.extension_request(csr)
-    san_extension = X509.Certificate.Extension.find(extensions, :subject_alt_name)
+    san_extension = Extension.find(extensions, :subject_alt_name)
 
     assert {:uniformResourceIdentifier, ~c"spiffe://secrethub/agent/agent-123"} in elem(
              san_extension,
@@ -26,11 +27,11 @@ defmodule SecretHub.Agent.TLSIdentityTest do
 
     assert {:dNSName, ~c"agent-123.internal.example"} in elem(san_extension, 3)
 
-    assert elem(X509.Certificate.Extension.find(extensions, :key_usage), 3) == [
+    assert elem(Extension.find(extensions, :key_usage), 3) == [
              :digitalSignature
            ]
 
-    assert X509.Certificate.Extension.find(extensions, :ext_key_usage)
+    assert Extension.find(extensions, :ext_key_usage)
   end
 
   defp required_csr_fields do

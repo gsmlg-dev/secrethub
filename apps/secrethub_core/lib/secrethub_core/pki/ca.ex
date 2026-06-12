@@ -29,6 +29,7 @@ defmodule SecretHub.Core.PKI.CA do
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.Certificate
+  alias X509.Certificate.Extension
 
   # Certificate validity periods
   # 10 years
@@ -478,16 +479,16 @@ defmodule SecretHub.Core.PKI.CA do
   # validators (e.g. OpenSSL) rejected the entire chain.
   defp build_extensions(public_key, is_ca) do
     extensions = [
-      X509.Certificate.Extension.subject_key_identifier(ski_public_key(public_key)),
+      Extension.subject_key_identifier(ski_public_key(public_key)),
       if is_ca do
-        X509.Certificate.Extension.key_usage([:keyCertSign, :cRLSign])
+        Extension.key_usage([:keyCertSign, :cRLSign])
       else
-        X509.Certificate.Extension.key_usage([:digitalSignature, :keyEncipherment])
+        Extension.key_usage([:digitalSignature, :keyEncipherment])
       end
     ]
 
     if is_ca do
-      [X509.Certificate.Extension.basic_constraints(true) | extensions]
+      [Extension.basic_constraints(true) | extensions]
     else
       extensions
     end

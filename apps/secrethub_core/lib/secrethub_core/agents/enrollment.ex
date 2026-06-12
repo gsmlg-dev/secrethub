@@ -10,6 +10,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Crypto.AgentCSRProof
   alias SecretHub.Shared.Schemas.{Agent, AgentEnrollment, Certificate}
+  alias X509.Certificate.Extension
 
   @pending_ttl_seconds 24 * 60 * 60
   @default_presence_timeout_ms 10_000
@@ -258,9 +259,8 @@ defmodule SecretHub.Core.Agents.Enrollment do
       %Agent{status: :trusted_connected, certificate_id: certificate_id}
       when is_binary(certificate_id) ->
         with {:ok, connection} <- runtime_connection(agent_id),
-             :ok <- verify_runtime_connection_certificate(connection, certificate_id),
-             :ok <- verify_enrollment_certificate(enrollment_id, agent_id, certificate_id) do
-          :ok
+             :ok <- verify_runtime_connection_certificate(connection, certificate_id) do
+          verify_enrollment_certificate(enrollment_id, agent_id, certificate_id)
         end
 
       %Agent{} ->
@@ -364,33 +364,36 @@ defmodule SecretHub.Core.Agents.Enrollment do
     |> AgentEnrollment.changeset(%{status: :csr_submitted, csr_pem: csr_pem, last_error: nil})
     |> Repo.update()
     |> case do
-      {:ok, updated} ->
-        case PKI.Issuer.issue_agent_certificate_from_csr(updated, csr) do
-          {:ok, certificate} ->
-            case bind_agent_certificate(updated.agent_id, certificate.id, updated.id) do
-              {:ok, _agent} ->
-                updated
-                |> AgentEnrollment.changeset(%{
-                  status: :certificate_issued,
-                  last_error: nil
-                })
-                |> Repo.update()
-                |> case do
-                  {:ok, enrollment} -> {:ok, %{enrollment: enrollment, certificate: certificate}}
-                  error -> error
-                end
+      {:ok, updated} -> issue_and_bind_certificate(updated, csr)
+      error -> error
+    end
+  end
 
-              {:error, reason} ->
-                Repo.delete(certificate)
-                mark_certificate_issue_failed(updated, reason)
-            end
+  defp issue_and_bind_certificate(enrollment, csr) do
+    case PKI.Issuer.issue_agent_certificate_from_csr(enrollment, csr) do
+      {:ok, certificate} -> bind_issued_certificate(enrollment, certificate)
+      {:error, reason} -> mark_certificate_issue_failed(enrollment, reason)
+    end
+  end
 
-          {:error, reason} ->
-            mark_certificate_issue_failed(updated, reason)
-        end
+  defp bind_issued_certificate(enrollment, certificate) do
+    case bind_agent_certificate(enrollment.agent_id, certificate.id, enrollment.id) do
+      {:ok, _agent} ->
+        mark_certificate_issued(enrollment, certificate)
 
-      error ->
-        error
+      {:error, reason} ->
+        Repo.delete(certificate)
+        mark_certificate_issue_failed(enrollment, reason)
+    end
+  end
+
+  defp mark_certificate_issued(enrollment, certificate) do
+    enrollment
+    |> AgentEnrollment.changeset(%{status: :certificate_issued, last_error: nil})
+    |> Repo.update()
+    |> case do
+      {:ok, enrollment} -> {:ok, %{enrollment: enrollment, certificate: certificate}}
+      error -> error
     end
   end
 
@@ -466,7 +469,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
   defp decode_enrollment_ssh_public_key(%AgentEnrollment{ssh_host_public_key: public_key_text})
        when is_binary(public_key_text) do
-    case apply(:ssh_file, :decode, [public_key_text, :public_key]) do
+    case :ssh_file.decode(public_key_text, :public_key) do
       [{public_key, _attrs}] -> {:ok, public_key}
       _other -> {:error, :invalid_host_public_key}
     end
@@ -498,9 +501,8 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
   defp verify_csr_identity(enrollment, csr, ssh_host_public_key) do
     with :ok <- verify_csr_tls_key_is_distinct(csr, ssh_host_public_key),
-         :ok <- verify_csr_subject(enrollment, csr),
-         :ok <- verify_csr_sans(enrollment, csr) do
-      :ok
+         :ok <- verify_csr_subject(enrollment, csr) do
+      verify_csr_sans(enrollment, csr)
     end
   end
 
@@ -516,9 +518,8 @@ defmodule SecretHub.Core.Agents.Enrollment do
     expected_subject = enrollment.required_csr_fields["subject"] || %{}
     subject = X509.CSR.subject(csr)
 
-    with :ok <- verify_csr_subject_attr(subject, "O", expected_subject["O"]),
-         :ok <- verify_csr_subject_attr(subject, "CN", expected_subject["CN"]) do
-      :ok
+    with :ok <- verify_csr_subject_attr(subject, "O", expected_subject["O"]) do
+      verify_csr_subject_attr(subject, "CN", expected_subject["CN"])
     end
   end
 
@@ -536,9 +537,8 @@ defmodule SecretHub.Core.Agents.Enrollment do
     expected_sans = enrollment.required_csr_fields["san"] || %{}
     actual_sans = csr_sans(csr)
 
-    with :ok <- verify_csr_san_values(actual_sans.uri, expected_sans["uri"]),
-         :ok <- verify_csr_san_values(actual_sans.dns, expected_sans["dns"]) do
-      :ok
+    with :ok <- verify_csr_san_values(actual_sans.uri, expected_sans["uri"]) do
+      verify_csr_san_values(actual_sans.dns, expected_sans["dns"])
     end
   end
 
@@ -558,7 +558,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
     extension =
       csr
       |> X509.CSR.extension_request()
-      |> X509.Certificate.Extension.find(:subject_alt_name)
+      |> Extension.find(:subject_alt_name)
 
     values = if extension, do: elem(extension, 3), else: []
 
@@ -793,7 +793,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
   end
 
   defp decode_ssh_host_public_key(trimmed_public_key) do
-    case apply(:ssh_file, :decode, [trimmed_public_key, :public_key]) do
+    case :ssh_file.decode(trimmed_public_key, :public_key) do
       [{public_key, _attrs}] ->
         case ssh_host_key_algorithm(public_key) do
           nil ->
@@ -812,7 +812,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
   defp encode_ssh_host_public_key(public_key) do
     [{public_key, []}]
-    |> then(&apply(:ssh_file, :encode, [&1, :openssh_key]))
+    |> :ssh_file.encode(:openssh_key)
     |> IO.iodata_to_binary()
     |> String.trim()
   end
@@ -841,7 +841,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
   defp ssh_host_key_algorithm({{:ECPoint, _point}, {:namedCurve, curve}})
        when curve in [
-              {1, 2, 840, 10045, 3, 1, 7},
+              {1, 2, 840, 10_045, 3, 1, 7},
               {1, 3, 132, 0, 34},
               {1, 3, 132, 0, 35}
             ],
@@ -849,7 +849,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
 
   defp ssh_host_key_algorithm({_point, {:namedCurve, curve}})
        when curve in [
-              {1, 2, 840, 10045, 3, 1, 7},
+              {1, 2, 840, 10_045, 3, 1, 7},
               {1, 3, 132, 0, 34},
               {1, 3, 132, 0, 35}
             ],
@@ -895,7 +895,7 @@ defmodule SecretHub.Core.Agents.Enrollment do
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 
   defp ca_chain_pem do
-    case SecretHub.Core.PKI.CA.get_ca_chain() do
+    case PKI.CA.get_ca_chain() do
       {:ok, chain} -> chain
       {:error, _} -> nil
     end

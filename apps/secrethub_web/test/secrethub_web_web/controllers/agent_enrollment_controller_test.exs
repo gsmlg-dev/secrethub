@@ -2,8 +2,9 @@ defmodule SecretHub.Web.AgentEnrollmentControllerTest do
   use SecretHub.Web.ConnCase, async: true
 
   alias SecretHub.Core.Agents.Enrollment
-  alias SecretHub.Core.PKI.CSR
+  alias SecretHub.Core.PKI.{CA, CSR}
   alias SecretHub.Shared.Crypto.AgentCSRProof
+  alias X509.Certificate.Extension
 
   @pending_attrs %{
     hostname: "build-01",
@@ -59,7 +60,7 @@ defmodule SecretHub.Web.AgentEnrollmentControllerTest do
 
   defp generate_active_ca! do
     {:ok, %{cert_record: cert}} =
-      SecretHub.Core.PKI.CA.generate_root_ca(
+      CA.generate_root_ca(
         "Agent Enrollment Controller Test Root CA #{System.unique_integer([:positive])}",
         "SecretHub Test",
         key_size: 2048
@@ -99,9 +100,9 @@ defmodule SecretHub.Web.AgentEnrollmentControllerTest do
 
     X509.CSR.new(private_key, [{"O", subject["O"]}, {"CN", subject["CN"]}],
       extension_request: [
-        X509.Certificate.Extension.subject_alt_name(uri_sans ++ dns_sans),
-        X509.Certificate.Extension.key_usage([:digitalSignature]),
-        X509.Certificate.Extension.ext_key_usage([:clientAuth])
+        Extension.subject_alt_name(uri_sans ++ dns_sans),
+        Extension.key_usage([:digitalSignature]),
+        Extension.ext_key_usage([:clientAuth])
       ]
     )
   end

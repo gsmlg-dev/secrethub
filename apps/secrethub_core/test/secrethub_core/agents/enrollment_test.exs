@@ -2,10 +2,11 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
   use SecretHub.Core.DataCase, async: false
 
   alias SecretHub.Core.Agents.{ConnectionManager, Enrollment}
-  alias SecretHub.Core.PKI.{CSR, Issuer, Verifier}
+  alias SecretHub.Core.PKI.{CA, CSR, Issuer, Verifier}
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Crypto.AgentCSRProof
   alias SecretHub.Shared.Schemas.{Agent, AgentEnrollment, Certificate}
+  alias X509.Certificate.Extension
 
   @ssh_host_public_key "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCzfBY98CsoKIQiaRg4dDON+o4mkz3vtNSslq+drKM97GAhSvE1+pjp4Iy1udn/tEsRiqzeOqgVG0vTTrKhH0Hn4eUB5NO1KeENUwSFafIgbeYzK5P1rWY65IyccP6nfGzslQALVTVPLMQ9P0vzbCjGqBbIvHxARvq78sp2Pxa92PHFuPkzgfhus7IXMsgJpd5bBhdjSlRxSFqUt21x4dtmwNpxdfL93Up6LWPmtItCz2whuZMabr2FbMcWCZS6b07sOBa1oqIjwUihHwGxP45r/BV6q6jtvMJAsE1QIAOxXDlhqosqhWJwGuhdwani/IlhNT2ruXObjeA8t14nirnz"
   @ssh_host_key_fingerprint "SHA256:msje3DyBcXxXmuF1TilCDOvsvGvnuZdHQ5YSS8BVoz4"
@@ -1080,7 +1081,7 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
 
   defp generate_active_ca! do
     {:ok, %{cert_record: cert}} =
-      SecretHub.Core.PKI.CA.generate_root_ca(
+      CA.generate_root_ca(
         "Agent Enrollment Test Root CA #{System.unique_integer([:positive])}",
         "SecretHub Test",
         key_size: 2048
@@ -1186,9 +1187,9 @@ defmodule SecretHub.Core.Agents.EnrollmentTest do
 
     X509.CSR.new(private_key, [{"O", subject["O"]}, {"CN", subject["CN"]}],
       extension_request: [
-        X509.Certificate.Extension.subject_alt_name(uri_sans ++ dns_sans),
-        X509.Certificate.Extension.key_usage([:digitalSignature]),
-        X509.Certificate.Extension.ext_key_usage([:clientAuth])
+        Extension.subject_alt_name(uri_sans ++ dns_sans),
+        Extension.key_usage([:digitalSignature]),
+        Extension.ext_key_usage([:clientAuth])
       ]
     )
   end

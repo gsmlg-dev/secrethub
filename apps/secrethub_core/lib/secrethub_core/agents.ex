@@ -14,8 +14,8 @@ defmodule SecretHub.Core.Agents do
   require Logger
   import Ecto.Query
 
-  alias SecretHub.Core.{Audit, Repo}
   alias SecretHub.Core.Agents.ConnectionManager
+  alias SecretHub.Core.{Audit, Repo}
   alias SecretHub.Shared.Schemas.{Agent, Certificate, Lease, Policy}
 
   @type result :: {:ok, term()} | {:error, term()}
@@ -103,38 +103,44 @@ defmodule SecretHub.Core.Agents do
 
   def mark_trusted_connected(agent_id, certificate_id) do
     with {:ok, certificate_id} <- cast_certificate_id(certificate_id) do
-      now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-      query =
-        from(a in Agent,
-          join: c in Certificate,
-          on: c.id == a.certificate_id,
-          where:
-            a.agent_id == ^agent_id and
-              a.certificate_id == ^certificate_id and
-              a.status in ^@runtime_connectable_statuses and
-              c.id == ^certificate_id and
-              c.cert_type == ^:agent_client and
-              c.entity_id == ^agent_id and
-              c.revoked == false and
-              c.valid_until > ^now
-        )
-
-      case Repo.update_all(query,
-             set: [
-               status: :trusted_connected,
-               authenticated_at: now,
-               last_seen_at: now,
-               last_heartbeat_at: now
-             ]
-           ) do
-        {1, _} ->
-          {:ok, Repo.get_by!(Agent, agent_id: agent_id)}
-
-        {0, _} ->
-          runtime_authorization_error(agent_id, certificate_id, @runtime_connectable_statuses)
-      end
+      do_mark_trusted_connected(agent_id, certificate_id)
     end
+  end
+
+  defp do_mark_trusted_connected(agent_id, certificate_id) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    query = trusted_connectable_query(agent_id, certificate_id, now)
+
+    case Repo.update_all(query,
+           set: [
+             status: :trusted_connected,
+             authenticated_at: now,
+             last_seen_at: now,
+             last_heartbeat_at: now
+           ]
+         ) do
+      {1, _} ->
+        {:ok, Repo.get_by!(Agent, agent_id: agent_id)}
+
+      {0, _} ->
+        runtime_authorization_error(agent_id, certificate_id, @runtime_connectable_statuses)
+    end
+  end
+
+  defp trusted_connectable_query(agent_id, certificate_id, now) do
+    from(a in Agent,
+      join: c in Certificate,
+      on: c.id == a.certificate_id,
+      where:
+        a.agent_id == ^agent_id and
+          a.certificate_id == ^certificate_id and
+          a.status in ^@runtime_connectable_statuses and
+          c.id == ^certificate_id and
+          c.cert_type == ^:agent_client and
+          c.entity_id == ^agent_id and
+          c.revoked == false and
+          c.valid_until > ^now
+    )
   end
 
   @doc """
@@ -144,9 +150,8 @@ defmodule SecretHub.Core.Agents do
     with {:ok, certificate_id} <- cast_certificate_id(certificate_id),
          {:ok, agent, certificate} <- runtime_agent_and_certificate(agent_id, certificate_id),
          :ok <- verify_runtime_agent_status(agent, @runtime_authorized_statuses),
-         :ok <- verify_runtime_certificate_binding(agent, certificate),
-         :ok <- verify_runtime_certificate(certificate, agent_id) do
-      :ok
+         :ok <- verify_runtime_certificate_binding(agent, certificate) do
+      verify_runtime_certificate(certificate, agent_id)
     end
   end
 

@@ -65,20 +65,7 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
 
   def handle_in("secret:read", %{"path" => secret_path}, socket) do
     with_runtime_authorized(socket, fn ->
-      agent_id = socket.assigns.agent_id
-
-      case Secrets.get_secret_for_entity(agent_id, secret_path, %{}) do
-        {:ok, secret_data} ->
-          # Deliberate second check: authorization may have been revoked
-          # while the secret was being read; never release decrypted data
-          # past a revocation.
-          with_runtime_authorized(socket, fn ->
-            {:reply, {:ok, %{path: secret_path, data: secret_data}}, socket}
-          end)
-
-        {:error, reason} ->
-          {:reply, {:error, %{reason: inspect(reason), path: secret_path}}, socket}
-      end
+      read_secret_reply(socket, secret_path)
     end)
   end
 
@@ -128,6 +115,21 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
     case socket.assigns[key] do
       nil -> {:error, :missing_assign}
       value -> {:ok, value}
+    end
+  end
+
+  defp read_secret_reply(socket, secret_path) do
+    case Secrets.get_secret_for_entity(socket.assigns.agent_id, secret_path, %{}) do
+      {:ok, secret_data} ->
+        # Deliberate second check: authorization may have been revoked
+        # while the secret was being read; never release decrypted data
+        # past a revocation.
+        with_runtime_authorized(socket, fn ->
+          {:reply, {:ok, %{path: secret_path, data: secret_data}}, socket}
+        end)
+
+      {:error, reason} ->
+        {:reply, {:error, %{reason: inspect(reason), path: secret_path}}, socket}
     end
   end
 

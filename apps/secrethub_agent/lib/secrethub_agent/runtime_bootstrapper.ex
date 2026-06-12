@@ -205,9 +205,9 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     %{core_url: core_url, pending: pending, timer: timer} = state.pending_finalization
     cancel_timer(timer)
 
-    Logger.info("Trusted runtime accepted by Core",
-      enrollment_id: pending["enrollment_id"],
-      agent_id: payload["agent_id"]
+    Logger.info(
+      "Trusted runtime accepted by Core " <>
+        "(enrollment #{pending["enrollment_id"]}, agent #{payload["agent_id"]})"
     )
 
     case finalize_success(core_url, pending, state.state_dir) do
@@ -346,9 +346,9 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
     case enrollment_core_url(endpoint) do
       {:ok, enrollment_url} ->
-        Logger.info("Trusted Agent material missing; starting enrollment",
-          core_url: enrollment_url,
-          state_dir: state.state_dir
+        Logger.info(
+          "Trusted Agent material missing; starting enrollment " <>
+            "(core_url #{enrollment_url}, state_dir #{state.state_dir})"
         )
 
         enrollment_opts =
@@ -515,9 +515,9 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
         :ok
 
       {:error, reason} ->
-        Logger.error("Failed to finalize trusted Agent enrollment",
-          enrollment_id: pending["enrollment_id"],
-          reason: inspect(reason)
+        Logger.error(
+          "Failed to finalize trusted Agent enrollment " <>
+            "#{pending["enrollment_id"]}: #{inspect(reason)}"
         )
 
         {:error, reason}
@@ -528,11 +528,10 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     retry_count = Map.get(finalization, :retry_count, 0) + 1
     delay_ms = finalize_retry_delay_ms(retry_count)
 
-    Logger.warning("Retrying trusted Agent enrollment finalization",
-      enrollment_id: finalization.pending["enrollment_id"],
-      retry_count: retry_count,
-      delay_ms: delay_ms,
-      reason: inspect(reason)
+    Logger.warning(
+      "Retrying trusted Agent enrollment finalization " <>
+        "(enrollment #{finalization.pending["enrollment_id"]}, " <>
+        "attempt #{retry_count}, in #{delay_ms}ms): #{inspect(reason)}"
     )
 
     %{
@@ -554,11 +553,10 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     retry_count = Map.get(finalization, :retry_count, 0) + 1
     delay_ms = finalize_retry_delay_ms(retry_count)
 
-    Logger.warning("Retrying trusted Agent runtime start",
-      enrollment_id: finalization.pending["enrollment_id"],
-      retry_count: retry_count,
-      delay_ms: delay_ms,
-      reason: inspect(reason)
+    Logger.warning(
+      "Retrying trusted Agent runtime start " <>
+        "(enrollment #{finalization.pending["enrollment_id"]}, " <>
+        "attempt #{retry_count}, in #{delay_ms}ms): #{inspect(reason)}"
     )
 
     Map.merge(finalization, %{

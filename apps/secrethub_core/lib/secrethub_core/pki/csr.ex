@@ -41,12 +41,12 @@ defmodule SecretHub.Core.PKI.CSR do
     string("ssh-rsa") <> mpint(exponent) <> mpint(modulus)
   end
 
-  defp ssh_public_key_blob({{:ECPoint, point}, {:namedCurve, {1, 2, 840, 10045, 3, 1, 7}}}) do
+  defp ssh_public_key_blob({{:ECPoint, point}, {:namedCurve, {1, 2, 840, 10_045, 3, 1, 7}}}) do
     curve = "nistp256"
     string("ecdsa-sha2-#{curve}") <> string(curve) <> string(point)
   end
 
-  defp ssh_public_key_blob({point, {:namedCurve, {1, 2, 840, 10045, 3, 1, 7}}})
+  defp ssh_public_key_blob({point, {:namedCurve, {1, 2, 840, 10_045, 3, 1, 7}}})
        when is_binary(point) do
     curve = "nistp256"
     string("ecdsa-sha2-#{curve}") <> string(curve) <> string(point)

@@ -5,6 +5,7 @@ defmodule SecretHub.Core.PKI.RootCA do
 
   import Ecto.Query
 
+  alias SecretHub.Core.PKI.CA
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Certificate
 
@@ -23,6 +24,6 @@ defmodule SecretHub.Core.PKI.RootCA do
   end
 
   def ca_chain_pem do
-    SecretHub.Core.PKI.CA.get_ca_chain()
+    CA.get_ca_chain()
   end
 end

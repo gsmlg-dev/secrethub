@@ -40,9 +40,8 @@ defmodule SecretHub.Agent.IdentityStore do
          :ok <- write_text(state_dir, :certificate_pem, values.certificate_pem),
          :ok <- write_text(state_dir, :private_key_pem, values.private_key_pem),
          :ok <- write_text(state_dir, :ca_chain_pem, values.ca_chain_pem),
-         :ok <- write_text(state_dir, :connect_info, values.encoded_connect_info),
-         :ok <- write_text(state_dir, :identity, values.encoded_identity) do
-      :ok
+         :ok <- write_text(state_dir, :connect_info, values.encoded_connect_info) do
+      write_text(state_dir, :identity, values.encoded_identity)
     end
   end
 
@@ -197,9 +196,8 @@ defmodule SecretHub.Agent.IdentityStore do
   end
 
   defp read_json(state_dir, key) do
-    with {:ok, body} <- read_text(state_dir, key),
-         {:ok, decoded} <- Jason.decode(body) do
-      {:ok, decoded}
+    with {:ok, body} <- read_text(state_dir, key) do
+      Jason.decode(body)
     end
   end
 end
