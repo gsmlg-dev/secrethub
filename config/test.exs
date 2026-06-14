@@ -10,12 +10,16 @@ config :secrethub_core, start_seal_state: false
 # Supports both Unix socket (devenv) and TCP (CI) connections
 database_name = "secrethub_test#{System.get_env("MIX_TEST_PARTITION")}"
 
+test_pool_size =
+  System.get_env("TEST_DB_POOL_SIZE", "20")
+  |> String.to_integer()
+
 db_config = [
   username: System.get_env("PGUSER", "secrethub"),
   password: System.get_env("PGPASSWORD", "secrethub_dev_password"),
   database: database_name,
   pool: Ecto.Adapters.SQL.Sandbox,
-  pool_size: System.schedulers_online() * 2
+  pool_size: test_pool_size
 ]
 
 project_socket_dir = Path.expand("../.devenv/state/postgres", __DIR__)
