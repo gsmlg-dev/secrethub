@@ -47,6 +47,21 @@ defmodule SecretHub.Web.AdminLayoutHook do
     :exit, _reason -> nil
   end
 
+  @pki_nav_paths [
+    {"/admin/pki/certificates/issue", :pki_certificates_issue},
+    {"/admin/pki/certificates", :pki_certificates},
+    {"/admin/pki/csr/upload", :pki_csr_upload},
+    {"/admin/pki/csr", :pki_csr},
+    {"/admin/pki/search", :pki_search},
+    {"/admin/pki/analytics", :pki_analytics},
+    {"/admin/pki/ca/new", :pki_ca_new},
+    {"/admin/pki/ca", :pki_ca_list},
+    {"/admin/pki/cas/new", :pki_ca_new},
+    {"/admin/pki/cas", :pki_ca_list},
+    {"/admin/pki/crl", :pki_ca_list},
+    {"/admin/pki", :pki_overview}
+  ]
+
   # Data-driven mapping from URL path segments to nav keys
   @nav_segments %{
     "secrets" => :secrets,
@@ -58,7 +73,6 @@ defmodule SecretHub.Web.AdminLayoutHook do
     "approles" => :approles,
     "pending-agents" => :pending_agents,
     "agents" => :agents,
-    "pki" => :pki,
     "certificates" => :certificates,
     "audit" => :audit,
     "cluster" => :cluster,
@@ -80,7 +94,15 @@ defmodule SecretHub.Web.AdminLayoutHook do
     approles: "AppRole Management",
     pending_agents: "Pending Agents",
     agents: "Agent Monitoring",
-    pki: "PKI Management",
+    pki_overview: "PKI Overview",
+    pki_ca_list: "PKI CA List",
+    pki_ca_new: "New PKI CA",
+    pki_certificates: "PKI Certificate List",
+    pki_certificates_issue: "Issue PKI Certificate",
+    pki_csr: "PKI CSR Management",
+    pki_csr_upload: "Upload PKI CSR",
+    pki_search: "PKI Search",
+    pki_analytics: "PKI Analytics",
     certificates: "Certificates",
     audit: "Audit Log",
     cluster: "Cluster Status",
@@ -90,10 +112,15 @@ defmodule SecretHub.Web.AdminLayoutHook do
   }
 
   defp determine_active_nav(path) do
-    @nav_segments
-    |> Enum.find_value(:dashboard, fn {segment, nav} ->
-      if String.contains?(path, "/admin/#{segment}"), do: nav
-    end)
+    pki_nav =
+      Enum.find_value(@pki_nav_paths, fn {prefix, nav} ->
+        if path == prefix or String.starts_with?(path, prefix <> "/"), do: nav
+      end)
+
+    pki_nav ||
+      Enum.find_value(@nav_segments, :dashboard, fn {segment, nav} ->
+        if String.contains?(path, "/admin/#{segment}"), do: nav
+      end)
   end
 
   defp page_title_for(nav) do

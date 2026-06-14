@@ -21,6 +21,7 @@ defmodule SecretHub.Web.PKIManagementLive do
   }
 
   @cert_type_filters ~w(all root_ca intermediate_ca agent_client app_client admin_client)
+  @issue_cert_types ~w(agent_client app_client admin_client)
 
   @impl true
   def mount(_params, _session, socket) do
@@ -40,6 +41,8 @@ defmodule SecretHub.Web.PKIManagementLive do
       |> assign(:show_ca_form, false)
       |> assign(:ca_form_type, :root)
       |> assign(:ca_form_data, default_root_ca_form())
+      |> assign(:issue_form_data, default_issue_form())
+      |> assign(:issued_certificate, nil)
       |> assign(:validation_errors, [])
       |> assign(:filter_type, "all")
       |> assign(:search_query, "")
@@ -61,6 +64,7 @@ defmodule SecretHub.Web.PKIManagementLive do
     ca_events = selected_ca_events(selected_ca)
     revocations = selected_revocations(socket.assigns.live_action, selected_ca)
     show_ca_form = socket.assigns.show_ca_form or socket.assigns.live_action == :new_ca
+    issue_form_data = issue_form_data(socket.assigns.issue_form_data, certificates)
 
     socket =
       socket
@@ -77,6 +81,7 @@ defmodule SecretHub.Web.PKIManagementLive do
       |> assign(:ca_events, ca_events)
       |> assign(:revocations, revocations)
       |> assign(:show_ca_form, show_ca_form)
+      |> assign(:issue_form_data, issue_form_data)
       |> assign(:filter_type, filter_type)
       |> assign(:search_query, search_query)
       |> assign(:active_section, active_section)
@@ -192,6 +197,11 @@ defmodule SecretHub.Web.PKIManagementLive do
   end
 
   @impl true
+  def handle_event("issue_certificate", %{"issue" => issue_params}, socket) do
+    issue_certificate(socket, issue_params)
+  end
+
+  @impl true
   def handle_event("filter_certificates", %{"filter_type" => filter_type}, socket) do
     filter_type = normalize_filter_type(filter_type)
 
@@ -249,20 +259,41 @@ defmodule SecretHub.Web.PKIManagementLive do
         <.dm_link navigate={~p"/admin/pki"} class={tab_class(@active_section, "overview")}>
           <.dm_mdi name="chart-box-outline" class="h-4 w-4" /> Overview
         </.dm_link>
-        <.dm_link navigate={~p"/admin/pki/cas"} class={tab_class(@active_section, "cas")}>
-          <.dm_mdi name="shield-key-outline" class="h-4 w-4" /> CAs
+        <.dm_link navigate={~p"/admin/pki/ca"} class={tab_class(@active_section, "cas")}>
+          <.dm_mdi name="shield-key-outline" class="h-4 w-4" /> CA List
+        </.dm_link>
+        <.dm_link navigate={~p"/admin/pki/ca/new"} class={tab_class(@active_section, "new_ca")}>
+          <.dm_mdi name="shield-plus-outline" class="h-4 w-4" /> New CA
         </.dm_link>
         <.dm_link
           navigate={~p"/admin/pki/certificates"}
           class={tab_class(@active_section, "certificates")}
         >
-          <.dm_mdi name="certificate-outline" class="h-4 w-4" /> Certificates
+          <.dm_mdi name="certificate-outline" class="h-4 w-4" /> Certificate List
+        </.dm_link>
+        <.dm_link
+          navigate={~p"/admin/pki/certificates/issue"}
+          class={tab_class(@active_section, "issue_certificate")}
+        >
+          <.dm_mdi name="file-sign" class="h-4 w-4" /> Issue Certificate
         </.dm_link>
         <.dm_link navigate={~p"/admin/pki/csr"} class={tab_class(@active_section, "csr")}>
-          <.dm_mdi name="file-sign" class="h-4 w-4" /> CSR
+          <.dm_mdi name="file-document-edit-outline" class="h-4 w-4" /> CSR Management
+        </.dm_link>
+        <.dm_link
+          navigate={~p"/admin/pki/csr/upload"}
+          class={tab_class(@active_section, "upload_csr")}
+        >
+          <.dm_mdi name="upload" class="h-4 w-4" /> Upload CSR
         </.dm_link>
         <.dm_link navigate={~p"/admin/pki/search"} class={tab_class(@active_section, "search")}>
           <.dm_mdi name="magnify" class="h-4 w-4" /> Search
+        </.dm_link>
+        <.dm_link
+          navigate={~p"/admin/pki/analytics"}
+          class={tab_class(@active_section, "analytics")}
+        >
+          <.dm_mdi name="chart-line" class="h-4 w-4" /> Analytics
         </.dm_link>
       </nav>
 
@@ -279,16 +310,44 @@ defmodule SecretHub.Web.PKIManagementLive do
           <% else %>
             <.ca_listing ca_certificates={@ca_certificates} />
           <% end %>
+        <% "new_ca" -> %>
+          <.ca_listing ca_certificates={@ca_certificates} />
         <% "certificates" -> %>
-          <.certificate_listing
-            certificates={@filtered_certificates}
-            filter_type={@filter_type}
-            search_query={@search_query}
+          <%= if @selected_cert do %>
+            <.certificate_show certificate={@selected_cert} />
+          <% else %>
+            <.certificate_listing
+              certificates={@filtered_certificates}
+              filter_type={@filter_type}
+              search_query={@search_query}
+            />
+          <% end %>
+        <% "issue_certificate" -> %>
+          <.issue_certificate_panel
+            title="Issue New Certificate"
+            certificates={@certificates}
+            issue_form_data={@issue_form_data}
+            issued_certificate={@issued_certificate}
+            validation_errors={@validation_errors}
           />
         <% "csr" -> %>
           <.csr_panel />
+        <% "upload_csr" -> %>
+          <.issue_certificate_panel
+            title="Upload CSR"
+            certificates={@certificates}
+            issue_form_data={@issue_form_data}
+            issued_certificate={@issued_certificate}
+            validation_errors={@validation_errors}
+          />
         <% "search" -> %>
           <.search_panel certificates={@filtered_certificates} search_query={@search_query} />
+        <% "analytics" -> %>
+          <.analytics_panel
+            stats={@stats}
+            event_stats={@event_stats}
+            certificates={@certificates}
+          />
       <% end %>
 
       <.ca_form_modal
@@ -381,13 +440,13 @@ defmodule SecretHub.Web.PKIManagementLive do
           <:col :let={ca} label="Actions">
             <div class="flex flex-wrap gap-2">
               <.dm_link
-                navigate={~p"/admin/pki/cas/#{ca.id}"}
+                navigate={~p"/admin/pki/ca/#{ca.id}"}
                 class="inline-flex items-center gap-1 text-sm text-primary"
               >
                 <.dm_mdi name="eye-outline" class="h-4 w-4" /> View
               </.dm_link>
               <.dm_link
-                navigate={~p"/admin/pki/cas/#{ca.id}/crl"}
+                navigate={~p"/admin/pki/crl/#{ca.id}"}
                 class="inline-flex items-center gap-1 text-sm text-secondary"
               >
                 <.dm_mdi name="file-document-outline" class="h-4 w-4" /> CRL
@@ -447,7 +506,15 @@ defmodule SecretHub.Web.PKIManagementLive do
     ~H"""
     <div class="space-y-4">
       <.dm_card shadow="sm">
-        <:title>PKI Certificates</:title>
+        <:title>Certificate List</:title>
+        <div class="mb-4">
+          <.dm_link
+            navigate={~p"/admin/pki/certificates/issue"}
+            class="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-content"
+          >
+            <.dm_mdi name="file-sign" class="h-4 w-4" /> Issue Certificate
+          </.dm_link>
+        </div>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-[220px_1fr]">
           <form phx-change="filter_certificates">
             <.dm_input
@@ -543,7 +610,7 @@ defmodule SecretHub.Web.PKIManagementLive do
   defp csr_panel(assigns) do
     ~H"""
     <.dm_card shadow="sm">
-      <:title>CSR Inbox</:title>
+      <:title>CSR Management</:title>
       <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <.dm_input
           type="textarea"
@@ -555,9 +622,157 @@ defmodule SecretHub.Web.PKIManagementLive do
         <div class="rounded-md border border-outline-variant p-4">
           <h3 class="text-sm font-semibold text-on-surface">Pending CSRs</h3>
           <p class="mt-4 text-sm text-on-surface-variant">No CSR records found.</p>
+          <.dm_link
+            navigate={~p"/admin/pki/csr/upload"}
+            class="mt-4 inline-flex items-center gap-2 rounded-md border border-outline-variant px-3 py-2 text-sm text-on-surface"
+          >
+            <.dm_mdi name="upload" class="h-4 w-4" /> Upload CSR
+          </.dm_link>
         </div>
       </div>
     </.dm_card>
+    """
+  end
+
+  defp issue_certificate_panel(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.dm_card shadow="sm">
+        <:title>{@title}</:title>
+        <form phx-submit="issue_certificate" class="space-y-4">
+          <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <.dm_input
+              type="select"
+              name="issue[ca_id]"
+              label="Certificate Authority"
+              value={@issue_form_data["ca_id"]}
+              prompt="Select CA"
+              options={parent_ca_options(@certificates)}
+              required
+            />
+            <.dm_input
+              type="select"
+              name="issue[cert_type]"
+              label="Certificate Template"
+              value={@issue_form_data["cert_type"]}
+              options={cert_type_options()}
+              required
+            />
+            <.dm_input
+              type="number"
+              name="issue[validity_days]"
+              label="Validity (days)"
+              value={@issue_form_data["validity_days"]}
+              required
+            />
+          </div>
+
+          <.dm_input
+            type="textarea"
+            name="issue[csr_pem]"
+            label="Certificate Signing Request (CSR)"
+            rows="14"
+            value={@issue_form_data["csr_pem"]}
+            placeholder="-----BEGIN CERTIFICATE REQUEST-----"
+            required
+          />
+
+          <div :if={!Enum.empty?(@validation_errors)} class="border-l-4 border-error bg-error/5 p-4">
+            <ul class="list-inside list-disc text-sm text-error">
+              <li :for={error <- @validation_errors}>{error}</li>
+            </ul>
+          </div>
+
+          <div class="flex justify-end">
+            <button
+              type="submit"
+              class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-content"
+            >
+              <.dm_mdi name="file-sign" class="h-4 w-4" /> Issue Certificate
+            </button>
+          </div>
+        </form>
+      </.dm_card>
+
+      <.dm_card :if={@issued_certificate} shadow="sm">
+        <:title>Issued Certificate</:title>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <.detail_item label="Common Name" value={@issued_certificate.cert_record.common_name} />
+          <.detail_item
+            label="Serial Number"
+            value={@issued_certificate.cert_record.serial_number}
+            mono
+          />
+          <.detail_item
+            label="Type"
+            value={format_cert_type(@issued_certificate.cert_record.cert_type)}
+          />
+          <.detail_item
+            label="Valid Until"
+            value={format_datetime(@issued_certificate.cert_record.valid_until)}
+          />
+        </div>
+        <pre class="mt-4 overflow-x-auto rounded-md border border-outline-variant bg-surface-container-low p-4 font-mono text-xs">{@issued_certificate.certificate}</pre>
+      </.dm_card>
+    </div>
+    """
+  end
+
+  defp certificate_show(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <.dm_link
+        navigate={~p"/admin/pki/certificates"}
+        class="inline-flex items-center gap-1 text-sm text-primary"
+      >
+        <.dm_mdi name="arrow-left" class="h-4 w-4" /> Certificate List
+      </.dm_link>
+      <.dm_card shadow="sm">
+        <:title>Certificate Details</:title>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <.detail_item label="Common Name" value={@certificate.common_name} />
+          <.detail_item label="Type" value={format_cert_type(@certificate.cert_type)} />
+          <.detail_item label="Serial Number" value={@certificate.serial_number} mono />
+          <.detail_item label="Fingerprint" value={@certificate.fingerprint} mono />
+          <.detail_item label="Subject" value={@certificate.subject} mono />
+          <.detail_item label="Issuer" value={@certificate.issuer} mono />
+        </div>
+      </.dm_card>
+    </div>
+    """
+  end
+
+  defp analytics_panel(assigns) do
+    ~H"""
+    <div class="space-y-6">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <.dm_card shadow="sm">
+          <.dm_stat title="Total Certificates" value={Integer.to_string(@stats.total)} />
+        </.dm_card>
+        <.dm_card shadow="sm">
+          <.dm_stat title="Certificate Authorities" value={Integer.to_string(@stats.cas)} />
+        </.dm_card>
+        <.dm_card shadow="sm">
+          <.dm_stat title="Expired" value={Integer.to_string(@stats.expired)} color="warning" />
+        </.dm_card>
+        <.dm_card shadow="sm">
+          <.dm_stat title="PKI Events" value={Integer.to_string(@event_stats.total_events)} />
+        </.dm_card>
+      </div>
+
+      <.dm_card shadow="sm">
+        <:title>Event Types</:title>
+        <.dm_table data={event_type_rows(@event_stats.events_by_type)} compact hover>
+          <:col :let={row} label="Event Type">{row.type}</:col>
+          <:col :let={row} label="Count">{row.count}</:col>
+        </.dm_table>
+      </.dm_card>
+
+      <section class="space-y-3">
+        <h3 class="text-base font-semibold text-on-surface">Expiring Certificates</h3>
+        <.certificate_table certificates={expiring_certificates(@certificates, 30)} />
+      </section>
+    </div>
     """
   end
 
@@ -764,7 +979,7 @@ defmodule SecretHub.Web.PKIManagementLive do
           </p>
           <p class="text-sm text-on-surface-variant">Type this exact text to continue:</p>
           <pre class="whitespace-pre-wrap rounded-md border border-outline-variant bg-surface-container-low p-3 font-mono text-xs">{@remove_confirmation_text}</pre>
-          <.dm_input name="remove[confirmation]" autocomplete="off" />
+          <.dm_input name="remove[confirmation]" value="" autocomplete="off" />
 
           <div :if={!Enum.empty?(@validation_errors)} class="border-l-4 border-error bg-error/5 p-4">
             <ul class="list-inside list-disc text-sm text-error">
@@ -829,6 +1044,43 @@ defmodule SecretHub.Web.PKIManagementLive do
          socket
          |> assign(:validation_errors, ["Failed to remove certificate: #{inspect(reason)}"])
          |> put_flash(:error, "Failed to remove certificate")}
+    end
+  end
+
+  defp issue_certificate(socket, issue_params) do
+    with {:ok, ca_id} <- required_value(issue_params["ca_id"], "Select a Certificate Authority"),
+         {:ok, csr_pem} <- required_value(issue_params["csr_pem"], "CSR PEM is required"),
+         {:ok, cert_type} <- issue_cert_type(issue_params["cert_type"]),
+         {:ok, validity_days} <- positive_integer(issue_params["validity_days"], "Validity") do
+      case CA.sign_csr(csr_pem, ca_id, cert_type, validity_days: validity_days) do
+        {:ok, issued_certificate} ->
+          {:noreply,
+           socket
+           |> reload_pki()
+           |> assign(:issued_certificate, issued_certificate)
+           |> assign(:issue_form_data, default_issue_form())
+           |> assign(:validation_errors, [])
+           |> put_flash(:info, "Certificate issued successfully")}
+
+        {:error, "Vault is sealed"} ->
+          {:noreply, show_vault_sealed_banner(socket)}
+
+        {:error, reason} ->
+          {:noreply,
+           socket
+           |> assign(:issue_form_data, issue_params)
+           |> assign(:issued_certificate, nil)
+           |> assign(:validation_errors, [format_ca_error(reason)])
+           |> put_flash(:error, "Failed to issue certificate")}
+      end
+    else
+      {:error, message} ->
+        {:noreply,
+         socket
+         |> assign(:issue_form_data, issue_params)
+         |> assign(:issued_certificate, nil)
+         |> assign(:validation_errors, [message])
+         |> put_flash(:error, "Failed to issue certificate")}
     end
   end
 
@@ -955,16 +1207,20 @@ defmodule SecretHub.Web.PKIManagementLive do
     end
   end
 
-  defp selected_certificate(:certificate_show, %{"id" => id}, _certificates) do
-    case CA.get_certificate(id) do
-      {:ok, certificate} -> certificate
-      {:error, _reason} -> nil
-    end
+  defp selected_certificate(action, params, certificates)
+       when action in [:certificate_show, :certificate_revoke] do
+    identifier = params["id"] || params["serial"]
+
+    Enum.find(certificates, fn certificate ->
+      certificate.id == identifier or certificate.serial_number == identifier
+    end)
   end
 
   defp selected_certificate(_action, _params, _certificates), do: nil
 
-  defp selected_ca(action, %{"id" => id}, certificates) when action in [:ca_show, :crl] do
+  defp selected_ca(action, params, certificates) when action in [:ca_show, :ca_stats, :crl] do
+    id = params["id"] || params["ca_id"]
+
     Enum.find(certificates, &(&1.id == id and &1.cert_type in [:root_ca, :intermediate_ca]))
   end
 
@@ -1033,6 +1289,31 @@ defmodule SecretHub.Web.PKIManagementLive do
     }
   end
 
+  defp default_issue_form do
+    %{
+      "ca_id" => "",
+      "cert_type" => "agent_client",
+      "validity_days" => "365",
+      "csr_pem" => ""
+    }
+  end
+
+  defp issue_form_data(form_data, certificates) do
+    form_data = Map.merge(default_issue_form(), form_data || %{})
+
+    if form_data["ca_id"] in [nil, ""] do
+      certificates
+      |> active_parent_cas()
+      |> List.first()
+      |> case do
+        nil -> form_data
+        ca -> Map.put(form_data, "ca_id", ca.id)
+      end
+    else
+      form_data
+    end
+  end
+
   defp ca_certificates(certificates) do
     Enum.filter(certificates, &(&1.cert_type in [:root_ca, :intermediate_ca]))
   end
@@ -1054,6 +1335,14 @@ defmodule SecretHub.Web.PKIManagementLive do
     certificates
     |> active_parent_cas()
     |> Enum.map(&{"#{&1.common_name} (#{format_cert_type(&1.cert_type)})", &1.id})
+  end
+
+  defp cert_type_options do
+    [
+      {"Agent Client", "agent_client"},
+      {"Application Client", "app_client"},
+      {"Admin Client", "admin_client"}
+    ]
   end
 
   defp filtered_certificates(certs, "all", ""), do: certs
@@ -1083,22 +1372,33 @@ defmodule SecretHub.Web.PKIManagementLive do
   defp normalize_filter_type(_filter_type), do: "all"
 
   defp section_for(:cas), do: "cas"
-  defp section_for(:new_ca), do: "cas"
+  defp section_for(:new_ca), do: "new_ca"
   defp section_for(:ca_show), do: "cas"
+  defp section_for(:ca_stats), do: "cas"
   defp section_for(:crl), do: "cas"
   defp section_for(:certificates), do: "certificates"
   defp section_for(:certificate_show), do: "certificates"
+  defp section_for(:certificate_revoke), do: "certificates"
+  defp section_for(:issue_certificate), do: "issue_certificate"
   defp section_for(:csr), do: "csr"
+  defp section_for(:upload_csr), do: "upload_csr"
   defp section_for(:search), do: "search"
+  defp section_for(:analytics), do: "analytics"
   defp section_for(_action), do: "overview"
 
   defp page_title_for("overview", _action), do: "PKI Overview"
   defp page_title_for("cas", :ca_show), do: "CA Details"
+  defp page_title_for("cas", :ca_stats), do: "CA Statistics"
   defp page_title_for("cas", :crl), do: "Certificate Revocation List"
-  defp page_title_for("cas", _action), do: "Certificate Authorities"
-  defp page_title_for("certificates", _action), do: "PKI Certificates"
-  defp page_title_for("csr", _action), do: "CSR Inbox"
+  defp page_title_for("cas", _action), do: "CA List"
+  defp page_title_for("new_ca", _action), do: "New CA"
+  defp page_title_for("certificates", :certificate_show), do: "Certificate Details"
+  defp page_title_for("certificates", _action), do: "Certificate List"
+  defp page_title_for("issue_certificate", _action), do: "Issue Certificate"
+  defp page_title_for("csr", _action), do: "CSR Management"
+  defp page_title_for("upload_csr", _action), do: "Upload CSR"
   defp page_title_for("search", _action), do: "PKI Search"
+  defp page_title_for("analytics", _action), do: "PKI Analytics"
 
   defp tab_class(active, section) do
     [
@@ -1142,6 +1442,15 @@ defmodule SecretHub.Web.PKIManagementLive do
   end
 
   defp parent_ca_id(parent_ca_id), do: {:ok, parent_ca_id}
+
+  defp required_value(value, message) when value in [nil, ""], do: {:error, message}
+  defp required_value(value, _message), do: {:ok, value}
+
+  defp issue_cert_type(cert_type) when cert_type in @issue_cert_types do
+    {:ok, String.to_existing_atom(cert_type)}
+  end
+
+  defp issue_cert_type(_cert_type), do: {:error, "Select a valid Certificate Template"}
 
   defp parse_key_type("ecdsa"), do: :ecdsa
   defp parse_key_type(_key_type), do: :rsa
@@ -1200,6 +1509,23 @@ defmodule SecretHub.Web.PKIManagementLive do
   end
 
   defp metadata_value(_event, _key), do: ""
+
+  defp event_type_rows(events_by_type) when is_map(events_by_type) do
+    events_by_type
+    |> Enum.map(fn {type, count} -> %{type: to_string(type), count: count} end)
+    |> Enum.sort_by(& &1.type)
+  end
+
+  defp event_type_rows(_events_by_type), do: []
+
+  defp expiring_certificates(certificates, days) do
+    deadline = DateTime.utc_now() |> DateTime.add(days, :day)
+
+    Enum.filter(certificates, fn certificate ->
+      (not certificate.revoked and certificate.valid_until) &&
+        DateTime.compare(certificate.valid_until, deadline) in [:lt, :eq]
+    end)
+  end
 
   defp x509_extensions(cert) do
     case :public_key.pem_decode(cert.certificate_pem) do

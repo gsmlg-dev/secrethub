@@ -20,10 +20,21 @@ defmodule SecretHub.Web.PKIAdminLiveTest do
     {:ok, _view, html} = live(conn, "/admin/pki")
 
     assert html =~ "PKI Overview"
-    assert html =~ ~s(href="/admin/pki/cas")
+    assert html =~ "CA List"
+    assert html =~ "New CA"
+    assert html =~ "Certificate List"
+    assert html =~ "Issue Certificate"
+    assert html =~ "CSR Management"
+    assert html =~ "Upload CSR"
+    assert html =~ "Analytics"
+    assert html =~ ~s(href="/admin/pki/ca")
+    assert html =~ ~s(href="/admin/pki/ca/new")
     assert html =~ ~s(href="/admin/pki/certificates")
+    assert html =~ ~s(href="/admin/pki/certificates/issue")
     assert html =~ ~s(href="/admin/pki/csr")
+    assert html =~ ~s(href="/admin/pki/csr/upload")
     assert html =~ ~s(href="/admin/pki/search")
+    assert html =~ ~s(href="/admin/pki/analytics")
   end
 
   test "CA listing and detail routes render CA records and event history", %{conn: conn} do
@@ -37,17 +48,22 @@ defmodule SecretHub.Web.PKIAdminLiveTest do
         timestamp: ~U[2026-06-12 01:00:00Z]
       )
 
-    {:ok, _view, html} = live(conn, "/admin/pki/cas")
+    {:ok, _view, html} = live(conn, "/admin/pki/ca")
 
-    assert html =~ "Certificate Authorities"
+    assert html =~ "CA List"
     assert html =~ "SecretHub Root CA"
-    assert html =~ ~s(href="/admin/pki/cas/#{ca.id}")
+    assert html =~ ~s(href="/admin/pki/ca/#{ca.id}")
 
-    {:ok, _view, html} = live(conn, "/admin/pki/cas/#{ca.id}")
+    {:ok, _view, html} = live(conn, "/admin/pki/ca/#{ca.id}")
 
     assert html =~ "CA Details"
     assert html =~ "ca_initialized"
     assert html =~ "CA100"
+
+    {:ok, _view, html} = live(conn, "/admin/pki/cas/#{ca.id}")
+
+    assert html =~ "CA Details"
+    assert html =~ "SecretHub Root CA"
   end
 
   test "certificate listing route renders persisted certificate records", %{conn: conn} do
@@ -55,9 +71,32 @@ defmodule SecretHub.Web.PKIAdminLiveTest do
 
     {:ok, _view, html} = live(conn, "/admin/pki/certificates")
 
-    assert html =~ "PKI Certificates"
+    assert html =~ "Certificate List"
     assert html =~ "agent-runtime-1"
     assert html =~ "Agent Client"
+  end
+
+  test "source-style issue, CSR upload, and analytics routes render", %{conn: conn} do
+    insert_certificate!("SecretHub Root CA", :root_ca, "CA100")
+    insert_certificate!("agent-runtime-1", :agent_client, "AGENT100")
+
+    {:ok, _view, html} = live(conn, "/admin/pki/certificates/issue")
+
+    assert html =~ "Issue New Certificate"
+    assert html =~ "Certificate Authority"
+    assert html =~ "Certificate Template"
+    assert html =~ "Certificate Signing Request"
+
+    {:ok, _view, html} = live(conn, "/admin/pki/csr/upload")
+
+    assert html =~ "Upload CSR"
+    assert html =~ "Certificate Signing Request"
+
+    {:ok, _view, html} = live(conn, "/admin/pki/analytics")
+
+    assert html =~ "PKI Analytics"
+    assert html =~ "Event Types"
+    assert html =~ "Expiring Certificates"
   end
 
   test "search route filters certificates by query", %{conn: conn} do

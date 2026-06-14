@@ -113,14 +113,23 @@ defmodule SecretHub.Web.Router do
       live "/policies/:id/simulate", PolicySimulatorLive, :show
       live "/audit", AuditLogLive, :index
       live "/pki", PKIManagementLive, :index
+      live "/pki/ca", PKIManagementLive, :cas
+      live "/pki/ca/new", PKIManagementLive, :new_ca
+      live "/pki/ca/:ca_id", PKIManagementLive, :ca_show
+      live "/pki/ca/:ca_id/stats", PKIManagementLive, :ca_stats
       live "/pki/cas", PKIManagementLive, :cas
       live "/pki/cas/new", PKIManagementLive, :new_ca
       live "/pki/cas/:id", PKIManagementLive, :ca_show
       live "/pki/cas/:id/crl", PKIManagementLive, :crl
+      live "/pki/crl/:ca_id", PKIManagementLive, :crl
       live "/pki/certificates", PKIManagementLive, :certificates
+      live "/pki/certificates/issue", PKIManagementLive, :issue_certificate
+      live "/pki/certificates/:serial/revoke", PKIManagementLive, :certificate_revoke
       live "/pki/certificates/:id", PKIManagementLive, :certificate_show
       live "/pki/csr", PKIManagementLive, :csr
+      live "/pki/csr/upload", PKIManagementLive, :upload_csr
       live "/pki/search", PKIManagementLive, :search
+      live "/pki/analytics", PKIManagementLive, :analytics
       live "/certificates", AdminCertificateLive, :index
       live "/approles", AppRoleManagementLive, :index
       live "/dynamic/postgresql", DynamicPostgreSQLConfigLive, :index

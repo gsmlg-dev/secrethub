@@ -84,7 +84,7 @@ defmodule SecretHub.Web.AdminVaultBannerTest do
       })
       |> Repo.insert!()
 
-    {:ok, view, html} = live(conn, "/admin/pki")
+    {:ok, view, html} = live(conn, "/admin/pki/certificates")
 
     assert html =~ "SecretHub Root CA"
     assert html =~ "Expires: 2036-04-30"
@@ -104,7 +104,7 @@ defmodule SecretHub.Web.AdminVaultBannerTest do
   end
 
   test "intermediate CA generation requires an existing root CA", %{conn: conn} do
-    {:ok, view, _html} = live(conn, "/admin/pki")
+    {:ok, view, _html} = live(conn, "/admin/pki/certificates")
 
     view
     |> element("button", "Generate Intermediate CA")
@@ -177,7 +177,7 @@ defmodule SecretHub.Web.AdminVaultBannerTest do
       })
       |> Repo.insert!()
 
-    {:ok, view, _html} = live(conn, "/admin/pki")
+    {:ok, view, _html} = live(conn, "/admin/pki/certificates")
 
     html =
       view

@@ -60,14 +60,42 @@
 
         <.dm_left_menu_group active={to_string(@active_nav)}>
           <:title>Security</:title>
-          <:menu id="pki" to={~p"/admin/pki"}>
-            <.dm_mdi name="certificate" class="w-5 h-5" /> PKI
-          </:menu>
           <:menu id="certificates" to={~p"/admin/certificates"}>
             <.dm_mdi name="file-certificate" class="w-5 h-5" /> Certificates
           </:menu>
           <:menu id="audit" to={~p"/admin/audit"}>
             <.dm_mdi name="eye" class="w-5 h-5" /> Audit Log
+          </:menu>
+        </.dm_left_menu_group>
+
+        <.dm_left_menu_group active={to_string(@active_nav)}>
+          <:title>PKI</:title>
+          <:menu id="pki_overview" to={~p"/admin/pki"}>
+            <.dm_mdi name="chart-box-outline" class="w-5 h-5" /> Overview
+          </:menu>
+          <:menu id="pki_ca_list" to={~p"/admin/pki/ca"}>
+            <.dm_mdi name="shield-key-outline" class="w-5 h-5" /> CA List
+          </:menu>
+          <:menu id="pki_ca_new" to={~p"/admin/pki/ca/new"}>
+            <.dm_mdi name="shield-plus-outline" class="w-5 h-5" /> New CA
+          </:menu>
+          <:menu id="pki_certificates" to={~p"/admin/pki/certificates"}>
+            <.dm_mdi name="certificate-outline" class="w-5 h-5" /> Certificate List
+          </:menu>
+          <:menu id="pki_certificates_issue" to={~p"/admin/pki/certificates/issue"}>
+            <.dm_mdi name="file-sign" class="w-5 h-5" /> Issue Certificate
+          </:menu>
+          <:menu id="pki_csr" to={~p"/admin/pki/csr"}>
+            <.dm_mdi name="file-document-edit-outline" class="w-5 h-5" /> CSR Management
+          </:menu>
+          <:menu id="pki_csr_upload" to={~p"/admin/pki/csr/upload"}>
+            <.dm_mdi name="upload" class="w-5 h-5" /> Upload CSR
+          </:menu>
+          <:menu id="pki_search" to={~p"/admin/pki/search"}>
+            <.dm_mdi name="magnify" class="w-5 h-5" /> Search
+          </:menu>
+          <:menu id="pki_analytics" to={~p"/admin/pki/analytics"}>
+            <.dm_mdi name="chart-line" class="w-5 h-5" /> Analytics
           </:menu>
         </.dm_left_menu_group>
 
