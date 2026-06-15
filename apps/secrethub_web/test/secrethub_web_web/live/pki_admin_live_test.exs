@@ -87,6 +87,11 @@ defmodule SecretHub.Web.PKIAdminLiveTest do
     assert html =~ "Certificate Template"
     assert html =~ "Certificate Signing Request"
 
+    {:ok, _view, html} = live(conn, "/admin/pki/csr")
+
+    assert html =~ "CSR Management"
+    assert html =~ "CSR PEM"
+
     {:ok, _view, html} = live(conn, "/admin/pki/csr/upload")
 
     assert html =~ "Upload CSR"

@@ -617,6 +617,7 @@ defmodule SecretHub.Web.PKIManagementLive do
           name="csr[pem]"
           label="CSR PEM"
           rows="14"
+          value=""
           placeholder="-----BEGIN CERTIFICATE REQUEST-----"
         />
         <div class="rounded-md border border-outline-variant p-4">
