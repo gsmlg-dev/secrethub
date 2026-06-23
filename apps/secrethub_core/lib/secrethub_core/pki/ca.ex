@@ -366,8 +366,8 @@ defmodule SecretHub.Core.PKI.CA do
     {:ok, ca_cert_der} = pem_to_der(ca_cert_pem, :certificate)
     ca_cert = :public_key.pkix_decode_cert(ca_cert_der, :otp)
 
-    # Extract issuer from CA cert
-    issuer = extract_issuer(ca_cert)
+    # The new certificate issuer is the signing CA's subject.
+    issuer = extract_subject(ca_cert)
 
     # Create subject for new certificate
     subject = build_subject(common_name, organization, opts)
@@ -743,10 +743,10 @@ defmodule SecretHub.Core.PKI.CA do
     subject = extract_subject_from_csr(csr)
     public_key = extract_public_key_from_csr(csr)
 
-    # Parse CA cert to get issuer
+    # Parse CA cert to get the signing issuer subject.
     {:ok, ca_cert_der} = pem_to_der(ca_cert.certificate_pem, :certificate)
     ca_cert_decoded = :public_key.pkix_decode_cert(ca_cert_der, :otp)
-    issuer = extract_issuer(ca_cert_decoded)
+    issuer = extract_subject(ca_cert_decoded)
 
     # Calculate validity
     not_before = :calendar.universal_time()
@@ -822,10 +822,10 @@ defmodule SecretHub.Core.PKI.CA do
     |> DateTime.truncate(:second)
   end
 
-  defp extract_issuer(
-         {:OTPCertificate, {:OTPTBSCertificate, _, _, _, issuer, _, _, _, _, _, _}, _, _}
+  defp extract_subject(
+         {:OTPCertificate, {:OTPTBSCertificate, _, _, _, _, _, subject, _, _, _, _}, _, _}
        ) do
-    issuer
+    subject
   end
 
   defp extract_subject_from_csr(

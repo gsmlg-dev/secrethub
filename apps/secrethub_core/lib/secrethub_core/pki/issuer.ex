@@ -183,10 +183,14 @@ defmodule SecretHub.Core.PKI.Issuer do
     dns_names
     |> List.wrap()
     |> Enum.flat_map(fn
-      "127.0.0.1" -> [{:iPAddress, {127, 0, 0, 1}}]
-      "::1" -> [{:iPAddress, {0, 0, 0, 0, 0, 0, 0, 1}}]
-      name when is_binary(name) -> [name]
-      _other -> []
+      name when is_binary(name) ->
+        case :inet.parse_address(to_charlist(name)) do
+          {:ok, address} -> [{:iPAddress, address |> Tuple.to_list() |> :erlang.list_to_binary()}]
+          {:error, _reason} -> [name]
+        end
+
+      _other ->
+        []
     end)
     |> Enum.uniq()
   end
