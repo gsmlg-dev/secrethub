@@ -41,11 +41,9 @@ defmodule SecretHub.Web.AdminVaultBannerTest do
   end
 
   test "sealed root CA generation uses the app banner instead of form validation", %{conn: conn} do
-    {:ok, view, _html} = live(conn, "/admin/pki")
+    {:ok, view, html} = live(conn, "/admin/pki/ca/new")
 
-    view
-    |> element("button", "Generate Root CA")
-    |> render_click()
+    assert html =~ "Generate Root CA"
 
     html =
       view
@@ -104,7 +102,7 @@ defmodule SecretHub.Web.AdminVaultBannerTest do
   end
 
   test "intermediate CA generation requires an existing root CA", %{conn: conn} do
-    {:ok, view, _html} = live(conn, "/admin/pki/certificates")
+    {:ok, view, _html} = live(conn, "/admin/pki/ca/new")
 
     view
     |> element("button", "Generate Intermediate CA")
@@ -146,7 +144,7 @@ defmodule SecretHub.Web.AdminVaultBannerTest do
       })
       |> Repo.insert!()
 
-    {:ok, view, _html} = live(conn, "/admin/pki")
+    {:ok, view, _html} = live(conn, "/admin/pki/ca/new")
 
     html =
       view

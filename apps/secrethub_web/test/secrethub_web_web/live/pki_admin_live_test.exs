@@ -21,20 +21,23 @@ defmodule SecretHub.Web.PKIAdminLiveTest do
 
     assert html =~ "PKI Overview"
     assert html =~ "CA List"
-    assert html =~ "New CA"
     assert html =~ "Certificate List"
     assert html =~ "Issue Certificate"
     assert html =~ "CSR Management"
     assert html =~ "Upload CSR"
     assert html =~ "Analytics"
     assert html =~ ~s(href="/admin/pki/ca")
-    assert html =~ ~s(href="/admin/pki/ca/new")
     assert html =~ ~s(href="/admin/pki/certificates")
     assert html =~ ~s(href="/admin/pki/certificates/issue")
     assert html =~ ~s(href="/admin/pki/csr")
     assert html =~ ~s(href="/admin/pki/csr/upload")
     assert html =~ ~s(href="/admin/pki/search")
     assert html =~ ~s(href="/admin/pki/analytics")
+    refute html =~ "New CA"
+    refute html =~ "Generate Root CA"
+    refute html =~ "Generate Intermediate CA"
+    refute html =~ ~s(href="/admin/pki/ca/new")
+    refute html =~ ~s(href="/admin/certificates")
   end
 
   test "CA listing and detail routes render CA records and event history", %{conn: conn} do
@@ -52,6 +55,8 @@ defmodule SecretHub.Web.PKIAdminLiveTest do
 
     assert html =~ "CA List"
     assert html =~ "SecretHub Root CA"
+    assert html =~ "New CA"
+    assert html =~ ~s(href="/admin/pki/ca/new")
     assert html =~ ~s(href="/admin/pki/ca/#{ca.id}")
 
     {:ok, _view, html} = live(conn, "/admin/pki/ca/#{ca.id}")
@@ -64,6 +69,15 @@ defmodule SecretHub.Web.PKIAdminLiveTest do
 
     assert html =~ "CA Details"
     assert html =~ "SecretHub Root CA"
+  end
+
+  test "new CA route renders the generation page without adding a global menu item", %{conn: conn} do
+    {:ok, _view, html} = live(conn, "/admin/pki/ca/new")
+
+    assert html =~ "New CA"
+    assert html =~ "Generate Root CA"
+    assert html =~ "Generate Intermediate CA"
+    refute html =~ ~s(href="/admin/pki/ca/new")
   end
 
   test "certificate listing route renders persisted certificate records", %{conn: conn} do

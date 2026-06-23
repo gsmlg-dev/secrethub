@@ -60,9 +60,6 @@
 
         <.dm_left_menu_group active={to_string(@active_nav)}>
           <:title>Security</:title>
-          <:menu id="certificates" to={~p"/admin/certificates"}>
-            <.dm_mdi name="file-certificate" class="w-5 h-5" /> Certificates
-          </:menu>
           <:menu id="audit" to={~p"/admin/audit"}>
             <.dm_mdi name="eye" class="w-5 h-5" /> Audit Log
           </:menu>
@@ -75,9 +72,6 @@
           </:menu>
           <:menu id="pki_ca_list" to={~p"/admin/pki/ca"}>
             <.dm_mdi name="shield-key-outline" class="w-5 h-5" /> CA List
-          </:menu>
-          <:menu id="pki_ca_new" to={~p"/admin/pki/ca/new"}>
-            <.dm_mdi name="shield-plus-outline" class="w-5 h-5" /> New CA
           </:menu>
           <:menu id="pki_certificates" to={~p"/admin/pki/certificates"}>
             <.dm_mdi name="certificate-outline" class="w-5 h-5" /> Certificate List

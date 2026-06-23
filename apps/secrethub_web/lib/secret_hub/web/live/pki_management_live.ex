@@ -63,7 +63,7 @@ defmodule SecretHub.Web.PKIManagementLive do
     selected_ca = selected_ca(socket.assigns.live_action, params, certificates)
     ca_events = selected_ca_events(selected_ca)
     revocations = selected_revocations(socket.assigns.live_action, selected_ca)
-    show_ca_form = socket.assigns.show_ca_form or socket.assigns.live_action == :new_ca
+    show_ca_form = socket.assigns.show_ca_form and socket.assigns.live_action != :new_ca
     issue_form_data = issue_form_data(socket.assigns.issue_form_data, certificates)
 
     socket =
@@ -237,22 +237,6 @@ defmodule SecretHub.Web.PKIManagementLive do
         <div>
           <h2 class="text-xl font-semibold text-on-surface">{@page_title}</h2>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            phx-click="new_root_ca"
-            class="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-content"
-          >
-            <.dm_mdi name="plus" class="h-4 w-4" /> Generate Root CA
-          </button>
-          <button
-            type="button"
-            phx-click="new_intermediate_ca"
-            class="inline-flex items-center gap-2 rounded-md border border-outline-variant px-3 py-2 text-sm font-medium text-on-surface"
-          >
-            <.dm_mdi name="source-branch-plus" class="h-4 w-4" /> Generate Intermediate CA
-          </button>
-        </div>
       </div>
 
       <nav class="flex flex-wrap gap-2" aria-label="PKI sections">
@@ -261,9 +245,6 @@ defmodule SecretHub.Web.PKIManagementLive do
         </.dm_link>
         <.dm_link navigate={~p"/admin/pki/ca"} class={tab_class(@active_section, "cas")}>
           <.dm_mdi name="shield-key-outline" class="h-4 w-4" /> CA List
-        </.dm_link>
-        <.dm_link navigate={~p"/admin/pki/ca/new"} class={tab_class(@active_section, "new_ca")}>
-          <.dm_mdi name="shield-plus-outline" class="h-4 w-4" /> New CA
         </.dm_link>
         <.dm_link
           navigate={~p"/admin/pki/certificates"}
@@ -301,17 +282,24 @@ defmodule SecretHub.Web.PKIManagementLive do
         <% "overview" -> %>
           <.overview stats={@stats} event_stats={@event_stats} certificates={@certificates} />
         <% "cas" -> %>
-          <%= if @selected_ca do %>
-            <%= if @live_action == :crl do %>
-              <.crl_panel ca={@selected_ca} revocations={@revocations} />
-            <% else %>
-              <.ca_detail ca={@selected_ca} ca_events={@ca_events} />
-            <% end %>
+          <%= if @live_action == :new_ca do %>
+            <.ca_form_panel
+              ca_form_type={@ca_form_type}
+              ca_form_data={@ca_form_data}
+              certificates={@certificates}
+              validation_errors={@validation_errors}
+            />
           <% else %>
-            <.ca_listing ca_certificates={@ca_certificates} />
+            <%= if @selected_ca do %>
+              <%= if @live_action == :crl do %>
+                <.crl_panel ca={@selected_ca} revocations={@revocations} />
+              <% else %>
+                <.ca_detail ca={@selected_ca} ca_events={@ca_events} />
+              <% end %>
+            <% else %>
+              <.ca_listing ca_certificates={@ca_certificates} />
+            <% end %>
           <% end %>
-        <% "new_ca" -> %>
-          <.ca_listing ca_certificates={@ca_certificates} />
         <% "certificates" -> %>
           <%= if @selected_cert do %>
             <.certificate_show certificate={@selected_cert} />
@@ -349,14 +337,6 @@ defmodule SecretHub.Web.PKIManagementLive do
             certificates={@certificates}
           />
       <% end %>
-
-      <.ca_form_modal
-        :if={@show_ca_form}
-        ca_form_type={@ca_form_type}
-        ca_form_data={@ca_form_data}
-        certificates={@certificates}
-        validation_errors={@validation_errors}
-      />
 
       <.certificate_details_modal :if={@selected_cert} certificate={@selected_cert} />
 
@@ -424,6 +404,14 @@ defmodule SecretHub.Web.PKIManagementLive do
     ~H"""
     <.dm_card shadow="sm">
       <:title>Certificate Authorities</:title>
+      <div class="mb-4 flex justify-end">
+        <.dm_link
+          navigate={~p"/admin/pki/ca/new"}
+          class="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-content"
+        >
+          <.dm_mdi name="shield-plus-outline" class="h-4 w-4" /> New CA
+        </.dm_link>
+      </div>
       <div class="overflow-x-auto">
         <.dm_table data={@ca_certificates} compact hover>
           <:col :let={ca} label="CA">
@@ -798,17 +786,39 @@ defmodule SecretHub.Web.PKIManagementLive do
     """
   end
 
-  defp ca_form_modal(assigns) do
+  defp ca_form_panel(assigns) do
     ~H"""
-    <div class="fixed inset-0 z-40 flex items-center justify-center bg-surface-container-low/80 p-4">
-      <div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-outline-variant bg-surface-container shadow-xl">
-        <div class="border-b border-outline-variant px-6 py-4">
-          <h3 class="text-lg font-medium text-on-surface">
-            {if @ca_form_type == :root, do: "Generate Root CA", else: "Generate Intermediate CA"}
-          </h3>
+    <div class="space-y-4">
+      <.dm_link
+        navigate={~p"/admin/pki/ca"}
+        class="inline-flex items-center gap-1 text-sm text-primary"
+      >
+        <.dm_mdi name="arrow-left" class="h-4 w-4" /> CA List
+      </.dm_link>
+
+      <.dm_card shadow="sm">
+        <:title>
+          {if @ca_form_type == :root, do: "Generate Root CA", else: "Generate Intermediate CA"}
+        </:title>
+
+        <div class="mb-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            phx-click="new_root_ca"
+            class={ca_type_button_class(@ca_form_type, :root)}
+          >
+            <.dm_mdi name="plus" class="h-4 w-4" /> Generate Root CA
+          </button>
+          <button
+            type="button"
+            phx-click="new_intermediate_ca"
+            class={ca_type_button_class(@ca_form_type, :intermediate)}
+          >
+            <.dm_mdi name="source-branch-plus" class="h-4 w-4" /> Generate Intermediate CA
+          </button>
         </div>
 
-        <form phx-submit="generate_ca" class="space-y-4 px-6 py-4">
+        <form phx-submit="generate_ca" class="space-y-4">
           <%= if @ca_form_type == :intermediate do %>
             <.dm_input
               type="select"
@@ -875,13 +885,12 @@ defmodule SecretHub.Web.PKIManagementLive do
           </div>
 
           <div class="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              phx-click="cancel_ca_form"
+            <.dm_link
+              navigate={~p"/admin/pki/ca"}
               class="rounded-md border border-outline-variant px-4 py-2 text-sm text-on-surface"
             >
               Cancel
-            </button>
+            </.dm_link>
             <button
               type="submit"
               class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-content"
@@ -890,7 +899,7 @@ defmodule SecretHub.Web.PKIManagementLive do
             </button>
           </div>
         </form>
-      </div>
+      </.dm_card>
     </div>
     """
   end
@@ -1373,7 +1382,7 @@ defmodule SecretHub.Web.PKIManagementLive do
   defp normalize_filter_type(_filter_type), do: "all"
 
   defp section_for(:cas), do: "cas"
-  defp section_for(:new_ca), do: "new_ca"
+  defp section_for(:new_ca), do: "cas"
   defp section_for(:ca_show), do: "cas"
   defp section_for(:ca_stats), do: "cas"
   defp section_for(:crl), do: "cas"
@@ -1388,6 +1397,7 @@ defmodule SecretHub.Web.PKIManagementLive do
   defp section_for(_action), do: "overview"
 
   defp page_title_for("overview", _action), do: "PKI Overview"
+  defp page_title_for("cas", :new_ca), do: "New CA"
   defp page_title_for("cas", :ca_show), do: "CA Details"
   defp page_title_for("cas", :ca_stats), do: "CA Statistics"
   defp page_title_for("cas", :crl), do: "Certificate Revocation List"
@@ -1405,6 +1415,16 @@ defmodule SecretHub.Web.PKIManagementLive do
     [
       "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium",
       if(active == section,
+        do: "border-primary bg-primary text-primary-content",
+        else: "border-outline-variant text-on-surface"
+      )
+    ]
+  end
+
+  defp ca_type_button_class(active, type) do
+    [
+      "inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium",
+      if(active == type,
         do: "border-primary bg-primary text-primary-content",
         else: "border-outline-variant text-on-surface"
       )
