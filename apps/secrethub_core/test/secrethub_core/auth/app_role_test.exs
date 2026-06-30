@@ -2,6 +2,13 @@ defmodule SecretHub.Core.Auth.AppRoleTest do
   use SecretHub.Core.DataCase, async: false
 
   alias SecretHub.Core.Auth.AppRole
+  alias SecretHub.Core.Repo
+  alias SecretHub.Shared.Schemas.Role
+
+  setup do
+    ensure_current_audit_partition!()
+    :ok
+  end
 
   describe "create_role/2" do
     test "creates a role with default options" do
@@ -19,6 +26,9 @@ defmodule SecretHub.Core.Auth.AppRoleTest do
 
       {:ok, role} = AppRole.get_role(result.role_id)
       assert role.policies == ["secret-read", "secret-write"]
+
+      persisted = Repo.get_by!(Role, role_id: result.role_id, auth_type: "approle")
+      assert persisted.policies == ["secret-read", "secret-write"]
     end
 
     test "creates a role with custom TTL and usage limits" do
@@ -50,6 +60,7 @@ defmodule SecretHub.Core.Auth.AppRoleTest do
       assert is_binary(result.token)
       assert result.role_name == "login-app"
       assert is_list(result.policies)
+      assert result.ttl == AppRole.token_ttl_seconds()
     end
 
     test "login fails with wrong secret_id" do
@@ -150,6 +161,40 @@ defmodule SecretHub.Core.Auth.AppRoleTest do
     end
   end
 
+  describe "update_role_policies/2" do
+    test "updates policy bindings in the role fields and metadata" do
+      role_id = Ecto.UUID.generate()
+
+      {:ok, _role} =
+        %Role{}
+        |> Role.changeset(%{
+          role_id: role_id,
+          role_name: "policy-update-app",
+          auth_type: "approle",
+          policies: ["secret-read"],
+          metadata: %{"policies" => ["secret-read"], "secret_id_uses" => 0}
+        })
+        |> Repo.insert()
+
+      assert {:ok, updated} =
+               AppRole.update_role_policies(role_id, ["secret-write", "database-access"])
+
+      assert updated.policies == ["secret-write", "database-access"]
+
+      persisted = Repo.get_by!(Role, role_id: role_id, auth_type: "approle")
+      assert persisted.policies == ["secret-write", "database-access"]
+      assert persisted.metadata["policies"] == ["secret-write", "database-access"]
+
+      assert {:ok, fetched} = AppRole.get_role(role_id)
+      assert fetched.policies == ["secret-write", "database-access"]
+    end
+
+    test "returns error for non-existent role" do
+      assert {:error, "Role not found"} =
+               AppRole.update_role_policies(Ecto.UUID.generate(), ["secret-read"])
+    end
+  end
+
   describe "list_roles/0" do
     test "lists all approle roles" do
       {:ok, _} = AppRole.create_role("list-app-1")
@@ -198,6 +243,34 @@ defmodule SecretHub.Core.Auth.AppRoleTest do
     end
   end
 
+  describe "renew_token/1" do
+    test "renews a valid token and reflects current role policies" do
+      {:ok, created} =
+        AppRole.create_role("renew-token-app",
+          policies: ["secret-read"],
+          secret_id_num_uses: 0
+        )
+
+      {:ok, %{token: token}} = AppRole.login(created.role_id, created.secret_id, "127.0.0.1")
+
+      {:ok, _updated} =
+        AppRole.update_role_policies(created.role_id, ["secret-read", "prod-read"])
+
+      assert {:ok, renewed} = AppRole.renew_token(token)
+      assert renewed.ttl == AppRole.token_ttl_seconds()
+      assert renewed.role_name == "renew-token-app"
+      assert renewed.policies == ["secret-read", "prod-read"]
+
+      assert {:ok, payload} = AppRole.verify_token(renewed.token)
+      assert payload.role_id == created.role_id
+      assert payload.policies == ["secret-read", "prod-read"]
+    end
+
+    test "rejects an invalid token" do
+      assert {:error, "Invalid token"} = AppRole.renew_token("invalid-token")
+    end
+  end
+
   describe "generate_secret_id/1" do
     test "generates and returns a new secret_id" do
       {:ok, created} = AppRole.create_role("gen-secret-app")
@@ -211,5 +284,18 @@ defmodule SecretHub.Core.Auth.AppRoleTest do
     test "returns error for non-existent role" do
       assert {:error, "Role not found"} = AppRole.generate_secret_id(Ecto.UUID.generate())
     end
+  end
+
+  defp ensure_current_audit_partition! do
+    today = Date.utc_today()
+    month = String.pad_leading(to_string(today.month), 2, "0")
+    partition_name = "audit_logs_y#{today.year}m#{month}"
+    from_date = %Date{today | day: 1}
+    to_date = Date.add(from_date, Date.days_in_month(from_date))
+
+    Repo.query!("""
+    CREATE TABLE IF NOT EXISTS #{partition_name} PARTITION OF audit_logs
+    FOR VALUES FROM ('#{Date.to_iso8601(from_date)}') TO ('#{Date.to_iso8601(to_date)}')
+    """)
   end
 end

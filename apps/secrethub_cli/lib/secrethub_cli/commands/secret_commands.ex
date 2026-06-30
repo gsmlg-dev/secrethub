@@ -80,12 +80,16 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
 
   defp list_secrets(_opts) do
     server = Config.get_server_url()
-    url = "#{server}/v1/secrets"
-    headers = Auth.auth_headers()
+    url = "#{server}/v1/secret/metadata?list=true"
+    headers = Auth.vault_headers()
 
     case Req.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
-        secrets = Map.get(body, "data", [])
+        secrets =
+          body
+          |> Map.get("keys", [])
+          |> Enum.map(&%{"path" => &1})
+
         {:ok, secrets}
 
       {:ok, %{status: status, body: body}} ->
@@ -98,8 +102,8 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
 
   defp get_secret(path, _opts) do
     server = Config.get_server_url()
-    url = "#{server}/v1/secrets/#{URI.encode(path)}"
-    headers = Auth.auth_headers()
+    url = "#{server}/v1/secret/data/#{vault_path(path)}"
+    headers = Auth.vault_headers()
 
     case Req.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
@@ -118,18 +122,17 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
 
   defp create_secret(path, value, _opts) do
     server = Config.get_server_url()
-    url = "#{server}/v1/secrets"
-    headers = Auth.auth_headers() ++ [{"content-type", "application/json"}]
+    url = "#{server}/v1/secret/data/#{vault_path(path)}"
+    headers = Auth.vault_headers() ++ [{"content-type", "application/json"}]
 
     body =
       Jason.encode!(%{
-        secret_path: path,
-        secret_data: %{value: value}
+        data: %{value: value}
       })
 
     case Req.post(url, body: body, headers: headers) do
-      {:ok, %{status: 201, body: body}} ->
-        {:ok, Map.get(body, "data", %{})}
+      {:ok, %{status: 200, body: body}} ->
+        {:ok, body}
 
       {:ok, %{status: status, body: body}} ->
         {:error, "API error #{status}: #{inspect(body)}"}
@@ -141,17 +144,17 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
 
   defp update_secret(path, value, _opts) do
     server = Config.get_server_url()
-    url = "#{server}/v1/secrets/#{URI.encode(path)}"
-    headers = Auth.auth_headers() ++ [{"content-type", "application/json"}]
+    url = "#{server}/v1/secret/data/#{vault_path(path)}"
+    headers = Auth.vault_headers() ++ [{"content-type", "application/json"}]
 
     body =
       Jason.encode!(%{
-        secret_data: %{value: value}
+        data: %{value: value}
       })
 
-    case Req.put(url, body: body, headers: headers) do
+    case Req.post(url, body: body, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
-        {:ok, Map.get(body, "data", %{})}
+        {:ok, body}
 
       {:ok, %{status: status, body: body}} ->
         {:error, "API error #{status}: #{inspect(body)}"}
@@ -163,8 +166,8 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
 
   defp delete_secret(path, _opts) do
     server = Config.get_server_url()
-    url = "#{server}/v1/secrets/#{URI.encode(path)}"
-    headers = Auth.auth_headers()
+    url = "#{server}/v1/secret/data/#{vault_path(path)}"
+    headers = Auth.vault_headers()
 
     case Req.delete(url, headers: headers) do
       {:ok, %{status: 204}} ->
@@ -180,12 +183,12 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
 
   defp list_versions(path, _opts) do
     server = Config.get_server_url()
-    url = "#{server}/v1/secrets/#{URI.encode(path)}/versions"
-    headers = Auth.auth_headers()
+    url = "#{server}/v1/secret/metadata/#{vault_path(path)}"
+    headers = Auth.vault_headers()
 
     case Req.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
-        versions = Map.get(body, "data", [])
+        versions = Map.get(body, "versions", %{})
         {:ok, versions}
 
       {:ok, %{status: status, body: body}} ->
@@ -198,12 +201,12 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
 
   defp rollback_secret(path, version, _opts) do
     server = Config.get_server_url()
-    url = "#{server}/v1/secrets/#{URI.encode(path)}/rollback"
-    headers = Auth.auth_headers() ++ [{"content-type", "application/json"}]
+    url = "#{server}/v1/secret/data/#{vault_path(path)}"
+    headers = Auth.vault_headers() ++ [{"content-type", "application/json"}]
 
     body =
       Jason.encode!(%{
-        target_version: version
+        version: version
       })
 
     case Req.post(url, body: body, headers: headers) do
@@ -216,5 +219,14 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
       {:error, reason} ->
         {:error, "HTTP request failed: #{inspect(reason)}"}
     end
+  end
+
+  defp vault_path(path) do
+    path
+    |> to_string()
+    |> String.split("/")
+    |> Enum.flat_map(&String.split(&1, "."))
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.map_join("/", &URI.encode/1)
   end
 end

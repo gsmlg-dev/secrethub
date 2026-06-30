@@ -63,6 +63,7 @@ yarn-error.log
 
 # Generated files
 /apps/*/priv/gettext/*.pot
+/apps/secrethub_cli/secrethub
 
 # Release builds
 /apps/*/rel/

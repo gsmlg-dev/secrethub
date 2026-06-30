@@ -31,15 +31,14 @@ defmodule SecretHub.Web.SecretApiController do
       sealed_response(conn)
     else
       path = extract_path(params)
-      agent = conn.assigns[:current_agent]
       secret_path = vault_path_to_dot(path)
       # Keep Vault-style path for policy check (policies use Vault patterns)
       vault_path = "secret/data/" <> path
 
       # Check policy allows write/create
-      with :ok <- check_policy(agent, vault_path, "create"),
+      with :ok <- check_policy(conn, vault_path, "create"),
            {:ok, data} <- validate_data_param(params["data"]) do
-        do_create_or_update(conn, path, secret_path, data, agent)
+        do_create_or_update(conn, path, secret_path, data)
       else
         {:error, :invalid_data} ->
           conn
@@ -62,11 +61,10 @@ defmodule SecretHub.Web.SecretApiController do
       sealed_response(conn)
     else
       path = extract_path(params)
-      agent = conn.assigns[:current_agent]
       secret_path = vault_path_to_dot(path)
       vault_path = "secret/data/" <> path
 
-      case check_policy(agent, vault_path, "read") do
+      case check_policy(conn, vault_path, "read") do
         :ok ->
           read_secret(conn, secret_path, params["version"])
 
@@ -86,11 +84,10 @@ defmodule SecretHub.Web.SecretApiController do
       sealed_response(conn)
     else
       path = extract_path(params)
-      agent = conn.assigns[:current_agent]
       secret_path = vault_path_to_dot(path)
       vault_path = "secret/data/" <> path
 
-      case check_policy(agent, vault_path, "delete") do
+      case check_policy(conn, vault_path, "delete") do
         :ok ->
           delete_secret_at_path(conn, secret_path)
 
@@ -107,11 +104,10 @@ defmodule SecretHub.Web.SecretApiController do
   """
   def metadata(conn, params) do
     path = extract_path(params)
-    agent = conn.assigns[:current_agent]
     secret_path = vault_path_to_dot(path)
     vault_path = "secret/metadata/" <> path
 
-    case check_policy(agent, vault_path, "read") do
+    case check_policy(conn, vault_path, "read") do
       :ok ->
         fetch_metadata(conn, secret_path, params["list"] == "true")
 
@@ -125,19 +121,19 @@ defmodule SecretHub.Web.SecretApiController do
   defp validate_data_param(data) when is_map(data) and map_size(data) > 0, do: {:ok, data}
   defp validate_data_param(_data), do: {:error, :invalid_data}
 
-  defp do_create_or_update(conn, path, secret_path, data, agent) do
+  defp do_create_or_update(conn, path, secret_path, data) do
     case Secrets.get_secret_by_path(secret_path) do
       {:ok, existing} ->
-        update_existing_secret(conn, existing, data, agent)
+        update_existing_secret(conn, existing, data)
 
       {:error, _} ->
         create_new_secret(conn, path, secret_path, data)
     end
   end
 
-  defp update_existing_secret(conn, existing, data, agent) do
+  defp update_existing_secret(conn, existing, data) do
     case Secrets.update_secret(existing.id, %{"secret_data" => data},
-           created_by: agent.agent_id,
+           created_by: current_actor_id(conn),
            change_description: "Updated via API",
            via_rotator_slug: "api"
          ) do
@@ -152,8 +148,6 @@ defmodule SecretHub.Web.SecretApiController do
   end
 
   defp create_new_secret(conn, path, secret_path, data) do
-    agent = conn.assigns[:current_agent]
-
     name =
       path
       |> String.split("/")
@@ -169,7 +163,7 @@ defmodule SecretHub.Web.SecretApiController do
       "rotator_slug" => "api",
       "ttl_seconds" => 0,
       "description" => "Created via API",
-      "created_by" => agent && agent.id
+      "created_by" => current_actor_id(conn)
     }
 
     case Secrets.create_secret(attrs) do
@@ -195,15 +189,15 @@ defmodule SecretHub.Web.SecretApiController do
   end
 
   defp read_secret(conn, secret_path, _version) do
-    agent = conn.assigns[:current_agent]
+    actor = current_actor(conn)
 
     case Secrets.read_decrypted(secret_path) do
       {:ok, decrypted_data, secret} ->
         Audit.log_event(%{
           event_type: "secret.accessed",
-          actor_type: "agent",
-          actor_id: agent && agent.id,
-          agent_id: agent && agent.id,
+          actor_type: actor.type,
+          actor_id: actor.id,
+          agent_id: actor.agent_id,
           secret_id: secret.id,
           secret_type: to_string(secret.secret_type),
           access_granted: true,
@@ -277,13 +271,13 @@ defmodule SecretHub.Web.SecretApiController do
   # Shared response helpers
 
   defp forbidden_response(conn) do
-    agent = conn.assigns[:current_agent]
+    actor = current_actor(conn)
 
     Audit.log_event(%{
       event_type: "secret.access_denied",
-      actor_type: "agent",
-      actor_id: agent && agent.id,
-      agent_id: agent && agent.id,
+      actor_type: actor.type,
+      actor_id: actor.id,
+      agent_id: actor.agent_id,
       access_granted: false,
       denial_reason: "policy_denied"
     })
@@ -315,9 +309,9 @@ defmodule SecretHub.Web.SecretApiController do
     |> String.replace("/", ".")
   end
 
-  defp check_policy(agent, vault_path, operation) do
-    # Get policies associated with the agent
-    policies = agent.policies || []
+  defp check_policy(conn, vault_path, operation) do
+    policies = conn.assigns[:current_policies] || []
+    candidate_paths = policy_candidate_paths(vault_path)
 
     matching =
       Enum.find(policies, fn policy ->
@@ -325,13 +319,20 @@ defmodule SecretHub.Web.SecretApiController do
         patterns = doc["allowed_secrets"] || []
         operations = doc["allowed_operations"] || []
 
-        path_matches?(vault_path, patterns) and operation in operations
+        path_matches?(candidate_paths, patterns) and operation_allowed?(operation, operations)
       end)
 
     if matching, do: :ok, else: {:error, "No policy allows access"}
   end
 
+  defp operation_allowed?(_operation, []), do: true
+  defp operation_allowed?(operation, operations), do: operation in operations
+
   defp path_matches?(_path, []), do: false
+
+  defp path_matches?(paths, patterns) when is_list(paths) do
+    Enum.any?(paths, &path_matches?(&1, patterns))
+  end
 
   defp path_matches?(path, patterns) do
     Enum.any?(patterns, fn pattern ->
@@ -346,6 +347,42 @@ defmodule SecretHub.Web.SecretApiController do
         _ -> path == pattern
       end
     end)
+  end
+
+  defp policy_candidate_paths("secret/data/" <> path) do
+    [path, dot_path(path), "secret/data/" <> path, "secret/data/" <> dot_path(path)]
+    |> Enum.uniq()
+  end
+
+  defp policy_candidate_paths("secret/metadata/" <> path) do
+    [path, dot_path(path), "secret/metadata/" <> path, "secret/metadata/" <> dot_path(path)]
+    |> Enum.uniq()
+  end
+
+  defp policy_candidate_paths(path), do: [path, dot_path(path)] |> Enum.uniq()
+
+  defp dot_path(path), do: String.replace(path, "/", ".")
+
+  defp current_actor(conn) do
+    actor = conn.assigns[:current_actor] || %{}
+
+    %{
+      type: Map.get(actor, :type, "unknown"),
+      id: Map.get(actor, :id),
+      agent_id: current_agent_id(conn)
+    }
+  end
+
+  defp current_actor_id(conn) do
+    actor = current_actor(conn)
+    actor.id || "unknown"
+  end
+
+  defp current_agent_id(conn) do
+    case conn.assigns[:current_agent] do
+      %{id: id} -> id
+      _ -> nil
+    end
   end
 
   defp read_specific_version(conn, secret_path, version_str) do

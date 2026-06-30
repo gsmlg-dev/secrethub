@@ -14,6 +14,9 @@ defmodule SecretHub.CLI.Commands.LoginCommand do
     server = Keyword.get(opts, :server)
 
     cond do
+      is_nil(role_id) and is_nil(secret_id) ->
+        Auth.login_with_cli_access(server)
+
       is_nil(role_id) ->
         {:error, "Missing required option: --role-id"}
 
@@ -52,5 +55,12 @@ defmodule SecretHub.CLI.Commands.LoginCommand do
         Output.info("Not authenticated")
         {:ok, "Not authenticated"}
     end
+  end
+
+  @doc """
+  Renews the current authentication token.
+  """
+  def renew(_opts) do
+    Auth.renew()
   end
 end

@@ -56,6 +56,9 @@
           <:menu id="pending_agents" to={~p"/admin/pending-agents"}>
             <.dm_mdi name="server-plus" class="w-5 h-5" /> Pending Agents
           </:menu>
+          <:menu id="cli_access" to={~p"/admin/cli-access"}>
+            <.dm_mdi name="console" class="w-5 h-5" /> CLI Access
+          </:menu>
         </.dm_left_menu_group>
 
         <.dm_left_menu_group active={to_string(@active_nav)}>

@@ -47,6 +47,15 @@ defmodule SecretHub.Web.Router do
       scope: :auth
   end
 
+  pipeline :cli_access_poll_api do
+    plug :api
+
+    plug SecretHub.Web.Plugs.RateLimiter,
+      max_requests: 90,
+      window_ms: 60_000,
+      scope: :cli_access_poll
+  end
+
   pipeline :agent_enrollment_api do
     plug :api
 
@@ -101,6 +110,7 @@ defmodule SecretHub.Web.Router do
       live "/agents", AgentMonitoringLive, :index
       live "/pending-agents", AgentPendingLive, :index
       live "/pending-agents/:id", AgentPendingLive, :show
+      live "/cli-access", CliAccessLive, :index
       live "/agents/:id", AgentMonitoringLive, :show
       live "/secrets", SecretManagementLive, :index
       live "/secrets/:id/versions", SecretVersionHistoryLive, :index
@@ -200,11 +210,26 @@ defmodule SecretHub.Web.Router do
 
     # AppRole login (public, rate-limited)
     post "/login", AuthController, :login
+    post "/renew", AuthController, :renew
 
     # Public endpoints for AppRole authentication (rate limited)
     get "/role/:role_name", AuthController, :get_role
     post "/role/:role_name/secret-id", AuthController, :rotate_secret_id
     get "/role/:role_name/role-id", AuthController, :get_role_id
+  end
+
+  # CLI browser-approved login request creation (public, strictly rate limited)
+  scope "/v1/auth", SecretHub.Web do
+    pipe_through :auth_api
+
+    post "/cli-access", CliAccessController, :create
+  end
+
+  # CLI browser-approved login polling (public, rate limited for polling cadence)
+  scope "/v1/auth", SecretHub.Web do
+    pipe_through :cli_access_poll_api
+
+    get "/cli-access/:request_id", CliAccessController, :poll
   end
 
   # Token-authenticated pipeline for Vault-style API

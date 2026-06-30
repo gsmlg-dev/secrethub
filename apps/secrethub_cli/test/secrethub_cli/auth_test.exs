@@ -14,6 +14,9 @@ defmodule SecretHub.CLI.AuthTest do
 
     # Mock the config directory
     original_config_dir = Application.get_env(:secrethub_cli, :config_dir)
+    original_token_renewer = Application.get_env(:secrethub_cli, :token_renewer)
+    original_cli_access_requester = Application.get_env(:secrethub_cli, :cli_access_requester)
+    original_cli_access_poller = Application.get_env(:secrethub_cli, :cli_access_poller)
     Application.put_env(:secrethub_cli, :config_dir, temp_dir)
 
     on_exit(fn ->
@@ -23,6 +26,24 @@ defmodule SecretHub.CLI.AuthTest do
         Application.put_env(:secrethub_cli, :config_dir, original_config_dir)
       else
         Application.delete_env(:secrethub_cli, :config_dir)
+      end
+
+      if original_token_renewer do
+        Application.put_env(:secrethub_cli, :token_renewer, original_token_renewer)
+      else
+        Application.delete_env(:secrethub_cli, :token_renewer)
+      end
+
+      if original_cli_access_requester do
+        Application.put_env(:secrethub_cli, :cli_access_requester, original_cli_access_requester)
+      else
+        Application.delete_env(:secrethub_cli, :cli_access_requester)
+      end
+
+      if original_cli_access_poller do
+        Application.put_env(:secrethub_cli, :cli_access_poller, original_cli_access_poller)
+      else
+        Application.delete_env(:secrethub_cli, :cli_access_poller)
       end
     end)
 
@@ -58,6 +79,45 @@ defmodule SecretHub.CLI.AuthTest do
       # Mock response with missing required fields
       # Would test error handling
       assert true
+    end
+  end
+
+  describe "login_with_cli_access/2" do
+    test "shows the 6 character code, polls until approval, and saves the token" do
+      expires_at = DateTime.utc_now() |> DateTime.add(600, :second)
+      token_expires_at = DateTime.utc_now() |> DateTime.add(86_400, :second)
+
+      Application.put_env(:secrethub_cli, :cli_access_requester, fn server, metadata ->
+        send(self(), {:cli_access_request, server, metadata})
+
+        {:ok,
+         %{
+           request_id: "request-123",
+           user_code: "ABC234",
+           expires_at: expires_at,
+           interval: 0
+         }}
+      end)
+
+      Application.put_env(:secrethub_cli, :cli_access_poller, fn
+        server, "request-123" ->
+          send(self(), {:cli_access_poll, server})
+          {:approved, %{token: "approved-token", expires_at: token_expires_at}}
+      end)
+
+      output =
+        capture_io(fn ->
+          assert {:ok, "Authentication successful"} =
+                   Auth.login_with_cli_access("https://core.example.com", poll_interval_ms: 0)
+        end)
+
+      assert output =~ "CLI Access Code: ABC234"
+      assert output =~ "Admin > Access Control > CLI Access"
+      assert output =~ "Successfully authenticated with SecretHub"
+      assert_receive {:cli_access_request, "https://core.example.com", metadata}
+      assert metadata["client_name"]
+      assert_receive {:cli_access_poll, "https://core.example.com"}
+      assert {:ok, "approved-token"} = Auth.get_token()
     end
   end
 
@@ -205,12 +265,40 @@ defmodule SecretHub.CLI.AuthTest do
 
       assert :ok = Config.save(config)
 
+      Application.put_env(:secrethub_cli, :token_renewer, fn _server, _token ->
+        {:error, "Token renewal failed"}
+      end)
+
       output =
         capture_io(:stderr, fn ->
           assert {:error, :not_authenticated} = Auth.ensure_authenticated()
         end)
 
       assert output =~ "expired"
+    end
+
+    test "renews an expired local token before returning it" do
+      expired_at = DateTime.utc_now() |> DateTime.add(-60, :second)
+      renewed_expires_at = DateTime.utc_now() |> DateTime.add(86_400, :second)
+
+      config = %{
+        "server_url" => "https://secrethub.example.com",
+        "auth" => %{
+          "token" => "expired-locally",
+          "expires_at" => DateTime.to_iso8601(expired_at)
+        }
+      }
+
+      assert :ok = Config.save(config)
+
+      Application.put_env(:secrethub_cli, :token_renewer, fn server, token ->
+        send(self(), {:renew_token, server, token})
+        {:ok, %{token: "renewed-token", expires_at: renewed_expires_at}}
+      end)
+
+      assert {:ok, "renewed-token"} = Auth.ensure_authenticated()
+      assert_receive {:renew_token, "https://secrethub.example.com", "expired-locally"}
+      assert {:ok, "renewed-token"} = Auth.get_token()
     end
 
     test "returns error and shows message when not authenticated" do
@@ -241,6 +329,21 @@ defmodule SecretHub.CLI.AuthTest do
       headers = Auth.auth_headers()
 
       assert headers == [{"authorization", "Bearer test-token-abc"}]
+    end
+
+    test "returns x-vault-token header for Vault-compatible APIs" do
+      expires_at = DateTime.utc_now() |> DateTime.add(3600, :second)
+
+      config = %{
+        "server_url" => "http://localhost:4000",
+        "auth" => %{
+          "token" => "vault-token-abc",
+          "expires_at" => DateTime.to_iso8601(expires_at)
+        }
+      }
+
+      assert :ok = Config.save(config)
+      assert Auth.vault_headers() == [{"x-vault-token", "vault-token-abc"}]
     end
 
     test "returns empty list when not authenticated" do

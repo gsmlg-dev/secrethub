@@ -118,6 +118,16 @@ defmodule SecretHub.CLI.Config do
     end
   end
 
+  @doc """
+  Gets the stored authentication token without checking local expiration.
+  """
+  def get_stored_auth_token do
+    case get("auth.token") do
+      {:ok, token} when is_binary(token) -> {:ok, token}
+      _ -> {:error, :not_found}
+    end
+  end
+
   defp check_token_expiration(token) do
     case get("auth.expires_at") do
       {:ok, expires_str} when is_binary(expires_str) ->

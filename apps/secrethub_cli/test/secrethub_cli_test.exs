@@ -88,6 +88,18 @@ defmodule SecretHub.CLITest do
       assert Keyword.get(opts, :secret_id) == "test-secret"
     end
 
+    test "parses login command without credentials for CLI access approval" do
+      args = ["login"]
+      assert {:ok, {:login, []}, opts} = CLI.parse_args(args)
+      refute Keyword.has_key?(opts, :role_id)
+      refute Keyword.has_key?(opts, :secret_id)
+    end
+
+    test "parses renew command" do
+      args = ["renew"]
+      assert {:ok, :renew, _opts} = CLI.parse_args(args)
+    end
+
     test "parses logout command" do
       args = ["logout"]
       assert {:ok, :logout, _opts} = CLI.parse_args(args)

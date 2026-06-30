@@ -138,6 +138,8 @@ defmodule SecretHub.Web.PolicyEditorLive do
 
   @impl true
   def handle_event("add_secret_pattern", %{"pattern" => pattern}, socket) do
+    pattern = String.trim(pattern)
+
     if pattern != "" do
       current_patterns = socket.assigns.form_data["allowed_secrets"]
       new_patterns = [pattern | current_patterns] |> Enum.uniq()
@@ -439,22 +441,22 @@ defmodule SecretHub.Web.PolicyEditorLive do
           to match any segment.
         </p>
 
-        <div class="flex gap-2 mb-3">
+        <form id="secret-pattern-form" phx-submit="add_secret_pattern" class="flex gap-2 mb-3">
           <input
             type="text"
+            name="pattern"
             id="new-pattern-input"
             class="input flex-1 border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm"
             placeholder="e.g., prod.db.*, *.password"
+            autocomplete="off"
           />
           <button
-            type="button"
-            phx-click="add_secret_pattern"
-            phx-value-pattern={get_input_value("new-pattern-input")}
+            type="submit"
             class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-primary-content bg-primary hover:bg-primary"
           >
             Add Pattern
           </button>
-        </div>
+        </form>
 
         <div class="mb-4">
           <h4 class="text-xs font-medium text-on-surface mb-2">Example Patterns:</h4>
@@ -814,7 +816,6 @@ defmodule SecretHub.Web.PolicyEditorLive do
   end
 
   # Helper functions for form values (would need JS hooks in production)
-  defp get_input_value(_id), do: ""
   defp get_select_value(_id), do: ""
   defp get_textarea_value(_id), do: ""
   defp build_time_range(_start_id, _end_id), do: ""

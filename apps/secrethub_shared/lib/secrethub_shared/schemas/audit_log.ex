@@ -137,6 +137,9 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "approle_login_failed",
       "approle_login_success",
       "approle_secret_rotated",
+      "approle_token_issued",
+      "approle_token_renewed",
+      "approle_token_revoked",
       "approle.unauthorized_access",
       # Policy changes
       "policy.created",

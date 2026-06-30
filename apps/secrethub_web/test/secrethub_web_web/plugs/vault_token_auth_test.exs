@@ -1,12 +1,15 @@
 defmodule SecretHub.Web.Plugs.VaultTokenAuthTest do
   use SecretHub.Web.ConnCase, async: false
 
+  alias SecretHub.Core.Auth.{AppRole, CliAccess}
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Agent
   alias SecretHub.Web.Plugs.VaultTokenAuth
 
   describe "VaultTokenAuth plug" do
     setup do
+      ensure_current_audit_partition!()
+
       # Create a test agent in active state
       {:ok, agent} =
         %Agent{}
@@ -180,5 +183,43 @@ defmodule SecretHub.Web.Plugs.VaultTokenAuthTest do
       assert conn.assigns[:current_agent].agent_id == agent.agent_id
       assert conn.assigns[:agent_id] == agent.agent_id
     end
+
+    test "returns 401 when CLI access backing an AppRole token is revoked", %{
+      conn: conn,
+      opts: opts
+    } do
+      {:ok, role} =
+        AppRole.create_role("vault-cli-access-role",
+          policies: ["secret-read"],
+          secret_id_num_uses: 0
+        )
+
+      {:ok, request} = CliAccess.create_request(%{"client_name" => "cli"}, "127.0.0.1")
+      {:ok, _approved} = CliAccess.approve_request(request.id, role.role_id, "admin")
+      {:approved, %{token: token}} = CliAccess.poll_request(request.request_id)
+      {:ok, _revoked} = CliAccess.revoke_request(request.id, "admin")
+
+      conn =
+        conn
+        |> put_req_header("x-vault-token", token)
+        |> VaultTokenAuth.call(opts)
+
+      assert conn.halted
+      assert conn.status == 401
+      assert Jason.decode!(conn.resp_body)["error"] == "CLI access has been revoked"
+    end
+  end
+
+  defp ensure_current_audit_partition! do
+    today = Date.utc_today()
+    month = String.pad_leading(to_string(today.month), 2, "0")
+    partition_name = "audit_logs_y#{today.year}m#{month}"
+    from_date = %Date{today | day: 1}
+    to_date = Date.add(from_date, Date.days_in_month(from_date))
+
+    Repo.query!("""
+    CREATE TABLE IF NOT EXISTS #{partition_name} PARTITION OF audit_logs
+    FOR VALUES FROM ('#{Date.to_iso8601(from_date)}') TO ('#{Date.to_iso8601(to_date)}')
+    """)
   end
 end

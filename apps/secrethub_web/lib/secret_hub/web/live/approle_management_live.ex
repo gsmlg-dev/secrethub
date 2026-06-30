@@ -27,7 +27,10 @@ defmodule SecretHub.Web.AppRoleManagementLive do
       |> assign(:new_role_name, "")
       |> assign(:new_role_policies, [])
       |> assign(:new_role_result, nil)
+      |> assign(:new_secret_id, nil)
       |> assign(:selected_role, nil)
+      |> assign(:delete_role_target, nil)
+      |> assign(:editing_role_policies, nil)
       |> assign(:page_title, "AppRole Management")
 
     {:ok, socket}
@@ -41,6 +44,16 @@ defmodule SecretHub.Web.AppRoleManagementLive do
       |> assign(:available_policies, list_available_policies())
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("open_create_form", _params, socket) do
+    {:noreply, assign(socket, :creating_role, true)}
+  end
+
+  @impl true
+  def handle_event("close_create_form", _params, socket) do
+    {:noreply, close_create_form(socket)}
   end
 
   @impl true
@@ -61,6 +74,9 @@ defmodule SecretHub.Web.AppRoleManagementLive do
           |> assign(:creating_role, false)
           |> assign(:new_role_name, "")
           |> assign(:new_role_policies, [])
+          |> assign(:new_secret_id, nil)
+          |> assign(:delete_role_target, nil)
+          |> assign(:editing_role_policies, nil)
           |> assign(:roles, list_approles())
           |> put_flash(
             :info,
@@ -72,6 +88,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
       {:error, reason} ->
         socket =
           socket
+          |> assign(:creating_role, true)
           |> assign(:new_role_name, role_name)
           |> assign(:new_role_policies, policies)
           |> put_flash(:error, "Failed to create AppRole: #{inspect(reason)}")
@@ -86,13 +103,22 @@ defmodule SecretHub.Web.AppRoleManagementLive do
   end
 
   @impl true
+  def handle_event("close_generated_secret_id", _params, socket) do
+    {:noreply, assign(socket, :new_secret_id, nil)}
+  end
+
+  @impl true
   def handle_event("generate_secret_id", %{"role_id" => role_id}, socket) do
     case AppRole.generate_secret_id(role_id) do
       {:ok, secret_id} ->
         socket =
           socket
           |> put_flash(:info, "New SecretID generated successfully!")
-          |> assign(:new_secret_id, %{role_id: role_id, secret_id: secret_id})
+          |> assign(:new_secret_id, %{
+            role_name: role_name_for(socket.assigns.roles, role_id),
+            role_id: role_id,
+            secret_id: secret_id
+          })
 
         {:noreply, socket}
 
@@ -103,18 +129,40 @@ defmodule SecretHub.Web.AppRoleManagementLive do
   end
 
   @impl true
-  def handle_event("delete_role", %{"role_id" => role_id}, socket) do
+  def handle_event("show_delete_role_modal", %{"role_id" => role_id}, socket) do
+    case delete_role_target(socket.assigns.roles, role_id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Failed to load AppRole for deletion")}
+
+      target ->
+        {:noreply, assign(socket, :delete_role_target, target)}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_delete_role", _params, socket) do
+    {:noreply, assign(socket, :delete_role_target, nil)}
+  end
+
+  @impl true
+  def handle_event("confirm_delete_role", %{"role_id" => role_id}, socket) do
     case AppRole.delete_role(role_id) do
       :ok ->
         socket =
           socket
           |> assign(:roles, list_approles())
+          |> assign(:delete_role_target, nil)
+          |> clear_selected_role(role_id)
           |> put_flash(:info, "AppRole deleted successfully")
 
         {:noreply, socket}
 
       {:error, reason} ->
-        socket = put_flash(socket, :error, "Failed to delete AppRole: #{inspect(reason)}")
+        socket =
+          socket
+          |> assign(:delete_role_target, nil)
+          |> put_flash(:error, "Failed to delete AppRole: #{inspect(reason)}")
+
         {:noreply, socket}
     end
   end
@@ -136,6 +184,47 @@ defmodule SecretHub.Web.AppRoleManagementLive do
   end
 
   @impl true
+  def handle_event("edit_role_policies", %{"role_id" => role_id}, socket) do
+    case edit_role_policies_target(socket.assigns.roles, role_id) do
+      nil ->
+        {:noreply, put_flash(socket, :error, "Failed to load AppRole policies")}
+
+      target ->
+        {:noreply, assign(socket, :editing_role_policies, target)}
+    end
+  end
+
+  @impl true
+  def handle_event("cancel_edit_role_policies", _params, socket) do
+    {:noreply, assign(socket, :editing_role_policies, nil)}
+  end
+
+  @impl true
+  def handle_event("update_role_policies", %{"role_id" => role_id} = params, socket) do
+    policies = normalize_selected_policies(Map.get(params, "policies", []))
+
+    case AppRole.update_role_policies(role_id, policies) do
+      {:ok, updated_role} ->
+        socket =
+          socket
+          |> assign(:roles, list_approles())
+          |> assign(:editing_role_policies, nil)
+          |> update_selected_role_policies(updated_role)
+          |> put_flash(:info, "AppRole policies updated successfully")
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        socket =
+          socket
+          |> assign(:editing_role_policies, nil)
+          |> put_flash(:error, "Failed to update AppRole policies: #{inspect(reason)}")
+
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
   def render(assigns) do
     ~H"""
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -145,12 +234,12 @@ defmodule SecretHub.Web.AppRoleManagementLive do
           Manage AppRoles for agent authentication. Each AppRole has a RoleID and one or more SecretIDs.
         </p>
       </div>
-      
+
     <!-- Create New AppRole Button -->
       <div class="mb-6">
         <button
-          phx-click="toggle_create_form"
-          class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+          phx-click="open_create_form"
+          class="inline-flex cursor-pointer items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
         >
           <svg
             class="-ml-1 mr-2 h-5 w-5"
@@ -167,14 +256,46 @@ defmodule SecretHub.Web.AppRoleManagementLive do
           Create New AppRole
         </button>
       </div>
-      
-    <!-- Create Role Form -->
+
+    <!-- Create Role Modal -->
       <%= if @creating_role do %>
-        <div class="bg-surface-container shadow sm:rounded-lg mb-6">
-          <div class="px-4 py-5 sm:p-6">
-            <h3 class="text-lg leading-6 font-medium text-on-surface">Create New AppRole</h3>
-            <div class="mt-4">
-              <form phx-submit="create_role" class="space-y-4">
+        <div
+          class="fixed inset-0 z-50 overflow-y-auto"
+          aria-labelledby="create-approle-title"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            class="fixed inset-0 bg-surface-container-low/80 transition-opacity"
+            aria-hidden="true"
+            phx-click="close_create_form"
+          >
+          </div>
+          <div class="relative z-10 flex min-h-screen items-center justify-center p-4">
+            <div
+              data-create-role-modal-panel
+              class="w-full max-w-lg bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:p-6"
+            >
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h3 class="text-lg leading-6 font-medium text-on-surface" id="create-approle-title">
+                    Create New AppRole
+                  </h3>
+                  <p class="mt-1 text-sm text-on-surface-variant">
+                    Assign policies before showing the one-time RoleID and SecretID.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  phx-click="close_create_form"
+                  class="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                  aria-label="Close create AppRole modal"
+                >
+                  <.dm_mdi name="close" class="size-5" />
+                </button>
+              </div>
+
+              <form phx-submit="create_role" class="mt-5 space-y-4">
                 <div>
                   <label for="role_name" class="block text-sm font-medium text-on-surface">
                     Role Name
@@ -200,7 +321,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                     multiple
                     size={policy_select_size(@available_policies)}
                     disabled={Enum.empty?(@available_policies)}
-                    class="select mt-1 block w-full border border-outline-variant rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                    class="mt-1 block w-full overflow-y-auto rounded-md border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <%= for policy <- @available_policies do %>
                       <option
@@ -221,17 +342,17 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                   </p>
                 </div>
 
-                <div class="flex justify-end space-x-3">
+                <div class="flex justify-end space-x-3 pt-2">
                   <button
                     type="button"
-                    phx-click="toggle_create_form"
-                    class="inline-flex items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                    phx-click="close_create_form"
+                    class="inline-flex cursor-pointer items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                    class="inline-flex cursor-pointer items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                   >
                     Create AppRole
                   </button>
@@ -244,21 +365,21 @@ defmodule SecretHub.Web.AppRoleManagementLive do
       <!-- New Role Credentials Modal -->
       <%= if @new_role_result do %>
         <div
-          class="fixed z-10 inset-0 overflow-y-auto"
+          class="fixed inset-0 z-50 overflow-y-auto"
           aria-labelledby="modal-title"
           role="dialog"
           aria-modal="true"
         >
-          <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+          <div
+            class="fixed inset-0 bg-surface-container-low/80 transition-opacity"
+            aria-hidden="true"
+          >
+          </div>
+          <div class="relative z-10 flex min-h-screen items-center justify-center p-4">
             <div
-              class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 transition-opacity"
-              aria-hidden="true"
+              data-credential-modal-panel
+              class="w-full max-w-lg bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:p-6"
             >
-            </div>
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">
-              &#8203;
-            </span>
-            <div class="inline-block align-bottom bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
               <div>
                 <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-success/10">
                   <svg
@@ -290,7 +411,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                         id="copy-new-approle-credentials"
                         phx-hook="CopyToClipboard"
                         data-copy-value={approle_credentials_text(@new_role_result)}
-                        class="btn btn-outline btn-sm shrink-0"
+                        class="btn btn-outline btn-sm shrink-0 cursor-pointer"
                         title="Copy all credentials"
                         aria-label="Copy all credentials"
                       >
@@ -298,29 +419,30 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                       </button>
                     </div>
 
-                    <div class="bg-surface-container-low p-4 rounded-md text-left space-y-3">
+                    <dl class="bg-surface-container-low p-4 rounded-md text-left space-y-3">
                       <%= for {label, field, value} <- approle_credential_fields(@new_role_result) do %>
                         <div>
-                          <label
-                            for={"new-approle-credential-#{field}"}
-                            class="block text-xs font-medium text-on-surface-variant uppercase"
-                          >
+                          <dt class="block text-xs font-medium text-on-surface-variant uppercase">
                             {label}
-                          </label>
+                          </dt>
                           <div class="mt-1 flex min-w-0 rounded border border-outline-variant bg-surface-container focus-within:ring-2 focus-within:ring-primary">
-                            <input
-                              id={"new-approle-credential-#{field}"}
-                              type="text"
-                              readonly
-                              value={value}
-                              class="input min-w-0 flex-1 bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none"
-                            />
+                            <dd
+                              data-copyable-credential={field}
+                              tabindex="0"
+                              class={[
+                                "block min-w-0 flex-1 cursor-text overflow-x-auto whitespace-nowrap bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary",
+                                field == "role-name" && "select-text",
+                                field != "role-name" && "select-all"
+                              ]}
+                            >
+                              {value}
+                            </dd>
                             <button
                               type="button"
                               id={"copy-new-approle-#{field}"}
                               phx-hook="CopyToClipboard"
                               data-copy-value={value}
-                              class="inline-flex h-10 w-10 shrink-0 items-center justify-center border-l border-outline-variant text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                              class="inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center border-l border-outline-variant text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
                               title={"Copy #{label}"}
                               aria-label={"Copy #{label}"}
                             >
@@ -329,7 +451,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                           </div>
                         </div>
                       <% end %>
-                    </div>
+                    </dl>
 
                     <p class="mt-4 text-xs text-on-surface-variant">
                       Use these credentials to configure your agent. The RoleID is reusable, but the SecretID should be single-use.
@@ -341,7 +463,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                 <button
                   type="button"
                   phx-click="close_credentials"
-                  class="inline-flex justify-center w-full rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-primary-content hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:text-sm"
+                  class="inline-flex w-full cursor-pointer justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-primary-content hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:text-sm"
                 >
                   I've Saved These Credentials
                 </button>
@@ -350,26 +472,123 @@ defmodule SecretHub.Web.AppRoleManagementLive do
           </div>
         </div>
       <% end %>
-      
+
+    <!-- Generated SecretID Modal -->
+      <%= if @new_secret_id do %>
+        <div
+          class="fixed inset-0 z-50 overflow-y-auto"
+          aria-labelledby="generated-secret-id-title"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            class="fixed inset-0 bg-surface-container-low/80 transition-opacity"
+            aria-hidden="true"
+          >
+          </div>
+          <div class="relative z-10 flex min-h-screen items-center justify-center p-4">
+            <div
+              data-generated-secret-id-modal-panel
+              class="w-full max-w-lg bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:p-6"
+            >
+              <div>
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-success/10">
+                  <.dm_mdi name="key-plus" class="size-6 text-success" />
+                </div>
+                <div class="mt-3 text-center sm:mt-5">
+                  <h3
+                    class="text-lg leading-6 font-medium text-on-surface"
+                    id="generated-secret-id-title"
+                  >
+                    SecretID Generated
+                  </h3>
+                  <div class="mt-4">
+                    <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p class="text-sm text-error font-semibold">
+                        Save this SecretID now. It will only be shown once.
+                      </p>
+                      <button
+                        type="button"
+                        id="copy-generated-approle-secret-id-details"
+                        phx-hook="CopyToClipboard"
+                        data-copy-value={generated_secret_id_text(@new_secret_id)}
+                        class="btn btn-outline btn-sm shrink-0 cursor-pointer"
+                        title="Copy generated SecretID details"
+                        aria-label="Copy generated SecretID details"
+                      >
+                        <.dm_mdi name="content-copy" class="size-4" /> Copy all
+                      </button>
+                    </div>
+
+                    <dl class="bg-surface-container-low p-4 rounded-md text-left space-y-3">
+                      <%= for {label, field, value} <- generated_secret_id_fields(@new_secret_id) do %>
+                        <div>
+                          <dt class="block text-xs font-medium text-on-surface-variant uppercase">
+                            {label}
+                          </dt>
+                          <div class="mt-1 flex min-w-0 rounded border border-outline-variant bg-surface-container focus-within:ring-2 focus-within:ring-primary">
+                            <dd
+                              data-copyable-credential={field}
+                              tabindex="0"
+                              class={[
+                                "block min-w-0 flex-1 cursor-text overflow-x-auto whitespace-nowrap bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary",
+                                field == "generated-role-name" && "select-text",
+                                field != "generated-role-name" && "select-all"
+                              ]}
+                            >
+                              {value}
+                            </dd>
+                            <button
+                              type="button"
+                              id={"copy-generated-approle-#{field}"}
+                              phx-hook="CopyToClipboard"
+                              data-copy-value={value}
+                              class="inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center border-l border-outline-variant text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                              title={"Copy #{label}"}
+                              aria-label={"Copy #{label}"}
+                            >
+                              <.dm_mdi name="content-copy" class="size-4" />
+                            </button>
+                          </div>
+                        </div>
+                      <% end %>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-5 sm:mt-6">
+                <button
+                  type="button"
+                  phx-click="close_generated_secret_id"
+                  class="inline-flex w-full cursor-pointer justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-primary-content hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary sm:text-sm"
+                >
+                  I've Saved This SecretID
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% end %>
+
     <!-- Role Details Modal -->
       <%= if @selected_role do %>
         <div
-          class="fixed z-10 inset-0 overflow-y-auto"
+          class="fixed inset-0 z-50 overflow-y-auto"
           aria-labelledby="role-details-title"
           role="dialog"
           aria-modal="true"
         >
-          <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+          <div
+            class="fixed inset-0 bg-surface-container-low/80 transition-opacity"
+            aria-hidden="true"
+            phx-click="close_role_details"
+          >
+          </div>
+          <div class="relative z-10 flex min-h-screen items-center justify-center p-4">
             <div
-              class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 transition-opacity"
-              aria-hidden="true"
-              phx-click="close_role_details"
+              data-role-details-modal-panel
+              class="w-full max-w-2xl bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all select-text sm:p-6"
             >
-            </div>
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">
-              &#8203;
-            </span>
-            <div class="inline-block align-bottom bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full sm:p-6">
               <div class="flex items-start justify-between gap-4">
                 <div>
                   <h3 class="text-lg leading-6 font-medium text-on-surface" id="role-details-title">
@@ -382,7 +601,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                 <button
                   type="button"
                   phx-click="close_role_details"
-                  class="inline-flex h-9 w-9 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                  class="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
                   aria-label="Close role details"
                 >
                   <.dm_mdi name="close" class="size-5" />
@@ -391,22 +610,23 @@ defmodule SecretHub.Web.AppRoleManagementLive do
 
               <div class="mt-6 space-y-5">
                 <div>
-                  <label class="block text-xs font-medium text-on-surface-variant uppercase">
+                  <span class="block text-xs font-medium text-on-surface-variant uppercase">
                     Role ID
-                  </label>
+                  </span>
                   <div class="mt-1 flex min-w-0 rounded border border-outline-variant bg-surface-container-low focus-within:ring-2 focus-within:ring-primary">
-                    <input
-                      type="text"
-                      readonly
-                      value={@selected_role.role_id}
-                      class="input min-w-0 flex-1 bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none"
-                    />
+                    <span
+                      data-copyable-credential="selected-role-id"
+                      tabindex="0"
+                      class="block min-w-0 flex-1 cursor-text overflow-x-auto whitespace-nowrap bg-transparent px-2 py-2 font-mono text-sm text-on-surface outline-none select-all focus:ring-2 focus:ring-primary"
+                    >
+                      {@selected_role.role_id}
+                    </span>
                     <button
                       type="button"
                       id="copy-selected-approle-role-id"
                       phx-hook="CopyToClipboard"
                       data-copy-value={@selected_role.role_id}
-                      class="inline-flex h-10 w-10 shrink-0 items-center justify-center border-l border-outline-variant text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                      class="inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center border-l border-outline-variant text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
                       title="Copy Role ID"
                       aria-label="Copy Role ID"
                     >
@@ -489,11 +709,107 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                 <button
                   type="button"
                   phx-click="close_role_details"
-                  class="inline-flex items-center rounded-md border border-outline-variant bg-surface-container px-4 py-2 text-sm font-medium text-on-surface shadow-sm hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-primary"
+                  class="inline-flex cursor-pointer items-center rounded-md border border-outline-variant bg-surface-container px-4 py-2 text-sm font-medium text-on-surface shadow-sm hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-primary"
                 >
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      <% end %>
+
+    <!-- Edit Policies Modal -->
+      <%= if @editing_role_policies do %>
+        <div
+          class="fixed inset-0 z-50 overflow-y-auto"
+          aria-labelledby="edit-approle-policies-title"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            class="fixed inset-0 bg-surface-container-low/80 transition-opacity"
+            aria-hidden="true"
+            phx-click="cancel_edit_role_policies"
+          >
+          </div>
+          <div class="relative z-10 flex min-h-screen items-center justify-center p-4">
+            <div
+              data-edit-policies-modal-panel
+              class="w-full max-w-lg bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:p-6"
+            >
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h3
+                    class="text-lg leading-6 font-medium text-on-surface"
+                    id="edit-approle-policies-title"
+                  >
+                    Edit AppRole Policies
+                  </h3>
+                  <p class="mt-1 text-sm text-on-surface-variant">
+                    {@editing_role_policies.role_name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  phx-click="cancel_edit_role_policies"
+                  class="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary"
+                  aria-label="Close edit policies modal"
+                >
+                  <.dm_mdi name="close" class="size-5" />
+                </button>
+              </div>
+
+              <form phx-submit="update_role_policies" class="mt-5 space-y-4">
+                <input type="hidden" name="role_id" value={@editing_role_policies.role_id} />
+
+                <div>
+                  <label for="edit_policies" class="block text-sm font-medium text-on-surface">
+                    Policies
+                  </label>
+                  <select
+                    name="policies[]"
+                    id="edit_policies"
+                    multiple
+                    size={policy_select_size(@available_policies)}
+                    disabled={Enum.empty?(@available_policies)}
+                    class="mt-1 block w-full overflow-y-auto rounded-md border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <%= for policy <- @available_policies do %>
+                      <option
+                        value={policy.name}
+                        selected={policy.name in @editing_role_policies.policies}
+                        title={policy.description}
+                      >
+                        {policy.name}
+                      </option>
+                    <% end %>
+                  </select>
+                  <p class="mt-1 text-sm text-on-surface-variant">
+                    <%= if Enum.empty?(@available_policies) do %>
+                      No policies are available yet.
+                    <% else %>
+                      Select one or more policies for this AppRole.
+                    <% end %>
+                  </p>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    phx-click="cancel_edit_role_policies"
+                    class="inline-flex cursor-pointer items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    class="inline-flex cursor-pointer items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-primary-content bg-primary hover:bg-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                  >
+                    Save Policies
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -559,22 +875,28 @@ defmodule SecretHub.Web.AppRoleManagementLive do
                     <button
                       phx-click="view_role"
                       phx-value-role_id={role.role_id}
-                      class="inline-flex items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                      class="inline-flex cursor-pointer items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                     >
                       View Details
                     </button>
                     <button
+                      phx-click="edit_role_policies"
+                      phx-value-role_id={role.role_id}
+                      class="inline-flex cursor-pointer items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                    >
+                      Edit Policies
+                    </button>
+                    <button
                       phx-click="generate_secret_id"
                       phx-value-role_id={role.role_id}
-                      class="inline-flex items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                      class="inline-flex cursor-pointer items-center px-3 py-1.5 border border-outline-variant shadow-sm text-xs font-medium rounded text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
                     >
                       Generate SecretID
                     </button>
                     <button
-                      phx-click="delete_role"
+                      phx-click="show_delete_role_modal"
                       phx-value-role_id={role.role_id}
-                      data-confirm="Are you sure you want to delete this AppRole? This action cannot be undone."
-                      class="inline-flex items-center px-3 py-1.5 border border-error shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-error"
+                      class="inline-flex cursor-pointer items-center px-3 py-1.5 border border-error shadow-sm text-xs font-medium rounded text-error bg-surface-container hover:bg-error/5 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-error"
                     >
                       Delete
                     </button>
@@ -585,6 +907,65 @@ defmodule SecretHub.Web.AppRoleManagementLive do
           <% end %>
         </ul>
       </div>
+
+    <!-- Delete AppRole Modal -->
+      <%= if @delete_role_target do %>
+        <div
+          class="fixed inset-0 z-50 overflow-y-auto"
+          aria-labelledby="delete-approle-title"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            class="fixed inset-0 bg-surface-container-low/80 transition-opacity"
+            aria-hidden="true"
+            phx-click="cancel_delete_role"
+          >
+          </div>
+          <div class="relative z-10 flex min-h-screen items-center justify-center p-4">
+            <div
+              data-delete-role-modal-panel
+              class="w-full max-w-lg bg-surface-container rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:p-6"
+            >
+              <div class="flex items-start gap-4">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-error/10">
+                  <.dm_mdi name="alert-circle" class="size-6 text-error" />
+                </div>
+                <div>
+                  <h3 class="text-lg leading-6 font-medium text-on-surface" id="delete-approle-title">
+                    Delete AppRole
+                  </h3>
+                  <p class="mt-2 text-sm text-on-surface-variant">
+                    Delete <span class="font-medium text-on-surface">{@delete_role_target.role_name}</span>?
+                    This action cannot be undone.
+                  </p>
+                  <p class="mt-2 font-mono text-xs text-on-surface-variant select-all">
+                    {@delete_role_target.role_id}
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  phx-click="cancel_delete_role"
+                  class="inline-flex cursor-pointer items-center px-4 py-2 border border-outline-variant shadow-sm text-sm font-medium rounded-md text-on-surface bg-surface-container hover:bg-surface-container-low focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  phx-click="confirm_delete_role"
+                  phx-value-role_id={@delete_role_target.role_id}
+                  class="inline-flex cursor-pointer items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-error-content bg-error hover:bg-error focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-error"
+                >
+                  Delete AppRole
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% end %>
     </div>
     """
   end
@@ -605,6 +986,71 @@ defmodule SecretHub.Web.AppRoleManagementLive do
     Policy
     |> order_by([p], asc: p.name)
     |> Repo.all()
+  end
+
+  defp close_create_form(socket) do
+    socket
+    |> assign(:creating_role, false)
+    |> assign(:new_role_name, "")
+    |> assign(:new_role_policies, [])
+  end
+
+  defp role_name_for(roles, role_id) do
+    roles
+    |> Enum.find(&(&1.role_id == role_id))
+    |> case do
+      nil -> nil
+      role -> role.role_name
+    end
+  end
+
+  defp delete_role_target(roles, role_id) do
+    roles
+    |> Enum.find(&(&1.role_id == role_id))
+    |> case do
+      nil -> nil
+      role -> %{role_id: role.role_id, role_name: role.role_name}
+    end
+  end
+
+  defp edit_role_policies_target(roles, role_id) do
+    roles
+    |> Enum.find(&(&1.role_id == role_id))
+    |> case do
+      nil ->
+        nil
+
+      role ->
+        %{
+          role_id: role.role_id,
+          role_name: role.role_name,
+          policies: role_policies(role)
+        }
+    end
+  end
+
+  defp clear_selected_role(socket, role_id) do
+    case socket.assigns.selected_role do
+      %{role_id: ^role_id} -> assign(socket, :selected_role, nil)
+      _role -> socket
+    end
+  end
+
+  defp update_selected_role_policies(socket, %{role_id: role_id} = updated_role) do
+    case socket.assigns.selected_role do
+      %{role_id: ^role_id} -> assign(socket, :selected_role, updated_role)
+      _role -> socket
+    end
+  end
+
+  defp role_policies(%{metadata: metadata, policies: policies}) do
+    metadata_policies = Map.get(metadata || %{}, "policies")
+
+    cond do
+      is_list(metadata_policies) -> metadata_policies
+      is_list(policies) -> policies
+      true -> []
+    end
   end
 
   defp normalize_selected_policies(policies) when is_list(policies) do
@@ -667,5 +1113,20 @@ defmodule SecretHub.Web.AppRoleManagementLive do
     Secret ID: #{result.secret_id}
     """
     |> String.trim()
+  end
+
+  defp generated_secret_id_fields(result) do
+    [
+      {"Role Name", "generated-role-name", result.role_name},
+      {"Role ID", "generated-role-id", result.role_id},
+      {"Secret ID", "generated-secret-id", result.secret_id}
+    ]
+    |> Enum.reject(fn {_label, _field, value} -> is_nil(value) or value == "" end)
+  end
+
+  defp generated_secret_id_text(result) do
+    result
+    |> generated_secret_id_fields()
+    |> Enum.map_join("\n", fn {label, _field, value} -> "#{label}: #{value}" end)
   end
 end

@@ -28,38 +28,17 @@ defmodule SecretHub.Web.AuthController do
   ```
   """
   def login(conn, %{"role_id" => role_id, "secret_id" => secret_id}) do
-    alias SecretHub.Core.{Agents, Audit}
+    alias SecretHub.Core.Agents
 
     case Agents.authenticate_with_approle(role_id, secret_id) do
       {:ok, %{certificate: certificate, agent: agent}} ->
-        # Generate a signed token for API access
-        payload = %{
-          agent_id: agent.agent_id,
-          agent_db_id: agent.id,
-          issued_at: DateTime.utc_now() |> DateTime.to_iso8601()
-        }
+        render_agent_login(conn, role_id, certificate, agent)
 
-        token = Phoenix.Token.sign(SecretHub.Web.Endpoint, "agent_auth", payload)
-
-        Audit.log_event(%{
-          event_type: "approle_login_success",
-          actor_type: "approle",
-          actor_id: agent.id,
-          agent_id: agent.id,
-          access_granted: true,
-          event_data: %{role_id: role_id, agent_id: agent.agent_id}
-        })
-
-        conn
-        |> put_status(:ok)
-        |> json(%{token: token, certificate: certificate.certificate_pem})
+      {:error, "Invalid credentials"} ->
+        login_with_managed_approle(conn, role_id, secret_id)
 
       {:error, reason} ->
-        status = if String.contains?(reason, "revoked"), do: :forbidden, else: :unauthorized
-
-        conn
-        |> put_status(status)
-        |> json(%{error: reason})
+        render_login_error(conn, reason)
     end
   end
 
@@ -67,6 +46,101 @@ defmodule SecretHub.Web.AuthController do
     conn
     |> put_status(:bad_request)
     |> json(%{error: "Missing role_id or secret_id"})
+  end
+
+  defp render_agent_login(conn, role_id, certificate, agent) do
+    alias SecretHub.Core.Audit
+
+    # Generate a signed token for API access
+    payload = %{
+      agent_id: agent.agent_id,
+      agent_db_id: agent.id,
+      issued_at: DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+
+    token = Phoenix.Token.sign(SecretHub.Web.Endpoint, "agent_auth", payload)
+
+    Audit.log_event(%{
+      event_type: "approle_login_success",
+      actor_type: "approle",
+      actor_id: agent.id,
+      agent_id: agent.id,
+      access_granted: true,
+      event_data: %{role_id: role_id, agent_id: agent.agent_id}
+    })
+
+    conn
+    |> put_status(:ok)
+    |> json(%{token: token, token_type: "agent", certificate: certificate.certificate_pem})
+  end
+
+  defp login_with_managed_approle(conn, role_id, secret_id) do
+    case AppRole.login(role_id, secret_id, get_client_ip(conn)) do
+      {:ok, %{token: token, policies: policies, role_name: role_name, ttl: ttl}} ->
+        render_approle_token(conn, token, role_name, policies, ttl)
+
+      {:error, reason} ->
+        render_login_error(conn, reason)
+    end
+  end
+
+  def renew(conn, _params) do
+    case get_req_header(conn, "x-vault-token") do
+      [token] when token != "" ->
+        case AppRole.renew_token(token) do
+          {:ok, %{token: token, policies: policies, role_name: role_name, ttl: ttl}} ->
+            render_approle_token(conn, token, role_name, policies, ttl)
+
+          {:error, reason} ->
+            render_login_error(conn, reason)
+        end
+
+      _ ->
+        conn
+        |> put_status(:unauthorized)
+        |> json(%{error: "Missing or empty X-Vault-Token header"})
+    end
+  end
+
+  defp render_approle_token(conn, token, role_name, policies, ttl) do
+    conn
+    |> put_status(:ok)
+    |> json(%{
+      token: token,
+      token_type: "approle",
+      role_name: role_name,
+      policies: policies,
+      ttl: ttl,
+      auth: %{
+        client_token: token,
+        lease_duration: ttl,
+        token_type: "bearer",
+        policies: policies,
+        metadata: %{role_name: role_name}
+      }
+    })
+  end
+
+  defp render_login_error(conn, reason) do
+    status = if String.contains?(reason, "revoked"), do: :forbidden, else: :unauthorized
+
+    conn
+    |> put_status(status)
+    |> json(%{error: reason})
+  end
+
+  defp get_client_ip(conn) do
+    case get_req_header(conn, "x-forwarded-for") do
+      [ip | _] ->
+        ip |> String.split(",") |> List.first() |> String.trim()
+
+      _ ->
+        conn.remote_ip
+        |> :inet.ntoa()
+        |> to_string()
+    end
+  rescue
+    _ -> "unknown"
   end
 
   @doc """

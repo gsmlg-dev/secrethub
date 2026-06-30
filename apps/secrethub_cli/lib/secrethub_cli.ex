@@ -10,6 +10,7 @@ defmodule SecretHub.CLI do
 
   ### Authentication
   - `login` - Authenticate with SecretHub server
+  - `renew` - Renew the current authentication token
   - `logout` - Clear authentication credentials
   - `whoami` - Show current authentication status
 
@@ -52,6 +53,7 @@ defmodule SecretHub.CLI do
   ## Examples
 
       # Login to SecretHub
+      secrethub login
       secrethub login --role-id <role-id> --secret-id <secret-id>
 
       # Get a secret
@@ -138,6 +140,7 @@ defmodule SecretHub.CLI do
   defp parse_command(["version"]), do: :version
   defp parse_command(["completion", shell | args]), do: {:completion, shell, args}
   defp parse_command(["login" | _]), do: {:login, []}
+  defp parse_command(["renew"]), do: :renew
   defp parse_command(["logout"]), do: :logout
   defp parse_command(["whoami"]), do: :whoami
 
@@ -179,6 +182,7 @@ defmodule SecretHub.CLI do
   defp execute({:ok, :version, _opts}), do: {:ok, "SecretHub CLI v#{@version}"}
   defp execute({:ok, {:completion, shell, _args}, _opts}), do: execute_completion(shell)
   defp execute({:ok, {:login, _}, opts}), do: LoginCommand.execute(opts)
+  defp execute({:ok, :renew, opts}), do: LoginCommand.renew(opts)
   defp execute({:ok, :logout, _opts}), do: Auth.logout()
   defp execute({:ok, :whoami, opts}), do: LoginCommand.whoami(opts)
 
@@ -251,6 +255,7 @@ defmodule SecretHub.CLI do
     COMMANDS:
         Authentication:
           login                    Authenticate with SecretHub
+          renew                    Renew authentication token
           logout                   Clear credentials
           whoami                   Show authentication status
 
@@ -295,7 +300,9 @@ defmodule SecretHub.CLI do
         --verbose                Detailed output
 
     EXAMPLES:
+        secrethub login
         secrethub login --role-id <id> --secret-id <secret>
+        secrethub renew
         secrethub secret get prod.db.password
         secrethub policy create --from-template business_hours
         secrethub agent list

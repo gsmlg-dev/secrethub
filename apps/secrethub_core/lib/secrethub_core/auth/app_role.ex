@@ -24,12 +24,20 @@ defmodule SecretHub.Core.Auth.AppRole do
   import Ecto.Query
 
   alias SecretHub.Core.{Audit, Repo}
-  alias SecretHub.Shared.Schemas.Role
+  alias SecretHub.Shared.Schemas.{CliAccessRequest, Role}
 
   # 10 minutes in seconds
   @secret_id_ttl_default 600
   # Single-use by default
   @max_secret_id_uses 1
+  # 30 days in seconds
+  @token_ttl_seconds 30 * 24 * 60 * 60
+
+  @doc """
+  Returns the lifetime used for AppRole client tokens.
+  """
+  @spec token_ttl_seconds() :: pos_integer()
+  def token_ttl_seconds, do: @token_ttl_seconds
 
   @doc """
   Creates a new AppRole with generated RoleID and SecretID.
@@ -68,6 +76,7 @@ defmodule SecretHub.Core.Auth.AppRole do
       role_id: role_id,
       role_name: role_name,
       auth_type: "approle",
+      policies: policies,
       metadata: %{
         "bind_secret_id" => bind_secret_id,
         "secret_id_ttl" => secret_id_ttl,
@@ -111,7 +120,7 @@ defmodule SecretHub.Core.Auth.AppRole do
       {:ok, %{token: "token", policies: ["secret-read"]}}
   """
   @spec login(String.t(), String.t(), String.t()) ::
-          {:ok, %{token: String.t(), policies: list(), role_name: String.t()}}
+          {:ok, %{token: String.t(), policies: list(), role_name: String.t(), ttl: pos_integer()}}
           | {:error, String.t()}
   def login(role_id, secret_id, source_ip \\ "unknown") do
     # Validate role_id is a valid UUID before querying
@@ -148,8 +157,7 @@ defmodule SecretHub.Core.Auth.AppRole do
 
             # Generate authentication token
             token = generate_auth_token(role)
-
-            policies = Map.get(role.metadata, "policies", [])
+            policies = role_policies(role)
 
             Logger.info("AppRole login successful: #{role.role_name}")
 
@@ -162,7 +170,8 @@ defmodule SecretHub.Core.Auth.AppRole do
              %{
                token: token,
                policies: policies,
-               role_name: role.role_name
+               role_name: role.role_name,
+               ttl: @token_ttl_seconds
              }}
 
           {:error, reason} ->
@@ -290,13 +299,104 @@ defmodule SecretHub.Core.Auth.AppRole do
     end
   end
 
+  @doc """
+  Issues an AppRole token for an existing role without requiring a SecretID.
+
+  This is intended for admin-approved flows such as CLI Access, where the admin
+  explicitly chooses which AppRole should back the issued token.
+  """
+  @spec issue_token_for_role(String.t(), String.t(), map()) ::
+          {:ok, %{token: String.t(), policies: list(), role_name: String.t(), ttl: pos_integer()}}
+          | {:error, String.t()}
+  def issue_token_for_role(role_id, source_ip \\ "unknown", token_metadata \\ %{}) do
+    case Repo.get_by(Role, role_id: role_id, auth_type: "approle") do
+      nil ->
+        {:error, "Role not found"}
+
+      %{enabled: false} ->
+        {:error, "Role disabled"}
+
+      role ->
+        policies = role_policies(role)
+        token = generate_auth_token(role, token_metadata)
+
+        audit_event("approle_token_issued", role.role_id, %{
+          role_name: role.role_name,
+          source_ip: source_ip
+        })
+
+        {:ok,
+         %{
+           token: token,
+           policies: policies,
+           role_name: role.role_name,
+           ttl: @token_ttl_seconds
+         }}
+    end
+  end
+
+  @doc """
+  Replaces the policies attached to an AppRole.
+
+  Updates both the role's policy field and metadata policy list so legacy callers
+  that read either location see the same policy bindings.
+  """
+  @spec update_role_policies(String.t(), [String.t()]) :: {:ok, map()} | {:error, String.t()}
+  def update_role_policies(role_id, policies) when is_list(policies) do
+    policies = normalize_policies(policies)
+
+    case Repo.get_by(Role, role_id: role_id, auth_type: "approle") do
+      nil ->
+        {:error, "Role not found"}
+
+      role ->
+        metadata = (role.metadata || %{}) |> Map.put("policies", policies)
+
+        role
+        |> Role.changeset(%{policies: policies, metadata: metadata})
+        |> Repo.update()
+        |> case do
+          {:ok, updated_role} ->
+            Logger.info("Updated AppRole policies: #{role.role_name}")
+
+            audit_event("policy.updated", role_id, %{
+              role_name: role.role_name,
+              policies: policies
+            })
+
+            {:ok, format_role(updated_role)}
+
+          {:error, changeset} ->
+            {:error, "Failed to update role policies: #{inspect(changeset.errors)}"}
+        end
+    end
+  end
+
   # Private helper functions
+
+  defp normalize_policies(policies) do
+    policies
+    |> Enum.map(&to_string/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.uniq()
+  end
+
+  defp role_policies(role) do
+    metadata_policies = Map.get(role.metadata || %{}, "policies")
+
+    cond do
+      is_list(metadata_policies) -> metadata_policies
+      is_list(role.policies) -> role.policies
+      true -> []
+    end
+  end
 
   defp format_role(role) do
     %{
       role_id: role.role_id,
       role_name: role.role_name,
-      policies: Map.get(role.metadata, "policies", []),
+      policies: role_policies(role),
       secret_id_ttl: Map.get(role.metadata, "secret_id_ttl"),
       secret_id_num_uses: Map.get(role.metadata, "secret_id_num_uses"),
       secret_id_uses: Map.get(role.metadata, "secret_id_uses", 0),
@@ -423,13 +523,15 @@ defmodule SecretHub.Core.Auth.AppRole do
   defp bit_size_for(n) when n <= 0xFFFFFFFF, do: 32
   defp bit_size_for(_), do: 128
 
-  defp generate_auth_token(role) do
-    payload = %{
-      role_id: role.role_id,
-      role_name: role.role_name,
-      policies: Map.get(role.metadata, "policies", []),
-      issued_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix()
-    }
+  defp generate_auth_token(role, token_metadata \\ %{}) do
+    payload =
+      %{
+        role_id: role.role_id,
+        role_name: role.role_name,
+        policies: role_policies(role),
+        issued_at: DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix()
+      }
+      |> Map.merge(allowed_token_metadata(token_metadata))
 
     Phoenix.Token.sign(SecretHub.Web.Endpoint, "approle_auth", payload)
   end
@@ -440,9 +542,14 @@ defmodule SecretHub.Core.Auth.AppRole do
       actor_type: "approle",
       actor_id: role_id,
       event_data: metadata,
-      access_granted: String.contains?(event_type, "success"),
+      access_granted: successful_event?(event_type),
       response_time_ms: 0
     })
+  end
+
+  defp successful_event?(event_type) do
+    String.contains?(event_type, "success") or String.ends_with?(event_type, "renewed") or
+      String.ends_with?(event_type, "issued")
   end
 
   @doc """
@@ -463,9 +570,11 @@ defmodule SecretHub.Core.Auth.AppRole do
   """
   @spec verify_token(String.t()) :: {:ok, map()} | {:error, String.t()}
   def verify_token(token) do
-    case Phoenix.Token.verify(SecretHub.Web.Endpoint, "approle_auth", token, max_age: 3600) do
+    case Phoenix.Token.verify(SecretHub.Web.Endpoint, "approle_auth", token,
+           max_age: @token_ttl_seconds
+         ) do
       {:ok, payload} ->
-        {:ok, payload}
+        verify_cli_access_payload(payload)
 
       {:error, :expired} ->
         {:error, "Token has expired"}
@@ -473,5 +582,82 @@ defmodule SecretHub.Core.Auth.AppRole do
       {:error, _reason} ->
         {:error, "Invalid token"}
     end
+  end
+
+  @doc """
+  Renews a valid AppRole token by re-signing the current role state.
+  """
+  @spec renew_token(String.t()) ::
+          {:ok, %{token: String.t(), policies: list(), role_name: String.t(), ttl: pos_integer()}}
+          | {:error, String.t()}
+  def renew_token(token) do
+    with {:ok, payload} <- verify_token(token),
+         {:ok, role} <- get_token_role(payload) do
+      policies = role_policies(role)
+      renewed_token = generate_auth_token(role, renewal_token_metadata(payload))
+
+      audit_event("approle_token_renewed", role.role_id, %{
+        role_name: role.role_name
+      })
+
+      {:ok,
+       %{
+         token: renewed_token,
+         policies: policies,
+         role_name: role.role_name,
+         ttl: @token_ttl_seconds
+       }}
+    end
+  end
+
+  defp get_token_role(payload) do
+    role_id = Map.get(payload, :role_id) || Map.get(payload, "role_id")
+
+    case Repo.get_by(Role, role_id: role_id, auth_type: "approle") do
+      nil -> {:error, "Role not found"}
+      %{enabled: false} -> {:error, "Role disabled"}
+      role -> {:ok, role}
+    end
+  end
+
+  defp verify_cli_access_payload(payload) do
+    case cli_access_request_id(payload) do
+      nil ->
+        {:ok, payload}
+
+      request_id ->
+        case Repo.get(CliAccessRequest, request_id) do
+          nil -> {:error, "CLI access not found"}
+          %{status: :revoked} -> {:error, "CLI access has been revoked"}
+          _request -> {:ok, payload}
+        end
+    end
+  end
+
+  defp renewal_token_metadata(payload) do
+    case cli_access_request_id(payload) do
+      nil -> %{}
+      request_id -> %{cli_access_request_id: request_id}
+    end
+  end
+
+  defp allowed_token_metadata(metadata) when is_map(metadata) do
+    metadata
+    |> Enum.reduce(%{}, fn {key, value}, acc ->
+      case normalize_token_metadata_key(key) do
+        :cli_access_request_id -> Map.put(acc, :cli_access_request_id, value)
+        nil -> acc
+      end
+    end)
+  end
+
+  defp allowed_token_metadata(_metadata), do: %{}
+
+  defp normalize_token_metadata_key(:cli_access_request_id), do: :cli_access_request_id
+  defp normalize_token_metadata_key("cli_access_request_id"), do: :cli_access_request_id
+  defp normalize_token_metadata_key(_key), do: nil
+
+  defp cli_access_request_id(payload) do
+    Map.get(payload, :cli_access_request_id) || Map.get(payload, "cli_access_request_id")
   end
 end
