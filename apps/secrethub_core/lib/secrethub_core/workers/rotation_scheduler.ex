@@ -50,7 +50,7 @@ defmodule SecretHub.Core.Workers.RotationScheduler do
   use Oban.Worker,
     queue: :rotation,
     max_attempts: 1,
-    unique: [period: 60, states: [:available, :scheduled, :executing]]
+    unique: [period: 60, states: :incomplete]
 
   require Logger
 

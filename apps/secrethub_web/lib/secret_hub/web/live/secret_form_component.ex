@@ -74,7 +74,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                   field={f[:name]}
                   label="Secret Name"
                   placeholder="e.g., Production Database"
-                  errors={field_errors(@form, :name)}
+                  errors={local_field_errors(@form, :name)}
                   field_class="md:col-span-2"
                 />
                 <.dm_textarea
@@ -82,7 +82,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                   label="Description"
                   rows={2}
                   placeholder="Brief description of what this secret provides access to"
-                  errors={field_errors(@form, :description)}
+                  errors={local_field_errors(@form, :description)}
                   class="md:col-span-2"
                 />
                 <.dm_input
@@ -90,7 +90,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                   label="Secret Path"
                   placeholder="e.g., prod.db.postgres"
                   helper="Use reverse domain notation such as environment.service.credential."
-                  errors={field_errors(@form, :secret_path)}
+                  errors={local_field_errors(@form, :secret_path)}
                   field_class="md:col-span-2"
                 />
               </.dm_form_grid>
@@ -103,7 +103,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                 rows={4}
                 placeholder="Paste or type the secret value"
                 helper={value_helper(@mode)}
-                errors={field_errors(@form, :value)}
+                errors={local_field_errors(@form, :value)}
               />
             </.dm_form_section>
 
@@ -114,7 +114,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                   label="Rotator"
                   options={rotator_options(@rotators)}
                   helper="The selected rotator is responsible for future value updates."
-                  errors={field_errors(@form, :rotator_id)}
+                  errors={local_field_errors(@form, :rotator_id)}
                 />
                 <.dm_input
                   field={f[:ttl_seconds]}
@@ -123,7 +123,7 @@ defmodule SecretHub.Web.SecretFormComponent do
                   min="0"
                   placeholder="0"
                   helper="0 means always alive."
-                  errors={field_errors(@form, :ttl_seconds)}
+                  errors={local_field_errors(@form, :ttl_seconds)}
                 />
               </.dm_form_grid>
             </.dm_form_section>
@@ -206,7 +206,7 @@ defmodule SecretHub.Web.SecretFormComponent do
     {:noreply, socket}
   end
 
-  defp field_errors(form, field) do
+  defp local_field_errors(form, field) do
     form.errors
     |> Keyword.get_values(field)
     |> Enum.map(&format_error/1)
