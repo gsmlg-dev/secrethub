@@ -122,6 +122,48 @@ defmodule SecretHub.Web.AppRoleSecurityTest do
   end
 
   describe "P0: Managed AppRole login" do
+    test "public clients cannot read role management details" do
+      {:ok, role} =
+        AppRole.create_role("public-get-denied-#{System.unique_integer([:positive])}",
+          secret_id_num_uses: 0
+        )
+
+      conn =
+        build_conn()
+        |> get("/v1/auth/approle/role/#{role.role_name}")
+
+      assert conn.status == 401
+    end
+
+    test "public clients cannot rotate SecretIDs" do
+      {:ok, role} =
+        AppRole.create_role("public-rotate-denied-#{System.unique_integer([:positive])}",
+          secret_id_num_uses: 0
+        )
+
+      conn =
+        build_conn()
+        |> post("/v1/auth/approle/role/#{role.role_name}/secret-id")
+
+      assert conn.status == 401
+    end
+
+    test "admin web session can access AppRole management endpoints" do
+      conn =
+        build_conn()
+        |> init_test_session(%{admin_id: "dev-admin"})
+        |> post(
+          "/v1/auth/approle/role/admin-session-role-#{System.unique_integer([:positive])}",
+          %{
+            "secret_id_num_uses" => 0
+          }
+        )
+
+      assert %{"role_id" => role_id, "secret_id" => secret_id} = json_response(conn, 201)
+      assert is_binary(role_id)
+      assert is_binary(secret_id)
+    end
+
     test "role credentials created by AppRole management can log in without an agent row" do
       {:ok, role} =
         AppRole.create_role("cli-login-route-#{System.unique_integer([:positive])}",

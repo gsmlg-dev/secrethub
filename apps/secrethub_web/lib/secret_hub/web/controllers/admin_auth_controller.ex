@@ -132,7 +132,6 @@ defmodule SecretHub.Web.AdminAuthController do
 
     conn
     |> clear_session()
-    |> configure_session_timeout()
     |> put_flash(:info, "Successfully logged out")
     |> redirect(to: "/admin/auth/login")
   end
@@ -246,6 +245,11 @@ defmodule SecretHub.Web.AdminAuthController do
   defp configure_session_timeout(conn) do
     # Set session timeout to 1 hour
     conn
+    |> put_session(:admin_authenticated, true)
+    |> put_session(
+      :admin_login_at,
+      DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+    )
     |> put_session(:max_age, 3600)
   end
 

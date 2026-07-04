@@ -16,7 +16,7 @@ defmodule SecretHub.Web.SecretApiController do
   use SecretHub.Web, :controller
   require Logger
 
-  alias SecretHub.Core.{Audit, Repo}
+  alias SecretHub.Core.{Audit, Policies, Repo}
   alias SecretHub.Core.Secrets
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Schemas.Secret
@@ -103,16 +103,20 @@ defmodule SecretHub.Web.SecretApiController do
   Get metadata for secrets at the given path.
   """
   def metadata(conn, params) do
-    path = extract_path(params)
-    secret_path = vault_path_to_dot(path)
-    vault_path = "secret/metadata/" <> path
+    if vault_sealed?() do
+      sealed_response(conn)
+    else
+      path = extract_path(params)
+      secret_path = vault_path_to_dot(path)
+      vault_path = "secret/metadata/" <> path
 
-    case check_policy(conn, vault_path, "read") do
-      :ok ->
-        fetch_metadata(conn, secret_path, params["list"] == "true")
+      case check_policy(conn, vault_path, "read") do
+        :ok ->
+          fetch_metadata(conn, secret_path, params["list"] == "true")
 
-      {:error, _reason} ->
-        forbidden_response(conn)
+        {:error, _reason} ->
+          forbidden_response(conn)
+      end
     end
   end
 
@@ -313,40 +317,14 @@ defmodule SecretHub.Web.SecretApiController do
     policies = conn.assigns[:current_policies] || []
     candidate_paths = policy_candidate_paths(vault_path)
 
-    matching =
-      Enum.find(policies, fn policy ->
-        doc = policy.policy_document || %{}
-        patterns = doc["allowed_secrets"] || []
-        operations = doc["allowed_operations"] || []
-
-        path_matches?(candidate_paths, patterns) and operation_allowed?(operation, operations)
-      end)
-
-    if matching, do: :ok, else: {:error, "No policy allows access"}
+    case Policies.evaluate_policies(policies, candidate_paths, operation, policy_context(conn)) do
+      {:ok, _policy} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
-  defp operation_allowed?(_operation, []), do: true
-  defp operation_allowed?(operation, operations), do: operation in operations
-
-  defp path_matches?(_path, []), do: false
-
-  defp path_matches?(paths, patterns) when is_list(paths) do
-    Enum.any?(paths, &path_matches?(&1, patterns))
-  end
-
-  defp path_matches?(path, patterns) do
-    Enum.any?(patterns, fn pattern ->
-      regex_pattern =
-        pattern
-        |> String.replace(".", "\\.")
-        |> String.replace("*", ".*")
-        |> then(&("^" <> &1 <> "$"))
-
-      case Regex.compile(regex_pattern) do
-        {:ok, regex} -> Regex.match?(regex, path)
-        _ -> path == pattern
-      end
-    end)
+  defp policy_context(conn) do
+    %{ip_address: get_client_ip(conn)}
   end
 
   defp policy_candidate_paths("secret/data/" <> path) do
@@ -362,6 +340,20 @@ defmodule SecretHub.Web.SecretApiController do
   defp policy_candidate_paths(path), do: [path, dot_path(path)] |> Enum.uniq()
 
   defp dot_path(path), do: String.replace(path, "/", ".")
+
+  defp get_client_ip(conn) do
+    case get_req_header(conn, "x-forwarded-for") do
+      [ip | _] ->
+        ip |> String.split(",") |> List.first() |> String.trim()
+
+      _ ->
+        conn.remote_ip
+        |> :inet.ntoa()
+        |> to_string()
+    end
+  rescue
+    _ -> "unknown"
+  end
 
   defp current_actor(conn) do
     actor = conn.assigns[:current_actor] || %{}

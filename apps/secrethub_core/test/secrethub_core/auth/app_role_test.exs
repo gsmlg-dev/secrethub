@@ -31,6 +31,17 @@ defmodule SecretHub.Core.Auth.AppRoleTest do
       assert persisted.policies == ["secret-read", "secret-write"]
     end
 
+    test "stores only a hash/accessor for the generated SecretID" do
+      assert {:ok, result} = AppRole.create_role("hashed-secret-app")
+
+      persisted = Repo.get_by!(Role, role_id: result.role_id, auth_type: "approle")
+
+      assert is_binary(persisted.secret_id_hash)
+      assert persisted.secret_id_hash != result.secret_id
+      assert is_binary(persisted.secret_id_accessor)
+      refute Map.has_key?(persisted.metadata, "secret_id")
+    end
+
     test "creates a role with custom TTL and usage limits" do
       assert {:ok, result} =
                AppRole.create_role("custom-app",
@@ -134,6 +145,11 @@ defmodule SecretHub.Core.Auth.AppRoleTest do
 
       assert {:ok, %{secret_id: new_secret_id}} = AppRole.rotate_secret_id(created.role_id)
       assert new_secret_id != created.secret_id
+
+      persisted = Repo.get_by!(Role, role_id: created.role_id, auth_type: "approle")
+      assert persisted.secret_id_hash != created.secret_id
+      assert persisted.secret_id_hash != new_secret_id
+      refute Map.has_key?(persisted.metadata, "secret_id")
 
       # Old secret_id should no longer work
       assert {:error, "Invalid credentials"} =

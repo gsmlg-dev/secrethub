@@ -282,20 +282,8 @@ defmodule SecretHub.Core.Policies do
       policies_count: length(policies)
     )
 
-    # Find first policy that allows access
-    case Enum.find(policies, fn policy ->
-           evaluate_policy(policy, secret_path, operation, context)
-         end) do
-      nil ->
-        Logger.warning("Access denied - no matching policy",
-          entity_id: entity_id,
-          secret_path: secret_path,
-          operation: operation
-        )
-
-        {:error, "No policy allows access to this secret"}
-
-      policy ->
+    case evaluate_policies(policies, secret_path, operation, context) do
+      {:ok, policy} ->
         Logger.info("Access granted",
           entity_id: entity_id,
           secret_path: secret_path,
@@ -304,6 +292,43 @@ defmodule SecretHub.Core.Policies do
         )
 
         {:ok, policy}
+
+      {:error, reason} ->
+        Logger.warning("Access denied - no matching policy",
+          entity_id: entity_id,
+          secret_path: secret_path,
+          operation: operation,
+          reason: reason
+        )
+
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Evaluate a supplied set of policies against one or more candidate secret paths.
+
+  Deny policies take precedence over allow policies. If any deny policy matches
+  the requested path, operation, and conditions, access is rejected even when a
+  separate allow policy also matches.
+  """
+  @spec evaluate_policies([Policy.t()], String.t() | [String.t()], String.t(), map()) ::
+          {:ok, Policy.t()} | {:error, String.t()}
+  def evaluate_policies(policies, secret_paths, operation, context \\ %{})
+      when is_list(policies) do
+    candidate_paths = List.wrap(secret_paths)
+
+    cond do
+      deny_policy =
+          Enum.find(policies, &deny_policy_matches?(&1, candidate_paths, operation, context)) ->
+        {:error, "Access explicitly denied by policy #{deny_policy.name}"}
+
+      allow_policy =
+          Enum.find(policies, &allow_policy_matches?(&1, candidate_paths, operation, context)) ->
+        {:ok, allow_policy}
+
+      true ->
+        {:error, "No policy allows access to this secret"}
     end
   end
 
@@ -334,16 +359,20 @@ defmodule SecretHub.Core.Policies do
 
   ## Private Functions
 
-  # Evaluate a single policy against the request
-  defp evaluate_policy(policy, secret_path, operation, context) do
-    # Check if it's a deny policy first
-    if policy.deny_policy do
-      # Deny policies work in reverse - if they match, access is denied
-      !matches_policy?(policy, secret_path, operation, context)
-    else
-      # Allow policies - must match to grant access
-      matches_policy?(policy, secret_path, operation, context)
-    end
+  defp deny_policy_matches?(%Policy{deny_policy: true} = policy, paths, operation, context) do
+    policy_matches_any_path?(policy, paths, operation, context)
+  end
+
+  defp deny_policy_matches?(_policy, _paths, _operation, _context), do: false
+
+  defp allow_policy_matches?(%Policy{deny_policy: true}, _paths, _operation, _context), do: false
+
+  defp allow_policy_matches?(policy, paths, operation, context) do
+    policy_matches_any_path?(policy, paths, operation, context)
+  end
+
+  defp policy_matches_any_path?(policy, paths, operation, context) do
+    Enum.any?(paths, &matches_policy?(policy, &1, operation, context))
   end
 
   defp matches_policy?(policy, secret_path, operation, context) do

@@ -57,10 +57,11 @@ defmodule SecretHub.Web.Plugs.AppRoleAuth do
   end
 
   defp has_admin_session?(conn) do
+    admin_id = Plug.Conn.get_session(conn, :admin_id)
     admin_authenticated = Plug.Conn.get_session(conn, :admin_authenticated)
     login_at = Plug.Conn.get_session(conn, :admin_login_at)
 
-    admin_authenticated && !session_expired?(login_at)
+    (is_binary(admin_id) || admin_authenticated == true) && !session_expired?(login_at)
   end
 
   defp has_admin_token?(conn) do
@@ -96,7 +97,7 @@ defmodule SecretHub.Web.Plugs.AppRoleAuth do
 
   defp has_admin_policy?(_), do: false
 
-  defp session_expired?(nil), do: true
+  defp session_expired?(nil), do: false
 
   defp session_expired?(login_at_str) when is_binary(login_at_str) do
     case DateTime.from_iso8601(login_at_str) do

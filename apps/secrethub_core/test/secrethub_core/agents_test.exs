@@ -1,7 +1,9 @@
 defmodule SecretHub.Core.AgentsTest do
   use SecretHub.Core.DataCase, async: false
 
+  alias SecretHub.Core.Repo
   alias SecretHub.Core.Agents
+  alias SecretHub.Shared.Schemas.Agent
 
   defp unique_agent_id, do: "agent-test-#{System.unique_integer([:positive])}"
 
@@ -76,6 +78,17 @@ defmodule SecretHub.Core.AgentsTest do
       assert is_binary(secret_id)
     end
 
+    test "stores the generated secret_id as a non-plaintext verifier" do
+      {:ok, agent} = register()
+      assert {:ok, role_id, secret_id} = Agents.generate_approle_credentials(agent.id)
+
+      persisted = Repo.get!(Agent, agent.id)
+
+      assert persisted.role_id == role_id
+      assert persisted.secret_id != secret_id
+      assert byte_size(persisted.secret_id) > byte_size(secret_id)
+    end
+
     test "returns error for unknown agent database ID" do
       assert {:error, "Agent not found"} =
                Agents.generate_approle_credentials(Ecto.UUID.generate())
@@ -92,6 +105,16 @@ defmodule SecretHub.Core.AgentsTest do
 
       assert active_agent.status == :active
       assert is_binary(cert.fingerprint)
+    end
+
+    test "rejects reuse of bootstrap credentials after successful authentication" do
+      {:ok, agent} = register()
+      {:ok, role_id, secret_id} = Agents.generate_approle_credentials(agent.id)
+
+      assert {:ok, _} = Agents.authenticate_with_approle(role_id, secret_id)
+
+      assert {:error, "Invalid credentials"} =
+               Agents.authenticate_with_approle(role_id, secret_id)
     end
 
     test "returns error for invalid credentials" do

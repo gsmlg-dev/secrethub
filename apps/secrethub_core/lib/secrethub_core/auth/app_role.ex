@@ -71,21 +71,28 @@ defmodule SecretHub.Core.Auth.AppRole do
     role_id = Ecto.UUID.generate()
     secret_id = Ecto.UUID.generate()
 
+    secret_id_created_at =
+      DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+
     # Create role record
     role_attrs = %{
       role_id: role_id,
       role_name: role_name,
       auth_type: "approle",
+      secret_id_hash: hash_secret_id(secret_id),
+      secret_id_accessor: generate_secret_id_accessor(),
       policies: policies,
+      bind_secret_id: bind_secret_id,
+      secret_id_num_uses: secret_id_num_uses,
+      secret_id_ttl_seconds: secret_id_ttl,
+      bound_cidr_list: bound_cidr_list,
       metadata: %{
         "bind_secret_id" => bind_secret_id,
         "secret_id_ttl" => secret_id_ttl,
         "secret_id_num_uses" => secret_id_num_uses,
         "bound_cidr_list" => bound_cidr_list,
         "policies" => policies,
-        "secret_id" => secret_id,
-        "secret_id_created_at" =>
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
+        "secret_id_created_at" => secret_id_created_at,
         "secret_id_uses" => 0
       }
     }
@@ -128,14 +135,14 @@ defmodule SecretHub.Core.Auth.AppRole do
       :error ->
         {:error, "Invalid credentials"}
 
-      {:ok, _} ->
-        login_with_valid_role_id(role_id, secret_id, source_ip)
+      {:ok, cast_role_id} ->
+        login_with_valid_role_id(cast_role_id, secret_id, source_ip)
     end
   end
 
   defp login_with_valid_role_id(role_id, secret_id, source_ip) do
-    case Repo.get_by(Role, role_id: role_id, auth_type: "approle") do
-      nil ->
+    case locked_login(role_id, secret_id, source_ip) do
+      {:ok, {:error, "role_not_found"}} ->
         audit_event("approle_login_failed", role_id, %{
           reason: "role_not_found",
           source_ip: source_ip
@@ -143,46 +150,80 @@ defmodule SecretHub.Core.Auth.AppRole do
 
         {:error, "Invalid credentials"}
 
-      role ->
-        # Validate SecretID
-        case validate_secret_id(role, secret_id, source_ip) do
-          :ok ->
-            # Increment usage counter
-            new_uses = Map.get(role.metadata, "secret_id_uses", 0) + 1
-            updated_metadata = Map.put(role.metadata, "secret_id_uses", new_uses)
+      {:ok, {:error, reason}} ->
+        audit_event("approle_login_failed", role_id, %{
+          reason: reason,
+          source_ip: source_ip
+        })
 
-            role
-            |> Ecto.Changeset.change(%{metadata: updated_metadata})
-            |> Repo.update()
+        {:error, "Invalid credentials"}
 
-            # Generate authentication token
-            token = generate_auth_token(role)
-            policies = role_policies(role)
+      {:ok, {:ok, %{role: role, result: result}}} ->
+        Logger.info("AppRole login successful: #{role.role_name}")
 
-            Logger.info("AppRole login successful: #{role.role_name}")
+        audit_event("approle_login_success", role_id, %{
+          role_name: role.role_name,
+          source_ip: source_ip
+        })
 
-            audit_event("approle_login_success", role_id, %{
-              role_name: role.role_name,
-              source_ip: source_ip
-            })
+        {:ok, result}
 
-            {:ok,
-             %{
-               token: token,
-               policies: policies,
-               role_name: role.role_name,
-               ttl: @token_ttl_seconds
-             }}
+      {:error, reason} ->
+        Logger.error("AppRole login transaction failed",
+          role_id: role_id,
+          reason: inspect(reason)
+        )
 
-          {:error, reason} ->
-            audit_event("approle_login_failed", role_id, %{
-              reason: reason,
-              source_ip: source_ip
-            })
-
-            {:error, "Invalid credentials"}
-        end
+        {:error, "Invalid credentials"}
     end
+  end
+
+  defp locked_login(role_id, secret_id, source_ip) do
+    Repo.transaction(fn ->
+      case locked_role(role_id) do
+        nil ->
+          {:error, "role_not_found"}
+
+        role ->
+          with :ok <- validate_secret_id(role, secret_id, source_ip),
+               {:ok, updated_role} <- increment_secret_id_uses(role) do
+            {:ok, %{role: updated_role, result: login_result(updated_role)}}
+          else
+            {:error, reason} -> {:error, reason}
+          end
+      end
+    end)
+  end
+
+  defp locked_role(role_id) do
+    from(r in Role,
+      where: r.role_id == ^role_id and r.auth_type == "approle",
+      lock: "FOR UPDATE"
+    )
+    |> Repo.one()
+  end
+
+  defp increment_secret_id_uses(role) do
+    metadata = role.metadata || %{}
+    new_uses = Map.get(metadata, "secret_id_uses", 0) + 1
+    updated_metadata = Map.put(metadata, "secret_id_uses", new_uses)
+
+    role
+    |> Ecto.Changeset.change(%{metadata: updated_metadata})
+    |> Repo.update()
+    |> case do
+      {:ok, updated_role} -> {:ok, updated_role}
+      {:error, changeset} -> {:error, "secret_id_use_update_failed: #{inspect(changeset.errors)}"}
+    end
+  end
+
+  defp login_result(role) do
+    %{
+      token: generate_auth_token(role),
+      policies: role_policies(role),
+      role_name: role.role_name,
+      ttl: @token_ttl_seconds
+    }
   end
 
   @doc """
@@ -206,8 +247,8 @@ defmodule SecretHub.Core.Auth.AppRole do
         new_secret_id = Ecto.UUID.generate()
 
         updated_metadata =
-          role.metadata
-          |> Map.put("secret_id", new_secret_id)
+          (role.metadata || %{})
+          |> Map.delete("secret_id")
           |> Map.put(
             "secret_id_created_at",
             DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
@@ -215,13 +256,22 @@ defmodule SecretHub.Core.Auth.AppRole do
           |> Map.put("secret_id_uses", 0)
 
         role
-        |> Ecto.Changeset.change(%{metadata: updated_metadata})
+        |> Role.changeset(%{
+          secret_id_hash: hash_secret_id(new_secret_id),
+          secret_id_accessor: generate_secret_id_accessor(),
+          metadata: updated_metadata
+        })
         |> Repo.update()
+        |> case do
+          {:ok, _updated_role} ->
+            Logger.info("Rotated SecretID for AppRole: #{role.role_name}")
+            audit_event("approle_secret_rotated", role_id, %{role_name: role.role_name})
 
-        Logger.info("Rotated SecretID for AppRole: #{role.role_name}")
-        audit_event("approle_secret_rotated", role_id, %{role_name: role.role_name})
+            {:ok, %{secret_id: new_secret_id}}
 
-        {:ok, %{secret_id: new_secret_id}}
+          {:error, changeset} ->
+            {:error, "Failed to rotate SecretID: #{inspect(changeset.errors)}"}
+        end
     end
   end
 
@@ -397,21 +447,20 @@ defmodule SecretHub.Core.Auth.AppRole do
       role_id: role.role_id,
       role_name: role.role_name,
       policies: role_policies(role),
-      secret_id_ttl: Map.get(role.metadata, "secret_id_ttl"),
-      secret_id_num_uses: Map.get(role.metadata, "secret_id_num_uses"),
-      secret_id_uses: Map.get(role.metadata, "secret_id_uses", 0),
-      bound_cidr_list: Map.get(role.metadata, "bound_cidr_list", []),
+      secret_id_ttl: role_secret_id_ttl(role),
+      secret_id_num_uses: role_secret_id_num_uses(role),
+      secret_id_uses: Map.get(role.metadata || %{}, "secret_id_uses", 0),
+      bound_cidr_list: role_bound_cidr_list(role),
       created_at: role.inserted_at
     }
   end
 
   defp validate_secret_id(role, secret_id, source_ip) do
-    stored_secret_id = Map.get(role.metadata, "secret_id")
-    bind_secret_id = Map.get(role.metadata, "bind_secret_id", true)
+    bind_secret_id = role_bind_secret_id(role)
 
     cond do
       # Use constant-time comparison to prevent timing attacks
-      bind_secret_id and not Plug.Crypto.secure_compare(secret_id, stored_secret_id) ->
+      bind_secret_id and not secret_id_matches?(role, secret_id) ->
         {:error, "invalid_secret_id"}
 
       # Check TTL
@@ -432,9 +481,17 @@ defmodule SecretHub.Core.Auth.AppRole do
   end
 
   defp valid_secret_id_ttl?(role) do
-    created_at_str = Map.get(role.metadata, "secret_id_created_at")
-    ttl = Map.get(role.metadata, "secret_id_ttl", @secret_id_ttl_default)
+    created_at_str = Map.get(role.metadata || %{}, "secret_id_created_at")
+    ttl = role_secret_id_ttl(role)
 
+    if ttl == 0 do
+      true
+    else
+      secret_id_created_before_expiry?(created_at_str, ttl)
+    end
+  end
+
+  defp secret_id_created_before_expiry?(created_at_str, ttl) do
     case DateTime.from_iso8601(created_at_str) do
       {:ok, created_at, _offset} ->
         expires_at = DateTime.add(created_at, ttl, :second)
@@ -446,15 +503,15 @@ defmodule SecretHub.Core.Auth.AppRole do
   end
 
   defp valid_secret_id_uses?(role) do
-    uses = Map.get(role.metadata, "secret_id_uses", 0)
-    max_uses = Map.get(role.metadata, "secret_id_num_uses", @max_secret_id_uses)
+    uses = Map.get(role.metadata || %{}, "secret_id_uses", 0)
+    max_uses = role_secret_id_num_uses(role)
 
     # 0 means unlimited
     max_uses == 0 or uses < max_uses
   end
 
   defp valid_source_ip?(role, source_ip) do
-    bound_cidr_list = Map.get(role.metadata, "bound_cidr_list", [])
+    bound_cidr_list = role_bound_cidr_list(role)
 
     # Empty list means no IP restriction
     if Enum.empty?(bound_cidr_list) do
@@ -463,6 +520,56 @@ defmodule SecretHub.Core.Auth.AppRole do
       ip_in_any_cidr?(source_ip, bound_cidr_list)
     end
   end
+
+  defp role_bind_secret_id(role) do
+    Map.get(role.metadata || %{}, "bind_secret_id", role.bind_secret_id)
+  end
+
+  defp role_secret_id_ttl(role) do
+    Map.get(
+      role.metadata || %{},
+      "secret_id_ttl",
+      role.secret_id_ttl_seconds || @secret_id_ttl_default
+    )
+  end
+
+  defp role_secret_id_num_uses(role) do
+    Map.get(
+      role.metadata || %{},
+      "secret_id_num_uses",
+      role.secret_id_num_uses || @max_secret_id_uses
+    )
+  end
+
+  defp role_bound_cidr_list(role) do
+    Map.get(role.metadata || %{}, "bound_cidr_list", role.bound_cidr_list || [])
+  end
+
+  defp secret_id_matches?(_role, secret_id) when not is_binary(secret_id), do: false
+
+  defp secret_id_matches?(%{secret_id_hash: hash}, secret_id) when is_binary(hash) do
+    secure_compare(hash_secret_id(secret_id), hash)
+  end
+
+  defp secret_id_matches?(role, secret_id) do
+    legacy_secret_id = Map.get(role.metadata || %{}, "secret_id")
+    secure_compare(secret_id, legacy_secret_id)
+  end
+
+  defp hash_secret_id(secret_id) when is_binary(secret_id) do
+    "sha256:" <> (:crypto.hash(:sha256, secret_id) |> Base.encode16(case: :lower))
+  end
+
+  defp generate_secret_id_accessor do
+    Ecto.UUID.generate()
+  end
+
+  defp secure_compare(left, right)
+       when is_binary(left) and is_binary(right) and byte_size(left) == byte_size(right) do
+    Plug.Crypto.secure_compare(left, right)
+  end
+
+  defp secure_compare(_, _), do: false
 
   defp ip_in_any_cidr?(ip_string, cidr_list) do
     case :inet.parse_address(String.to_charlist(ip_string)) do

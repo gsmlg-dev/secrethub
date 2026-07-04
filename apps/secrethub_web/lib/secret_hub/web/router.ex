@@ -34,6 +34,7 @@ defmodule SecretHub.Web.Router do
   # AppRole management pipeline (requires authentication)
   pipeline :approle_management do
     plug :api
+    plug :fetch_session
     plug SecretHub.Web.Plugs.AppRoleAuth
   end
 
@@ -201,6 +202,8 @@ defmodule SecretHub.Web.Router do
     # Role management (requires admin authentication)
     post "/role/:role_name", AuthController, :create_role
     get "/role", AuthController, :list_roles
+    get "/role/:role_name", AuthController, :get_role
+    post "/role/:role_name/secret-id", AuthController, :rotate_secret_id
     delete "/role/:role_name", AuthController, :delete_role
   end
 
@@ -212,9 +215,7 @@ defmodule SecretHub.Web.Router do
     post "/login", AuthController, :login
     post "/renew", AuthController, :renew
 
-    # Public endpoints for AppRole authentication (rate limited)
-    get "/role/:role_name", AuthController, :get_role
-    post "/role/:role_name/secret-id", AuthController, :rotate_secret_id
+    # Public RoleID lookup for AppRole authentication (rate limited)
     get "/role/:role_name/role-id", AuthController, :get_role_id
   end
 

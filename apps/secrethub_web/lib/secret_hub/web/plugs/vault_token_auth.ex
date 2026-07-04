@@ -96,13 +96,23 @@ defmodule SecretHub.Web.Plugs.VaultTokenAuth do
   defp load_approle_policies([]), do: []
 
   defp load_approle_policies(policy_refs) when is_list(policy_refs) do
-    policy_ids = Enum.filter(policy_refs, &(Ecto.UUID.cast(&1) != :error))
+    policy_names = Enum.map(policy_refs, &to_string/1)
+    policy_ids = Enum.filter(policy_names, &canonical_uuid?/1)
 
-    from(p in Policy, where: p.name in ^policy_refs or p.id in ^policy_ids)
+    from(p in Policy, where: p.name in ^policy_names or p.id in ^policy_ids)
     |> Repo.all()
   end
 
   defp load_approle_policies(_policy_refs), do: []
+
+  defp canonical_uuid?(value) when is_binary(value) do
+    String.match?(
+      value,
+      ~r/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+    )
+  end
+
+  defp canonical_uuid?(_value), do: false
 
   defp unauthorized(conn, message) do
     conn

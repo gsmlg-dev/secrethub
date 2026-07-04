@@ -422,7 +422,7 @@ defmodule SecretHub.Core.Agents do
         secret_id = Ecto.UUID.generate()
 
         agent
-        |> Ecto.Changeset.change(%{role_id: role_id, secret_id: secret_id})
+        |> Ecto.Changeset.change(%{role_id: role_id, secret_id: hash_secret_id(secret_id)})
         |> Repo.update()
         |> case do
           {:ok, _updated} -> {:ok, role_id, secret_id}
@@ -470,35 +470,73 @@ defmodule SecretHub.Core.Agents do
   Returns the updated agent and certificate. Token generation is left to the web layer.
   """
   def authenticate_with_approle(role_id, secret_id) do
-    case Repo.get_by(Agent, role_id: role_id, secret_id: secret_id) do
+    case Repo.get_by(Agent, role_id: role_id) do
       nil ->
         {:error, "Invalid credentials"}
 
-      %Agent{status: :revoked} ->
-        {:error, "Agent has been revoked"}
-
       %Agent{} = agent ->
-        # Issue certificate for the agent
-        case issue_agent_certificate(agent) do
-          {:ok, certificate} ->
-            # Update agent to active status
-            {:ok, updated_agent} =
-              Agent.authenticate_changeset(agent, certificate)
-              |> Repo.update()
+        cond do
+          not is_valid_agent_secret_id?(agent, secret_id) ->
+            {:error, "Invalid credentials"}
 
-            {:ok,
-             %{
-               certificate: certificate,
-               agent: updated_agent
-             }}
+          agent.status == :revoked ->
+            {:error, "Agent has been revoked"}
 
-          {:error, reason} ->
-            {:error, "Failed to issue certificate: #{inspect(reason)}"}
+          agent.status != :pending_bootstrap ->
+            {:error, "Invalid credentials"}
+
+          true ->
+            authenticate_agent_with_valid_approle(agent)
         end
     end
   end
 
   # Private helper functions
+
+  defp authenticate_agent_with_valid_approle(agent) do
+    # Issue certificate for the agent
+    case issue_agent_certificate(agent) do
+      {:ok, certificate} ->
+        # Update agent to active status
+        {:ok, updated_agent} =
+          Agent.authenticate_changeset(agent, certificate)
+          |> Ecto.Changeset.change(%{role_id: nil, secret_id: nil})
+          |> Repo.update()
+
+        {:ok,
+         %{
+           certificate: certificate,
+           agent: updated_agent
+         }}
+
+      {:error, reason} ->
+        {:error, "Failed to issue certificate: #{inspect(reason)}"}
+    end
+  end
+
+  defp is_valid_agent_secret_id?(%Agent{secret_id: stored_secret_id}, secret_id)
+       when is_binary(secret_id) and is_binary(stored_secret_id) do
+    cond do
+      String.starts_with?(stored_secret_id, "sha256:") ->
+        secure_compare(hash_secret_id(secret_id), stored_secret_id)
+
+      true ->
+        secure_compare(secret_id, stored_secret_id)
+    end
+  end
+
+  defp is_valid_agent_secret_id?(_agent, _secret_id), do: false
+
+  defp hash_secret_id(secret_id) when is_binary(secret_id) do
+    "sha256:" <> (:crypto.hash(:sha256, secret_id) |> Base.encode16(case: :lower))
+  end
+
+  defp secure_compare(left, right)
+       when is_binary(left) and is_binary(right) and byte_size(left) == byte_size(right) do
+    Plug.Crypto.secure_compare(left, right)
+  end
+
+  defp secure_compare(_, _), do: false
 
   defp bootstrap_new_agent(agent_id, role_id, secret_id, metadata) do
     agent_attrs = %{

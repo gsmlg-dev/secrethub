@@ -14,7 +14,8 @@ defmodule SecretHub.Web.AccessControlE2ETest do
   use SecretHub.Web.ConnCase, async: false
 
   alias Ecto.Adapters.SQL.Sandbox
-  alias SecretHub.Core.{Agents, Policies}
+  alias SecretHub.Core.Policies
+  alias SecretHub.Core.Auth.AppRole
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 
@@ -22,6 +23,8 @@ defmodule SecretHub.Web.AccessControlE2ETest do
 
   setup do
     Sandbox.mode(Repo, {:shared, self()})
+    ensure_current_audit_partition!()
+
     {:ok, _pid} = start_supervised(SealState)
     Process.sleep(100)
 
@@ -38,11 +41,23 @@ defmodule SecretHub.Web.AccessControlE2ETest do
     :ok
   end
 
-  # Helper to register an agent with a policy and return a vault token
+  defp ensure_current_audit_partition! do
+    today = Date.utc_today()
+    month = String.pad_leading(to_string(today.month), 2, "0")
+    partition_name = "audit_logs_y#{today.year}m#{month}"
+    from_date = %Date{today | day: 1}
+    to_date = Date.add(from_date, Date.days_in_month(from_date))
+
+    Repo.query!("""
+    CREATE TABLE IF NOT EXISTS #{partition_name} PARTITION OF audit_logs
+    FOR VALUES FROM ('#{Date.to_iso8601(from_date)}') TO ('#{Date.to_iso8601(to_date)}')
+    """)
+  end
+
+  # Helper to create an AppRole token with a policy
   defp create_agent_with_token(policy_doc, opts \\ []) do
     suffix = :rand.uniform(100_000)
     policy_name = Keyword.get(opts, :policy_name, "acl-policy-#{suffix}")
-    agent_name = Keyword.get(opts, :agent_name, "acl-agent-#{suffix}")
 
     {:ok, policy} =
       Policies.create_policy(%{
@@ -50,25 +65,37 @@ defmodule SecretHub.Web.AccessControlE2ETest do
         policy_document: policy_doc
       })
 
-    {:ok, agent} =
-      Agents.register_agent(%{
-        agent_id: "acl-#{suffix}",
-        name: agent_name,
-        policy_ids: [policy.id],
-        auth_method: "approle"
-      })
+    {:ok, role} =
+      AppRole.create_role("acl-role-#{suffix}",
+        policies: [policy.name],
+        secret_id_num_uses: 0
+      )
 
-    {:ok, role_id, secret_id} = Agents.generate_approle_credentials(agent.id)
+    {:ok, %{token: token}} = AppRole.login(role.role_id, role.secret_id, "127.0.0.1")
+    %{token: token, role: role, policy: policy}
+  end
 
-    conn =
-      build_conn()
-      |> post("/v1/auth/approle/login", %{
-        "role_id" => role_id,
-        "secret_id" => secret_id
-      })
+  defp create_agent_with_policies(policy_attrs_list) do
+    suffix = :rand.uniform(100_000)
 
-    token = json_response(conn, 200)["token"]
-    %{token: token, agent: agent, policy: policy}
+    policies =
+      Enum.map(policy_attrs_list, fn attrs ->
+        {:ok, policy} =
+          attrs
+          |> Map.put_new(:name, "acl-policy-#{suffix}-#{System.unique_integer([:positive])}")
+          |> Policies.create_policy()
+
+        policy
+      end)
+
+    {:ok, role} =
+      AppRole.create_role("acl-multi-role-#{suffix}",
+        policies: Enum.map(policies, & &1.name),
+        secret_id_num_uses: 0
+      )
+
+    {:ok, %{token: token}} = AppRole.login(role.role_id, role.secret_id, "127.0.0.1")
+    %{token: token, role: role, policies: policies}
   end
 
   # Helper to create a secret via API
@@ -223,6 +250,82 @@ defmodule SecretHub.Web.AccessControlE2ETest do
     end
   end
 
+  describe "E2E: Policy deny and conditions" do
+    test "deny policy overrides a matching allow policy" do
+      %{token: writer_token} =
+        create_agent_with_token(%{
+          "version" => "1.0",
+          "allowed_secrets" => ["secret/data/deny-test/*"],
+          "allowed_operations" => ["create", "read"]
+        })
+
+      conn = create_secret(writer_token, "deny-test/target", %{"val" => "blocked"})
+      assert conn.status == 200
+
+      %{token: denied_token} =
+        create_agent_with_policies([
+          %{
+            policy_document: %{
+              "version" => "1.0",
+              "allowed_secrets" => ["secret/data/deny-test/*"],
+              "allowed_operations" => ["read"]
+            }
+          },
+          %{
+            deny_policy: true,
+            policy_document: %{
+              "version" => "1.0",
+              "allowed_secrets" => ["secret/data/deny-test/*"],
+              "allowed_operations" => ["read"]
+            }
+          }
+        ])
+
+      conn =
+        build_conn()
+        |> put_req_header("x-vault-token", denied_token)
+        |> get("/v1/secret/data/deny-test/target")
+
+      assert conn.status == 403
+    end
+
+    test "IP range policy condition is enforced from request headers" do
+      %{token: writer_token} =
+        create_agent_with_token(%{
+          "version" => "1.0",
+          "allowed_secrets" => ["secret/data/ip-condition/*"],
+          "allowed_operations" => ["create", "read"]
+        })
+
+      conn = create_secret(writer_token, "ip-condition/target", %{"val" => "guarded"})
+      assert conn.status == 200
+
+      %{token: reader_token} =
+        create_agent_with_token(%{
+          "version" => "1.0",
+          "allowed_secrets" => ["secret/data/ip-condition/*"],
+          "allowed_operations" => ["read"],
+          "conditions" => %{"ip_ranges" => ["10.0.0.0/8"]}
+        })
+
+      denied_conn =
+        build_conn()
+        |> put_req_header("x-vault-token", reader_token)
+        |> put_req_header("x-forwarded-for", "203.0.113.20")
+        |> get("/v1/secret/data/ip-condition/target")
+
+      assert denied_conn.status == 403
+
+      allowed_conn =
+        build_conn()
+        |> put_req_header("x-vault-token", reader_token)
+        |> put_req_header("x-forwarded-for", "10.1.2.3")
+        |> get("/v1/secret/data/ip-condition/target")
+
+      assert allowed_conn.status == 200
+    end
+  end
+
   describe "E2E: Token validation edge cases" do
     test "request without X-Vault-Token header returns 401" do
       conn = get(build_conn(), "/v1/secret/data/any/path")
@@ -303,14 +406,25 @@ defmodule SecretHub.Web.AccessControlE2ETest do
           "allowed_operations" => ["create", "read"]
         })
 
-      # Seal the vault
-      build_conn() |> post("/v1/sys/seal", %{})
+      # Manual sealing is disabled in production code, so force the test process state.
+      previous_state = :sys.get_state(SealState)
+
+      on_exit(fn ->
+        if Process.whereis(SealState) do
+          :sys.replace_state(SealState, fn _state -> previous_state end)
+        end
+      end)
+
+      :sys.replace_state(SealState, fn state ->
+        %{state | status: :sealed, master_key: nil, unseal_progress: 0, unsealed_at: nil}
+      end)
+
+      assert %{sealed: true} = SealState.status()
 
       # Try to create a secret while sealed
       conn = create_secret(token, "seal-test/locked", %{"val" => "should-fail"})
 
-      # Should fail — either 503 (service unavailable) or 500
-      assert conn.status in [401, 403, 500, 503]
+      assert conn.status == 503
     end
   end
 end
