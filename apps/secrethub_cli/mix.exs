@@ -5,16 +5,17 @@ defmodule SecretHub.CLI.MixProject do
     [
       app: :secrethub_cli,
       version: "0.1.0",
-      build_path: "../../_build",
-      config_path: "../../config/config.exs",
-      deps_path: "../../deps",
-      lockfile: "../../mix.lock",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       escript: escript(),
-      aliases: aliases()
+      aliases: aliases(),
+      description: description(),
+      package: package(),
+      source_url: "https://github.com/gsmlg-dev/secrethub",
+      homepage_url: "https://github.com/gsmlg-dev/secrethub"
     ]
+    |> Keyword.merge(umbrella_paths())
   end
 
   def application do
@@ -25,9 +26,6 @@ defmodule SecretHub.CLI.MixProject do
 
   defp deps do
     [
-      # Umbrella dependencies
-      {:secrethub_shared, in_umbrella: true},
-
       # HTTP client for API calls
       {:req, "~> 0.5"},
 
@@ -58,5 +56,41 @@ defmodule SecretHub.CLI.MixProject do
     [
       test: "test --no-start"
     ]
+  end
+
+  defp description do
+    "Command-line interface for SecretHub secrets management."
+  end
+
+  defp package do
+    [
+      files: [
+        "lib",
+        "priv",
+        "mix.exs",
+        "README.md",
+        "COMPLETION.md",
+        "COMPLETION_QUICKSTART.md",
+        "COMPLETION_SUMMARY.md"
+      ],
+      links: %{
+        "GitHub" => "https://github.com/gsmlg-dev/secrethub"
+      },
+      licenses: ["LicenseRef-Proprietary"],
+      build_tools: ["mix"]
+    ]
+  end
+
+  defp umbrella_paths do
+    if File.exists?(Path.expand("../../mix.exs", __DIR__)) do
+      [
+        build_path: "../../_build",
+        config_path: "../../config/config.exs",
+        deps_path: "../../deps",
+        lockfile: "../../mix.lock"
+      ]
+    else
+      []
+    end
   end
 end

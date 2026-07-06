@@ -175,7 +175,7 @@ defmodule SecretHub.MixProject do
           secrethub_agent: :permanent,
           secrethub_shared: :permanent
         ],
-        include_executables_for: [:unix],
+        include_executables_for: [:unix, :windows],
         steps: [:assemble, :tar]
       ]
     ]
