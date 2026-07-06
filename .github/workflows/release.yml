@@ -382,6 +382,7 @@ jobs:
             pkg install -y erlang-runtime28 elixir git gmake bash curl
           run: |
             set -e
+            export PATH="/usr/local/lib/erlang28/bin:$PATH"
             export MIX_ENV=prod
             export DATABASE_URL="${{ env.BUILD_DATABASE_URL }}"
             export SECRET_KEY_BASE="${{ env.BUILD_SECRET_KEY_BASE }}"
