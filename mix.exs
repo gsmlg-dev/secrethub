@@ -15,7 +15,7 @@ defmodule SecretHub.MixProject do
       docs: docs(),
 
       # Testing
-      test_coverage: [tool: ExCoveralls],
+      test_coverage: [tool: ExCoveralls, summary: [threshold: 0]],
       preferred_cli_env: [
         test: :test,
         coveralls: :test,

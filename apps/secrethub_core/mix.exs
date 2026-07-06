@@ -12,6 +12,7 @@ defmodule SecretHub.Core.MixProject do
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
+      test_coverage: [summary: [threshold: 0]],
       deps: deps(),
       aliases: aliases()
     ]

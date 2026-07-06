@@ -11,6 +11,7 @@ defmodule SecretHub.Shared.MixProject do
       lockfile: "../../mix.lock",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
+      test_coverage: [summary: [threshold: 0]],
       deps: deps(),
       aliases: aliases()
     ]

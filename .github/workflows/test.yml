@@ -87,7 +87,7 @@ jobs:
           MIX_ENV: test
           DATABASE_URL: postgresql://secrethub:secrethub_test_password@localhost:5432/secrethub_test
           REDIS_URL: redis://localhost:6379
-        run: mix coveralls.html
+        run: mix coveralls.html --umbrella
 
       - name: Upload coverage report
         if: success()
