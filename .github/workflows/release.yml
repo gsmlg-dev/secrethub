@@ -379,7 +379,7 @@ jobs:
           sync: rsync
           copyback: true
           prepare: |
-            pkg install -y elixir git gmake bash curl
+            pkg install -y erlang-runtime28 elixir git gmake bash curl
           run: |
             set -e
             export MIX_ENV=prod
