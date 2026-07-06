@@ -298,8 +298,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
           Create and manage access control policies for secrets.
         </p>
       </div>
-      
-    <!-- Create New Policy Button -->
+
+      <!-- Create New Policy Button -->
       <div class="mb-6 flex justify-between items-center">
         <div class="flex gap-3">
           <.link
@@ -342,8 +342,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
           </.link>
         </div>
       </div>
-      
-    <!-- Policy Form Modal -->
+
+      <!-- Policy Form Modal -->
       <%= if @show_form do %>
         <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 z-40 flex items-center justify-center p-4">
           <div class="bg-surface-container rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -383,8 +383,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   </div>
                 </div>
               <% end %>
-              
-    <!-- Basic Information -->
+
+              <!-- Basic Information -->
               <div>
                 <label class="block text-sm font-medium text-on-surface">Policy Name</label>
                 <input
@@ -423,8 +423,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   Deny Policy (blocks matching requests instead of allowing them)
                 </label>
               </div>
-              
-    <!-- Secret Patterns -->
+
+              <!-- Secret Patterns -->
               <div>
                 <label class="block text-sm font-medium text-on-surface mb-2">
                   Allowed Secret Patterns
@@ -461,8 +461,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   <% end %>
                 </div>
               </div>
-              
-    <!-- Allowed Operations -->
+
+              <!-- Allowed Operations -->
               <div>
                 <label class="block text-sm font-medium text-on-surface mb-2">
                   Allowed Operations
@@ -484,8 +484,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   <% end %>
                 </div>
               </div>
-              
-    <!-- Entity Bindings -->
+
+              <!-- Entity Bindings -->
               <div>
                 <label class="block text-sm font-medium text-on-surface mb-2">Entity Bindings</label>
                 <div class="flex gap-2 mb-2">
@@ -523,8 +523,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
                   <% end %>
                 </div>
               </div>
-              
-    <!-- Policy Document JSON -->
+
+              <!-- Policy Document JSON -->
               <div>
                 <label class="block text-sm font-medium text-on-surface mb-2">
                   Policy Document (JSON)
@@ -560,8 +560,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
           </div>
         </div>
       <% end %>
-      
-    <!-- Test Mode Panel -->
+
+      <!-- Test Mode Panel -->
       <%= if @test_mode && @selected_policy do %>
         <div class="bg-warning/5 border-l-4 border-warning p-4 mb-6">
           <div class="flex">
@@ -637,8 +637,8 @@ defmodule SecretHub.Web.PolicyManagementLive do
           </div>
         </div>
       <% end %>
-      
-    <!-- Policies List -->
+
+      <!-- Policies List -->
       <div class="bg-surface-container shadow overflow-hidden sm:rounded-md">
         <ul role="list" class="divide-y divide-outline-variant">
           <%= if Enum.empty?(@policies) do %>

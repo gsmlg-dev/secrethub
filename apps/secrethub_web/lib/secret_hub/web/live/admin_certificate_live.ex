@@ -133,8 +133,8 @@ defmodule SecretHub.Web.AdminCertificateLive do
           {@flash["error"]}
         </div>
       <% end %>
-      
-    <!-- Upload Section -->
+
+      <!-- Upload Section -->
       <div class="mt-8 bg-surface-container shadow sm:rounded-lg">
         <div class="px-4 py-5 sm:p-6">
           <h3 class="text-lg font-medium leading-6 text-on-surface">
@@ -214,8 +214,8 @@ defmodule SecretHub.Web.AdminCertificateLive do
           </form>
         </div>
       </div>
-      
-    <!-- Certificates List -->
+
+      <!-- Certificates List -->
       <div class="mt-8 flex flex-col">
         <div class="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
           <div class="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
@@ -308,8 +308,8 @@ defmodule SecretHub.Web.AdminCertificateLive do
           </div>
         </div>
       </div>
-      
-    <!-- Certificate Details Modal -->
+
+      <!-- Certificate Details Modal -->
       <%= if @selected_cert do %>
         <div class="fixed z-10 inset-0 overflow-y-auto" role="dialog">
           <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">

@@ -117,8 +117,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
           </button>
         </div>
       </div>
-      
-    <!-- Key Metrics Grid -->
+
+      <!-- Key Metrics Grid -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
         <!-- Connected Agents -->
         <div class="bg-surface-container rounded-lg shadow p-6">
@@ -147,8 +147,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
             </div>
           </div>
         </div>
-        
-    <!-- Request Rate -->
+
+        <!-- Request Rate -->
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
             <div class="flex-shrink-0 bg-success rounded-md p-3">
@@ -175,8 +175,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
             </div>
           </div>
         </div>
-        
-    <!-- P95 Latency -->
+
+        <!-- P95 Latency -->
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
             <div class={"flex-shrink-0 rounded-md p-3 #{latency_color(@metrics.p95_latency)}"}>
@@ -203,8 +203,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
             </div>
           </div>
         </div>
-        
-    <!-- Memory Usage -->
+
+        <!-- Memory Usage -->
         <div class="bg-surface-container rounded-lg shadow p-6">
           <div class="flex items-center">
             <div class="flex-shrink-0 bg-tertiary text-tertiary-content rounded-md p-3">
@@ -232,8 +232,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
           </div>
         </div>
       </div>
-      
-    <!-- Detailed Metrics -->
+
+      <!-- Detailed Metrics -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <!-- Database Metrics -->
         <div class="bg-surface-container rounded-lg shadow p-6">
@@ -269,8 +269,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
             </div>
           </div>
         </div>
-        
-    <!-- Cache Metrics -->
+
+        <!-- Cache Metrics -->
         <div class="bg-surface-container rounded-lg shadow p-6">
           <h3 class="text-lg font-medium text-on-surface mb-4">Cache Performance</h3>
           <div class="space-y-4">
@@ -314,8 +314,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
           </div>
         </div>
       </div>
-      
-    <!-- VM Metrics -->
+
+      <!-- VM Metrics -->
       <div class="bg-surface-container rounded-lg shadow p-6">
         <h3 class="text-lg font-medium text-on-surface mb-4">VM Metrics</h3>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -337,8 +337,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
           </div>
         </div>
       </div>
-      
-    <!-- WebSocket Metrics -->
+
+      <!-- WebSocket Metrics -->
       <div class="bg-surface-container rounded-lg shadow p-6">
         <h3 class="text-lg font-medium text-on-surface mb-4">WebSocket Performance</h3>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -362,8 +362,8 @@ defmodule SecretHub.Web.PerformanceDashboardLive do
           </div>
         </div>
       </div>
-      
-    <!-- Performance Status -->
+
+      <!-- Performance Status -->
       <div class={"border-l-4 p-4 #{status_color(@metrics.overall_status)}"}>
         <div class="flex">
           <div class="flex-shrink-0">

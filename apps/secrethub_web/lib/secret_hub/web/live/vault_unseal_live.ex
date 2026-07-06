@@ -48,8 +48,8 @@ defmodule SecretHub.Web.VaultUnsealLive do
             Secure Secrets Management Platform
           </p>
         </div>
-        
-    <!-- Vault Status Card -->
+
+        <!-- Vault Status Card -->
         <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden mb-6">
           <div class="px-6 py-4 border-b border-outline-variant">
             <h2 class="text-xl font-semibold text-on-surface">Vault Status</h2>
@@ -68,8 +68,8 @@ defmodule SecretHub.Web.VaultUnsealLive do
                   </p>
                 </div>
               </div>
-              
-    <!-- Sealed Status -->
+
+              <!-- Sealed Status -->
               <div class="flex items-center space-x-3">
                 <div class={"w-3 h-3 rounded-full #{if @vault_status.sealed, do: "bg-error text-error-content", else: "bg-success"}"}>
                 </div>
@@ -80,8 +80,8 @@ defmodule SecretHub.Web.VaultUnsealLive do
                   </p>
                 </div>
               </div>
-              
-    <!-- Progress -->
+
+              <!-- Progress -->
               <%= if @vault_status.initialized and @vault_status.threshold do %>
                 <div class="col-span-2">
                   <p class="text-sm text-on-surface-variant mb-2">Unseal Progress</p>
@@ -102,8 +102,8 @@ defmodule SecretHub.Web.VaultUnsealLive do
             </div>
           </div>
         </div>
-        
-    <!-- Unseal Form (only show if vault is sealed) -->
+
+        <!-- Unseal Form (only show if vault is sealed) -->
         <%= if @vault_status.initialized and @vault_status.sealed do %>
           <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden mb-6">
             <div class="px-6 py-4 border-b border-outline-variant">
@@ -131,16 +131,16 @@ defmodule SecretHub.Web.VaultUnsealLive do
                     Paste one or more Shamir shares above, separated by newlines, commas, or spaces. You need {@vault_status.threshold} shares to unseal the vault.
                   </p>
                 </div>
-                
-    <!-- Error Message -->
+
+                <!-- Error Message -->
                 <%= if @error_message do %>
                   <div class="bg-error/5 border border-error text-error px-4 py-3 rounded-lg">
                     <p class="font-medium">Error</p>
                     <p class="text-sm">{@error_message}</p>
                   </div>
                 <% end %>
-                
-    <!-- Success Message -->
+
+                <!-- Success Message -->
                 <%= if @success_message do %>
                   <div class="bg-success/5 border border-success text-success px-4 py-3 rounded-lg">
                     <p class="font-medium">Success</p>
@@ -155,8 +155,8 @@ defmodule SecretHub.Web.VaultUnsealLive do
                   Submit Share(s)
                 </button>
               </form>
-              
-    <!-- Submitted Shares -->
+
+              <!-- Submitted Shares -->
               <%= if length(@shares_submitted) > 0 do %>
                 <div class="mt-6">
                   <p class="text-sm font-medium text-on-surface mb-2">
@@ -175,8 +175,8 @@ defmodule SecretHub.Web.VaultUnsealLive do
             </div>
           </div>
         <% end %>
-        
-    <!-- Unsealed Actions (only show if vault is unsealed) -->
+
+        <!-- Unsealed Actions (only show if vault is unsealed) -->
         <%= if @vault_status.initialized and not @vault_status.sealed do %>
           <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden">
             <div class="px-6 py-4 border-b border-outline-variant">
@@ -207,8 +207,8 @@ defmodule SecretHub.Web.VaultUnsealLive do
             </div>
           </div>
         <% end %>
-        
-    <!-- Not Initialized Message -->
+
+        <!-- Not Initialized Message -->
         <%= if not @vault_status.initialized do %>
           <div class="bg-surface-container shadow-lg rounded-lg overflow-hidden">
             <div class="px-6 py-6">

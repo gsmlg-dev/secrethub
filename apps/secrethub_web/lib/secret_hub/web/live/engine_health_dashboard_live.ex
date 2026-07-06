@@ -260,8 +260,8 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
           </button>
         </div>
       </div>
-      
-    <!-- Current Status Card -->
+
+      <!-- Current Status Card -->
       <div class="card bg-base-100 shadow-xl mb-6">
         <div class="card-body">
           <h2 class="card-title">Current Status</h2>
@@ -307,8 +307,8 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Statistics Cards -->
+
+      <!-- Statistics Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Total Checks</div>
@@ -340,8 +340,8 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
           <div class="stat-desc">Response time</div>
         </div>
       </div>
-      
-    <!-- Time Range Selector -->
+
+      <!-- Time Range Selector -->
       <div class="mb-6 flex items-center gap-4">
         <label class="text-sm font-medium">Time Range:</label>
         <div class="join">
@@ -368,8 +368,8 @@ defmodule SecretHub.Web.EngineHealthDashboardLive do
           </button>
         </div>
       </div>
-      
-    <!-- Health History -->
+
+      <!-- Health History -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Health Check History</h2>

@@ -83,12 +83,13 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     agent = Helpers.bootstrap_agent(role_id, secret_id)
 
-    # ── Phase 3: Login via REST to get agent_auth token ──
+    # ── Phase 3: Create policy and attach it to both auth paths ──
+    policy = Helpers.create_and_link_policy(agent)
+    Helpers.attach_policy_to_approle(role_id, [policy.name])
+
+    # ── Phase 4: Login via REST to get agent_auth token ──
     {200, login_resp} = Helpers.approle_login(role_id, secret_id)
     token = login_resp["token"]
-
-    # ── Phase 4: Create policy and link to agent ──
-    _policy = Helpers.create_and_link_policy(agent)
 
     # ── Phase 5: Create a secret for WebSocket tests ──
     # Done here instead of in individual tests to avoid ConnTest HTTP

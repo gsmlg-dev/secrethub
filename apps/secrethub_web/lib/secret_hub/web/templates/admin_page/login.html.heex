@@ -12,8 +12,8 @@
         Certificate-based authentication required
       </p>
     </div>
-    
-<!-- Authentication Card -->
+
+    <!-- Authentication Card -->
     <div class="mt-8 bg-surface-container py-8 px-4 shadow-lg rounded-lg sm:px-10">
       <%= if @conn.assigns[:flash]["error"] do %>
         <div
@@ -32,8 +32,8 @@
           <span class="block sm:inline">{@conn.assigns[:flash]["info"]}</span>
         </div>
       <% end %>
-      
-<!-- Instructions -->
+
+      <!-- Instructions -->
       <div class="space-y-4">
         <div class="border-l-4 border-primary bg-primary-container text-on-primary-container p-4">
           <div class="flex">
@@ -52,8 +52,8 @@
             </div>
           </div>
         </div>
-        
-<!-- Certificate Status -->
+
+        <!-- Certificate Status -->
         <div class="bg-surface-container-low px-4 py-5 sm:p-6 rounded-md">
           <h3 class="text-lg leading-6 font-medium text-on-surface mb-4">
             Certificate Status
@@ -78,8 +78,8 @@
             </div>
           </div>
         </div>
-        
-<!-- Development Mode Login -->
+
+        <!-- Development Mode Login -->
         <%= if @dev_mode do %>
           <div class="border-l-4 border-warning bg-warning-container text-on-warning-container p-4 mb-4">
             <div class="flex">
@@ -135,8 +135,8 @@
             </div>
           </div>
         <% end %>
-        
-<!-- Action Buttons -->
+
+        <!-- Action Buttons -->
         <div class="space-y-3">
           <%= if get_req_header(@conn, "x-ssl-client-cert") != [] do %>
             <form action="/admin/auth/login" method="post" class="w-full">
@@ -166,8 +166,8 @@
             Back to Home
           </.button>
         </div>
-        
-<!-- Help Text -->
+
+        <!-- Help Text -->
         <div class="mt-6">
           <div class="relative">
             <div class="absolute inset-0 flex items-center">
@@ -189,8 +189,8 @@
         </div>
       </div>
     </div>
-    
-<!-- Footer -->
+
+    <!-- Footer -->
     <div class="text-center text-xs text-on-surface-variant">
       <p>SecretHub Admin Console</p>
       <p class="mt-1">Secure secrets management platform</p>

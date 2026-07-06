@@ -178,8 +178,8 @@ defmodule SecretHub.Web.LeaseViewerLive do
           View and manage active dynamic secret leases
         </p>
       </div>
-      
-    <!-- Statistics Cards -->
+
+      <!-- Statistics Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="bg-surface-container shadow rounded-lg p-6">
           <div class="text-sm font-medium text-on-surface-variant">Total Leases</div>
@@ -201,8 +201,8 @@ defmodule SecretHub.Web.LeaseViewerLive do
           <div class="mt-2 text-3xl font-bold text-error">{@stats[:expired] || 0}</div>
         </div>
       </div>
-      
-    <!-- Filters -->
+
+      <!-- Filters -->
       <div class="bg-surface-container shadow rounded-lg p-6 mb-6">
         <h2 class="text-lg font-semibold mb-4">Filters</h2>
 
@@ -272,8 +272,8 @@ defmodule SecretHub.Web.LeaseViewerLive do
           </button>
         </div>
       </div>
-      
-    <!-- Leases Table -->
+
+      <!-- Leases Table -->
       <div class="bg-surface-container shadow rounded-lg overflow-hidden">
         <table class="min-w-full divide-y divide-outline-variant">
           <thead class="bg-surface-container-low">

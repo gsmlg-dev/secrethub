@@ -229,8 +229,8 @@ defmodule SecretHub.Web.SecretManagementLive do
           New Secret
         </.dm_btn>
       </div>
-      
-    <!-- Filters and Search -->
+
+      <!-- Filters and Search -->
       <div class="bg-surface-container p-4 rounded-lg shadow">
         <div class="flex flex-wrap gap-4 items-center">
           <.dm_select
@@ -258,8 +258,8 @@ defmodule SecretHub.Web.SecretManagementLive do
           />
         </div>
       </div>
-      
-    <!-- Secret Form Modal -->
+
+      <!-- Secret Form Modal -->
       <%= if @show_form do %>
         <.live_component
           module={SecretHub.Web.SecretFormComponent}
@@ -272,8 +272,8 @@ defmodule SecretHub.Web.SecretManagementLive do
           return_to="/admin/secrets"
         />
       <% end %>
-      
-    <!-- Secret List -->
+
+      <!-- Secret List -->
       <div class="bg-surface-container rounded-lg shadow">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-outline-variant">
@@ -371,8 +371,8 @@ defmodule SecretHub.Web.SecretManagementLive do
           </table>
         </div>
       </div>
-      
-    <!-- Loading State -->
+
+      <!-- Loading State -->
       <%= if @loading do %>
         <div class="fixed inset-0 bg-surface-container-highest/75 bg-opacity-50 flex items-center justify-center z-50">
           <div class="bg-surface-container rounded-lg p-6 shadow-xl">

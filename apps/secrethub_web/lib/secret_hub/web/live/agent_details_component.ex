@@ -95,8 +95,8 @@ defmodule SecretHub.Web.AgentDetailsComponent do
             </div>
           </div>
         </div>
-        
-    <!-- Security Info -->
+
+        <!-- Security Info -->
         <div class="space-y-4">
           <h4 class="text-lg font-medium text-on-surface">Security Information</h4>
 
@@ -122,8 +122,8 @@ defmodule SecretHub.Web.AgentDetailsComponent do
           </div>
         </div>
       </div>
-      
-    <!-- Recent Activity -->
+
+      <!-- Recent Activity -->
       <div class="mt-6">
         <h4 class="text-lg font-medium text-on-surface mb-4">Recent Activity</h4>
         <div class="bg-surface-container-low rounded-lg p-4">
@@ -142,8 +142,8 @@ defmodule SecretHub.Web.AgentDetailsComponent do
           </div>
         </div>
       </div>
-      
-    <!-- Agent Actions -->
+
+      <!-- Agent Actions -->
       <div class="mt-6 border-t pt-6">
         <h4 class="text-lg font-medium text-on-surface mb-4">Agent Actions</h4>
         <div class="flex space-x-4">

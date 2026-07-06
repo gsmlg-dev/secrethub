@@ -589,8 +589,8 @@ defmodule SecretHub.Web.TemplateManagementLive do
             </div>
           <% end %>
         </div>
-        
-    <!-- Template Details / Preview -->
+
+        <!-- Template Details / Preview -->
         <div class="bg-surface-container shadow-md rounded-lg p-6">
           <h2 class="text-xl font-semibold mb-4">Template Details</h2>
 

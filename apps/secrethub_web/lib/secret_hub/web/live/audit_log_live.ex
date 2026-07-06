@@ -176,8 +176,8 @@ defmodule SecretHub.Web.AuditLogLive do
           </button>
         </div>
       </div>
-      
-    <!-- Filters -->
+
+      <!-- Filters -->
       <div class="bg-surface-container p-6 rounded-lg shadow">
         <div class="flex justify-between items-center mb-4">
           <h3 class="text-lg font-medium text-on-surface">Filters</h3>
@@ -271,8 +271,8 @@ defmodule SecretHub.Web.AuditLogLive do
           </div>
         </form>
       </div>
-      
-    <!-- Results Summary -->
+
+      <!-- Results Summary -->
       <div class="bg-primary/5 border border-primary/50 rounded-lg p-4">
         <div class="flex items-center justify-between">
           <div>
@@ -298,8 +298,8 @@ defmodule SecretHub.Web.AuditLogLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Audit Log Table -->
+
+      <!-- Audit Log Table -->
       <div class="bg-surface-container rounded-lg shadow">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-outline-variant">
@@ -380,8 +380,8 @@ defmodule SecretHub.Web.AuditLogLive do
           </table>
         </div>
       </div>
-      
-    <!-- Event Details Modal -->
+
+      <!-- Event Details Modal -->
       <%= if @selected_event do %>
         <.live_component
           module={SecretHub.Web.AuditEventDetailsComponent}

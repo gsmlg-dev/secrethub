@@ -233,8 +233,8 @@ defmodule SecretHub.Web.EngineSetupWizardLive do
         </h1>
         <p class="text-on-surface-variant mt-1">Configure a new dynamic secret engine</p>
       </div>
-      
-    <!-- Progress Steps -->
+
+      <!-- Progress Steps -->
       <div class="mb-8">
         <ul class="steps steps-horizontal w-full">
           <li class={"step #{if @step >= 1, do: "step-primary", else: ""}"}>Basic Info</li>

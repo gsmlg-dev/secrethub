@@ -171,8 +171,8 @@ defmodule SecretHub.Web.HealthAlertsLive do
           <span>{@error}</span>
         </div>
       <% end %>
-      
-    <!-- Alerts List -->
+
+      <!-- Alerts List -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <%= if Enum.any?(@alerts) do %>
@@ -248,8 +248,8 @@ defmodule SecretHub.Web.HealthAlertsLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Info Card -->
+
+      <!-- Info Card -->
       <div class="card bg-base-200 shadow-xl mt-6">
         <div class="card-body">
           <h2 class="card-title">About Health Alerts</h2>

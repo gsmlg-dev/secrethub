@@ -281,8 +281,8 @@ defmodule SecretHub.Web.DeploymentStatusLive do
           </span>
         </div>
       <% end %>
-      
-    <!-- Deployment Overview -->
+
+      <!-- Deployment Overview -->
       <%= if @deployment do %>
         <div class="card bg-base-100 shadow-xl mb-6">
           <div class="card-body">
@@ -330,8 +330,8 @@ defmodule SecretHub.Web.DeploymentStatusLive do
           </div>
         </div>
       <% end %>
-      
-    <!-- Pods Table -->
+
+      <!-- Pods Table -->
       <div class="card bg-base-100 shadow-xl mb-6">
         <div class="card-body">
           <h2 class="card-title">Pods</h2>
@@ -422,8 +422,8 @@ defmodule SecretHub.Web.DeploymentStatusLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Recent Events -->
+
+      <!-- Recent Events -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Recent Events</h2>
@@ -479,8 +479,8 @@ defmodule SecretHub.Web.DeploymentStatusLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Scale Dialog Modal -->
+
+      <!-- Scale Dialog Modal -->
       <%= if @scale_replicas do %>
         <div class="modal modal-open">
           <div class="modal-box">

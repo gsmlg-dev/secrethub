@@ -54,8 +54,8 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
               </div>
             </div>
           </div>
-          
-    <!-- Request Details -->
+
+          <!-- Request Details -->
           <div>
             <h4 class="text-lg font-medium text-on-surface mb-4">Request Details</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -128,8 +128,8 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
               </div>
             </div>
           </div>
-          
-    <!-- Request/Response Details -->
+
+          <!-- Request/Response Details -->
           <div>
             <h4 class="text-lg font-medium text-on-surface mb-4">Request & Response</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -172,16 +172,16 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
               </div>
             </div>
           </div>
-          
-    <!-- Denial Reason (if applicable) -->
+
+          <!-- Denial Reason (if applicable) -->
           <%= if @event.access_granted == false and @event.denial_reason do %>
             <div class="bg-error/5 border border-error rounded-lg p-4">
               <h4 class="text-sm font-medium text-error mb-2">Denial Reason</h4>
               <p class="text-sm text-error">{@event.denial_reason}</p>
             </div>
           <% end %>
-          
-    <!-- Additional Context -->
+
+          <!-- Additional Context -->
           <%= if @event.context do %>
             <div>
               <h4 class="text-lg font-medium text-on-surface mb-4">Additional Context</h4>
@@ -190,8 +190,8 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
               </div>
             </div>
           <% end %>
-          
-    <!-- Hash Chain Information -->
+
+          <!-- Hash Chain Information -->
           <div>
             <h4 class="text-lg font-medium text-on-surface mb-4">Integrity Verification</h4>
             <div class="bg-surface-container-low rounded-lg p-4">
@@ -217,8 +217,8 @@ defmodule SecretHub.Web.AuditEventDetailsComponent do
             </div>
           </div>
         </div>
-        
-    <!-- Actions -->
+
+        <!-- Actions -->
         <div class="px-6 py-4 border-t border-outline-variant flex justify-end space-x-4">
           <button
             class="btn btn-secondary"

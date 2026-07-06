@@ -101,7 +101,7 @@ end
 
 db_config =
   cond do
-    database_url = System.get_env("DATABASE_TEST_URL") ->
+    database_url = System.get_env("DATABASE_TEST_URL") || System.get_env("DATABASE_URL") ->
       db_config
       |> Keyword.merge(database_url_config.(database_url))
       |> Keyword.put(:database, database_name)

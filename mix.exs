@@ -60,10 +60,8 @@ defmodule SecretHub.MixProject do
       "test.watch": ["test.watch --stale"],
 
       # Code quality
-      quality: ["format", "cmd mix lint"],
-      lint: ["cmd mix lint"],
-      credo: ["cmd mix credo --strict"],
-      dialyzer: ["cmd mix dialyzer"],
+      quality: ["format", "credo --strict", "dialyzer --halt-exit-status"],
+      lint: ["credo --strict"],
 
       # Assets
       "assets.deploy": [

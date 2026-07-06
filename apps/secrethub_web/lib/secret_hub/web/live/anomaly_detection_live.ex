@@ -118,8 +118,8 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
         Anomaly Detection
         <:subtitle>Real-time anomaly detection and alerting</:subtitle>
       </.header>
-      
-    <!-- Statistics Cards -->
+
+      <!-- Statistics Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
         <.stat_card
           title="Total Alerts"
@@ -146,8 +146,8 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
           color="green"
         />
       </div>
-      
-    <!-- Detection Rules -->
+
+      <!-- Detection Rules -->
       <div class="bg-surface-container rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b">
           <h2 class="text-lg font-semibold">Detection Rules</h2>
@@ -193,8 +193,8 @@ defmodule SecretHub.Web.AnomalyDetectionLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Recent Alerts -->
+
+      <!-- Recent Alerts -->
       <div class="bg-surface-container rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b flex items-center justify-between">
           <h2 class="text-lg font-semibold">Recent Alerts</h2>

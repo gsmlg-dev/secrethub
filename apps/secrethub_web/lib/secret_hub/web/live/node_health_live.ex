@@ -221,8 +221,8 @@ defmodule SecretHub.Web.NodeHealthLive do
           <span>{@error}</span>
         </div>
       <% end %>
-      
-    <!-- Current Health Metrics -->
+
+      <!-- Current Health Metrics -->
       <div class="card bg-base-100 shadow-xl mb-6">
         <div class="card-body">
           <h2 class="card-title">Current Health Status</h2>
@@ -365,8 +365,8 @@ defmodule SecretHub.Web.NodeHealthLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Recent Alerts -->
+
+      <!-- Recent Alerts -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Recent Alerts</h2>

@@ -136,8 +136,8 @@ defmodule SecretHub.Web.AlertConfigurationLive do
           </.button>
         </:actions>
       </.header>
-      
-    <!-- Configuration Form -->
+
+      <!-- Configuration Form -->
       <%= if @show_form do %>
         <div class="bg-surface-container p-6 rounded-lg border shadow-sm">
           <h3 class="text-lg font-semibold mb-4">
@@ -232,8 +232,8 @@ defmodule SecretHub.Web.AlertConfigurationLive do
           </form>
         </div>
       <% end %>
-      
-    <!-- Configuration List -->
+
+      <!-- Configuration List -->
       <div class="bg-surface-container rounded-lg border shadow-sm overflow-hidden">
         <table class="min-w-full divide-y divide-outline-variant">
           <thead class="bg-surface-container-low">

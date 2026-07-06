@@ -5,6 +5,8 @@ defmodule SecretHub.CLITest do
 
   alias SecretHub.CLI
 
+  @version Mix.Project.config()[:version]
+
   describe "main/1 - help and version" do
     test "shows help when no arguments provided" do
       output =
@@ -42,7 +44,7 @@ defmodule SecretHub.CLITest do
           catch_exit(CLI.main(["--version"]))
         end)
 
-      assert output =~ "SecretHub CLI v0.1.0"
+      assert output =~ "SecretHub CLI v#{@version}"
     end
 
     test "shows version with version command" do
@@ -51,7 +53,7 @@ defmodule SecretHub.CLITest do
           catch_exit(CLI.main(["version"]))
         end)
 
-      assert output =~ "SecretHub CLI v0.1.0"
+      assert output =~ "SecretHub CLI v#{@version}"
     end
   end
 

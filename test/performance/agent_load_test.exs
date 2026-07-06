@@ -12,8 +12,8 @@ defmodule SecretHub.Performance.AgentLoadTest do
   """
 
   alias SecretHub.Core.{Agents, Policies, Secrets}
-  alias SecretHub.Core.Vault.SealState
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.Vault.SealState
 
   require Logger
 
@@ -241,11 +241,7 @@ defmodule SecretHub.Performance.AgentLoadTest do
       end)
       |> Enum.map(fn {:ok, {:success, latency}} -> latency end)
 
-    avg_latency = if length(latencies) > 0, do: Enum.sum(latencies) / length(latencies), else: 0
-    min_latency = if length(latencies) > 0, do: Enum.min(latencies), else: 0
-    max_latency = if length(latencies) > 0, do: Enum.max(latencies), else: 0
-    p95_latency = if length(latencies) > 0, do: percentile(latencies, 95), else: 0
-    p99_latency = if length(latencies) > 0, do: percentile(latencies, 99), else: 0
+    latency_stats = latency_stats(latencies)
 
     %{
       total_attempts: @agent_count,
@@ -253,11 +249,11 @@ defmodule SecretHub.Performance.AgentLoadTest do
       failed: error_count,
       duration_ms: duration_ms,
       throughput: success_count / (duration_ms / 1000),
-      avg_latency_ms: avg_latency,
-      min_latency_ms: min_latency,
-      max_latency_ms: max_latency,
-      p95_latency_ms: p95_latency,
-      p99_latency_ms: p99_latency
+      avg_latency_ms: latency_stats.avg,
+      min_latency_ms: latency_stats.min,
+      max_latency_ms: latency_stats.max,
+      p95_latency_ms: latency_stats.p95,
+      p99_latency_ms: latency_stats.p99
     }
   end
 
@@ -293,19 +289,7 @@ defmodule SecretHub.Performance.AgentLoadTest do
         fn {_agent, _token} ->
           # Each agent makes multiple requests
           Enum.map(1..@requests_per_agent, fn _i ->
-            # Pick a random secret
-            secret = Enum.random(secrets)
-            req_start = System.monotonic_time(:millisecond)
-
-            result = Secrets.get_secret_by_path(secret.path)
-
-            req_end = System.monotonic_time(:millisecond)
-            latency = req_end - req_start
-
-            case result do
-              {:ok, _secret} -> {:success, latency}
-              {:error, reason} -> {:error, reason, latency}
-            end
+            read_random_secret(secrets)
           end)
         end,
         max_concurrency: @agent_count,
@@ -337,11 +321,7 @@ defmodule SecretHub.Performance.AgentLoadTest do
       end)
       |> Enum.map(fn {:success, latency} -> latency end)
 
-    avg_latency = if length(latencies) > 0, do: Enum.sum(latencies) / length(latencies), else: 0
-    min_latency = if length(latencies) > 0, do: Enum.min(latencies), else: 0
-    max_latency = if length(latencies) > 0, do: Enum.max(latencies), else: 0
-    p95_latency = if length(latencies) > 0, do: percentile(latencies, 95), else: 0
-    p99_latency = if length(latencies) > 0, do: percentile(latencies, 99), else: 0
+    latency_stats = latency_stats(latencies)
 
     %{
       total_requests: total_requests,
@@ -349,11 +329,11 @@ defmodule SecretHub.Performance.AgentLoadTest do
       failed: error_count,
       duration_ms: duration_ms,
       throughput: success_count / (duration_ms / 1000),
-      avg_latency_ms: avg_latency,
-      min_latency_ms: min_latency,
-      max_latency_ms: max_latency,
-      p95_latency_ms: p95_latency,
-      p99_latency_ms: p99_latency
+      avg_latency_ms: latency_stats.avg,
+      min_latency_ms: latency_stats.min,
+      max_latency_ms: latency_stats.max,
+      p95_latency_ms: latency_stats.p95,
+      p99_latency_ms: latency_stats.p99
     }
   end
 
@@ -384,32 +364,7 @@ defmodule SecretHub.Performance.AgentLoadTest do
         fn {_agent, _token} ->
           # Mix of reads (70%) and writes (30%)
           Enum.map(1..@requests_per_agent, fn i ->
-            req_start = System.monotonic_time(:millisecond)
-
-            result =
-              if rem(i, 10) < 7 do
-                # Read operation
-                secret = Enum.random(secrets)
-                Secrets.get_secret_by_path(secret.path)
-              else
-                # Write operation (update existing secret)
-                secret = Enum.random(secrets)
-
-                Secrets.update_secret(secret.id, %{
-                  data: %{
-                    "updated_at" => DateTime.utc_now() |> DateTime.to_string(),
-                    "counter" => i
-                  }
-                })
-              end
-
-            req_end = System.monotonic_time(:millisecond)
-            latency = req_end - req_start
-
-            case result do
-              {:ok, _} -> {:success, latency}
-              {:error, reason} -> {:error, reason, latency}
-            end
+            run_mixed_operation(secrets, i)
           end)
         end,
         max_concurrency: @agent_count,
@@ -441,7 +396,7 @@ defmodule SecretHub.Performance.AgentLoadTest do
       end)
       |> Enum.map(fn {:success, latency} -> latency end)
 
-    avg_latency = if length(latencies) > 0, do: Enum.sum(latencies) / length(latencies), else: 0
+    avg_latency = average_latency(latencies)
 
     %{
       total_requests: @agent_count * @requests_per_agent,
@@ -467,6 +422,63 @@ defmodule SecretHub.Performance.AgentLoadTest do
       d0 + d1
     end
   end
+
+  defp read_random_secret(secrets) do
+    secret = Enum.random(secrets)
+
+    timed_secret_result(fn ->
+      Secrets.get_secret_by_path(secret.path)
+    end)
+  end
+
+  defp run_mixed_operation(secrets, i) do
+    secret = Enum.random(secrets)
+
+    operation =
+      if rem(i, 10) < 7 do
+        fn -> Secrets.get_secret_by_path(secret.path) end
+      else
+        fn ->
+          Secrets.update_secret(secret.id, %{
+            data: %{
+              "updated_at" => DateTime.utc_now() |> DateTime.to_string(),
+              "counter" => i
+            }
+          })
+        end
+      end
+
+    timed_secret_result(operation)
+  end
+
+  defp timed_secret_result(operation) do
+    req_start = System.monotonic_time(:millisecond)
+    result = operation.()
+    req_end = System.monotonic_time(:millisecond)
+    latency = req_end - req_start
+
+    case result do
+      {:ok, _} -> {:success, latency}
+      {:error, reason} -> {:error, reason, latency}
+    end
+  end
+
+  defp latency_stats([]) do
+    %{avg: 0, min: 0, max: 0, p95: 0, p99: 0}
+  end
+
+  defp latency_stats(latencies) do
+    %{
+      avg: average_latency(latencies),
+      min: Enum.min(latencies),
+      max: Enum.max(latencies),
+      p95: percentile(latencies, 95),
+      p99: percentile(latencies, 99)
+    }
+  end
+
+  defp average_latency([]), do: 0
+  defp average_latency(latencies), do: Enum.sum(latencies) / length(latencies)
 
   defp print_results(results) do
     IO.puts("\n")

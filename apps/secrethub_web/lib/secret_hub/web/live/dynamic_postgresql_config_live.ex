@@ -272,8 +272,8 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                 <p class="text-error text-sm mt-1">{error}</p>
               <% end %>
             </div>
-            
-    <!-- Connection Parameters -->
+
+            <!-- Connection Parameters -->
             <div class="mb-6">
               <h3 class="text-lg font-semibold mb-3">Connection Parameters</h3>
 
@@ -397,8 +397,8 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                 <% end %>
               </div>
             </div>
-            
-    <!-- TTL Configuration -->
+
+            <!-- TTL Configuration -->
             <div class="mb-6">
               <h3 class="text-lg font-semibold mb-3">TTL Configuration</h3>
 
@@ -438,8 +438,8 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                 </div>
               </div>
             </div>
-            
-    <!-- SQL Statement Templates -->
+
+            <!-- SQL Statement Templates -->
             <div class="mb-6">
               <h3 class="text-lg font-semibold mb-3">SQL Statement Templates</h3>
               <p class="text-sm text-on-surface-variant mb-3">
@@ -490,8 +490,8 @@ defmodule SecretHub.Web.DynamicPostgreSQLConfigLive do
                 <% end %>
               </div>
             </div>
-            
-    <!-- Form Actions -->
+
+            <!-- Form Actions -->
             <div class="flex justify-end space-x-3">
               <button
                 type="button"

@@ -149,8 +149,8 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           </.button>
         </:actions>
       </.header>
-      
-    <!-- Comparison Tool -->
+
+      <!-- Comparison Tool -->
       <div class="bg-surface-container rounded-lg border shadow-sm p-6">
         <h3 class="text-lg font-semibold mb-4">Compare Versions</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -222,8 +222,8 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           </div>
         <% end %>
       </div>
-      
-    <!-- Version Timeline -->
+
+      <!-- Version Timeline -->
       <div class="bg-surface-container rounded-lg border shadow-sm">
         <div class="px-6 py-4 border-b">
           <h3 class="text-lg font-semibold">Version Timeline</h3>
@@ -291,8 +291,8 @@ defmodule SecretHub.Web.SecretVersionHistoryLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Rollback Confirmation Modal -->
+
+      <!-- Rollback Confirmation Modal -->
       <%= if @show_rollback_modal do %>
         <div class="fixed inset-0 bg-surface-container-low0 bg-opacity-75 flex items-center justify-center z-50">
           <div class="bg-surface-container rounded-lg p-6 max-w-md w-full mx-4">

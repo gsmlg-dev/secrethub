@@ -235,7 +235,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
         </p>
       </div>
 
-    <!-- Create New AppRole Button -->
+      <!-- Create New AppRole Button -->
       <div class="mb-6">
         <button
           phx-click="open_create_form"
@@ -257,7 +257,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
         </button>
       </div>
 
-    <!-- Create Role Modal -->
+      <!-- Create Role Modal -->
       <%= if @creating_role do %>
         <div
           class="fixed inset-0 z-50 overflow-y-auto"
@@ -473,7 +473,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
         </div>
       <% end %>
 
-    <!-- Generated SecretID Modal -->
+      <!-- Generated SecretID Modal -->
       <%= if @new_secret_id do %>
         <div
           class="fixed inset-0 z-50 overflow-y-auto"
@@ -570,7 +570,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
         </div>
       <% end %>
 
-    <!-- Role Details Modal -->
+      <!-- Role Details Modal -->
       <%= if @selected_role do %>
         <div
           class="fixed inset-0 z-50 overflow-y-auto"
@@ -719,7 +719,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
         </div>
       <% end %>
 
-    <!-- Edit Policies Modal -->
+      <!-- Edit Policies Modal -->
       <%= if @editing_role_policies do %>
         <div
           class="fixed inset-0 z-50 overflow-y-auto"
@@ -908,7 +908,7 @@ defmodule SecretHub.Web.AppRoleManagementLive do
         </ul>
       </div>
 
-    <!-- Delete AppRole Modal -->
+      <!-- Delete AppRole Modal -->
       <%= if @delete_role_target do %>
         <div
           class="fixed inset-0 z-50 overflow-y-auto"

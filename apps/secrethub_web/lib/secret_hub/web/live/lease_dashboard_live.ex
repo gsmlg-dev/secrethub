@@ -81,8 +81,8 @@ defmodule SecretHub.Web.LeaseDashboardLive do
           </select>
         </div>
       </div>
-      
-    <!-- Overview Statistics -->
+
+      <!-- Overview Statistics -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="bg-surface-container shadow rounded-lg p-6">
           <div class="text-sm font-medium text-on-surface-variant">Total Leases</div>
@@ -122,8 +122,8 @@ defmodule SecretHub.Web.LeaseDashboardLive do
           </div>
         </div>
       </div>
-      
-    <!-- Renewal Metrics Chart -->
+
+      <!-- Renewal Metrics Chart -->
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div class="bg-surface-container shadow rounded-lg p-6">
           <h2 class="text-lg font-semibold mb-4">Renewal Trends</h2>
@@ -209,8 +209,8 @@ defmodule SecretHub.Web.LeaseDashboardLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Upcoming Renewals Timeline -->
+
+      <!-- Upcoming Renewals Timeline -->
       <div class="bg-surface-container shadow rounded-lg p-6 mb-6">
         <h2 class="text-lg font-semibold mb-4">Upcoming Renewals</h2>
 
@@ -275,8 +275,8 @@ defmodule SecretHub.Web.LeaseDashboardLive do
           </div>
         <% end %>
       </div>
-      
-    <!-- Recent Activity -->
+
+      <!-- Recent Activity -->
       <div class="bg-surface-container shadow rounded-lg p-6">
         <h2 class="text-lg font-semibold mb-4">Recent Activity</h2>
 

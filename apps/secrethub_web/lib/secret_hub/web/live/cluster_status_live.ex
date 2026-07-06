@@ -205,8 +205,8 @@ defmodule SecretHub.Web.ClusterStatusLive do
             </button>
           </div>
         </div>
-        
-    <!-- Last refresh time -->
+
+        <!-- Last refresh time -->
         <div class="mt-2 text-xs text-on-surface-variant">
           Last updated: {format_timestamp(@last_refresh)}
         </div>
@@ -292,8 +292,8 @@ defmodule SecretHub.Web.ClusterStatusLive do
                 </div>
               </div>
             </div>
-            
-    <!-- Quick Actions -->
+
+            <!-- Quick Actions -->
             <div class="mb-6 bg-surface-container rounded-lg shadow p-6">
               <h3 class="text-lg font-semibold text-on-surface mb-4">Cluster Management</h3>
               <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -418,8 +418,8 @@ defmodule SecretHub.Web.ClusterStatusLive do
                 </.link>
               </div>
             </div>
-            
-    <!-- Overall health status -->
+
+            <!-- Overall health status -->
             <%= if @health_status do %>
               <div class="mb-6 bg-surface-container rounded-lg shadow p-6">
                 <h3 class="text-lg font-semibold text-on-surface mb-4">Overall Health</h3>
@@ -449,8 +449,8 @@ defmodule SecretHub.Web.ClusterStatusLive do
                 </div>
               </div>
             <% end %>
-            
-    <!-- Nodes table -->
+
+            <!-- Nodes table -->
             <div class="bg-surface-container rounded-lg shadow overflow-hidden">
               <div class="px-6 py-4 border-b border-outline-variant">
                 <h3 class="text-lg font-semibold text-on-surface">Cluster Nodes</h3>

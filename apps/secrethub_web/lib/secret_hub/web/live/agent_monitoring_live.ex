@@ -184,8 +184,8 @@ defmodule SecretHub.Web.AgentMonitoringLive do
           </div>
         </div>
       </div>
-      
-    <!-- Agent List -->
+
+      <!-- Agent List -->
       <div class="bg-surface-container rounded-lg shadow">
         <div class="px-4 py-3 border-b border-outline-variant">
           <h3 class="text-lg font-semibold text-on-surface">
@@ -281,8 +281,8 @@ defmodule SecretHub.Web.AgentMonitoringLive do
           </table>
         </div>
       </div>
-      
-    <!-- Agent Details Panel -->
+
+      <!-- Agent Details Panel -->
       <%= if @selected_agent do %>
         <.live_component
           module={SecretHub.Web.AgentDetailsComponent}

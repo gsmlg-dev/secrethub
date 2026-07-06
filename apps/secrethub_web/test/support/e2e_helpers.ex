@@ -155,17 +155,15 @@ defmodule SecretHub.E2E.Helpers do
       })
       |> Repo.insert()
 
-    # Link policy to agent via join table.
-    # insert_all with a raw table name bypasses Ecto schema type casting,
-    # so we must dump UUIDs to their binary representation manually.
-    {:ok, agent_id_bin} = Ecto.UUID.dump(agent.id)
-    {:ok, policy_id_bin} = Ecto.UUID.dump(policy.id)
-
-    Repo.insert_all("agents_policies", [
-      %{agent_id: agent_id_bin, policy_id: policy_id_bin}
-    ])
+    {:ok, _agent} = Agents.assign_policies(agent.agent_id, [policy.id])
 
     policy
+  end
+
+  @doc "Attach policy references to an AppRole."
+  def attach_policy_to_approle(role_id, policies) when is_list(policies) do
+    {:ok, _role} = AppRole.update_role_policies(role_id, policies)
+    :ok
   end
 
   # ─── Secret Operations ─────────────────────────────────────

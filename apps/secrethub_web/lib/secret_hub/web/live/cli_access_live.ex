@@ -120,7 +120,7 @@ defmodule SecretHub.Web.CliAccessLive do
                     >
                       <select
                         name="role_id"
-                        class="min-w-48 rounded-md border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                        class="select min-w-48 rounded-md border border-outline-variant bg-surface-container px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
                         disabled={Enum.empty?(@roles)}
                       >
                         <%= for role <- @roles do %>

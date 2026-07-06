@@ -101,7 +101,7 @@ defmodule SecretHub.Web.ButtonClassTest do
   end
 
   defp missing_form_control_base?("select", tag) do
-    not class_attribute_contains_token?(tag, "select")
+    not multiple_select?(tag) and not class_attribute_contains_token?(tag, "select")
   end
 
   defp attribute_value(tag, attribute) do
@@ -110,6 +110,8 @@ defmodule SecretHub.Web.ButtonClassTest do
       nil -> nil
     end
   end
+
+  defp multiple_select?(tag), do: Regex.match?(~r/\bmultiple(?:\s|>|=)/, tag)
 
   defp class_attribute_contains_token?(tag, token) do
     tag

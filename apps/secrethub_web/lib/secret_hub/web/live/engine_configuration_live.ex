@@ -292,8 +292,8 @@ defmodule SecretHub.Web.EngineConfigurationLive do
           <span>{@error}</span>
         </div>
       <% end %>
-      
-    <!-- Statistics Cards -->
+
+      <!-- Statistics Cards -->
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div class="stat bg-base-100 shadow rounded-lg">
           <div class="stat-title">Total Engines</div>
@@ -325,8 +325,8 @@ defmodule SecretHub.Web.EngineConfigurationLive do
           <div class="stat-desc">Engine distribution</div>
         </div>
       </div>
-      
-    <!-- Quick Actions -->
+
+      <!-- Quick Actions -->
       <div class="mb-6 bg-base-100 shadow rounded-lg p-6">
         <h3 class="text-lg font-semibold mb-4">Quick Actions</h3>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -437,8 +437,8 @@ defmodule SecretHub.Web.EngineConfigurationLive do
           </button>
         </div>
       </div>
-      
-    <!-- Engines List -->
+
+      <!-- Engines List -->
       <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
           <h2 class="card-title">Configured Engines</h2>
@@ -523,8 +523,8 @@ defmodule SecretHub.Web.EngineConfigurationLive do
           <% end %>
         </div>
       </div>
-      
-    <!-- Delete Confirmation Modal -->
+
+      <!-- Delete Confirmation Modal -->
       <%= if @delete_modal do %>
         <div class="modal modal-open">
           <div class="modal-box">
