@@ -38,9 +38,6 @@ defmodule SecretHub.Agent.ConnectionManager do
     :agent_id,
     :connection_pid,
     :current_endpoint,
-    :cert_path,
-    :key_path,
-    :ca_path,
     :reconnect_attempts,
     :max_reconnect_attempts
   ]
@@ -56,9 +53,6 @@ defmodule SecretHub.Agent.ConnectionManager do
 
     * `:agent_id` - Agent identifier (required)
     * `:core_endpoints` - List of Core URLs (required)
-    * `:cert_path` - Path to agent certificate (optional)
-    * `:key_path` - Path to agent private key (optional)
-    * `:ca_path` - Path to CA certificate (optional)
   """
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -109,17 +103,11 @@ defmodule SecretHub.Agent.ConnectionManager do
   @impl true
   def init(opts) do
     agent_id = Keyword.fetch!(opts, :agent_id)
-    cert_path = Keyword.get(opts, :cert_path)
-    key_path = Keyword.get(opts, :key_path)
-    ca_path = Keyword.get(opts, :ca_path)
 
     state = %__MODULE__{
       agent_id: agent_id,
       connection_pid: nil,
       current_endpoint: nil,
-      cert_path: cert_path,
-      key_path: key_path,
-      ca_path: ca_path,
       reconnect_attempts: 0,
       max_reconnect_attempts: @max_reconnect_attempts
     }
@@ -169,10 +157,7 @@ defmodule SecretHub.Agent.ConnectionManager do
 
         connection_opts = [
           agent_id: state.agent_id,
-          core_url: endpoint,
-          cert_path: state.cert_path,
-          key_path: state.key_path,
-          ca_path: state.ca_path
+          core_url: endpoint
         ]
 
         case GenServer.start(Connection, connection_opts, name: Connection) do

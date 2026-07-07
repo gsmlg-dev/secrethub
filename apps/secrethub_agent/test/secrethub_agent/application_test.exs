@@ -3,7 +3,6 @@ defmodule SecretHub.Agent.ApplicationTest do
 
   alias SecretHub.Agent.{
     Connection,
-    ConnectionManager,
     EndpointManager,
     IdentityStore,
     RuntimeBootstrapper,
@@ -36,24 +35,21 @@ defmodule SecretHub.Agent.ApplicationTest do
     :ok
   end
 
-  test "starts the agent and targets localhost core by default" do
+  test "starts the agent from configured core URL" do
     socket_path =
       Path.join(System.tmp_dir!(), "secrethub_agent_#{System.unique_integer([:positive])}.sock")
 
+    home_dir =
+      Path.join(System.tmp_dir!(), "secrethub_agent_home_#{System.unique_integer([:positive])}")
+
+    System.put_env("HOME", home_dir)
+
     Application.put_env(:secrethub_agent, :enabled, true)
-    Application.put_env(:secrethub_agent, :agent_id, "agent-test-localhost")
     Application.put_env(:secrethub_agent, :core_url, @localhost_core_url)
-    Application.delete_env(:secrethub_agent, :core_endpoints)
 
-    state_dir =
-      Path.join(System.tmp_dir!(), "secrethub_agent_state_#{System.unique_integer([:positive])}")
-
-    Application.put_env(:secrethub_agent, :state_dir, state_dir)
+    state_dir = Path.join(home_dir, ".local/state/secrethub/agent")
     Application.put_env(:secrethub_agent, :endpoint_health_check_interval, 60_000)
     Application.put_env(:secrethub_agent, :socket_path, socket_path)
-    Application.put_env(:secrethub_agent, :cert_path, nil)
-    Application.put_env(:secrethub_agent, :key_path, nil)
-    Application.put_env(:secrethub_agent, :ca_path, nil)
 
     assert :ok = IdentityStore.write(state_dir, trusted_material())
 
@@ -63,7 +59,6 @@ defmodule SecretHub.Agent.ApplicationTest do
 
     assert Process.whereis(EndpointManager)
     assert Process.whereis(RuntimeBootstrapper)
-    refute Process.whereis(ConnectionManager)
     assert Process.whereis(UDSServer)
 
     assert [%{url: @localhost_core_url}] = EndpointManager.get_health_status()
@@ -71,35 +66,24 @@ defmodule SecretHub.Agent.ApplicationTest do
     assert File.exists?(socket_path)
   end
 
-  test "starts the agent from SECRET_HUB_AGENT environment variables" do
+  test "starts the agent from only SECRET_HUB_AGENT_CORE_URL" do
     socket_path =
       Path.join(System.tmp_dir!(), "secrethub_agent_#{System.unique_integer([:positive])}.sock")
 
-    state_dir =
-      Path.join(System.tmp_dir!(), "secrethub_agent_state_#{System.unique_integer([:positive])}")
+    home_dir =
+      Path.join(System.tmp_dir!(), "secrethub_agent_home_#{System.unique_integer([:positive])}")
 
     core_url = "https://core-env.example.com"
 
+    System.put_env("HOME", home_dir)
     System.put_env("SECRET_HUB_AGENT_CORE_URL", core_url)
 
-    System.put_env(
-      "SECRET_HUB_AGENT_CORE_ENDPOINTS",
-      "#{core_url}, https://core-env-secondary.example.com "
-    )
-
-    System.put_env("SECRET_HUB_AGENT_STATE_DIR", state_dir)
-    System.put_env("SECRET_HUB_AGENT_ID", "agent-env-start")
-
     Application.put_env(:secrethub_agent, :enabled, true)
-    Application.delete_env(:secrethub_agent, :agent_id)
     Application.delete_env(:secrethub_agent, :core_url)
-    Application.delete_env(:secrethub_agent, :core_endpoints)
-    Application.delete_env(:secrethub_agent, :state_dir)
     Application.put_env(:secrethub_agent, :endpoint_health_check_interval, 60_000)
     Application.put_env(:secrethub_agent, :socket_path, socket_path)
-    Application.put_env(:secrethub_agent, :cert_path, nil)
-    Application.put_env(:secrethub_agent, :key_path, nil)
-    Application.put_env(:secrethub_agent, :ca_path, nil)
+
+    state_dir = Path.join(home_dir, ".local/state/secrethub/agent")
 
     assert :ok =
              IdentityStore.write(
@@ -112,51 +96,19 @@ defmodule SecretHub.Agent.ApplicationTest do
     assert Process.whereis(EndpointManager)
     assert Process.whereis(RuntimeBootstrapper)
 
-    assert Enum.sort([core_url, "https://core-env-secondary.example.com"]) ==
-             EndpointManager.get_health_status()
-             |> Enum.map(& &1.url)
-             |> Enum.sort()
+    assert [%{url: ^core_url}] = EndpointManager.get_health_status()
 
     assert File.exists?(socket_path)
   end
 
-  test "preserves legacy certificate path startup when trusted state is missing" do
-    socket_path =
-      Path.join(System.tmp_dir!(), "secrethub_agent_#{System.unique_integer([:positive])}.sock")
-
-    state_dir =
-      Path.join(System.tmp_dir!(), "secrethub_agent_state_#{System.unique_integer([:positive])}")
-
-    cert_dir =
-      Path.join(System.tmp_dir!(), "secrethub_agent_certs_#{System.unique_integer([:positive])}")
-
-    File.mkdir_p!(cert_dir)
-
-    material = trusted_material()
-    cert_path = Path.join(cert_dir, "agent-cert.pem")
-    key_path = Path.join(cert_dir, "agent-key.pem")
-    ca_path = Path.join(cert_dir, "ca-chain.pem")
-
-    File.write!(cert_path, material.certificate_pem)
-    File.write!(key_path, material.private_key_pem)
-    File.write!(ca_path, material.ca_chain_pem)
-
+  test "requires a core URL when the agent is enabled" do
     Application.put_env(:secrethub_agent, :enabled, true)
-    Application.put_env(:secrethub_agent, :agent_id, "agent-test-localhost")
-    Application.put_env(:secrethub_agent, :core_url, "wss://127.0.0.1:1")
-    Application.put_env(:secrethub_agent, :core_endpoints, ["wss://127.0.0.1:1"])
-    Application.put_env(:secrethub_agent, :state_dir, state_dir)
-    Application.put_env(:secrethub_agent, :endpoint_health_check_interval, 60_000)
-    Application.put_env(:secrethub_agent, :socket_path, socket_path)
-    Application.put_env(:secrethub_agent, :cert_path, cert_path)
-    Application.put_env(:secrethub_agent, :key_path, key_path)
-    Application.put_env(:secrethub_agent, :ca_path, ca_path)
+    Application.delete_env(:secrethub_agent, :core_url)
+    System.delete_env("SECRET_HUB_AGENT_CORE_URL")
 
-    assert {:ok, _supervisor} = SecretHub.Agent.Application.start(:normal, [])
-
-    assert Process.whereis(RuntimeBootstrapper)
-    assert wait_for_process(ConnectionManager)
-    assert Process.whereis(UDSServer)
+    assert_raise RuntimeError, ~r/SECRET_HUB_AGENT_CORE_URL is required/, fn ->
+      SecretHub.Agent.Application.start(:normal, [])
+    end
   end
 
   defp trusted_material(overrides \\ []) do
@@ -200,36 +152,15 @@ defmodule SecretHub.Agent.ApplicationTest do
   defp stop_agent_processes do
     stop_registered_process(SecretHub.Agent.Supervisor)
     stop_registered_process(Connection)
-    stop_registered_process(ConnectionManager)
     stop_registered_process(EndpointManager)
     stop_registered_process(RuntimeBootstrapper)
     stop_registered_process(UDSServer)
   end
 
-  defp wait_for_process(name, attempts \\ 20)
-
-  defp wait_for_process(name, attempts) when attempts > 0 do
-    case Process.whereis(name) do
-      nil ->
-        Process.sleep(50)
-        wait_for_process(name, attempts - 1)
-
-      pid ->
-        pid
-    end
-  end
-
-  defp wait_for_process(_name, 0), do: nil
-
   defp agent_system_env do
     [
-      "SECRET_HUB_AGENT_CORE_URL",
-      "SECRET_HUB_AGENT_CORE_ENDPOINTS",
-      "SECRET_HUB_AGENT_STATE_DIR",
-      "SECRET_HUB_AGENT_ID",
-      "SECRET_HUB_AGENT_CERT_PATH",
-      "SECRET_HUB_AGENT_KEY_PATH",
-      "SECRET_HUB_AGENT_CA_PATH"
+      "HOME",
+      "SECRET_HUB_AGENT_CORE_URL"
     ]
     |> Map.new(fn key -> {key, System.get_env(key)} end)
   end

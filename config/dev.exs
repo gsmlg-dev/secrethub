@@ -168,11 +168,6 @@ config :swoosh, :api_client, false
 # normal Phoenix development.
 config :secrethub_agent,
   enabled: System.get_env("SECRET_HUB_AGENT_ENABLED") in ["1", "true", "TRUE"],
-  agent_id: "agent-dev-01",
-  core_url: System.get_env("SECRET_HUB_AGENT_CORE_URL", "ws://localhost:4664"),
+  core_url: System.get_env("SECRET_HUB_AGENT_CORE_URL"),
   # Use /tmp for socket in development (no root permissions needed)
-  socket_path: "/tmp/secrethub_dev_agent.sock",
-  # TLS certificates (will be used in production with wss://)
-  cert_path: nil,
-  key_path: nil,
-  ca_path: nil
+  socket_path: "/tmp/secrethub_dev_agent.sock"

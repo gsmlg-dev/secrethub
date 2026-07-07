@@ -16,15 +16,8 @@ defmodule SecretHub.Agent.BootstrapTest do
   end
 
   describe "get_certificate_info/0" do
-    test "returns error when certificate doesn't exist" do
-      File.rm_rf("priv/cert")
-
-      assert {:error, :certificate_not_found} = Bootstrap.get_certificate_info()
-    end
-
-    test "parses certificate and returns info" do
-      # TODO: Create mock certificate file and test parsing
-      assert true
+    test "legacy certificate path lookup is disabled" do
+      assert {:error, :legacy_certificate_info_disabled} = Bootstrap.get_certificate_info()
     end
   end
 end

@@ -577,13 +577,12 @@ jobs:
 
           ## Deploy SecretHub Agent
 
-          Download the artifact matching the agent host OS and architecture, then configure it with the Core URL and a persistent state directory.
+          Download the artifact matching the agent host OS and architecture, then configure it with the Core URL. The agent stores enrollment material under its default state directory.
 
           \`\`\`bash
           tar -xzf secrethub_agent-${RELEASE_TAG}-linux-amd64.tar.gz -C /opt/secrethub-agent
           cd /opt/secrethub-agent
           export SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com
-          export SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent
           bin/secrethub_agent start
           \`\`\`
 
@@ -592,7 +591,6 @@ jobs:
           \`\`\`powershell
           Expand-Archive .\secrethub_agent-${RELEASE_TAG}-windows-amd64.zip -DestinationPath C:\SecretHubAgent
           \$env:SECRET_HUB_AGENT_CORE_URL = "https://secrethub.example.com"
-          \$env:SECRET_HUB_AGENT_STATE_DIR = "C:\ProgramData\SecretHubAgent"
           C:\SecretHubAgent\bin\secrethub_agent.bat start
           \`\`\`
 

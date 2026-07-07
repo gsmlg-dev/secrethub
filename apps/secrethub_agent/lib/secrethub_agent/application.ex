@@ -16,13 +16,8 @@ defmodule SecretHub.Agent.Application do
   end
 
   defp start_agent do
-    core_url = configured_value(:core_url, "SECRET_HUB_AGENT_CORE_URL", "https://localhost:4664")
-
-    state_dir =
-      configured_value(:state_dir, "SECRET_HUB_AGENT_STATE_DIR", "/var/lib/secrethub-agent")
-
-    # Get core endpoints from configuration
-    core_endpoints = configured_core_endpoints(core_url)
+    core_url = configured_value(:core_url, "SECRET_HUB_AGENT_CORE_URL")
+    core_endpoints = [core_url]
 
     children = [
       # Cache for secrets
@@ -43,11 +38,6 @@ defmodule SecretHub.Agent.Application do
        [
          core_url: core_url,
          core_endpoints: core_endpoints,
-         state_dir: state_dir,
-         agent_id: configured_value(:agent_id, "SECRET_HUB_AGENT_ID"),
-         cert_path: configured_value(:cert_path, "SECRET_HUB_AGENT_CERT_PATH"),
-         key_path: configured_value(:key_path, "SECRET_HUB_AGENT_KEY_PATH"),
-         ca_path: configured_value(:ca_path, "SECRET_HUB_AGENT_CA_PATH"),
          enrollment_opts: Application.get_env(:secrethub_agent, :enrollment_opts, [])
        ]},
 
@@ -79,29 +69,17 @@ defmodule SecretHub.Agent.Application do
     Supervisor.start_link(children, opts)
   end
 
-  defp configured_value(key, env_name, default \\ nil) do
-    System.get_env(env_name) || Application.get_env(:secrethub_agent, key, default)
-  end
+  defp configured_value(key, env_name) do
+    value = System.get_env(env_name) || Application.get_env(:secrethub_agent, key)
 
-  defp configured_core_endpoints(core_url) do
-    case System.get_env("SECRET_HUB_AGENT_CORE_ENDPOINTS") do
-      endpoints when is_binary(endpoints) ->
-        endpoints
-        |> String.split(",", trim: true)
-        |> Enum.map(&String.trim/1)
-        |> Enum.reject(&(&1 == ""))
-        |> case do
-          [] -> configured_core_endpoints_from_app(core_url)
-          parsed -> parsed
-        end
-
-      _missing ->
-        configured_core_endpoints_from_app(core_url)
+    if is_binary(value) and value != "" do
+      value
+    else
+      raise """
+      #{env_name} is required to start the SecretHub Agent.
+      For example: https://secrethub.example.com
+      """
     end
-  end
-
-  defp configured_core_endpoints_from_app(core_url) do
-    Application.get_env(:secrethub_agent, :core_endpoints) || [core_url]
   end
 
   # Lease renewal callbacks

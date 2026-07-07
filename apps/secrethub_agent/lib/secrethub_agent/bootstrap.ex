@@ -14,13 +14,5 @@ defmodule SecretHub.Agent.Bootstrap do
 
   def renew_certificate(_agent_id, _core_url), do: {:error, :renewal_requires_trusted_identity}
 
-  def get_certificate_info do
-    cert_file = Path.join(["priv", "cert", "agent-cert.pem"])
-
-    if File.exists?(cert_file) do
-      {:ok, %{cert_path: cert_file}}
-    else
-      {:error, :certificate_not_found}
-    end
-  end
+  def get_certificate_info, do: {:error, :legacy_certificate_info_disabled}
 end

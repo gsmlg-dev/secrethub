@@ -28,10 +28,9 @@ docker run -d \
   --name secrethub-agent \
   --restart unless-stopped \
   -v /app/config:/app/config \
-  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
+  -v secrethub-agent-state:/home/secrethub/.local/state/secrethub/agent \
   -v /var/run/secrethub:/var/run/secrethub \
   -e SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com \
-  -e SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent \
   secrethub/agent:latest
 ```
 
@@ -58,13 +57,11 @@ spec:
         env:
         - name: SECRET_HUB_AGENT_CORE_URL
           value: "https://secrethub-core.secrethub.svc.cluster.local"
-        - name: SECRET_HUB_AGENT_STATE_DIR
-          value: /var/lib/secrethub-agent
         volumeMounts:
         - name: config
           mountPath: /app/config
         - name: state
-          mountPath: /var/lib/secrethub-agent
+          mountPath: /home/secrethub/.local/state/secrethub/agent
         - name: secrets
           mountPath: /var/run/secrethub
       volumes:
@@ -98,7 +95,6 @@ Type=simple
 User=secrethub
 Group=secrethub
 Environment="SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com"
-Environment="SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent"
 ExecStart=/usr/local/bin/secrethub-agent
 Restart=always
 RestartSec=5
@@ -120,18 +116,12 @@ sudo systemctl start secrethub-agent
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SECRET_HUB_AGENT_CORE_URL` | Yes | HTTPS URL of SecretHub Core for enrollment; trusted WebSocket details come from `connect-info.json` |
-| `SECRET_HUB_AGENT_CORE_ENDPOINTS` | No | Comma-separated Core enrollment endpoints for startup failover; defaults to `SECRET_HUB_AGENT_CORE_URL` |
-| `SECRET_HUB_AGENT_STATE_DIR` | No | Directory for trusted runtime material; default: `/var/lib/secrethub-agent` |
-| `SECRET_HUB_AGENT_ID` | Optional | Unique identifier for legacy explicit certificate-path mode |
-| `SECRET_HUB_AGENT_CERT_PATH` | No | Legacy override path to client certificate |
-| `SECRET_HUB_AGENT_KEY_PATH` | No | Legacy override path to client private key |
-| `SECRET_HUB_AGENT_CA_PATH` | No | Legacy override path to CA certificate chain |
 
 Trusted enrollment no longer uses AppRole credentials for runtime authorization. AppRole values may exist for older deployments, but new Agents should use the pending enrollment flow.
 
 ### Configuration Sources
 
-The Agent reads the supported `SECRET_HUB_AGENT_*` environment variables at application startup. Elixir release configuration may also set the matching application keys directly under `:secrethub_agent` (`:core_url`, `:state_dir`, `:agent_id`, `:cert_path`, `:key_path`, and `:ca_path`). Environment variables take precedence over application config.
+The Agent reads `SECRET_HUB_AGENT_CORE_URL` at application startup. Core-managed runtime options are delivered through enrollment and `connect-info.json`.
 
 ### Local State and Startup Modes
 
@@ -139,9 +129,8 @@ The Agent reads the supported `SECRET_HUB_AGENT_*` environment variables at appl
 
 - `trusted_runtime`: `IdentityStore` loads trusted material from `state_dir` and starts the mTLS runtime.
 - `enrollment`: trusted material is missing, so the Agent creates a pending enrollment, waits for approval, receives certificate material, and then starts trusted runtime.
-- `legacy_certificate_paths`: explicit `SECRET_HUB_AGENT_ID`, `SECRET_HUB_AGENT_CERT_PATH`, `SECRET_HUB_AGENT_KEY_PATH`, and `SECRET_HUB_AGENT_CA_PATH` are configured for older deployments.
 
-The default `state_dir` is `/var/lib/secrethub-agent`. Development can override it with `SECRET_HUB_AGENT_STATE_DIR`.
+The internal `state_dir` is `~/.local/state/secrethub/agent`.
 
 | File | Purpose | Permissions |
 |------|---------|------|
@@ -156,7 +145,7 @@ The default `state_dir` is `/var/lib/secrethub-agent`. Development can override 
 
 ### Step 1: Start Agent Enrollment
 
-Start the Agent with `SECRET_HUB_AGENT_CORE_URL` and a writable `state_dir`. On first boot, `RuntimeBootstrapper` enters enrollment mode because trusted material is not present.
+Start the Agent with `SECRET_HUB_AGENT_CORE_URL`. On first boot, `RuntimeBootstrapper` enters enrollment mode because trusted material is not present.
 
 ### Step 2: Pending Enrollment
 
@@ -166,8 +155,7 @@ The Agent discovers its SSH host key, hostname, FQDN, and machine identity, then
 docker run -d \
   --name secrethub-agent \
   -e SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com \
-  -e SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent \
-  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
+  -v secrethub-agent-state:/home/secrethub/.local/state/secrethub/agent \
   secrethub/agent:latest
 ```
 

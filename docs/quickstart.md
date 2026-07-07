@@ -183,8 +183,7 @@ curl http://localhost:4664/v1/secrets/static/prod/db/postgres \
 docker run -d \
   --name secrethub-agent \
   -e SECRET_HUB_AGENT_CORE_URL=https://secrethub-core:4664 \
-  -e SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent \
-  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
+  -v secrethub-agent-state:/home/secrethub/.local/state/secrethub/agent \
   secrethub/agent:latest
 
 # Approve the pending enrollment in the Web UI, then check connection status
@@ -360,7 +359,7 @@ curl -X POST http://localhost:4664/v1/sys/unseal \
 
 **Solution:**
 1. Check Core is running: `curl http://localhost:4664/v1/sys/health`
-2. Verify agent config: `SECRET_HUB_AGENT_CORE_URL` and `SECRET_HUB_AGENT_STATE_DIR`
+2. Verify agent config: `SECRET_HUB_AGENT_CORE_URL`
 3. Check network connectivity
 4. Check firewall rules
 

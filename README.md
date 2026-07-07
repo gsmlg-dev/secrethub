@@ -409,8 +409,7 @@ docker run -d -p 4664:4664 \
 # Agent
 docker run -d \
   -e SECRET_HUB_AGENT_CORE_URL="http://core:4664" \
-  -e SECRET_HUB_AGENT_STATE_DIR="/var/lib/secrethub-agent" \
-  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
+  -v secrethub-agent-state:/home/secrethub/.local/state/secrethub/agent \
   ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc3
 ```
 
@@ -433,8 +432,6 @@ POOL_SIZE=10
 
 # Agent
 SECRET_HUB_AGENT_CORE_URL=https://core.example.com:4664
-SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent
-SECRET_HUB_AGENT_CORE_ENDPOINTS=https://core-1.example.com:4664,https://core-2.example.com:4664
 ```
 
 ---

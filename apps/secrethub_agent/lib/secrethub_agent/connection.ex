@@ -11,17 +11,14 @@ defmodule SecretHub.Agent.Connection do
   - Request/reply pattern with ref matching
   - Server push event handling
   - Heartbeat monitoring
-  - mTLS certificate configuration (for production)
+  - mTLS runtime material from trusted enrollment
 
   ## Usage
 
-      # Start connection (usually via supervision tree)
+      # Start connection (usually via TrustedConnection)
       {:ok, pid} = Connection.start_link(
         agent_id: "agent-prod-01",
-        core_url: "wss://secrethub.example.com",
-        cert_path: "priv/cert/agent.pem",
-        key_path: "priv/cert/agent-key.pem",
-        ca_path: "priv/cert/ca.pem"
+        core_url: "wss://secrethub.example.com"
       )
 
       # Request static secret
@@ -33,16 +30,8 @@ defmodule SecretHub.Agent.Connection do
       # Renew lease
       {:ok, renewal} = Connection.renew_lease(pid, lease_id)
 
-  ## Configuration
-
-  Configure in config/dev.exs or config/prod.exs:
-
-      config :secrethub_agent,
-        agent_id: "agent-01",
-        core_url: "wss://localhost:4001",
-        cert_path: "priv/cert/agent.pem",
-        key_path: "priv/cert/agent-key.pem",
-        ca_path: "priv/cert/ca.pem"
+  Runtime mTLS material is supplied by `SecretHub.Agent.TrustedConnection`
+  after enrollment. Operators do not configure certificate file paths.
   """
 
   use GenServer
@@ -59,9 +48,6 @@ defmodule SecretHub.Agent.Connection do
           heartbeat_timer: reference() | nil,
           agent_id: String.t(),
           core_url: String.t(),
-          cert_path: String.t() | nil,
-          key_path: String.t() | nil,
-          ca_path: String.t() | nil,
           cert_pem: binary() | nil,
           private_key: tuple() | nil,
           ca_pem: binary() | nil,
@@ -81,9 +67,9 @@ defmodule SecretHub.Agent.Connection do
 
   - `:agent_id` - Agent identifier (required)
   - `:core_url` - Core WebSocket URL (required)
-  - `:cert_path` - Path to agent certificate (optional, for mTLS)
-  - `:key_path` - Path to agent private key (optional, for mTLS)
-  - `:ca_path` - Path to CA certificate (optional, for mTLS)
+  - `:cert_pem` - Core-issued Agent certificate PEM (optional, for trusted runtime)
+  - `:private_key` - Agent private key tuple (optional, for trusted runtime)
+  - `:ca_pem` - Core CA certificate PEM (optional, for trusted runtime)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -192,9 +178,6 @@ defmodule SecretHub.Agent.Connection do
   def init(opts) do
     agent_id = Keyword.fetch!(opts, :agent_id)
     core_url = Keyword.fetch!(opts, :core_url)
-    cert_path = Keyword.get(opts, :cert_path)
-    key_path = Keyword.get(opts, :key_path)
-    ca_path = Keyword.get(opts, :ca_path)
     cert_pem = Keyword.get(opts, :cert_pem)
     private_key = Keyword.get(opts, :private_key)
     ca_pem = Keyword.get(opts, :ca_pem)
@@ -208,9 +191,6 @@ defmodule SecretHub.Agent.Connection do
       heartbeat_timer: nil,
       agent_id: agent_id,
       core_url: core_url,
-      cert_path: cert_path,
-      key_path: key_path,
-      ca_path: ca_path,
       cert_pem: cert_pem,
       private_key: private_key,
       ca_pem: ca_pem,
@@ -517,17 +497,8 @@ defmodule SecretHub.Agent.Connection do
     end
   end
 
-  defp should_use_mtls?(state) do
-    file_mtls? =
-      state.cert_path != nil and state.key_path != nil and state.ca_path != nil and
-        File.exists?(state.cert_path) and File.exists?(state.key_path) and
-        File.exists?(state.ca_path)
-
-    memory_mtls? =
-      is_binary(state.cert_pem) and not is_nil(state.private_key) and is_binary(state.ca_pem)
-
-    file_mtls? or memory_mtls?
-  end
+  defp should_use_mtls?(state),
+    do: is_binary(state.cert_pem) and not is_nil(state.private_key) and is_binary(state.ca_pem)
 
   defp build_mtls_transport_opts(state) do
     common_opts = [
@@ -538,26 +509,14 @@ defmodule SecretHub.Agent.Connection do
       ]
     ]
 
-    if is_binary(state.cert_pem) and not is_nil(state.private_key) and is_binary(state.ca_pem) do
-      [
-        ssl_verify: :verify_peer,
-        socket_opts:
-          [
-            certs_keys: [in_memory_certs_key(state.cert_pem, state.private_key)],
-            cacerts: pem_entries_der(state.ca_pem, :Certificate)
-          ] ++ common_opts
-      ]
-    else
-      [
-        ssl_verify: :verify_peer,
-        socket_opts:
-          [
-            certfile: to_charlist(state.cert_path),
-            keyfile: to_charlist(state.key_path),
-            cacertfile: to_charlist(state.ca_path)
-          ] ++ common_opts
-      ]
-    end
+    [
+      ssl_verify: :verify_peer,
+      socket_opts:
+        [
+          certs_keys: [in_memory_certs_key(state.cert_pem, state.private_key)],
+          cacerts: pem_entries_der(state.ca_pem, :Certificate)
+        ] ++ common_opts
+    ]
   end
 
   defp expected_server_name(%{expected_server_name: server_name}) when is_binary(server_name) do

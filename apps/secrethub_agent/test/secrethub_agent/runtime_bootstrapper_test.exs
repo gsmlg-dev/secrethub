@@ -71,8 +71,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     assert {:noreply, state} =
              RuntimeBootstrapper.handle_continue(:start_runtime, %RuntimeBootstrapper{
                core_url: "https://fallback-core.example",
-               state_dir: state_dir,
-               legacy_connection_opts: []
+               state_dir: state_dir
              })
 
     assert state.pending_finalization.core_url == "https://enrolled-core.example"
@@ -82,27 +81,11 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     assert {:ok, :needs_enrollment} = RuntimeBootstrapper.plan_start(tmp_dir)
   end
 
-  test "plan_start returns legacy runtime when certificate paths are configured", %{
-    tmp_dir: tmp_dir
-  } do
-    cert_path = Path.join(tmp_dir, "agent-cert.pem")
-    key_path = Path.join(tmp_dir, "agent-key.pem")
-    ca_path = Path.join(tmp_dir, "ca-chain.pem")
+  test "init defaults state directory to user-local agent state" do
+    assert {:ok, %RuntimeBootstrapper{state_dir: state_dir}, {:continue, :start_runtime}} =
+             RuntimeBootstrapper.init(core_url: "https://core.example")
 
-    File.write!(cert_path, "cert")
-    File.write!(key_path, "key")
-    File.write!(ca_path, "ca")
-
-    opts = [
-      agent_id: "legacy-agent",
-      core_endpoints: ["wss://core.example/agent/socket/websocket"],
-      cert_path: cert_path,
-      key_path: key_path,
-      ca_path: ca_path
-    ]
-
-    assert {:ok, :ready_for_legacy_runtime, ^opts} =
-             RuntimeBootstrapper.plan_start(Path.join(tmp_dir, "missing-state"), opts)
+    assert state_dir == Path.expand("~/.local/state/secrethub/agent")
   end
 
   test "converts websocket core URLs to enrollment HTTP URLs" do
@@ -317,8 +300,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     assert {:noreply, retry_state} =
              RuntimeBootstrapper.handle_continue(:start_runtime, %RuntimeBootstrapper{
                core_url: "https://fallback-core.example",
-               state_dir: state_dir,
-               legacy_connection_opts: []
+               state_dir: state_dir
              })
 
     assert retry_state.runtime_pid == nil
@@ -399,8 +381,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     state = %RuntimeBootstrapper{
       core_url: "https://core.example:4664",
       state_dir: state_dir,
-      enrollment_opts: [host_key: test_host_key(tmp_dir)],
-      legacy_connection_opts: []
+      enrollment_opts: [host_key: test_host_key(tmp_dir)]
     }
 
     assert {:noreply, retry_state} =
@@ -449,8 +430,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     state = %RuntimeBootstrapper{
       core_url: "https://core.example:4664",
       state_dir: state_dir,
-      enrollment_opts: [host_key: test_host_key(tmp_dir)],
-      legacy_connection_opts: []
+      enrollment_opts: [host_key: test_host_key(tmp_dir)]
     }
 
     assert {:stop, {:enrollment_rejected, _payload}, _state} =

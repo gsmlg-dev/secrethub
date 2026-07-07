@@ -382,8 +382,7 @@ docker run -d \
   --name secrethub-agent \
   --network host \
   -e SECRET_HUB_AGENT_CORE_URL=https://secrethub-core.example.com \
-  -e SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent \
-  -v /var/lib/secrethub-agent:/var/lib/secrethub-agent \
+  -v secrethub-agent-state:/home/secrethub/.local/state/secrethub/agent \
   -v /var/run/secrethub:/var/run/secrethub \
   secrethub/agent:latest
 ```
@@ -391,7 +390,7 @@ docker run -d \
 ### Method 2: Kubernetes DaemonSet
 
 ```bash
-# Deploy agent with the supported SECRET_HUB_AGENT_* environment variables.
+# Deploy agent with the supported SECRET_HUB_AGENT_CORE_URL environment variable.
 # See docs/deployment/agent-deployment-guide.md for the full DaemonSet shape.
 kubectl apply -f infrastructure/kubernetes/agent-daemonset.yaml -n secrethub
 ```
@@ -523,7 +522,7 @@ docker-compose logs secrethub_core
 2. Enrollment state is valid
    - Verify the pending Agent enrollment is approved in `/admin/agents/pending`
    - Verify the SSH host-key fingerprint shown in Core matches the host
-   - Check `SECRET_HUB_AGENT_CORE_URL` and `SECRET_HUB_AGENT_STATE_DIR`
+   - Check `SECRET_HUB_AGENT_CORE_URL`
 
 3. Network connectivity
    - Check firewall rules

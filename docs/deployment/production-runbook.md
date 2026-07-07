@@ -476,7 +476,6 @@ Type=simple
 User=secrethub
 Group=secrethub
 Environment=SECRET_HUB_AGENT_CORE_URL=https://secrethub.company.com:4664
-Environment=SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub-agent
 ExecStart=/usr/local/bin/secrethub-agent
 Restart=always
 RestartSec=5

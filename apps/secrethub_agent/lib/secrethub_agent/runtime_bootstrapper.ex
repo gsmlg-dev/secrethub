@@ -9,15 +9,13 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   require Logger
 
   alias SecretHub.Agent.{
-    ConnectionManager,
     EndpointManager,
     Enrollment,
     IdentityStore,
     TrustedConnection
   }
 
-  @default_core_url "https://localhost:4664"
-  @default_state_dir "/var/lib/secrethub-agent"
+  @default_state_dir "~/.local/state/secrethub/agent"
   @default_connect_timeout_ms 10_000
   @finalize_retry_base_ms 1_000
   @finalize_retry_max_ms 60_000
@@ -28,7 +26,6 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     :core_endpoints,
     :state_dir,
     :enrollment_opts,
-    :legacy_connection_opts,
     :runtime_pid,
     :pending_finalization,
     enrollment_retry_count: 0
@@ -39,7 +36,6 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
           core_endpoints: [binary()],
           state_dir: Path.t(),
           enrollment_opts: keyword(),
-          legacy_connection_opts: keyword(),
           runtime_pid: pid() | nil,
           pending_finalization: map() | nil,
           enrollment_retry_count: non_neg_integer()
@@ -51,16 +47,15 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   end
 
   @doc false
-  @spec plan_start(Path.t(), keyword()) ::
+  @spec plan_start(Path.t()) ::
           {:ok, :ready_for_runtime, IdentityStore.t()}
           | {:ok, :ready_for_runtime, IdentityStore.t(), map()}
-          | {:ok, :ready_for_legacy_runtime, keyword()}
           | {:ok, :needs_enrollment}
           | {:error, term()}
-  def plan_start(state_dir, opts \\ []) do
+  def plan_start(state_dir) do
     case IdentityStore.load(state_dir) do
       {:ok, material} -> ready_runtime_plan(state_dir, material)
-      {:error, :missing_trusted_material} -> legacy_or_enrollment(opts)
+      {:error, :missing_trusted_material} -> {:ok, :needs_enrollment}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -142,18 +137,13 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
   @impl true
   def init(opts) do
+    core_url = Keyword.fetch!(opts, :core_url)
+
     state = %__MODULE__{
-      core_url: Keyword.get(opts, :core_url, @default_core_url),
-      core_endpoints:
-        Keyword.get(opts, :core_endpoints, [Keyword.get(opts, :core_url, @default_core_url)]),
-      state_dir:
-        Keyword.get(
-          opts,
-          :state_dir,
-          System.get_env("SECRET_HUB_AGENT_STATE_DIR") || @default_state_dir
-        ),
-      enrollment_opts: Keyword.get(opts, :enrollment_opts, []),
-      legacy_connection_opts: legacy_connection_opts(opts)
+      core_url: core_url,
+      core_endpoints: Keyword.get(opts, :core_endpoints, [core_url]),
+      state_dir: Keyword.get(opts, :state_dir, default_state_dir()),
+      enrollment_opts: Keyword.get(opts, :enrollment_opts, [])
     }
 
     {:ok, state, {:continue, :start_runtime}}
@@ -161,7 +151,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
   @impl true
   def handle_continue(:start_runtime, state) do
-    case plan_start(state.state_dir, state.legacy_connection_opts) do
+    case plan_start(state.state_dir) do
       {:ok, :ready_for_runtime, material} ->
         start_runtime(material, nil, state)
 
@@ -180,9 +170,6 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
           {:error, reason} ->
             {:stop, reason, state}
         end
-
-      {:ok, :ready_for_legacy_runtime, legacy_opts} ->
-        start_legacy_runtime(legacy_opts, state)
 
       {:ok, :needs_enrollment} ->
         enroll_and_start_runtime(state)
@@ -440,51 +427,12 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     TrustedConnection.start_link(trusted_connection_opts(material, callback))
   end
 
-  defp start_legacy_runtime(legacy_opts, state) do
-    Logger.info("Starting trusted Agent runtime connection from legacy certificate paths",
-      agent_id: Keyword.fetch!(legacy_opts, :agent_id)
-    )
-
-    case ConnectionManager.start_link(legacy_opts) do
-      {:ok, pid} -> {:noreply, %{state | runtime_pid: pid}}
-      {:error, {:already_started, pid}} -> {:noreply, %{state | runtime_pid: pid}}
-      {:error, reason} -> {:stop, reason, state}
-    end
-  end
-
-  defp legacy_or_enrollment(opts) do
-    if legacy_configured?(opts) do
-      {:ok, :ready_for_legacy_runtime, opts}
-    else
-      {:ok, :needs_enrollment}
-    end
-  end
-
   defp ready_runtime_plan(state_dir, material) do
     case load_pending_token(state_dir) do
       {:ok, pending} -> {:ok, :ready_for_runtime, material, pending}
       {:error, :missing_pending_token} -> {:ok, :ready_for_runtime, material}
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  defp legacy_connection_opts(opts) do
-    [
-      agent_id: Keyword.get(opts, :agent_id),
-      core_endpoints:
-        Keyword.get(opts, :core_endpoints, [Keyword.get(opts, :core_url, @default_core_url)]),
-      cert_path: Keyword.get(opts, :cert_path),
-      key_path: Keyword.get(opts, :key_path),
-      ca_path: Keyword.get(opts, :ca_path)
-    ]
-  end
-
-  defp legacy_configured?(opts) do
-    binary_present?(Keyword.get(opts, :agent_id)) and
-      nonempty_list?(Keyword.get(opts, :core_endpoints)) and
-      regular_file?(Keyword.get(opts, :cert_path)) and
-      regular_file?(Keyword.get(opts, :key_path)) and
-      regular_file?(Keyword.get(opts, :ca_path))
   end
 
   defp pending_finalization(core_url, pending, connect_info) do
@@ -641,6 +589,8 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   defp cancel_timer(_timer), do: :ok
 
   defp binary_present?(value), do: is_binary(value) and value != ""
-  defp nonempty_list?(value), do: is_list(value) and value != []
-  defp regular_file?(value), do: is_binary(value) and File.regular?(value)
+
+  defp default_state_dir do
+    Path.expand(@default_state_dir)
+  end
 end

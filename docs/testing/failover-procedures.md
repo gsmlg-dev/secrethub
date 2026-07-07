@@ -94,7 +94,6 @@ for i in {1..10}; do
     --image=secrethub/agent:latest \
     --restart=Never \
     --env="SECRET_HUB_AGENT_CORE_URL=https://secrethub-core-lb:4664" \
-    --env="SECRET_HUB_AGENT_STATE_DIR=/tmp/secrethub-agent-$i" \
     -n secrethub-test
 done
 
@@ -335,15 +334,13 @@ EOF
 
 ```bash
 # Deploy test agents with multiple Core enrollment endpoints.
-# The Agent reads these values from environment/application config;
-# it does not load YAML config files at startup.
+# The Agent reads only the Core URL from environment/application config;
+# runtime endpoint details are delivered by Core through enrollment.
 kubectl run test-agent-failover \
   --image=secrethub/agent:latest \
   --restart=Never \
   -n secrethub-test \
-  --env="SECRET_HUB_AGENT_CORE_URL=https://secrethub-core-lb:4664" \
-  --env="SECRET_HUB_AGENT_CORE_ENDPOINTS=https://secrethub-core-lb:4664,https://core-pod-1.secrethub-core:4664,https://core-pod-2.secrethub-core:4664,https://core-pod-3.secrethub-core:4664" \
-  --env="SECRET_HUB_AGENT_STATE_DIR=/tmp/secrethub-agent-failover"
+  --env="SECRET_HUB_AGENT_CORE_URL=https://secrethub-core-lb:4664"
 ```
 
 ### Phase 2: Simulate Load Balancer Failure

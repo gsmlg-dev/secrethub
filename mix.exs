@@ -173,6 +173,7 @@ defmodule SecretHub.MixProject do
           secrethub_agent: :permanent,
           secrethub_shared: :permanent
         ],
+        runtime_config_path: "config/agent_runtime.exs",
         include_executables_for: [:unix, :windows],
         steps: [:assemble, :tar]
       ]

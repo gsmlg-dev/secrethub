@@ -9,9 +9,10 @@ defmodule SecretHub.Agent.EndpointManager do
   - Exponential backoff for failed endpoints
   - Connection health tracking
 
-  ## Configuration
+  ## Internal Configuration
 
-      config :secrethub_agent,
+      {SecretHub.Agent.EndpointManager,
+       [
         core_endpoints: [
           "wss://secrethub-core-0.secrethub.svc.cluster.local:4000",
           "wss://secrethub-core-1.secrethub.svc.cluster.local:4000",
@@ -19,6 +20,7 @@ defmodule SecretHub.Agent.EndpointManager do
         ],
         endpoint_health_check_interval: 30_000,
         endpoint_failover_threshold: 3
+       ]}
 
   ## Usage
 
@@ -139,10 +141,7 @@ defmodule SecretHub.Agent.EndpointManager do
 
   @impl true
   def init(opts) do
-    # Get endpoints from config or options
-    endpoints =
-      Keyword.get(opts, :core_endpoints) ||
-        Application.get_env(:secrethub_agent, :core_endpoints, [])
+    endpoints = Keyword.get(opts, :core_endpoints, [])
 
     if Enum.empty?(endpoints) do
       Logger.error("No Core endpoints configured!")

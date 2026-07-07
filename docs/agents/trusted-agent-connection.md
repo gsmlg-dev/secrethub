@@ -76,9 +76,7 @@ Out of scope for this first slice: automatic renewal implementation, multi-endpo
 
 ## State Directory
 
-Default path: `/var/lib/secrethub-agent`
-
-Development override: `SECRET_HUB_AGENT_STATE_DIR`
+Default path: `~/.local/state/secrethub/agent`
 
 Files:
 
