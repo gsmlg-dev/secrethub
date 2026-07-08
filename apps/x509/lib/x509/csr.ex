@@ -16,6 +16,7 @@ defmodule X509.CSR do
 
   # CertificationRequest record version
   @version :v1
+  @extension_request_oid oid(:"pkcs-9-at-extensionRequest")
 
   @doc """
   Returns a `:CertificationRequest` record for the given key pair and subject.
@@ -167,18 +168,34 @@ defmodule X509.CSR do
     attribute =
       info
       |> certification_request_info(:attributes)
-      |> Enum.find(
-        &match?(certification_request_attribute(type: oid(:"pkcs-9-at-extensionRequest")), &1)
-      )
+      |> Enum.find(&extension_request_attribute?/1)
 
-    case attribute do
-      certification_request_attribute(values: [asn1_OPENTYPE: der]) ->
+    case extension_request_der(attribute) do
+      {:ok, der} ->
         Extension.from_der!(der, :Extensions)
 
-      _ ->
+      :error ->
         []
     end
   end
+
+  defp extension_request_attribute?(
+         certification_request_attribute(type: @extension_request_oid)
+       ),
+       do: true
+
+  defp extension_request_attribute?({:"AttributePKCS-10", @extension_request_oid, _values}),
+    do: true
+
+  defp extension_request_attribute?(_attribute), do: false
+
+  defp extension_request_der(certification_request_attribute(values: [asn1_OPENTYPE: der])),
+    do: {:ok, der}
+
+  defp extension_request_der({:"AttributePKCS-10", @extension_request_oid, [asn1_OPENTYPE: der]}),
+    do: {:ok, der}
+
+  defp extension_request_der(_attribute), do: :error
 
   @doc """
   Verifies whether a CSR has a valid signature.

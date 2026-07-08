@@ -80,6 +80,38 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
       assert is_function(&SecretCommands.execute/4)
     end
 
+    @tag :tmp_dir
+    test "retrieves secret through the local agent without requiring CLI auth", %{
+      tmp_dir: tmp_dir
+    } do
+      Config.clear_auth()
+
+      socket_path =
+        Path.join(System.tmp_dir!(), "sh_cmd_#{System.unique_integer([:positive])}.sock")
+
+      cert_path = Path.join(tmp_dir, "app.crt")
+
+      File.write!(
+        cert_path,
+        "-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----\n"
+      )
+
+      on_exit(fn -> File.rm(socket_path) end)
+
+      server = start_agent_socket_server(socket_path, self())
+
+      assert {:ok, json} =
+               SecretCommands.execute(:get, "prod.db.password", [],
+                 agent_socket: socket_path,
+                 agent_cert: cert_path,
+                 format: "json"
+               )
+
+      assert %{"value" => "from-agent"} = Jason.decode!(json)
+      assert_receive {:secret_request, %{"params" => %{"path" => "prod.db.password"}}}
+      Task.await(server, 5_000)
+    end
+
     test "requires authentication" do
       Config.clear_auth()
 
@@ -329,5 +361,52 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
       Config.delete("server_url")
       assert Config.get_server_url() == "http://localhost:4000"
     end
+  end
+
+  defp start_agent_socket_server(socket_path, test_pid) do
+    Task.async(fn ->
+      {:ok, listener} =
+        :gen_tcp.listen(0, [
+          {:ifaddr, {:local, String.to_charlist(socket_path)}},
+          :binary,
+          packet: :line,
+          active: false,
+          reuseaddr: true
+        ])
+
+      send(test_pid, :agent_socket_ready)
+
+      {:ok, socket} = :gen_tcp.accept(listener, 5_000)
+
+      auth_request = recv_json!(socket)
+
+      send_json!(socket, %{
+        request_id: auth_request["request_id"],
+        status: "ok",
+        data: %{"authenticated" => true, "app_id" => "app-1"}
+      })
+
+      secret_request = recv_json!(socket)
+      send(test_pid, {:secret_request, secret_request})
+
+      send_json!(socket, %{
+        request_id: secret_request["request_id"],
+        status: "ok",
+        data: %{"value" => "from-agent", "version" => 1}
+      })
+
+      :gen_tcp.close(socket)
+      :gen_tcp.close(listener)
+    end)
+    |> tap(fn _task -> assert_receive :agent_socket_ready, 5_000 end)
+  end
+
+  defp recv_json!(socket) do
+    {:ok, line} = :gen_tcp.recv(socket, 0, 5_000)
+    Jason.decode!(line)
+  end
+
+  defp send_json!(socket, payload) do
+    :ok = :gen_tcp.send(socket, Jason.encode!(payload) <> "\n")
   end
 end

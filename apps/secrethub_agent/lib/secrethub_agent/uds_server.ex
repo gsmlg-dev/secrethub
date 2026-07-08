@@ -101,7 +101,7 @@ defmodule SecretHub.Agent.UDSServer do
   use GenServer
   require Logger
 
-  alias SecretHub.Agent.{Cache, CertVerifier}
+  alias SecretHub.Agent.{Cache, CertVerifier, Connection}
 
   @default_socket_path "/var/run/secrethub/agent.sock"
   @max_connections 100
@@ -418,27 +418,27 @@ defmodule SecretHub.Agent.UDSServer do
     {:ok, %{message: "pong"}}
   end
 
-  defp dispatch_action(action, _socket, params, _state, connection) do
+  defp dispatch_action(action, _socket, params, state, connection) do
     if connection && connection.authenticated do
-      dispatch_authenticated_action(action, params, connection)
+      dispatch_authenticated_action(action, params, state, connection)
     else
       {:error, "not_authenticated", "Please authenticate first using 'authenticate' action"}
     end
   end
 
-  defp dispatch_authenticated_action("get_secret", params, connection) do
-    handle_get_secret(params, connection)
+  defp dispatch_authenticated_action("get_secret", params, state, connection) do
+    handle_get_secret(params, state, connection)
   end
 
-  defp dispatch_authenticated_action("list_secrets", params, connection) do
+  defp dispatch_authenticated_action("list_secrets", params, _state, connection) do
     handle_list_secrets(params, connection)
   end
 
-  defp dispatch_authenticated_action(nil, _params, _connection) do
+  defp dispatch_authenticated_action(nil, _params, _state, _connection) do
     {:error, "missing_action", "Request must include 'action' field"}
   end
 
-  defp dispatch_authenticated_action(unknown, _params, _connection) do
+  defp dispatch_authenticated_action(unknown, _params, _state, _connection) do
     {:error, "unknown_action", "Unknown action: #{unknown}"}
   end
 
@@ -497,7 +497,7 @@ defmodule SecretHub.Agent.UDSServer do
     end
   end
 
-  defp handle_get_secret(params, connection) do
+  defp handle_get_secret(params, state, connection) do
     path = Map.get(params, "path")
 
     if path do
@@ -505,11 +505,11 @@ defmodule SecretHub.Agent.UDSServer do
       Logger.debug("Get secret", path: path, app_id: connection.app_id)
 
       case Cache.get(path) do
-        {:ok, secret} ->
-          {:ok, %{value: secret.value, version: secret.version}}
+        {:ok, secret_data} ->
+          {:ok, secret_response(secret_data)}
 
-        {:error, :not_found} ->
-          {:error, "not_found", "Secret not found: #{path}"}
+        {:error, reason} when reason in [:not_found, :expired] ->
+          fetch_secret_from_core(path, state.request_timeout)
 
         {:error, reason} ->
           {:error, "internal_error", "Failed to retrieve secret: #{inspect(reason)}"}
@@ -517,6 +517,73 @@ defmodule SecretHub.Agent.UDSServer do
     else
       {:error, "missing_parameter", "Parameter 'path' is required"}
     end
+  end
+
+  defp fetch_secret_from_core(path, timeout) do
+    case Process.whereis(Connection) do
+      nil ->
+        {:error, "core_unavailable", "Agent is not connected to Core"}
+
+      pid ->
+        do_fetch_secret_from_core(pid, path, timeout)
+    end
+  end
+
+  defp do_fetch_secret_from_core(pid, path, timeout) do
+    case Connection.get_static_secret(pid, path, timeout) do
+      {:ok, response} ->
+        with {:ok, secret_data, version} <- normalize_core_secret_response(response) do
+          Cache.put(path, secret_data, version: version)
+          {:ok, secret_response(secret_data, version)}
+        end
+
+      {:error, :not_connected} ->
+        {:error, "core_unavailable", "Agent is not connected to Core"}
+
+      {:error, reason} ->
+        {:error, "core_error", "Core secret fetch failed: #{inspect(reason)}"}
+    end
+  catch
+    :exit, {:timeout, _} ->
+      {:error, "core_timeout", "Core secret fetch timed out"}
+
+    :exit, {:noproc, _} ->
+      {:error, "core_unavailable", "Agent is not connected to Core"}
+
+    :exit, reason ->
+      {:error, "core_error", "Core secret fetch failed: #{inspect(reason)}"}
+  end
+
+  defp normalize_core_secret_response(%{"data" => data} = response) when is_map(data) do
+    {:ok, data, response_version(response)}
+  end
+
+  defp normalize_core_secret_response(%{data: data} = response) when is_map(data) do
+    {:ok, data, response_version(response)}
+  end
+
+  defp normalize_core_secret_response(%{"value" => value} = response) do
+    {:ok, %{"value" => value}, response_version(response)}
+  end
+
+  defp normalize_core_secret_response(%{value: value} = response) do
+    {:ok, %{"value" => value}, response_version(response)}
+  end
+
+  defp normalize_core_secret_response(other) do
+    {:error, "internal_error", "Unexpected Core secret response: #{inspect(other)}"}
+  end
+
+  defp secret_response(secret_data, version \\ 1)
+
+  defp secret_response(%{"value" => value}, version), do: %{value: value, version: version}
+  defp secret_response(%{value: value}, version), do: %{value: value, version: version}
+
+  defp secret_response(secret_data, version) when is_map(secret_data),
+    do: %{value: secret_data, version: version}
+
+  defp response_version(response) do
+    Map.get(response, "version") || Map.get(response, :version) || 1
   end
 
   defp handle_list_secrets(_params, _connection) do

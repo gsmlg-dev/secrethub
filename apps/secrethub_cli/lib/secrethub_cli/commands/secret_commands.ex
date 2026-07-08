@@ -3,7 +3,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
   Secret management command implementations.
   """
 
-  alias SecretHub.CLI.{Auth, Config, Output}
+  alias SecretHub.CLI.{AgentClient, Auth, Config, Output}
 
   @doc """
   Executes secret commands.
@@ -17,8 +17,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
   end
 
   def execute(:get, path, _args, opts) do
-    with {:ok, _token} <- Auth.ensure_authenticated(),
-         {:ok, secret} <- get_secret(path, opts) do
+    with {:ok, secret} <- get_secret_for_cli(path, opts) do
       format = Keyword.get(opts, :format, Config.get_output_format())
       Output.format(secret, format: format)
     end
@@ -77,6 +76,19 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
   end
 
   ## Private API Functions
+
+  defp get_secret_for_cli(path, opts) do
+    if agent_socket = Keyword.get(opts, :agent_socket) do
+      AgentClient.get_secret(path,
+        socket_path: agent_socket,
+        certificate_path: Keyword.get(opts, :agent_cert)
+      )
+    else
+      with {:ok, _token} <- Auth.ensure_authenticated() do
+        get_secret(path, opts)
+      end
+    end
+  end
 
   defp list_secrets(_opts) do
     server = Config.get_server_url()

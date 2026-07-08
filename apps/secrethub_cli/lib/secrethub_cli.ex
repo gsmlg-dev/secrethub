@@ -116,7 +116,9 @@ defmodule SecretHub.CLI do
           secret_id: :string,
           value: :string,
           from_template: :string,
-          name: :string
+          name: :string,
+          agent_socket: :string,
+          agent_cert: :string
         ],
         aliases: [
           h: :help,
@@ -298,12 +300,15 @@ defmodule SecretHub.CLI do
         -f, --format <format>    Output format (json|table|yaml)
         -q, --quiet              Suppress output
         --verbose                Detailed output
+        --agent-socket <path>    Local Agent Unix socket for secret get
+        --agent-cert <path>      App certificate PEM for Agent auth
 
     EXAMPLES:
         secrethub login
         secrethub login --role-id <id> --secret-id <secret>
         secrethub renew
         secrethub secret get prod.db.password
+        secrethub secret get prod.db.password --agent-socket /var/run/secrethub/agent.sock --agent-cert ./app.pem
         secrethub policy create --from-template business_hours
         secrethub agent list
 

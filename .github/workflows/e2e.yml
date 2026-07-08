@@ -16,7 +16,7 @@ jobs:
   e2e:
     name: End-to-End Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -90,6 +90,9 @@ jobs:
 
       - name: Run E2E tests
         run: mix test apps/secrethub_web/test/e2e/ --include e2e --trace --max-failures 3
+
+      - name: Run CLI agent socket tests
+        run: mix test apps/secrethub_cli/test/secrethub_cli/agent_client_test.exs apps/secrethub_cli/test/secrethub_cli/commands/secret_commands_test.exs --trace
 
       - name: Upload logs on failure
         if: failure()

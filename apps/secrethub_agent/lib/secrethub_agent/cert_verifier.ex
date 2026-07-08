@@ -324,27 +324,11 @@ defmodule SecretHub.Agent.CertVerifier do
   end
 
   defp find_attribute({:rdnSequence, rdn_sequence}, oid) do
-    # Flatten RDN sequence and search for OID
-    rdn_sequence
-    |> List.flatten()
-    |> Enum.find_value(fn
-      {:AttributeTypeAndValue, ^oid, value} ->
-        {:ok, decode_attribute_value(value)}
-
-      _ ->
-        nil
-    end)
-    |> case do
-      nil -> :not_found
-      result -> result
+    case X509.RDNSequence.get_attr({:rdnSequence, rdn_sequence}, oid) do
+      [value | _] -> {:ok, value}
+      [] -> :not_found
     end
   end
-
-  defp decode_attribute_value({:utf8String, value}), do: value
-  defp decode_attribute_value({:printableString, value}), do: value
-  defp decode_attribute_value({:ia5String, value}), do: value
-  defp decode_attribute_value(value) when is_binary(value), do: value
-  defp decode_attribute_value(value), do: to_string(value)
 
   defp parse_time({:utcTime, time_str}) when is_list(time_str) do
     # UTCTime format: YYMMDDHHMMSSZ

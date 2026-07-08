@@ -26,6 +26,7 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
   }
 
   setup do
+    ensure_current_audit_partition!()
     start_supervised!({ConnectionManager, name: ConnectionManager})
     :ok
   end
@@ -256,6 +257,23 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
       :public_key.pem_decode(certificate.certificate_pem)
 
     %{certificate: certificate, cert_der: cert_der, enrollment: issued}
+  end
+
+  defp ensure_current_audit_partition! do
+    today = Date.utc_today()
+    month = String.pad_leading(to_string(today.month), 2, "0")
+    partition_name = "audit_logs_y#{today.year}m#{month}"
+    from_date = "#{today.year}-#{month}-01"
+
+    next_month_number = if today.month == 12, do: 1, else: today.month + 1
+    next_year = if today.month == 12, do: today.year + 1, else: today.year
+    next_month = String.pad_leading(to_string(next_month_number), 2, "0")
+    to_date = "#{next_year}-#{next_month}-01"
+
+    Repo.query!("""
+    CREATE TABLE IF NOT EXISTS #{partition_name} PARTITION OF audit_logs
+    FOR VALUES FROM ('#{from_date}') TO ('#{to_date}')
+    """)
   end
 
   defp revoke_agent_row!(agent_id) do
