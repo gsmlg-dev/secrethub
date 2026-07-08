@@ -13,6 +13,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
   import Phoenix.ConnTest, except: [connect: 2]
   import Phoenix.ChannelTest
+  import ExUnit.CaptureIO
 
   alias Ecto.Adapters.SQL.Sandbox
   alias SecretHub.Agent.{Cache, Connection, TrustedConnection, UDSServer}
@@ -29,7 +30,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   alias X509.Certificate.Extension
 
   @endpoint SecretHub.Web.Endpoint
-  @cli_timeout 60_000
+  @cli_timeout 20_000
 
   @pending_attrs %{
     hostname: "e2e-runtime-01",
@@ -579,34 +580,67 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   defp wait_for_http!(url, 0), do: flunk("HTTP endpoint did not start: #{url}")
 
   defp run_cli(args, home_dir) do
-    File.mkdir_p!(home_dir)
+    config_dir = Path.join(home_dir, ".secrethub")
+    File.mkdir_p!(config_dir)
+
+    previous_test_mode = Application.get_env(:secrethub_cli, :test_mode)
+    previous_config_dir = Application.get_env(:secrethub_cli, :config_dir)
+
+    Application.put_env(:secrethub_cli, :test_mode, true)
+    Application.put_env(:secrethub_cli, :config_dir, config_dir)
 
     task =
       Task.async(fn ->
-        System.cmd(
-          "mix",
-          [
-            "run",
-            "--no-compile",
-            "--no-deps-check",
-            "-e",
-            "SecretHub.CLI.main(System.argv())",
-            "--"
-          ] ++
-            args,
-          cd: Path.expand("../../../../apps/secrethub_cli", __DIR__),
-          env: [{"MIX_ENV", "test"}, {"HOME", home_dir}],
-          stderr_to_stdout: true
-        )
+        run_cli_in_process(args)
       end)
 
-    case Task.yield(task, @cli_timeout) || Task.shutdown(task, :brutal_kill) do
-      {:ok, result} ->
-        result
+    try do
+      case Task.yield(task, @cli_timeout) || Task.shutdown(task, :brutal_kill) do
+        {:ok, result} ->
+          result
 
-      nil ->
-        flunk("CLI command timed out after #{@cli_timeout}ms: #{Enum.join(args, " ")}")
+        nil ->
+          flunk("CLI command timed out after #{@cli_timeout}ms: #{Enum.join(args, " ")}")
+      end
+    after
+      restore_app_env(:secrethub_cli, :test_mode, previous_test_mode)
+      restore_app_env(:secrethub_cli, :config_dir, previous_config_dir)
     end
+  end
+
+  defp run_cli_in_process(args) do
+    Process.delete(:cli_stdout)
+    Process.delete(:cli_exit_code)
+
+    stderr =
+      capture_io(:stderr, fn ->
+        stdout =
+          capture_io(fn ->
+            Process.put(:cli_exit_code, run_cli_main(args))
+          end)
+
+        Process.put(:cli_stdout, stdout)
+      end)
+
+    stdout = Process.delete(:cli_stdout) || ""
+    code = Process.delete(:cli_exit_code) || 0
+
+    {stdout <> stderr, code}
+  end
+
+  defp run_cli_main(args) do
+    try do
+      SecretHub.CLI.main(args)
+      0
+    catch
+      :exit, {:shutdown, code} when is_integer(code) -> code
+    end
+  end
+
+  defp restore_app_env(app, key, nil), do: Application.delete_env(app, key)
+
+  defp restore_app_env(app, key, value) do
+    Application.put_env(app, key, value)
   end
 
   defp write_app_certificate!(tmp_dir) do
