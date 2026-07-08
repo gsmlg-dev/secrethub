@@ -411,6 +411,15 @@ defmodule SecretHub.Agent.Connection do
     {:noreply, %{state | reconnect_timer: nil}}
   end
 
+  def handle_info(message, state) do
+    Logger.debug("Ignoring unexpected connection message",
+      agent_id: state.agent_id,
+      message: inspect(message)
+    )
+
+    {:noreply, state}
+  end
+
   ## Private Functions
 
   defp schedule_runtime_heartbeat do

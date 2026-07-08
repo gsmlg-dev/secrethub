@@ -29,6 +29,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   alias X509.Certificate.Extension
 
   @endpoint SecretHub.Web.Endpoint
+  @cli_timeout 60_000
 
   @pending_attrs %{
     hostname: "e2e-runtime-01",
@@ -580,14 +581,32 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   defp run_cli(args, home_dir) do
     File.mkdir_p!(home_dir)
 
-    System.cmd(
-      "mix",
-      ["run", "--no-compile", "--no-deps-check", "-e", "SecretHub.CLI.main(System.argv())", "--"] ++
-        args,
-      cd: Path.expand("../../../../apps/secrethub_cli", __DIR__),
-      env: [{"MIX_ENV", "test"}, {"HOME", home_dir}],
-      stderr_to_stdout: true
-    )
+    task =
+      Task.async(fn ->
+        System.cmd(
+          "mix",
+          [
+            "run",
+            "--no-compile",
+            "--no-deps-check",
+            "-e",
+            "SecretHub.CLI.main(System.argv())",
+            "--"
+          ] ++
+            args,
+          cd: Path.expand("../../../../apps/secrethub_cli", __DIR__),
+          env: [{"MIX_ENV", "test"}, {"HOME", home_dir}],
+          stderr_to_stdout: true
+        )
+      end)
+
+    case Task.yield(task, @cli_timeout) || Task.shutdown(task, :brutal_kill) do
+      {:ok, result} ->
+        result
+
+      nil ->
+        flunk("CLI command timed out after #{@cli_timeout}ms: #{Enum.join(args, " ")}")
+    end
   end
 
   defp write_app_certificate!(tmp_dir) do
