@@ -7,6 +7,7 @@ Welcome to the SecretHub documentation. This guide provides comprehensive inform
 ## Quick Links
 
 - **[Quickstart Guide](./quickstart.md)** - Get started in 5 minutes
+- **[Deployment Guide](./deploy.md)** - Deploy Core, Agent, and CLI from release artifacts
 - **[Architecture Overview](./architecture.md)** - System design and components
 - **[Operator Manual](./operator-manual.md)** - Day-to-day operations
 - **[Troubleshooting](./troubleshooting.md)** - Common issues and solutions
@@ -25,6 +26,7 @@ Welcome to the SecretHub documentation. This guide provides comprehensive inform
 - [Application Certificate Issuance](./architecture/app-certificate-issuance.md) - App cert lifecycle design
 
 ### Deployment
+- [Deployment Guide](./deploy.md) - Current release artifacts, Docker, tarball, Agent, and CLI deployment
 - [MVP Deployment Guide](./deployment/mvp-deployment-guide.md) - Docker Compose and Kubernetes deployment
 - [Agent Deployment Guide](./deployment/agent-deployment-guide.md) - Agent configuration and deployment
 - [PostgreSQL HA Setup](./deployment/postgresql-ha-setup.md) - Database high availability

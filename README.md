@@ -2,7 +2,7 @@
 
 > Enterprise-grade Machine-to-Machine secrets management platform
 
-**Status:** 🚀 v1.0.0-rc3 Released
+**Status:** 🚀 v1.0.0-rc9 Released
 
 ---
 
@@ -389,50 +389,56 @@ Pre-built policy templates for common scenarios:
 
 ## 🚢 Deployment
 
+Start with the [deployment guide](docs/deploy.md) for current Core, Agent, and CLI deployment steps. The detailed production runbook and operational checklists live under [docs/deployment](docs/deployment/).
+
 ### Release Artifacts
 
-| Release | Includes |
-|---------|----------|
-| `secrethub_core` | Core + Web + Shared |
-| `secrethub_agent` | Agent + Shared |
+| Artifact | Platforms | Includes |
+|----------|-----------|----------|
+| `secrethub_core-<tag>-linux-*.tar.gz` | Linux amd64, Linux arm64 | Core + Web + Shared |
+| `secrethub_agent-<tag>-*.tar.gz` | Linux, macOS, FreeBSD | Agent + Shared |
+| `secrethub_agent-<tag>-windows-amd64.zip` | Windows amd64 | Agent + Shared |
+| `secrethub_cli` | Hex.pm package | CLI escript |
 
 ### Docker Images
 
 ```bash
-# Core Service
+docker pull ghcr.io/gsmlg-dev/secrethub/core:v1.0.0-rc9
+docker pull ghcr.io/gsmlg-dev/secrethub/core-standalone:v1.0.0-rc9
+docker pull ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc9
+```
+
+Core with external PostgreSQL:
+
+```bash
 docker run -d -p 4664:4664 \
+  -e PHX_SERVER=true \
   -e PORT=4664 \
-  -e DATABASE_URL="postgresql://..." \
-  -e SECRET_KEY_BASE="..." \
-  ghcr.io/gsmlg-dev/secrethub/core:v1.0.0-rc3
+  -e PHX_HOST=secrethub.example.com \
+  -e DATABASE_URL="postgresql://secrethub:password@postgres/secrethub_prod" \
+  -e SECRET_KEY_BASE="$(openssl rand -base64 48)" \
+  ghcr.io/gsmlg-dev/secrethub/core:v1.0.0-rc9
+```
 
-# Agent
+Agent:
+
+```bash
 docker run -d \
-  -e SECRET_HUB_AGENT_CORE_URL="http://core:4664" \
-  -v secrethub-agent-state:/home/secrethub/.local/state/secrethub/agent \
-  ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc3
+  -e SECRET_HUB_AGENT_CORE_URL="https://secrethub.example.com" \
+  -v /var/lib/secrethub-agent:/app/.local/state/secrethub/agent \
+  -v /var/run/secrethub:/var/run/secrethub \
+  ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc9
 ```
 
-### Kubernetes (Helm)
+For production, run migrations before starting Core, expose the trusted Agent mTLS endpoint, and persist Agent state. See [docs/deploy.md](docs/deploy.md).
 
-```bash
-helm install secrethub ./infrastructure/helm/secrethub \
-  --set core.database.url="postgresql://..." \
-  --set core.secretKeyBase="..."
-```
+### Required Runtime Environment
 
-### Environment Variables
-
-```bash
-# Core Service
-DATABASE_URL=postgresql://user:pass@host/db  # Or with socket: ?host=/var/run/postgresql
-SECRET_KEY_BASE=<64-char-hex>
-PHX_HOST=secrethub.example.com
-POOL_SIZE=10
-
-# Agent
-SECRET_HUB_AGENT_CORE_URL=https://core.example.com:4664
-```
+| Service | Required |
+|---------|----------|
+| Core | `PHX_SERVER=true`, `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST` |
+| Core trusted Agent endpoint | `SECRET_HUB_AGENT_ENDPOINT_SERVER=true`, endpoint cert/key/CA paths |
+| Agent | `SECRET_HUB_AGENT_CORE_URL` |
 
 ---
 
@@ -461,7 +467,7 @@ SECRET_HUB_AGENT_CORE_URL=https://core.example.com:4664
 - [x] LiveView admin dashboard (20+ pages)
 - [x] CI/CD with GitHub Actions
 - [x] Multi-arch Docker images (amd64/arm64)
-- [x] Helm charts for Kubernetes deployment
+- [x] Production deployment guide and operational runbooks
 
 ---
 
@@ -495,5 +501,6 @@ MIT License
 ## 🔗 Links
 
 - **Repository:** https://github.com/gsmlg-dev/secrethub
-- **Latest Release:** [v1.0.0-rc3](https://github.com/gsmlg-dev/secrethub/releases/tag/v1.0.0-rc3)
-- **Docker Images:** `ghcr.io/gsmlg-dev/secrethub/core` | `ghcr.io/gsmlg-dev/secrethub/agent`
+- **Latest Release:** [v1.0.0-rc9](https://github.com/gsmlg-dev/secrethub/releases/tag/v1.0.0-rc9)
+- **Deployment Guide:** [docs/deploy.md](docs/deploy.md)
+- **Docker Images:** `ghcr.io/gsmlg-dev/secrethub/core` | `ghcr.io/gsmlg-dev/secrethub/core-standalone` | `ghcr.io/gsmlg-dev/secrethub/agent`
