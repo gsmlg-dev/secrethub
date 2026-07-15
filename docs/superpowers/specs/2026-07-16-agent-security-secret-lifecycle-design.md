@@ -1,7 +1,7 @@
 # Agent Security and Secret Lifecycle Completion Design
 
 **Date:** 2026-07-16
-**Status:** Draft - architecture approved, written spec review pending
+**Status:** Approved
 
 ## Overview
 
@@ -205,6 +205,15 @@ The v2 proof handler may be deployed behind an explicit migration gate, but
 production cutover cannot enable the fail-closed verifier until preflight reaches
 zero; after cutover there is no legacy-certificate compatibility bypass.
 
+The Core database gate is the production authority for that cutover. Agents
+advertise auth-v2 capability on their trusted runtime join and derive the local
+authentication version from UDS state rather than application input. Gate
+activation requires capable fresh Agents, Core immediately rejects requests
+derived from v1 local sessions, and join replies plus post-commit notifications
+monotonically move Agents to v2-only mode. A delayed notification may affect
+availability but cannot authorize a legacy session, and local configuration
+cannot lower a persisted Core-issued floor.
+
 ### Application-to-Agent proof
 
 UDS authentication version 2 uses two requests. This version names the
@@ -322,11 +331,13 @@ lease lifecycle below.
 Static reads are audited with actor type `application`, actor ID equal to the
 application UUID, and Agent ID plus certificate fingerprint in event metadata.
 The Agent does not release a static secret from its local cache without a Core
-round trip. The Agent includes its cached version in the read request. After
-authorization Core returns either the current value and version or an explicit
-`not_modified` response for that same version; only the latter permits the Agent
-to release the matching cached value. Cache remains available for internal
-sinks and dynamic lifecycle state, scoped by application and resource.
+round trip. The Agent includes its cached monotonic path-mutation revision in
+the read request. After authorization Core returns either the current value and
+revision or an explicit `not_modified` response for that same revision; only the
+latter permits the Agent to release the matching cached value. Delete retains
+the revision row, so recreating a path cannot reuse an older revision. Dynamic
+credential values are never placed in this static cache; the renewal subsystem
+stores only nonsecret lease scheduling metadata.
 
 ## Agent First Boot and Packaging
 
@@ -356,7 +367,9 @@ enrollment host key is temporarily unavailable, because runtime identity is the
 Core-issued certificate. A first boot without either identity fails clearly and
 does not create an enrollment. Enrollment retries resume the one nonterminal
 record for the same host fingerprint and idempotency key instead of creating
-duplicate pending Agents; a changed host fingerprint requires operator action.
+duplicate pending Agents; Core serializes on the canonical host fingerprint and
+a partial unique constraint rejects concurrent different request IDs for the
+same nonterminal identity. A changed host fingerprint requires operator action.
 
 The published Docker image creates a writable socket directory, uses the actual
 release environment names, and checks that the UDS accepts a bounded liveness
@@ -403,6 +416,10 @@ audit the version used. Resolving it is an internal, separately audited operatio
 that requires the vault to be unsealed; it does not use or broaden the
 requesting application's secret policy. Plaintext passwords or cloud keys in
 `engine_configurations.config` are rejected for the production dynamic path.
+An administrative secret has a database-enforced, irreversible
+`internal_engine_admin` access class. Runtime and REST application paths reject
+that class before wildcard policy evaluation; only an immutable engine-version
+reference and the bounded internal resolver can decrypt it.
 
 `EngineConfiguration` contains connection-level settings only; engine-specific
 creation, renewal, and revocation rules live in the dynamic role. Backfill splits
@@ -592,10 +609,11 @@ suspended or revoked identity may generate or renew a lease.
 
 ## Cache and Runtime Notifications
 
-Core publishes a path/version-only `secret:rotated` event after a successful
+Core publishes a path/revision-only `secret:rotated` event after a successful
 mutation or rotation and a scoped `policy:updated` event after policy binding or
-content changes. Certificate and application revocation emit an app identity
-event.
+content changes. The revision is a monotonic per-path mutation counter that
+survives deletion and recreation. Certificate and application revocation emit
+an app identity event.
 
 The Agent:
 
@@ -607,12 +625,12 @@ The Agent:
 
 Notifications are an optimization, not a correctness boundary: they may be
 duplicated, delayed, reordered, or missed during disconnect. The Agent keeps
-per-path version tombstones so an older in-flight response cannot repopulate a
+per-path revision tombstones so an older in-flight response cannot repopulate a
 rotated value, and it clears or reconciles application caches on reconnect.
 Static UDS reads still require current Core authorization and a matching current
-version, so a missed event cannot release stale data. Dynamic credentials never
-use stale fallback, are scoped by application and lease, and cannot be cached
-past lease expiry.
+revision, so a missed event cannot release stale data. Dynamic credential
+values are not cached; lease scheduling metadata is scoped by application and
+lease and contains no credential material.
 
 ## Agent Certificate Renewal
 
@@ -626,9 +644,12 @@ transition timestamps and mandatory `retire_until` for a retiring binding.
 `agents.certificate_id` remains a transactionally updated
 compatibility pointer to the primary active certificate. Backfill creates one
 active binding for each valid existing pointer and fails on missing, mismatched,
-or revoked references. A partial unique constraint permits at most one `active`
-binding per Agent; transition transactions ensure an enrolled Agent has one
-while allowing one bounded `retiring` binding during rollover.
+or revoked references. Partial unique constraints permit at most one binding in
+each of `active`, `pending_validation`, and `retiring` per Agent. Every mutating
+transition locks the Agent and its bindings; a new renewal is rejected until the
+current pending or retiring workflow terminates. This permits active+pending
+during validation and active+retiring during bounded rollback without allowing
+concurrent rollover workflows.
 
 The flow is intentionally two-phase:
 
@@ -686,6 +707,8 @@ terms. Required codes include:
 - `PROOF_REQUIRED`
 - `PROOF_FAILED`
 - `IDEMPOTENCY_CONFLICT`
+- `ENROLLMENT_IN_PROGRESS`
+- `RENEWAL_IN_PROGRESS`
 - `UNAUTHORIZED`
 - `FORBIDDEN`
 - `ROLE_NOT_FOUND`
@@ -706,25 +729,30 @@ reason, never credentials.
 
 The implementation requires migrations for:
 
-1. `app_bootstrap_tokens.issuance_request_id` and
+1. persisted upgrade gates and fresh Core/Agent capability evidence for
+   mechanical cutover decisions;
+2. enrollment request/payload idempotency plus nonterminal canonical host-key
+   fingerprint uniqueness;
+3. `app_bootstrap_tokens.issuance_request_id` and
    `app_bootstrap_tokens.issued_certificate_id` for issuance idempotency;
-2. `app_certificate_renewals` for payload-bound renewal idempotency;
-3. a canonical certificate SHA-256 fingerprint column, with
+4. `app_certificate_renewals` for payload-bound renewal idempotency;
+5. a canonical certificate SHA-256 fingerprint column, with
    expand/backfill/cutover from legacy forms;
-4. a validated `applications.agent_id -> agents.id` foreign key, with a
+6. a validated `applications.agent_id -> agents.id` foreign key, with a
    fail-fast orphan preflight;
-5. a global authorization epoch, authorization-subject version rows, and typed
-   policy entity bindings, with deterministic backfill from legacy raw
-   identifiers;
-6. `dynamic_secret_roles`, immutable engine-configuration versions, stable
-   administrative-secret references, and their restrictive foreign keys;
-7. lease public ID, lifecycle state, auto-renew delegation, operation token,
+7. a global authorization epoch, authorization-subject version rows, typed
+   policy entity bindings, and monotonic secret-path revisions, with
+   deterministic backfill from legacy raw identifiers;
+8. `dynamic_secret_roles`, immutable engine-configuration versions, stable
+   administrative-secret references, irreversible internal-secret access
+   classification, and their restrictive foreign keys;
+9. lease public ID, lifecycle state, auto-renew delegation, operation token,
    target expiry, `revoke_requested_at`, deterministic external principal,
    role/configuration version, application ownership, issuing certificate
    evidence, encrypted credentials/snapshot fields, and scoped operation
    idempotency records; and
-8. `agent_certificate_bindings` for pending, active, retiring, and revoked
-   rollover states, including `retire_until`.
+10. `agent_certificate_bindings` for pending, active, retiring, and revoked
+    rollover states, including renewal uniqueness and `retire_until`.
 
 Active roles or leases prevent deletion of an issuing configuration version.
 No migration silently removes or rewrites unresolved identity or active lease
@@ -765,7 +793,7 @@ Implementation follows red-green-refactor for each vertical slice.
   Tests assert database rows, logs, and Oban arguments contain no plaintext
   secrets.
 - Cache notifications: rotation, policy update, app revocation, duplicate,
-  out-of-order and missed events, reconnect reconciliation, version tombstones,
+  out-of-order and missed events, reconnect reconciliation, revision tombstones,
   and an in-flight stale response after rotation.
 - Agent renewal: scheduling, restricted candidate privileges, atomic generation
   persistence, activation, normal runtime acceptance, finalization, rollback,
