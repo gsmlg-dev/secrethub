@@ -1115,7 +1115,12 @@ defmodule SecretHub.Core.PKI.CA do
   def delete_certificate(cert_id) do
     with {:ok, uuid} <- Ecto.UUID.cast(cert_id),
          %Certificate{} = cert <- Repo.get(Certificate, uuid) do
-      Repo.delete(cert)
+      cert
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.no_assoc_constraint(:issued_bootstrap_tokens)
+      |> Ecto.Changeset.no_assoc_constraint(:renewals_from)
+      |> Ecto.Changeset.no_assoc_constraint(:renewals_issued)
+      |> Repo.delete()
     else
       :error -> {:error, :not_found}
       nil -> {:error, :not_found}

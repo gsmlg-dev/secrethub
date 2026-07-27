@@ -23,6 +23,12 @@ defmodule SecretHub.Shared.Schemas.Application do
     has_many(:bootstrap_tokens, SecretHub.Shared.Schemas.AppBootstrapToken, foreign_key: :app_id)
     has_many(:app_certificates, SecretHub.Shared.Schemas.AppCertificate, foreign_key: :app_id)
 
+    has_many(
+      :certificate_renewals,
+      SecretHub.Shared.Schemas.AppCertificateRenewal,
+      foreign_key: :app_id
+    )
+
     timestamps(type: :utc_datetime)
   end
 

@@ -23,8 +23,14 @@ defmodule SecretHub.Shared.Schemas.AppBootstrapToken do
     field(:used, :boolean, default: false)
     field(:used_at, :utc_datetime)
     field(:expires_at, :utc_datetime)
+    field(:issuance_request_id, :binary_id)
 
     belongs_to(:app, SecretHub.Shared.Schemas.Application, foreign_key: :app_id, type: :binary_id)
+
+    belongs_to(:issued_certificate, SecretHub.Shared.Schemas.Certificate,
+      foreign_key: :issued_certificate_id,
+      type: :binary_id
+    )
 
     timestamps(type: :utc_datetime, updated_at: false)
   end
@@ -34,9 +40,21 @@ defmodule SecretHub.Shared.Schemas.AppBootstrapToken do
   """
   def changeset(token, attrs) do
     token
-    |> cast(attrs, [:app_id, :token_hash, :used, :used_at, :expires_at])
+    |> cast(attrs, [
+      :app_id,
+      :token_hash,
+      :used,
+      :used_at,
+      :expires_at,
+      :issuance_request_id,
+      :issued_certificate_id
+    ])
     |> validate_required([:app_id, :token_hash, :expires_at])
     |> unique_constraint(:token_hash)
     |> foreign_key_constraint(:app_id)
+    |> foreign_key_constraint(:issued_certificate_id)
+    |> check_constraint(:issuance_request_id,
+      name: :app_bootstrap_tokens_issuance_result_pair
+    )
   end
 end

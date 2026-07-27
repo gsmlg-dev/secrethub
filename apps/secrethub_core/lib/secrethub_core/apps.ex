@@ -561,7 +561,12 @@ defmodule SecretHub.Core.Apps do
   defp perform_app_deletion(app, id) do
     revoke_all_app_certificates(id)
 
-    case Repo.delete(app) do
+    delete_changeset =
+      app
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.no_assoc_constraint(:certificate_renewals)
+
+    case Repo.delete(delete_changeset) do
       {:ok, deleted_app} ->
         Logger.info("Application deleted",
           app_id: deleted_app.id,

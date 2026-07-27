@@ -16,11 +16,14 @@ defmodule SecretHub.Shared.Schemas.Certificate do
 
   @primary_key {:id, :binary_id, autogenerate: true}
   @foreign_key_type :binary_id
+  @canonical_fingerprint_format ~r/\A[0-9a-f]{64}\z/
+  @canonical_fingerprint_error "must be a 64-character lowercase hexadecimal SHA-256 fingerprint"
 
   schema "certificates" do
     # Certificate identification
     field(:serial_number, :string)
     field(:fingerprint, :string)
+    field(:canonical_fingerprint, :string)
 
     # Certificate data
     field(:certificate_pem, :string)
@@ -58,6 +61,18 @@ defmodule SecretHub.Shared.Schemas.Certificate do
     field(:entity_id, :string)
     field(:entity_type, :string)
 
+    has_many(:issued_bootstrap_tokens, SecretHub.Shared.Schemas.AppBootstrapToken,
+      foreign_key: :issued_certificate_id
+    )
+
+    has_many(:renewals_from, SecretHub.Shared.Schemas.AppCertificateRenewal,
+      foreign_key: :current_certificate_id
+    )
+
+    has_many(:renewals_issued, SecretHub.Shared.Schemas.AppCertificateRenewal,
+      foreign_key: :issued_certificate_id
+    )
+
     # Metadata
     field(:metadata, :map, default: %{})
 
@@ -72,6 +87,7 @@ defmodule SecretHub.Shared.Schemas.Certificate do
     |> cast(attrs, [
       :serial_number,
       :fingerprint,
+      :canonical_fingerprint,
       :certificate_pem,
       :private_key_encrypted,
       :subject,
@@ -106,6 +122,15 @@ defmodule SecretHub.Shared.Schemas.Certificate do
     ])
     |> unique_constraint(:serial_number)
     |> unique_constraint(:fingerprint)
+    |> unique_constraint(:canonical_fingerprint,
+      name: :certificates_canonical_fingerprint_unique
+    )
+    |> validate_format(:canonical_fingerprint, @canonical_fingerprint_format,
+      message: @canonical_fingerprint_error
+    )
+    |> check_constraint(:canonical_fingerprint,
+      name: :certificates_canonical_fingerprint_format
+    )
     |> validate_validity_period()
   end
 

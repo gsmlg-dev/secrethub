@@ -1,7 +1,9 @@
 defmodule SecretHub.Core.AppsTest do
   use SecretHub.Core.DataCase, async: false
 
-  alias SecretHub.Core.{Agents, Apps}
+  alias SecretHub.Core.{Agents, Apps, Repo}
+  alias SecretHub.Core.PKI.CA
+  alias SecretHub.Shared.Schemas.AppCertificateRenewal
 
   # Apps require a real agent record for the foreign key constraint.
   defp create_agent do
@@ -46,16 +48,14 @@ defmodule SecretHub.Core.AppsTest do
       assert {_msg, _} = changeset.errors[:agent_id]
     end
 
-    test "succeeds with a valid agent_id (FK not enforced at DB level)" do
-      # The Application schema uses a belongs_to but there's no hard FK constraint,
-      # so registration succeeds even with an unknown agent UUID.
-      assert {:ok, %{app: app}} =
+    test "rejects an unknown agent_id" do
+      assert {:error, changeset} =
                Apps.register_app(%{
                  name: "orphan-app",
                  agent_id: Ecto.UUID.generate()
                })
 
-      assert app.name == "orphan-app"
+      assert %{agent_id: ["does not exist"]} = errors_on(changeset)
     end
   end
 
@@ -160,6 +160,61 @@ defmodule SecretHub.Core.AppsTest do
 
     test "returns error for non-existent app" do
       assert {:error, :not_found} = Apps.delete_app(Ecto.UUID.generate())
+    end
+
+    test "returns a controlled error when renewal evidence preserves the app" do
+      {:ok, %{app: app}} = register_app()
+
+      {:ok, current} =
+        CA.generate_root_ca(
+          "Current App Evidence #{System.unique_integer([:positive])}",
+          "SecretHub Test",
+          key_size: 2048
+        )
+
+      {:ok, issued} =
+        CA.generate_root_ca(
+          "Issued App Evidence #{System.unique_integer([:positive])}",
+          "SecretHub Test",
+          key_size: 2048
+        )
+
+      attrs = %{
+        app_id: app.id,
+        current_certificate_id: current.cert_record.id,
+        issued_certificate_id: issued.cert_record.id,
+        request_id: Ecto.UUID.generate(),
+        original_fingerprint: String.duplicate("a", 64),
+        csr_sha256: :crypto.strong_rand_bytes(32),
+        normalized_payload_sha256: :crypto.strong_rand_bytes(32),
+        proof: <<1>>,
+        proof_algorithm: "rsa-pss-sha256"
+      }
+
+      assert {:ok, _renewal} =
+               %AppCertificateRenewal{}
+               |> AppCertificateRenewal.changeset(attrs)
+               |> Repo.insert()
+
+      assert {:error, current_certificate_changeset} =
+               CA.delete_certificate(current.cert_record.id)
+
+      assert %{renewals_from: ["are still associated with this entry"]} =
+               errors_on(current_certificate_changeset)
+
+      assert {:error, issued_certificate_changeset} =
+               CA.delete_certificate(issued.cert_record.id)
+
+      assert %{renewals_issued: ["are still associated with this entry"]} =
+               errors_on(issued_certificate_changeset)
+
+      assert {:error, changeset} = Apps.delete_app(app.id)
+
+      assert %{certificate_renewals: ["are still associated with this entry"]} =
+               errors_on(changeset)
+
+      assert {:ok, persisted_app} = Apps.get_app(app.id)
+      assert persisted_app.id == app.id
     end
   end
 

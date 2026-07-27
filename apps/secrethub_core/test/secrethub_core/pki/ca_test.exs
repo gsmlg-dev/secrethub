@@ -16,9 +16,9 @@ defmodule SecretHub.Core.PKI.CATest do
 
   import Ecto.Query
 
+  alias SecretHub.Core.{Agents, Apps, Repo}
   alias SecretHub.Core.PKI.CA
-  alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.Certificate
+  alias SecretHub.Shared.Schemas.{AppBootstrapToken, Certificate}
 
   describe "generate_root_ca/3" do
     test "generates valid self-signed root CA with RSA-4096" do
@@ -371,6 +371,49 @@ defmodule SecretHub.Core.PKI.CATest do
       # Query revoked certificates
       revoked = Repo.all(from(c in Certificate, where: c.revoked == true))
       assert length(revoked) >= 1
+    end
+  end
+
+  describe "delete_certificate/1" do
+    test "returns a controlled error when issuance evidence preserves the certificate" do
+      {:ok, result} =
+        CA.generate_root_ca(
+          "Issued Certificate Evidence #{System.unique_integer([:positive])}",
+          "SecretHub Test",
+          key_size: 2048
+        )
+
+      {:ok, agent} =
+        Agents.register_agent(%{
+          agent_id: "agent-cert-delete-#{System.unique_integer([:positive])}",
+          name: "Certificate Delete Agent #{System.unique_integer([:positive])}",
+          auth_method: "approle"
+        })
+
+      {:ok, %{app: app}} =
+        Apps.register_app(%{
+          name: "cert-delete-app-#{System.unique_integer([:positive])}",
+          agent_id: agent.id
+        })
+
+      token = Repo.get_by!(AppBootstrapToken, app_id: app.id)
+
+      assert {:ok, _consumed_token} =
+               token
+               |> AppBootstrapToken.changeset(%{
+                 used: true,
+                 used_at: DateTime.utc_now() |> DateTime.truncate(:second),
+                 issuance_request_id: Ecto.UUID.generate(),
+                 issued_certificate_id: result.cert_record.id
+               })
+               |> Repo.update()
+
+      assert {:error, changeset} = CA.delete_certificate(result.cert_record.id)
+
+      assert %{issued_bootstrap_tokens: ["are still associated with this entry"]} =
+               errors_on(changeset)
+
+      assert Repo.get(Certificate, result.cert_record.id)
     end
   end
 
