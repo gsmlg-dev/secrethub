@@ -127,12 +127,14 @@ defmodule SecretHub.Core.Audit do
       |> Map.put(:correlation_id, Map.get(event_attrs, :correlation_id, Ecto.UUID.generate()))
       |> Map.put(:created_at, DateTime.utc_now() |> DateTime.truncate(:second))
 
-    with {:ok, attrs} <- validate_and_normalize_attrs(attrs) do
-      attrs = Map.put(attrs, :current_hash, calculate_entry_hash(attrs))
-      attrs = Map.put(attrs, :signature, sign_entry(attrs))
+    with {:ok, changeset} <- validate_and_normalize_attrs(attrs) do
+      audit_log = Ecto.Changeset.apply_changes(changeset)
+      current_hash = calculate_entry_hash(audit_log)
+      signature = sign_entry(%{audit_log | current_hash: current_hash})
 
-      %AuditLog{}
-      |> AuditLog.changeset(attrs)
+      changeset
+      |> Ecto.Changeset.put_change(:current_hash, current_hash)
+      |> Ecto.Changeset.put_change(:signature, signature)
       |> Repo.insert()
     end
     |> case do
@@ -459,7 +461,7 @@ defmodule SecretHub.Core.Audit do
     changeset = AuditLog.changeset(%AuditLog{}, attrs)
 
     if changeset.valid? do
-      {:ok, Map.merge(attrs, changeset.changes)}
+      {:ok, changeset}
     else
       {:error, changeset}
     end

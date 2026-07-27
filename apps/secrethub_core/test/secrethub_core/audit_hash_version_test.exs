@@ -54,6 +54,22 @@ defmodule SecretHub.Core.AuditHashVersionTest do
       assert log.signature == expected_signature
       assert {:ok, :valid} = Audit.verify_chain()
     end
+
+    test "explicit castable v1 hash_version is persisted and verified as an integer" do
+      assert {:ok, log} =
+               Audit.log_event(%{
+                 event_type: "secret.accessed",
+                 hash_version: "1",
+                 actor_type: "agent",
+                 actor_id: "agent-explicit-v1",
+                 access_granted: true,
+                 event_data: %{"source" => "explicit-v1"}
+               })
+
+      assert log.hash_version == 1
+      assert {:ok, %{hash_version: 1}} = Audit.get_log(log.id)
+      assert {:ok, :valid} = Audit.verify_chain()
+    end
   end
 
   describe "version 2 upgrade evidence" do
