@@ -15,6 +15,8 @@ defmodule Mix.Tasks.Secrethub.Upgrade.Verify do
 
   @shortdoc "Verify and persist a zero-finding upgrade gate"
   @requirements ["app.start"]
+  @control_characters ~r/[\x00-\x1F\x7F]/u
+  @maximum_identifier_bytes 255
 
   @impl Mix.Task
   def run(args) do
@@ -125,26 +127,36 @@ defmodule Mix.Tasks.Secrethub.Upgrade.Verify do
   defp report_findings(_report), do: nil
 
   defp print_findings(findings) do
-    sanitized =
-      Enum.map(findings, fn
-        finding when is_map(finding) ->
-          %{
-            "identifier" =>
-              Map.get(finding, "identifier") || Map.get(finding, :identifier) || "unidentified",
-            "kind" => Map.get(finding, "kind") || Map.get(finding, :kind) || "unclassified"
-          }
-
-        _finding ->
-          %{"identifier" => "unidentified", "kind" => "invalid_finding"}
-      end)
+    identifiers = Enum.map(findings, &public_identifier/1)
 
     Mix.shell().info(
       Jason.encode!(%{
         "finding_count" => length(findings),
-        "findings" => sanitized
+        "identifiers" => identifiers
       })
     )
   end
+
+  defp public_identifier(finding) when is_map(finding) do
+    finding
+    |> then(&(Map.get(&1, "identifier") || Map.get(&1, :identifier)))
+    |> sanitize_public_identifier()
+  end
+
+  defp public_identifier(_finding), do: "unidentified"
+
+  defp sanitize_public_identifier(identifier)
+       when is_binary(identifier) and byte_size(identifier) > 0 and
+              byte_size(identifier) <= @maximum_identifier_bytes do
+    if String.valid?(identifier) and String.trim(identifier) != "" and
+         not Regex.match?(@control_characters, identifier) do
+      identifier
+    else
+      "unidentified"
+    end
+  end
+
+  defp sanitize_public_identifier(_identifier), do: "unidentified"
 
   defp safe_existing_atom_lookup(map, key) do
     Map.get(map, String.to_existing_atom(key))

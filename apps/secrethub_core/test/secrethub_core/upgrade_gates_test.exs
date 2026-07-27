@@ -47,8 +47,12 @@ defmodule SecretHub.Core.UpgradeGatesTest do
         "findings" => [
           %{
             "identifier" => "public-row-17",
-            "kind" => "legacy_row",
+            "kind" => "sensitive-classification",
             "secret" => "must-not-be-printed-or-persisted"
+          },
+          %{
+            "identifier" => %{"secret" => "nested-identifier-secret"},
+            "kind" => "another-sensitive-classification"
           }
         ]
       }
@@ -640,7 +644,7 @@ defmodule SecretHub.Core.UpgradeGatesTest do
 
       output =
         capture_io(fn ->
-          assert_raise Mix.Error, ~r/preflight reported 1 unresolved finding/, fn ->
+          assert_raise Mix.Error, ~r/preflight reported 2 unresolved findings/, fn ->
             UpgradeVerifyTask.run([
               "app_certificate_v2",
               "--actor",
@@ -650,7 +654,10 @@ defmodule SecretHub.Core.UpgradeGatesTest do
         end)
 
       assert output =~ "public-row-17"
+      assert output =~ "unidentified"
       refute output =~ "must-not-be-printed-or-persisted"
+      refute output =~ "nested-identifier-secret"
+      refute output =~ "sensitive-classification"
       assert Repo.aggregate(UpgradeGate, :count) == 0
       assert Repo.aggregate(AuditLog, :count) == 0
     end
