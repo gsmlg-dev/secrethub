@@ -193,7 +193,6 @@ ENV HOME=/app
 ENV PORT=4737
 ENV MIX_ENV=prod
 ENV PHX_SERVER=true
-ENV SECRET_HUB_CLUSTER_NODE_ID=secrethub-core-standalone
 ENV RELEASE_COOKIE=change-me-in-production
 
 # Create necessary directories

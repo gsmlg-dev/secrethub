@@ -3,7 +3,7 @@ defmodule SecretHub.Core.ClusterIdentityReleaseSurfaceTest do
 
   @repo_root Path.expand("../../../..", __DIR__)
 
-  test "Core Dockerfiles provide build identity without defaulting replicated runtime identity" do
+  test "Core Dockerfiles provide build identities without defaulting production runtime identities" do
     core = read!("Dockerfile.core")
     standalone = read!("Dockerfile.core-standalone")
 
@@ -11,9 +11,7 @@ defmodule SecretHub.Core.ClusterIdentityReleaseSurfaceTest do
     refute runtime_stage(core) =~ "ENV SECRET_HUB_CLUSTER_NODE_ID="
 
     assert standalone =~ "ENV SECRET_HUB_CLUSTER_NODE_ID=build-only-"
-
-    assert runtime_stage(standalone) =~
-             "ENV SECRET_HUB_CLUSTER_NODE_ID=secrethub-core-standalone"
+    refute runtime_stage(standalone) =~ "ENV SECRET_HUB_CLUSTER_NODE_ID="
   end
 
   test "release workflow wires build identity and generated runtime examples" do
