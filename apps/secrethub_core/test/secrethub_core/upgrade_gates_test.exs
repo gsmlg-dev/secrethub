@@ -592,6 +592,61 @@ defmodule SecretHub.Core.UpgradeGatesTest do
                UpgradeGates.cluster_capability("app_certificate_v2", @capability)
     end
 
+    test "reads the gate generation and matching acknowledgements in one query snapshot" do
+      verify_gate!("app_certificate_v2")
+
+      insert_node(
+        node_id: "fresh-capable",
+        status: "unsealed",
+        capabilities: %{"upgrade_gates" => 1}
+      )
+
+      insert_node(
+        node_id: "stale-old",
+        status: "sealed",
+        capabilities: %{"upgrade_gates" => 0},
+        last_seen_at: DateTime.add(now(), -3_600, :second)
+      )
+
+      assert {:error, {:stale_nodes, [snapshot]}} =
+               UpgradeGates.cluster_capability("app_certificate_v2", @capability)
+
+      assert {:ok, _gate} =
+               UpgradeGates.verify(
+                 "app_certificate_v2",
+                 zero_report("app_certificate_v2"),
+                 actor_id: @actor_id,
+                 stale_node_acknowledgements: [
+                   Map.put(snapshot, :reason, "node decommissioned")
+                 ]
+               )
+
+      handler_id = {__MODULE__, self(), :current_generation_query}
+
+      :ok =
+        :telemetry.attach(
+          handler_id,
+          [:secret_hub, :core, :repo, :query],
+          fn _event, _measurements, metadata, test_pid ->
+            send(test_pid, {:upgrade_gate_repo_query, metadata.query})
+          end,
+          self()
+        )
+
+      on_exit(fn -> :telemetry.detach(handler_id) end)
+
+      assert :ok =
+               UpgradeGates.cluster_capability("app_certificate_v2", @capability)
+
+      upgrade_gate_queries =
+        drain_repo_queries()
+        |> Enum.filter(&String.contains?(&1, "upgrade_gate"))
+
+      assert [joined_query] = upgrade_gate_queries
+      assert joined_query =~ "JOIN"
+      assert joined_query =~ "verification_generation"
+    end
+
     test "validates the single configured freshness timeout" do
       Application.put_env(:secrethub_core, :cluster_node_freshness_timeout_seconds, 0)
 
@@ -726,6 +781,110 @@ defmodule SecretHub.Core.UpgradeGatesTest do
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 
+  defp drain_repo_queries(queries \\ []) do
+    receive do
+      {:upgrade_gate_repo_query, query} -> drain_repo_queries([query | queries])
+    after
+      0 -> Enum.reverse(queries)
+    end
+  end
+
   defp restore_env(key, nil), do: Application.delete_env(:secrethub_core, key)
   defp restore_env(key, value), do: Application.put_env(:secrethub_core, key, value)
+end
+
+defmodule SecretHub.Core.UpgradeGatesCrossGateConcurrencyTest do
+  use ExUnit.Case, async: false
+
+  alias Ecto.Adapters.SQL.Sandbox
+  alias SecretHub.Core.{Audit, Repo, UpgradeGates}
+
+  alias SecretHub.Shared.Schemas.{
+    AuditLog,
+    UpgradeGate,
+    UpgradeGateStaleNodeAcknowledgement
+  }
+
+  @actor_id "operator:cross-gate-concurrency"
+
+  setup do
+    assert :ok = Sandbox.checkout(Repo, sandbox: false)
+    clear_persisted_evidence()
+
+    on_exit(fn ->
+      assert :ok = Sandbox.checkout(Repo, sandbox: false)
+
+      try do
+        clear_persisted_evidence()
+      after
+        Sandbox.checkin(Repo)
+      end
+    end)
+
+    :ok
+  end
+
+  test "different gates serialize their global audit appends" do
+    results =
+      1..8
+      |> Enum.flat_map(fn _round ->
+        concurrently_verify_all_gates()
+      end)
+
+    assert Enum.all?(results, &match?({:ok, %UpgradeGate{}}, &1)),
+           "expected every cross-gate verification to succeed, got: #{inspect(results)}"
+
+    assert Repo.aggregate(AuditLog, :count) == 32
+    assert {:ok, :valid} = Audit.verify_chain()
+  end
+
+  defp concurrently_verify_all_gates do
+    parent = self()
+
+    tasks =
+      Enum.map(UpgradeGates.gates(), fn gate ->
+        Task.async(fn ->
+          assert :ok = Sandbox.checkout(Repo, sandbox: false)
+          send(parent, {:cross_gate_ready, self()})
+
+          receive do
+            :verify_cross_gate -> :ok
+          end
+
+          try do
+            UpgradeGates.verify(gate, zero_report(gate), actor_id: @actor_id)
+          rescue
+            error -> {:raised, error}
+          catch
+            kind, reason -> {kind, reason}
+          after
+            Sandbox.checkin(Repo)
+          end
+        end)
+      end)
+
+    task_pids =
+      for _task <- tasks do
+        assert_receive {:cross_gate_ready, task_pid}
+        task_pid
+      end
+
+    Enum.each(task_pids, &send(&1, :verify_cross_gate))
+    Task.await_many(tasks, 15_000)
+  end
+
+  defp zero_report(gate) do
+    %{
+      "format" => "secrethub.upgrade-gate-report.v1",
+      "gate" => gate,
+      "preflight_version" => "1",
+      "findings" => []
+    }
+  end
+
+  defp clear_persisted_evidence do
+    Repo.delete_all(UpgradeGateStaleNodeAcknowledgement)
+    Repo.delete_all(UpgradeGate)
+    Repo.delete_all(AuditLog)
+  end
 end

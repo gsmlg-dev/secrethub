@@ -61,6 +61,7 @@ defmodule SecretHub.Core.Audit do
   alias SecretHub.Shared.Schemas.AuditLog
 
   @hmac_secret Application.compile_env(:secrethub_core, :audit_hmac_secret, "dev-audit-secret")
+  @append_lock_name "secrethub:audit-log-append:v1"
 
   if @hmac_secret == "dev-audit-secret" and
        Application.compile_env(:secrethub_core, :env) == :prod do
@@ -105,7 +106,14 @@ defmodule SecretHub.Core.Audit do
   """
   @spec log_event(map()) :: {:ok, AuditLog.t()} | {:error, Ecto.Changeset.t()}
   def log_event(event_attrs) do
-    do_log_event(event_attrs, 0)
+    Repo.transaction(fn ->
+      acquire_append_lock!()
+      do_log_event(event_attrs, 0)
+    end)
+    |> case do
+      {:ok, result} -> result
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   @max_retries 10
@@ -209,13 +217,17 @@ defmodule SecretHub.Core.Audit do
         {:ok, :valid}
 
       [first | rest] ->
-        if first.sequence_number != 1 do
-          {:error, "Chain does not start at sequence 1"}
-        else
-          with :ok <- verify_entry(first) do
-            verify_chain_recursive(first, rest, 1)
-          end
-        end
+        verify_chain_start(first, rest)
+    end
+  end
+
+  defp verify_chain_start(first, rest) do
+    if first.sequence_number != 1 do
+      {:error, "Chain does not start at sequence 1"}
+    else
+      with :ok <- verify_entry(first) do
+        verify_chain_recursive(first, rest, 1)
+      end
     end
   end
 
@@ -456,6 +468,15 @@ defmodule SecretHub.Core.Audit do
   end
 
   ## Private Functions
+
+  defp acquire_append_lock! do
+    Repo.query!(
+      "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+      [@append_lock_name]
+    )
+
+    :ok
+  end
 
   defp validate_and_normalize_attrs(attrs) do
     changeset = AuditLog.changeset(%AuditLog{}, attrs)

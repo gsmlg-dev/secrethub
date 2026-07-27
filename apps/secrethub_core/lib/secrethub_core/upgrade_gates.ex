@@ -509,8 +509,12 @@ defmodule SecretHub.Core.UpgradeGates do
     end
   end
 
-  defp audit_module do
-    Application.get_env(:secrethub_core, :upgrade_gate_audit_module, Audit)
+  if Application.compile_env(:secrethub_core, :env) == :test do
+    defp audit_module do
+      Application.get_env(:secrethub_core, :upgrade_gate_audit_module, Audit)
+    end
+  else
+    defp audit_module, do: Audit
   end
 
   defp unresolved_stale_snapshots(stale_nodes, gate_name) do
@@ -522,21 +526,17 @@ defmodule SecretHub.Core.UpgradeGates do
   end
 
   defp current_acknowledgement_snapshots(gate_name) do
-    case Repo.get_by(UpgradeGate, name: gate_name) do
-      nil ->
-        MapSet.new()
-
-      gate ->
-        UpgradeGateStaleNodeAcknowledgement
-        |> where(
-          [ack],
-          ack.upgrade_gate_id == ^gate.id and
-            ack.verification_generation == ^gate.verification_generation
-        )
-        |> Repo.all()
-        |> Enum.map(&acknowledgement_snapshot/1)
-        |> MapSet.new()
-    end
+    UpgradeGateStaleNodeAcknowledgement
+    |> join(:inner, [ack], gate in UpgradeGate,
+      on:
+        gate.id == ack.upgrade_gate_id and
+          gate.verification_generation == ack.verification_generation
+    )
+    |> where([_ack, gate], gate.name == ^gate_name)
+    |> lock("FOR SHARE")
+    |> Repo.all()
+    |> Enum.map(&acknowledgement_snapshot/1)
+    |> MapSet.new()
   end
 
   defp stale_node_snapshot(node) do
