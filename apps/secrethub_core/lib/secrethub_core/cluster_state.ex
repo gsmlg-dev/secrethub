@@ -379,8 +379,7 @@ defmodule SecretHub.Core.ClusterState do
     hostname = :inet.gethostname() |> elem(1) |> to_string()
     version = Application.spec(:secrethub_core, :vsn) |> to_string()
     now = DateTime.utc_now() |> DateTime.truncate(:second)
-    existing_metadata = existing_node_metadata(node_id)
-    metadata = normalize_metadata(existing_metadata, supplied_metadata)
+    metadata = normalize_metadata(supplied_metadata)
 
     attrs = %{
       node_id: node_id,
@@ -401,21 +400,7 @@ defmodule SecretHub.Core.ClusterState do
       |> ClusterNode.changeset(attrs)
       |> Repo.insert(
         conflict_target: :node_id,
-        on_conflict:
-          {:replace,
-           [
-             :incarnation_id,
-             :hostname,
-             :status,
-             :leader,
-             :last_seen_at,
-             :started_at,
-             :sealed,
-             :initialized,
-             :version,
-             :metadata,
-             :updated_at
-           ]}
+        on_conflict: registration_conflict_query()
       )
 
     case result do
@@ -429,22 +414,41 @@ defmodule SecretHub.Core.ClusterState do
     end
   end
 
-  defp existing_node_metadata(node_id) do
-    case Repo.get_by(ClusterNode, node_id: node_id) do
-      %ClusterNode{metadata: metadata} when is_map(metadata) -> metadata
-      _ -> %{}
-    end
-  end
-
-  defp normalize_metadata(existing_metadata, supplied_metadata)
-       when is_map(supplied_metadata) do
-    existing_metadata
-    |> Map.merge(supplied_metadata)
+  defp normalize_metadata(supplied_metadata) when is_map(supplied_metadata) do
+    supplied_metadata
+    |> Map.drop(["capabilities", :capabilities])
     |> Map.put("capabilities", @code_capabilities)
   end
 
-  defp normalize_metadata(existing_metadata, _supplied_metadata) do
-    Map.put(existing_metadata, "capabilities", @code_capabilities)
+  defp normalize_metadata(_supplied_metadata) do
+    %{"capabilities" => @code_capabilities}
+  end
+
+  defp registration_conflict_query do
+    capability_metadata = %{"capabilities" => @code_capabilities}
+
+    from(n in ClusterNode,
+      update: [
+        set: [
+          incarnation_id: fragment("EXCLUDED.incarnation_id"),
+          hostname: fragment("EXCLUDED.hostname"),
+          status: fragment("EXCLUDED.status"),
+          leader: fragment("EXCLUDED.leader"),
+          last_seen_at: fragment("EXCLUDED.last_seen_at"),
+          started_at: fragment("EXCLUDED.started_at"),
+          sealed: fragment("EXCLUDED.sealed"),
+          initialized: fragment("EXCLUDED.initialized"),
+          version: fragment("EXCLUDED.version"),
+          metadata:
+            fragment(
+              "COALESCE(?, '{}'::jsonb) || (EXCLUDED.metadata - 'capabilities') || ?",
+              n.metadata,
+              type(^capability_metadata, :map)
+            ),
+          updated_at: fragment("EXCLUDED.updated_at")
+        ]
+      ]
+    )
   end
 
   defp mark_cluster_initialized do
@@ -503,13 +507,19 @@ defmodule SecretHub.Core.ClusterState do
   end
 
   defp get_cluster_info do
-    nodes = Repo.all(from(n in ClusterNode, order_by: [desc: n.last_seen_at]))
-
     stale_cutoff =
       DateTime.add(
         DateTime.utc_now() |> DateTime.truncate(:second),
         -@node_timeout_seconds,
         :second
+      )
+
+    nodes =
+      Repo.all(
+        from(n in ClusterNode,
+          where: n.status == "shutdown" or n.last_seen_at >= ^stale_cutoff,
+          order_by: [desc: n.last_seen_at]
+        )
       )
 
     node_maps =

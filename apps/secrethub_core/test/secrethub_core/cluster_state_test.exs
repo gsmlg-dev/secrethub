@@ -5,6 +5,20 @@ defmodule SecretHub.Core.ClusterStateTest do
   alias SecretHub.Shared.Schemas.ClusterNode
 
   @node_id "cluster-state-test-node"
+  @concurrent_names [
+    :concurrent_cluster_state_1,
+    :concurrent_cluster_state_2,
+    :concurrent_cluster_state_3,
+    :concurrent_cluster_state_4,
+    :concurrent_cluster_state_5,
+    :concurrent_cluster_state_6,
+    :concurrent_cluster_state_7,
+    :concurrent_cluster_state_8,
+    :concurrent_cluster_state_9,
+    :concurrent_cluster_state_10,
+    :concurrent_cluster_state_11,
+    :concurrent_cluster_state_12
+  ]
 
   setup do
     case Process.whereis(SecretHub.Core.Vault.SealState) do
@@ -12,14 +26,32 @@ defmodule SecretHub.Core.ClusterStateTest do
       _pid -> :ok
     end
 
-    for name <- [ClusterState, :old_cluster_state, :replacement_cluster_state] do
+    process_names =
+      [
+        ClusterState,
+        :missing_identity_cluster_state,
+        :old_cluster_state,
+        :replacement_cluster_state
+        | @concurrent_names
+      ]
+
+    for name <- process_names do
       case Process.whereis(name) do
         nil -> :ok
         pid -> GenServer.stop(pid, :normal)
       end
     end
 
+    original_node_id = Application.get_env(:secrethub_core, :cluster_node_id)
     Repo.delete_all(ClusterNode)
+
+    on_exit(fn ->
+      restore_application_env(:cluster_node_id, original_node_id)
+
+      for name <- process_names, pid = Process.whereis(name) do
+        GenServer.stop(pid, :normal)
+      end
+    end)
 
     :ok
   end
@@ -30,6 +62,33 @@ defmodule SecretHub.Core.ClusterStateTest do
 
       assert %{node_id: @node_id} = :sys.get_state(pid)
       assert %ClusterNode{node_id: @node_id} = Repo.get_by(ClusterNode, node_id: @node_id)
+    end
+
+    test "fails clearly when neither injected nor configured identity exists" do
+      Application.delete_env(:secrethub_core, :cluster_node_id)
+      previous_trap_exit = Process.flag(:trap_exit, true)
+
+      result =
+        try do
+          ClusterState.start_link(name: :missing_identity_cluster_state)
+        after
+          Process.flag(:trap_exit, previous_trap_exit)
+        end
+
+      assert {:error, {%ArgumentError{message: message}, _stacktrace}} = result
+
+      assert message =~ "SECRET_HUB_CLUSTER_NODE_ID"
+    end
+
+    test "uses the runtime-configured identity when no identity is injected" do
+      Application.put_env(:secrethub_core, :cluster_node_id, "runtime-configured-node")
+
+      pid = start_cluster_state([])
+
+      assert %{node_id: "runtime-configured-node"} = :sys.get_state(pid)
+
+      assert %ClusterNode{node_id: "runtime-configured-node"} =
+               Repo.get_by(ClusterNode, node_id: "runtime-configured-node")
     end
 
     test "starts a new incarnation for the same node without creating a duplicate row" do
@@ -64,6 +123,87 @@ defmodule SecretHub.Core.ClusterStateTest do
 
       assert node.metadata["operator_note"] == "rack-4"
       assert node.metadata["capabilities"] == %{"upgrade_gates" => 1}
+    end
+
+    test "preserves durable metadata and normalizes capabilities across re-registration" do
+      start_cluster_state(
+        node_id: @node_id,
+        metadata: %{"operator_note" => "retain-me"}
+      )
+
+      stop_supervised(ClusterState)
+
+      start_cluster_state(
+        node_id: @node_id,
+        metadata: %{
+          "deployment" => "blue",
+          "capabilities" => %{"upgrade_gates" => 0}
+        }
+      )
+
+      node = Repo.get_by!(ClusterNode, node_id: @node_id)
+
+      assert node.metadata == %{
+               "operator_note" => "retain-me",
+               "deployment" => "blue",
+               "capabilities" => %{"upgrade_gates" => 1}
+             }
+    end
+
+    test "concurrent replacements atomically retain all unrelated metadata" do
+      start_cluster_state(
+        node_id: @node_id,
+        metadata: %{"operator_note" => "durable"}
+      )
+
+      stop_supervised(ClusterState)
+      parent = self()
+
+      tasks =
+        @concurrent_names
+        |> Enum.with_index(1)
+        |> Enum.map(fn {name, index} ->
+          Task.async(fn ->
+            send(parent, {:ready, self()})
+
+            receive do
+              :register -> :ok
+            end
+
+            ClusterState.start_link(
+              node_id: @node_id,
+              name: name,
+              metadata: %{
+                "registration_#{index}" => index,
+                "capabilities" => %{"upgrade_gates" => 0}
+              }
+            )
+          end)
+        end)
+
+      task_pids =
+        Enum.map(tasks, fn _task ->
+          assert_receive {:ready, task_pid}
+          task_pid
+        end)
+
+      Enum.each(task_pids, &send(&1, :register))
+
+      incarnation_ids =
+        tasks
+        |> Task.await_many()
+        |> Enum.map(fn {:ok, pid} -> :sys.get_state(pid).incarnation_id end)
+
+      node = Repo.get_by!(ClusterNode, node_id: @node_id)
+
+      assert Repo.aggregate(ClusterNode, :count) == 1
+      assert node.incarnation_id in incarnation_ids
+      assert node.metadata["operator_note"] == "durable"
+      assert node.metadata["capabilities"] == %{"upgrade_gates" => 1}
+
+      for index <- 1..length(@concurrent_names) do
+        assert node.metadata["registration_#{index}"] == index
+      end
     end
   end
 
@@ -104,6 +244,35 @@ defmodule SecretHub.Core.ClusterStateTest do
       assert persisted.status == "starting"
       assert persisted.last_seen_at == fixed_heartbeat
       assert Process.alive?(replacement_pid)
+    end
+
+    test "terminating an old incarnation cannot mark its replacement shutdown" do
+      start_cluster_state(
+        node_id: @node_id,
+        name: :old_cluster_state,
+        child_id: :old_cluster_state
+      )
+
+      start_cluster_state(
+        node_id: @node_id,
+        name: :replacement_cluster_state,
+        child_id: :replacement_cluster_state
+      )
+
+      replacement = Repo.get_by!(ClusterNode, node_id: @node_id)
+      fixed_heartbeat = ~U[2026-01-01 00:00:00Z]
+
+      replacement
+      |> Ecto.Changeset.change(last_seen_at: fixed_heartbeat)
+      |> Repo.update!()
+
+      stop_supervised(:old_cluster_state)
+
+      persisted = Repo.get_by!(ClusterNode, node_id: @node_id)
+
+      assert persisted.incarnation_id == replacement.incarnation_id
+      assert persisted.status == "starting"
+      assert persisted.last_seen_at == fixed_heartbeat
     end
   end
 
@@ -188,8 +357,9 @@ defmodule SecretHub.Core.ClusterStateTest do
   end
 
   describe "stale node evidence" do
-    test "heartbeat maintenance retains stale node rows" do
-      pid = start_cluster_state(node_id: @node_id)
+    test "retains stale evidence but excludes stale non-shutdown nodes from active cluster info" do
+      start_cluster_state(node_id: @node_id)
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
       stale_time = DateTime.add(DateTime.utc_now(), -120, :second) |> DateTime.truncate(:second)
 
       stale_node =
@@ -203,13 +373,40 @@ defmodule SecretHub.Core.ClusterStateTest do
           started_at: stale_time
         })
 
-      send(pid, :heartbeat)
-      :sys.get_state(pid)
+      Repo.insert!(%ClusterNode{
+        node_id: "active-node",
+        hostname: "active-host",
+        status: "sealed",
+        sealed: true,
+        initialized: true,
+        last_seen_at: now,
+        started_at: now
+      })
+
+      Repo.insert!(%ClusterNode{
+        node_id: "shutdown-node",
+        hostname: "shutdown-host",
+        status: "shutdown",
+        sealed: true,
+        initialized: true,
+        last_seen_at: stale_time,
+        started_at: stale_time
+      })
 
       assert %ClusterNode{id: id, last_seen_at: ^stale_time} =
                Repo.get(ClusterNode, stale_node.id)
 
       assert id == stale_node.id
+
+      assert {:ok, info} = ClusterState.cluster_info()
+      assert info.node_count == 3
+      assert info.sealed_count == 3
+      assert info.unsealed_count == 0
+
+      assert ["active-node", @node_id, "shutdown-node"] ==
+               info.nodes |> Enum.map(& &1.node_id) |> Enum.sort()
+
+      refute Enum.any?(info.nodes, &(&1.node_id == "stale-node"))
     end
   end
 
@@ -223,4 +420,7 @@ defmodule SecretHub.Core.ClusterStateTest do
       restart: :temporary
     })
   end
+
+  defp restore_application_env(key, nil), do: Application.delete_env(:secrethub_core, key)
+  defp restore_application_env(key, value), do: Application.put_env(:secrethub_core, key, value)
 end

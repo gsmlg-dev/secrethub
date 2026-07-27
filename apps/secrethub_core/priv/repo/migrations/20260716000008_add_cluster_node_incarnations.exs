@@ -6,15 +6,19 @@ defmodule SecretHub.Core.Repo.Migrations.AddClusterNodeIncarnations do
       add(:incarnation_id, :uuid, default: fragment("gen_random_uuid()"))
     end
 
-    execute("""
-    UPDATE cluster_nodes
-    SET incarnation_id = gen_random_uuid()
-    WHERE incarnation_id IS NULL
-    """)
+    execute(backfill_sql())
 
     alter table(:cluster_nodes) do
       modify(:incarnation_id, :uuid, null: false)
     end
+  end
+
+  def backfill_sql do
+    """
+    UPDATE cluster_nodes
+    SET incarnation_id = gen_random_uuid()
+    WHERE incarnation_id IS NULL
+    """
   end
 
   def down do

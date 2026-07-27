@@ -31,7 +31,26 @@ defmodule SecretHub.Core.ApplicationTest do
     refute ClusterState in Enum.map(Application.children(), &child_id/1)
   end
 
+  test "development config provides a deterministic cluster node identity default" do
+    original_node_id = System.get_env("SECRET_HUB_CLUSTER_NODE_ID")
+    System.delete_env("SECRET_HUB_CLUSTER_NODE_ID")
+
+    on_exit(fn ->
+      restore_system_env("SECRET_HUB_CLUSTER_NODE_ID", original_node_id)
+    end)
+
+    config_path = Path.expand("../../../../config/dev.exs", __DIR__)
+    config = Config.Reader.read!(config_path)
+
+    assert config
+           |> Keyword.fetch!(:secrethub_core)
+           |> Keyword.fetch!(:cluster_node_id) == "secrethub-dev"
+  end
+
   defp child_id(module) when is_atom(module), do: module
   defp child_id({module, _opts}) when is_atom(module), do: module
   defp child_id(%{id: id}), do: id
+
+  defp restore_system_env(key, nil), do: System.delete_env(key)
+  defp restore_system_env(key, value), do: System.put_env(key, value)
 end
