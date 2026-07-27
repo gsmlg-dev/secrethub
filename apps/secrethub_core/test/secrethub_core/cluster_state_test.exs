@@ -348,11 +348,41 @@ defmodule SecretHub.Core.ClusterStateTest do
     test "updates the current incarnation status in the database" do
       pid = start_cluster_state(node_id: @node_id)
 
-      ClusterState.update_status(:unsealed)
+      assert :ok = ClusterState.update_status(:unsealed)
       :sys.get_state(pid)
 
       assert %ClusterNode{status: "unsealed"} =
                Repo.get_by(ClusterNode, node_id: @node_id)
+    end
+
+    test "rejects an invalid public status without changing state or evidence" do
+      pid = start_cluster_state(node_id: @node_id)
+      persisted_before = Repo.get_by!(ClusterNode, node_id: @node_id)
+
+      assert {:error, :invalid_status} = ClusterState.update_status(:compromised)
+
+      assert %{status: :starting} = :sys.get_state(pid)
+
+      persisted_after = Repo.get_by!(ClusterNode, node_id: @node_id)
+      assert persisted_after.status == persisted_before.status
+      assert persisted_after.sealed == persisted_before.sealed
+      assert persisted_after.initialized == persisted_before.initialized
+      assert persisted_after.updated_at == persisted_before.updated_at
+    end
+
+    test "ignores a malformed direct status cast without changing state or evidence" do
+      pid = start_cluster_state(node_id: @node_id)
+      persisted_before = Repo.get_by!(ClusterNode, node_id: @node_id)
+
+      GenServer.cast(pid, {:update_status, :compromised})
+
+      assert %{status: :starting} = :sys.get_state(pid)
+
+      persisted_after = Repo.get_by!(ClusterNode, node_id: @node_id)
+      assert persisted_after.status == persisted_before.status
+      assert persisted_after.sealed == persisted_before.sealed
+      assert persisted_after.initialized == persisted_before.initialized
+      assert persisted_after.updated_at == persisted_before.updated_at
     end
   end
 

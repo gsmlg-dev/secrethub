@@ -53,6 +53,10 @@ The workflow bumps versions, pushes the release commit, builds artifacts/images,
 openssl rand -base64 48
 ```
 
+Assign each Core replica a stable, deployment-owned
+`SECRET_HUB_CLUSTER_NODE_ID`, for example `core-replica-a`. Keep the value
+across restarts and never share it between concurrently running Core replicas.
+
 Create the PostgreSQL database and required extensions:
 
 ```sql
@@ -71,10 +75,12 @@ Use `core` when PostgreSQL is managed outside the container.
 ```bash
 export DATABASE_URL='postgresql://secrethub:change-me@postgres.example.internal:5432/secrethub_prod'
 export SECRET_KEY_BASE="$(openssl rand -base64 48)"
+export SECRET_HUB_CLUSTER_NODE_ID=core-replica-a
 
 docker run --rm \
   -e DATABASE_URL="$DATABASE_URL" \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
+  -e SECRET_HUB_CLUSTER_NODE_ID=core-migration-runner \
   ghcr.io/gsmlg-dev/secrethub/core:$SECRETHUB_VERSION \
   eval "SecretHub.Core.Release.migrate()"
 
@@ -87,6 +93,7 @@ docker run -d \
   -e PHX_HOST="$SECRETHUB_HOST" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
+  -e SECRET_HUB_CLUSTER_NODE_ID="$SECRET_HUB_CLUSTER_NODE_ID" \
   -e POOL_SIZE=10 \
   -e RELEASE_COOKIE="$(openssl rand -hex 32)" \
   ghcr.io/gsmlg-dev/secrethub/core:$SECRETHUB_VERSION
@@ -126,6 +133,7 @@ docker run -d \
   -e PHX_HOST="$SECRETHUB_HOST" \
   -e DATABASE_URL="$DATABASE_URL" \
   -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
+  -e SECRET_HUB_CLUSTER_NODE_ID="$SECRET_HUB_CLUSTER_NODE_ID" \
   -e SECRET_HUB_AGENT_ENDPOINT_SERVER=true \
   -e SECRET_HUB_AGENT_ENDPOINT_HOST="$SECRETHUB_HOST" \
   -e SECRET_HUB_AGENT_ENDPOINT_PORT=4665 \
@@ -151,11 +159,14 @@ docker run -d \
   -v secrethub-standalone-data:/data \
   -e PHX_HOST=localhost \
   -e SECRET_KEY_BASE="$(openssl rand -base64 48)" \
+  -e SECRET_HUB_CLUSTER_NODE_ID=secrethub-core-standalone \
   -e RELEASE_COOKIE="$(openssl rand -hex 32)" \
   ghcr.io/gsmlg-dev/secrethub/core-standalone:$SECRETHUB_VERSION
 ```
 
-The standalone image initializes PostgreSQL and runs migrations on startup. Do not use it for high availability or production database operations.
+The standalone image initializes PostgreSQL and runs migrations on startup. Its
+deterministic `secrethub-core-standalone` node identity matches the image
+default. Do not use it for high availability or production database operations.
 
 ## Deploy Core From a Tarball
 
@@ -170,6 +181,7 @@ export PORT=4664
 export PHX_HOST="$SECRETHUB_HOST"
 export DATABASE_URL='postgresql://secrethub:change-me@postgres.example.internal:5432/secrethub_prod'
 export SECRET_KEY_BASE="$(openssl rand -base64 48)"
+export SECRET_HUB_CLUSTER_NODE_ID=core-replica-a
 export RELEASE_COOKIE="$(openssl rand -hex 32)"
 
 /opt/secrethub-core/bin/secrethub_core eval "SecretHub.Core.Release.migrate()"
@@ -319,7 +331,8 @@ secrethub secret get prod.db.password \
 4. Run migrations using the new Core image or tarball:
 
    ```bash
-   bin/secrethub_core eval "SecretHub.Core.Release.migrate()"
+   SECRET_HUB_CLUSTER_NODE_ID=core-migration-runner \
+     bin/secrethub_core eval "SecretHub.Core.Release.migrate()"
    ```
 
 5. Start Core with the new version.

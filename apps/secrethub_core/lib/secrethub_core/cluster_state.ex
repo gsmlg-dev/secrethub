@@ -46,6 +46,7 @@ defmodule SecretHub.Core.ClusterState do
   alias SecretHub.Shared.Schemas.{ClusterNode, NodeHealthMetric}
   import Ecto.Query
 
+  @node_statuses [:starting, :initializing, :sealed, :unsealed, :shutdown]
   @type node_status :: :starting | :initializing | :sealed | :unsealed | :shutdown
   @type cluster_info :: %{
           node_count: non_neg_integer(),
@@ -142,10 +143,12 @@ defmodule SecretHub.Core.ClusterState do
   @doc """
   Updates this node's status in the cluster.
   """
-  @spec update_status(node_status()) :: :ok
-  def update_status(status) do
+  @spec update_status(term()) :: :ok | {:error, :invalid_status}
+  def update_status(status) when status in @node_statuses do
     GenServer.cast(__MODULE__, {:update_status, status})
   end
+
+  def update_status(_status), do: {:error, :invalid_status}
 
   @doc """
   Retrieves health history for a specific node.
@@ -270,10 +273,15 @@ defmodule SecretHub.Core.ClusterState do
   end
 
   @impl true
-  def handle_cast({:update_status, new_status}, state) do
+  def handle_cast({:update_status, new_status}, state) when new_status in @node_statuses do
     Logger.debug("Node status updated: #{state.status} -> #{new_status}")
     update_node_status(state.node_id, state.incarnation_id, new_status)
     {:noreply, %{state | status: new_status}}
+  end
+
+  def handle_cast({:update_status, invalid_status}, state) do
+    Logger.warning("Ignoring invalid cluster node status: #{inspect(invalid_status)}")
+    {:noreply, state}
   end
 
   @impl true

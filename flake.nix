@@ -110,6 +110,7 @@
               mixEnv = "prod";
               mixFodDeps = mixDeps;
               mixReleaseName = "secrethub_core";
+              SECRET_HUB_CLUSTER_NODE_ID = "build-only-nix-core-package";
 
               nativeBuildInputs = [ pkgs.bun pkgs.tailwindcss_4 ];
 
@@ -164,6 +165,7 @@
                 cd apps/secrethub_web
                 DATABASE_URL="postgresql://x:x@localhost/x" \
                 SECRET_KEY_BASE="dummy-secret-key-base-for-nix-build-only-not-used-at-runtime-min-64-chars" \
+                SECRET_HUB_CLUSTER_NODE_ID="build-only-nix-core-package" \
                 mix run --no-deps-check --no-start -e '
                   Mix.Tasks.Phx.Digest.run([])
                 '
@@ -314,6 +316,12 @@
               description = "Path to file containing SECRET_KEY_BASE.";
             };
 
+            nodeId = lib.mkOption {
+              type = lib.types.str;
+              description = "Stable deployment-owned identity unique to this Core replica.";
+              example = "core-replica-a";
+            };
+
             openFirewall = lib.mkOption {
               type = lib.types.bool;
               default = false;
@@ -334,6 +342,7 @@
                 PHX_HOST = cfg.host;
                 PORT = toString cfg.port;
                 DATABASE_URL = cfg.databaseUrl;
+                SECRET_HUB_CLUSTER_NODE_ID = cfg.nodeId;
                 RELEASE_COOKIE = "secrethub-prod";
                 LANG = "C.UTF-8";
               };

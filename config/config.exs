@@ -18,6 +18,7 @@ import Config
 
 # Configure Ecto repositories
 config :secrethub_core,
+  env: config_env(),
   ecto_repos: [SecretHub.Core.Repo]
 
 config :secrethub_web,

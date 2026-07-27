@@ -26,6 +26,7 @@ env:
   MIX_ENV: 'prod'
   BUILD_DATABASE_URL: 'postgresql://dummy:dummy@localhost/dummy'
   BUILD_SECRET_KEY_BASE: 'build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!'
+  BUILD_CLUSTER_NODE_ID: 'build-only-release-artifact'
 
 jobs:
   prepare-release:
@@ -232,18 +233,21 @@ jobs:
         env:
           DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
           SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
+          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
         run: mix compile
 
       - name: Build frontend assets
         env:
           DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
           SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
+          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
         run: mix assets.deploy
 
       - name: Build Core release
         env:
           DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
           SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
+          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
         run: mix release secrethub_core
 
       - name: Package Core release
@@ -322,12 +326,14 @@ jobs:
         env:
           DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
           SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
+          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
         run: mix compile
 
       - name: Build Agent release
         env:
           DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
           SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
+          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
         run: mix release secrethub_agent
 
       - name: Package Agent tarball
@@ -386,6 +392,7 @@ jobs:
             export MIX_ENV=prod
             export DATABASE_URL="${{ env.BUILD_DATABASE_URL }}"
             export SECRET_KEY_BASE="${{ env.BUILD_SECRET_KEY_BASE }}"
+            export SECRET_HUB_CLUSTER_NODE_ID="${{ env.BUILD_CLUSTER_NODE_ID }}"
             export RELEASE_TAG="${{ needs.prepare-release.outputs.tag }}"
 
             mix local.hex --force
@@ -550,6 +557,7 @@ jobs:
             -e PHX_HOST=secrethub.example.com \\
             -e SECRET_KEY_BASE="\$(openssl rand -base64 48)" \\
             -e DATABASE_URL="postgresql://secrethub:password@postgres/secrethub_prod" \\
+            -e SECRET_HUB_CLUSTER_NODE_ID=core-replica-a \\
             ghcr.io/${REPOSITORY}/core:${RELEASE_TAG}
           \`\`\`
 
@@ -561,6 +569,7 @@ jobs:
             -v secrethub-data:/data \\
             -e PHX_HOST=localhost \\
             -e SECRET_KEY_BASE="\$(openssl rand -base64 48)" \\
+            -e SECRET_HUB_CLUSTER_NODE_ID=secrethub-core-standalone \\
             ghcr.io/${REPOSITORY}/core-standalone:${RELEASE_TAG}
           \`\`\`
 
@@ -572,6 +581,7 @@ jobs:
           export PHX_HOST=secrethub.example.com
           export SECRET_KEY_BASE="\$(openssl rand -base64 48)"
           export DATABASE_URL="postgresql://secrethub:password@postgres/secrethub_prod"
+          export SECRET_HUB_CLUSTER_NODE_ID=core-replica-a
           bin/secrethub_core start
           \`\`\`
 

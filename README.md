@@ -417,6 +417,7 @@ docker run -d -p 4664:4664 \
   -e PHX_HOST=secrethub.example.com \
   -e DATABASE_URL="postgresql://secrethub:password@postgres/secrethub_prod" \
   -e SECRET_KEY_BASE="$(openssl rand -base64 48)" \
+  -e SECRET_HUB_CLUSTER_NODE_ID=core-replica-a \
   ghcr.io/gsmlg-dev/secrethub/core:v1.0.0-rc9
 ```
 
@@ -436,9 +437,12 @@ For production, run migrations before starting Core, expose the trusted Agent mT
 
 | Service | Required |
 |---------|----------|
-| Core | `PHX_SERVER=true`, `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST` |
+| Core | `PHX_SERVER=true`, `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST`, `SECRET_HUB_CLUSTER_NODE_ID` |
 | Core trusted Agent endpoint | `SECRET_HUB_AGENT_ENDPOINT_SERVER=true`, endpoint cert/key/CA paths |
 | Agent | `SECRET_HUB_AGENT_CORE_URL` |
+
+`SECRET_HUB_CLUSTER_NODE_ID` must be stable across restarts and unique to each
+concurrently running Core replica.
 
 ---
 

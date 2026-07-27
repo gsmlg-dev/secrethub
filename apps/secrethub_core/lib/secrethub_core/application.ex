@@ -49,51 +49,54 @@ defmodule SecretHub.Core.Application do
     :ok
   end
 
-  # Conditionally start Repo based on environment
   # In test mode, Repo is started manually after Sandbox configuration.
-  # Note: Application.get_env may return nil when started from umbrella root;
-  # the test_helper.exs handles that case by restarting Repo with sandbox pool.
+  # A missing environment is treated as an incomplete umbrella bootstrap, so
+  # database-backed children wait rather than starting with the wrong pool.
   defp repo_children do
-    if Application.get_env(:secrethub_core, :env) == :test do
-      []
-    else
+    if runtime_environment?() do
       [SecretHub.Core.Repo]
+    else
+      []
     end
   end
 
   # Only start SealState in non-test environments (it tries to write to DB on init)
   defp seal_state_children do
-    if Application.get_env(:secrethub_core, :env) == :test do
-      []
-    else
+    if runtime_environment?() do
       [SecretHub.Core.Vault.SealState]
+    else
+      []
     end
   end
 
   # ClusterState owns a database-backed node registration, so it starts only
   # after Repo and SealState. Tests start it explicitly after sandbox checkout.
   defp cluster_state_children do
-    if Application.get_env(:secrethub_core, :env) == :test do
-      []
-    else
+    if runtime_environment?() do
       [SecretHub.Core.ClusterState]
+    else
+      []
     end
   end
 
   # Start LeaseManager for dynamic secret lease tracking
   defp lease_manager_children do
-    if Application.get_env(:secrethub_core, :env) == :test do
-      []
-    else
+    if runtime_environment?() do
       [SecretHub.Core.LeaseManager]
+    else
+      []
     end
   end
 
   defp agent_connection_children do
-    if Application.get_env(:secrethub_core, :env) == :test do
-      []
-    else
+    if runtime_environment?() do
       [SecretHub.Core.Agents.ConnectionManager]
+    else
+      []
     end
+  end
+
+  defp runtime_environment? do
+    Application.get_env(:secrethub_core, :env) in [:dev, :prod]
   end
 end

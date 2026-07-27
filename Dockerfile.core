@@ -18,6 +18,7 @@ WORKDIR /app
 
 # Set build ENV
 ENV MIX_ENV=prod
+ENV SECRET_HUB_CLUSTER_NODE_ID=build-only-docker-core
 
 # Install Elixir & Erlang tooling
 RUN mix local.hex --force && \
@@ -38,8 +39,8 @@ RUN mix deps.compile
 RUN cd apps/secrethub_web && npm install --prefer-offline
 
 # Build assets using bun and tailwind
-# Dummy DATABASE_URL and SECRET_KEY_BASE are needed because mix assets.deploy
-# evaluates config/runtime.exs which requires these in prod mode.
+# Dummy DATABASE_URL, SECRET_KEY_BASE, and the builder-only cluster identity are
+# needed because Mix tasks evaluate config/runtime.exs in prod mode.
 # Real values are provided at container runtime via environment variables.
 RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
     SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \

@@ -5,11 +5,8 @@ end
 
 ExUnit.start()
 
-# When running from the umbrella root, the application config may not be loaded
-# at the time the Core application starts (Application.get_env returns nil).
-# This causes the Repo to start with DBConnection.ConnectionPool instead of
-# Ecto.Adapters.SQL.Sandbox. We detect and fix this by setting the correct config
-# and restarting the affected processes within the supervisor.
+# Defensively repair an already-started Repo that did not receive the sandbox
+# configuration by restarting affected processes in dependency order.
 
 repo_config = Application.get_env(:secrethub_core, SecretHub.Core.Repo) || []
 pool = Keyword.get(repo_config, :pool)
@@ -28,10 +25,17 @@ if pool != Ecto.Adapters.SQL.Sandbox do
   Application.put_env(:secrethub_core, SecretHub.Core.Repo, test_config)
   Application.put_env(:secrethub_core, :env, :test)
 
-  # Stop LeaseManager and SealState first (they depend on Repo)
+  # Stop database-backed children first (they depend on Repo)
   sup = SecretHub.Core.Supervisor
 
-  for child_id <- [SecretHub.Core.LeaseManager, SecretHub.Core.Vault.SealState] do
+  repair_child_ids = [
+    SecretHub.Core.Agents.ConnectionManager,
+    SecretHub.Core.LeaseManager,
+    SecretHub.Core.ClusterState,
+    SecretHub.Core.Vault.SealState
+  ]
+
+  for child_id <- repair_child_ids do
     case Supervisor.terminate_child(sup, child_id) do
       :ok -> Supervisor.delete_child(sup, child_id)
       {:error, :not_found} -> :ok
