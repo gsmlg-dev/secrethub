@@ -68,8 +68,9 @@ defmodule SecretHub.Core.ClusterState do
 
   @heartbeat_interval 10_000
   @leader_lock_renewal_interval 15_000
-  @node_timeout_seconds 30
   @code_capabilities %{"upgrade_gates" => 1}
+  @minimum_freshness_timeout_seconds 1
+  @maximum_freshness_timeout_seconds 300
 
   # Client API
 
@@ -112,6 +113,32 @@ defmodule SecretHub.Core.ClusterState do
   @spec cluster_info() :: {:ok, cluster_info()} | {:error, term()}
   def cluster_info do
     GenServer.call(__MODULE__, :cluster_info)
+  end
+
+  @doc """
+  Returns the configured heartbeat freshness window used for cluster evidence.
+
+  The bounded window is shared by cluster status reporting and destructive
+  upgrade capability checks.
+  """
+  @spec freshness_timeout_seconds() :: pos_integer()
+  def freshness_timeout_seconds do
+    timeout =
+      Application.get_env(
+        :secrethub_core,
+        :cluster_node_freshness_timeout_seconds,
+        30
+      )
+
+    if is_integer(timeout) and
+         timeout in @minimum_freshness_timeout_seconds..@maximum_freshness_timeout_seconds do
+      timeout
+    else
+      raise ArgumentError,
+            ":cluster_node_freshness_timeout_seconds must be an integer between " <>
+              "#{@minimum_freshness_timeout_seconds} and " <>
+              "#{@maximum_freshness_timeout_seconds}"
+    end
   end
 
   @doc """
@@ -518,7 +545,7 @@ defmodule SecretHub.Core.ClusterState do
     stale_cutoff =
       DateTime.add(
         DateTime.utc_now() |> DateTime.truncate(:second),
-        -@node_timeout_seconds,
+        -freshness_timeout_seconds(),
         :second
       )
 

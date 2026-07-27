@@ -19,7 +19,8 @@ import Config
 # Configure Ecto repositories
 config :secrethub_core,
   env: config_env(),
-  ecto_repos: [SecretHub.Core.Repo]
+  ecto_repos: [SecretHub.Core.Repo],
+  cluster_node_freshness_timeout_seconds: 30
 
 config :secrethub_web,
   namespace: SecretHub.Web,
