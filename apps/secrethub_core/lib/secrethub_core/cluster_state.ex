@@ -58,6 +58,7 @@ defmodule SecretHub.Core.ClusterState do
   # GenServer state
   defstruct [
     :node_id,
+    :incarnation_id,
     :status,
     :leader?,
     :last_heartbeat,
@@ -66,7 +67,8 @@ defmodule SecretHub.Core.ClusterState do
 
   @heartbeat_interval 10_000
   @leader_lock_renewal_interval 15_000
-  @node_timeout 30_000
+  @node_timeout_seconds 30
+  @code_capabilities %{"upgrade_gates" => 1}
 
   # Client API
 
@@ -74,7 +76,8 @@ defmodule SecretHub.Core.ClusterState do
   Starts the ClusterState GenServer.
   """
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    name = Keyword.get(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
   end
 
   @doc """
@@ -167,28 +170,31 @@ defmodule SecretHub.Core.ClusterState do
   # Server Callbacks
 
   @impl true
-  def init(_opts) do
-    # Generate or retrieve node ID
-    node_id = generate_node_id()
+  def init(opts) do
+    node_id = node_id!(opts)
+    incarnation_id = Ecto.UUID.generate()
 
     state = %__MODULE__{
       node_id: node_id,
+      incarnation_id: incarnation_id,
       status: :starting,
       leader?: false,
       last_heartbeat: DateTime.utc_now() |> DateTime.truncate(:second),
       leader_lock: nil
     }
 
-    # Register this node in the cluster
-    register_node(node_id)
+    case register_node(node_id, incarnation_id, Keyword.get(opts, :metadata, %{})) do
+      {:ok, _node} ->
+        schedule_heartbeat()
+        schedule_leader_check()
 
-    # Schedule periodic tasks
-    schedule_heartbeat()
-    schedule_leader_check()
+        Logger.info("ClusterState initialized for node #{node_id} incarnation #{incarnation_id}")
 
-    Logger.info("ClusterState initialized for node #{node_id}")
+        {:ok, state}
 
-    {:ok, state}
+      {:error, reason} ->
+        {:stop, {:node_registration_failed, reason}}
+    end
   end
 
   @impl true
@@ -266,20 +272,15 @@ defmodule SecretHub.Core.ClusterState do
   @impl true
   def handle_cast({:update_status, new_status}, state) do
     Logger.debug("Node status updated: #{state.status} -> #{new_status}")
-    update_node_status(state.node_id, new_status)
+    update_node_status(state.node_id, state.incarnation_id, new_status)
     {:noreply, %{state | status: new_status}}
   end
 
   @impl true
   def handle_info(:heartbeat, state) do
-    # Send heartbeat to update last_seen timestamp
-    send_heartbeat(state.node_id)
-
-    # Collect and store health metrics
-    collect_and_store_health_metrics(state.node_id)
-
-    # Clean up stale nodes
-    cleanup_stale_nodes()
+    if send_heartbeat(state.node_id, state.incarnation_id) == :ok do
+      collect_and_store_health_metrics(state.node_id)
+    end
 
     # Schedule next heartbeat
     schedule_heartbeat()
@@ -317,7 +318,7 @@ defmodule SecretHub.Core.ClusterState do
     end
 
     # Mark node as shutdown
-    update_node_status(state.node_id, :shutdown)
+    update_node_status(state.node_id, state.incarnation_id, :shutdown)
 
     :ok
   end
@@ -359,50 +360,91 @@ defmodule SecretHub.Core.ClusterState do
     {:reply, {:error, :init_lock_timeout}, state}
   end
 
-  defp generate_node_id do
-    # Use hostname + random suffix for node ID
-    hostname = :inet.gethostname() |> elem(1) |> to_string()
-    random_suffix = :crypto.strong_rand_bytes(4) |> Base.encode16()
-    "#{hostname}-#{random_suffix}"
+  defp node_id!(opts) do
+    node_id =
+      Keyword.get(opts, :node_id) ||
+        Application.get_env(:secrethub_core, :cluster_node_id)
+
+    case node_id do
+      node_id when is_binary(node_id) and byte_size(node_id) > 0 ->
+        node_id
+
+      _ ->
+        raise ArgumentError,
+              "cluster node identity is required; set SECRET_HUB_CLUSTER_NODE_ID or pass :node_id"
+    end
   end
 
-  defp register_node(node_id) do
+  defp register_node(node_id, incarnation_id, supplied_metadata) do
     hostname = :inet.gethostname() |> elem(1) |> to_string()
     version = Application.spec(:secrethub_core, :vsn) |> to_string()
     now = DateTime.utc_now() |> DateTime.truncate(:second)
+    existing_metadata = existing_node_metadata(node_id)
+    metadata = normalize_metadata(existing_metadata, supplied_metadata)
 
-    case Repo.get_by(ClusterNode, node_id: node_id) do
-      nil ->
-        %ClusterNode{}
-        |> ClusterNode.changeset(%{
-          node_id: node_id,
-          hostname: hostname,
-          status: "starting",
-          leader: false,
-          last_seen_at: now,
-          started_at: now,
-          sealed: true,
-          initialized: false,
-          version: version
-        })
-        |> Repo.insert()
+    attrs = %{
+      node_id: node_id,
+      incarnation_id: incarnation_id,
+      hostname: hostname,
+      status: "starting",
+      leader: false,
+      last_seen_at: now,
+      started_at: now,
+      sealed: true,
+      initialized: false,
+      version: version,
+      metadata: metadata
+    }
 
-        Logger.info("Registered new cluster node: #{node_id}")
+    result =
+      %ClusterNode{}
+      |> ClusterNode.changeset(attrs)
+      |> Repo.insert(
+        conflict_target: :node_id,
+        on_conflict:
+          {:replace,
+           [
+             :incarnation_id,
+             :hostname,
+             :status,
+             :leader,
+             :last_seen_at,
+             :started_at,
+             :sealed,
+             :initialized,
+             :version,
+             :metadata,
+             :updated_at
+           ]}
+      )
 
-      existing_node ->
-        existing_node
-        |> ClusterNode.changeset(%{
-          last_seen_at: now,
-          started_at: now,
-          status: "starting",
-          version: version
-        })
-        |> Repo.update()
+    case result do
+      {:ok, node} ->
+        Logger.info("Registered cluster node: #{node_id} incarnation #{incarnation_id}")
+        {:ok, node}
 
-        Logger.info("Re-registered existing cluster node: #{node_id}")
+      {:error, changeset} ->
+        Logger.error("Failed to register cluster node #{node_id}")
+        {:error, changeset}
     end
+  end
 
-    :ok
+  defp existing_node_metadata(node_id) do
+    case Repo.get_by(ClusterNode, node_id: node_id) do
+      %ClusterNode{metadata: metadata} when is_map(metadata) -> metadata
+      _ -> %{}
+    end
+  end
+
+  defp normalize_metadata(existing_metadata, supplied_metadata)
+       when is_map(supplied_metadata) do
+    existing_metadata
+    |> Map.merge(supplied_metadata)
+    |> Map.put("capabilities", @code_capabilities)
+  end
+
+  defp normalize_metadata(existing_metadata, _supplied_metadata) do
+    Map.put(existing_metadata, "capabilities", @code_capabilities)
   end
 
   defp mark_cluster_initialized do
@@ -412,75 +454,64 @@ defmodule SecretHub.Core.ClusterState do
     :ok
   end
 
-  defp update_node_status(node_id, status) do
+  defp update_node_status(node_id, incarnation_id, status) do
     Logger.debug("Updating node #{node_id} status to #{status}")
 
-    case Repo.get_by(ClusterNode, node_id: node_id) do
-      nil ->
-        Logger.warning("Cannot update status for unknown node: #{node_id}")
+    sealed = status in [:sealed, :starting, :initializing]
+    initialized = status != :starting
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    from(n in ClusterNode,
+      where: n.node_id == ^node_id and n.incarnation_id == ^incarnation_id
+    )
+    |> Repo.update_all(
+      set: [
+        status: to_string(status),
+        sealed: sealed,
+        initialized: initialized,
+        last_seen_at: now,
+        updated_at: now
+      ]
+    )
+    |> case do
+      {1, _} ->
         :ok
 
-      node ->
-        # Infer sealed/initialized state from status
-        sealed = status in [:sealed, :starting, :initializing]
-        initialized = status != :starting
-
-        node
-        |> ClusterNode.changeset(%{
-          status: to_string(status),
-          sealed: sealed,
-          initialized: initialized,
-          last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
-        |> Repo.update()
-
-        :ok
+      {0, _} ->
+        Logger.warning("Cannot update status for stale or unknown node incarnation: #{node_id}")
+        :stale_incarnation
     end
   end
 
-  defp send_heartbeat(node_id) do
+  defp send_heartbeat(node_id, incarnation_id) do
     Logger.debug("Sending heartbeat for node #{node_id}")
 
-    case Repo.get_by(ClusterNode, node_id: node_id) do
-      nil ->
-        Logger.warning("Cannot send heartbeat for unknown node: #{node_id}")
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    from(n in ClusterNode,
+      where: n.node_id == ^node_id and n.incarnation_id == ^incarnation_id
+    )
+    |> Repo.update_all(set: [last_seen_at: now, updated_at: now])
+    |> case do
+      {1, _} ->
         :ok
 
-      node ->
-        node
-        |> ClusterNode.changeset(%{
-          last_seen_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
-        |> Repo.update()
-
-        :ok
+      {0, _} ->
+        Logger.warning("Cannot heartbeat stale or unknown node incarnation: #{node_id}")
+        :stale_incarnation
     end
-  end
-
-  defp cleanup_stale_nodes do
-    # Remove nodes that haven't sent heartbeat in @node_timeout (30 seconds)
-    timeout_cutoff =
-      DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -@node_timeout, :millisecond)
-
-    {count, _} =
-      from(n in ClusterNode,
-        where: n.last_seen_at < ^timeout_cutoff,
-        where: n.status != "shutdown"
-      )
-      |> Repo.delete_all()
-
-    if count > 0 do
-      Logger.info("Cleaned up #{count} stale cluster nodes")
-    end
-
-    :ok
   end
 
   defp get_cluster_info do
-    # Query all active cluster nodes, ordered by most recently seen
     nodes = Repo.all(from(n in ClusterNode, order_by: [desc: n.last_seen_at]))
 
-    # Convert to maps for the API response
+    stale_cutoff =
+      DateTime.add(
+        DateTime.utc_now() |> DateTime.truncate(:second),
+        -@node_timeout_seconds,
+        :second
+      )
+
     node_maps =
       Enum.map(nodes, fn node ->
         %{
@@ -493,7 +524,8 @@ defmodule SecretHub.Core.ClusterState do
           last_seen_at: node.last_seen_at,
           started_at: node.started_at,
           version: node.version,
-          metadata: node.metadata
+          metadata: node.metadata,
+          stale: DateTime.compare(node.last_seen_at, stale_cutoff) == :lt
         }
       end)
 

@@ -11,15 +11,8 @@ defmodule SecretHub.Core.Application do
     # Trap exits to enable graceful shutdown
     Process.flag(:trap_exit, true)
 
-    children =
-      cache_children() ++
-        repo_children() ++
-        seal_state_children() ++
-        lease_manager_children() ++
-        agent_connection_children()
-
     opts = [strategy: :one_for_one, name: SecretHub.Core.Supervisor]
-    result = Supervisor.start_link(children, opts)
+    result = Supervisor.start_link(children(), opts)
 
     Logger.info("SecretHub.Core.Application started")
     result
@@ -28,6 +21,16 @@ defmodule SecretHub.Core.Application do
   # Start Cache system early (doesn't depend on DB)
   defp cache_children do
     [SecretHub.Core.Cache]
+  end
+
+  @doc false
+  def children do
+    cache_children() ++
+      repo_children() ++
+      seal_state_children() ++
+      cluster_state_children() ++
+      lease_manager_children() ++
+      agent_connection_children()
   end
 
   @impl true
@@ -64,6 +67,16 @@ defmodule SecretHub.Core.Application do
       []
     else
       [SecretHub.Core.Vault.SealState]
+    end
+  end
+
+  # ClusterState owns a database-backed node registration, so it starts only
+  # after Repo and SealState. Tests start it explicitly after sandbox checkout.
+  defp cluster_state_children do
+    if Application.get_env(:secrethub_core, :env) == :test do
+      []
+    else
+      [SecretHub.Core.ClusterState]
     end
   end
 

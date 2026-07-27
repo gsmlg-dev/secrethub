@@ -67,6 +67,15 @@ end
 # when mix bun/tailwind tasks run.
 
 if config_env() == :prod do
+  cluster_node_id =
+    System.get_env("SECRET_HUB_CLUSTER_NODE_ID") ||
+      raise """
+      environment variable SECRET_HUB_CLUSTER_NODE_ID is missing.
+      Set it to a stable, deployment-owned identifier for this Core node.
+      """
+
+  config :secrethub_core, cluster_node_id: cluster_node_id
+
   # Database configuration from environment
   database_url =
     System.get_env("DATABASE_URL") ||

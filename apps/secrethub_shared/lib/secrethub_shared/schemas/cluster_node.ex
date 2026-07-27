@@ -13,6 +13,7 @@ defmodule SecretHub.Shared.Schemas.ClusterNode do
 
   schema "cluster_nodes" do
     field(:node_id, :string)
+    field(:incarnation_id, Ecto.UUID, autogenerate: true)
     field(:hostname, :string)
     field(:status, :string, default: "starting")
     field(:leader, :boolean, default: false)
@@ -31,6 +32,7 @@ defmodule SecretHub.Shared.Schemas.ClusterNode do
     node
     |> cast(attrs, [
       :node_id,
+      :incarnation_id,
       :hostname,
       :status,
       :leader,
@@ -41,7 +43,14 @@ defmodule SecretHub.Shared.Schemas.ClusterNode do
       :version,
       :metadata
     ])
-    |> validate_required([:node_id, :hostname, :status, :last_seen_at, :started_at])
+    |> validate_required([
+      :node_id,
+      :incarnation_id,
+      :hostname,
+      :status,
+      :last_seen_at,
+      :started_at
+    ])
     |> validate_inclusion(:status, [
       "starting",
       "initializing",

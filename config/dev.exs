@@ -79,7 +79,8 @@ db_config =
 config :secrethub_core, SecretHub.Core.Repo, db_config
 
 config :secrethub_core,
-  dev_pki_unsealed_fallback: true
+  dev_pki_unsealed_fallback: true,
+  cluster_node_id: System.get_env("SECRET_HUB_CLUSTER_NODE_ID") || "secrethub-dev"
 
 # For development, we disable any cache and enable
 # debugging and code reloading.
