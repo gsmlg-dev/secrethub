@@ -57,7 +57,7 @@ defmodule SecretHub.Core.Audit do
   require Logger
   import Ecto.Query
 
-  alias SecretHub.Core.Repo
+  alias SecretHub.Core.{CanonicalJSON, Repo}
   alias SecretHub.Shared.Schemas.AuditLog
 
   @hmac_secret Application.compile_env(:secrethub_core, :audit_hmac_secret, "dev-audit-secret")
@@ -127,18 +127,14 @@ defmodule SecretHub.Core.Audit do
       |> Map.put(:correlation_id, Map.get(event_attrs, :correlation_id, Ecto.UUID.generate()))
       |> Map.put(:created_at, DateTime.utc_now() |> DateTime.truncate(:second))
 
-    # Calculate current hash
-    current_hash = calculate_entry_hash(attrs)
-    attrs = Map.put(attrs, :current_hash, current_hash)
+    with {:ok, attrs} <- validate_and_normalize_attrs(attrs) do
+      attrs = Map.put(attrs, :current_hash, calculate_entry_hash(attrs))
+      attrs = Map.put(attrs, :signature, sign_entry(attrs))
 
-    # Sign the entry
-    signature = sign_entry(attrs)
-    attrs = Map.put(attrs, :signature, signature)
-
-    # Insert into database
-    %AuditLog{}
-    |> AuditLog.changeset(attrs)
-    |> Repo.insert()
+      %AuditLog{}
+      |> AuditLog.changeset(attrs)
+      |> Repo.insert()
+    end
     |> case do
       {:ok, log} = result ->
         Logger.debug("Audit event logged",
@@ -211,11 +207,12 @@ defmodule SecretHub.Core.Audit do
         {:ok, :valid}
 
       [first | rest] ->
-        # Verify first entry
         if first.sequence_number != 1 do
           {:error, "Chain does not start at sequence 1"}
         else
-          verify_chain_recursive(first, rest, 1)
+          with :ok <- verify_entry(first) do
+            verify_chain_recursive(first, rest, 1)
+          end
         end
     end
   end
@@ -458,52 +455,118 @@ defmodule SecretHub.Core.Audit do
 
   ## Private Functions
 
+  defp validate_and_normalize_attrs(attrs) do
+    changeset = AuditLog.changeset(%AuditLog{}, attrs)
+
+    if changeset.valid? do
+      {:ok, Map.merge(attrs, changeset.changes)}
+    else
+      {:error, changeset}
+    end
+  end
+
   defp calculate_entry_hash(attrs) do
-    # Create deterministic string from entry fields
+    case Map.get(attrs, :hash_version, 1) do
+      1 -> calculate_v1_entry_hash(attrs)
+      2 -> calculate_v2_entry_hash(attrs)
+    end
+  end
+
+  defp calculate_v1_entry_hash(attrs) do
     content =
       [
-        attrs[:sequence_number],
-        attrs[:timestamp] |> DateTime.to_iso8601(),
-        attrs[:event_type],
-        attrs[:actor_type] || "",
-        attrs[:actor_id] || "",
-        attrs[:secret_id] || "",
-        attrs[:access_granted] || false,
-        attrs[:previous_hash]
+        Map.get(attrs, :sequence_number),
+        attrs |> Map.get(:timestamp) |> DateTime.to_iso8601(),
+        Map.get(attrs, :event_type),
+        Map.get(attrs, :actor_type) || "",
+        Map.get(attrs, :actor_id) || "",
+        Map.get(attrs, :secret_id) || "",
+        Map.get(attrs, :access_granted) || false,
+        Map.get(attrs, :previous_hash)
       ]
       |> Enum.join("|")
 
+    sha256(content)
+  end
+
+  defp calculate_v2_entry_hash(attrs) do
+    %{
+      "hash_version" => Map.get(attrs, :hash_version),
+      "sequence_number" => Map.get(attrs, :sequence_number),
+      "timestamp" => Map.get(attrs, :timestamp),
+      "event_type" => Map.get(attrs, :event_type),
+      "actor_type" => Map.get(attrs, :actor_type) || "",
+      "actor_id" => Map.get(attrs, :actor_id) || "",
+      "secret_id" => Map.get(attrs, :secret_id) || "",
+      "access_granted" => Map.get(attrs, :access_granted) || false,
+      "previous_hash" => Map.get(attrs, :previous_hash),
+      "event_data" => Map.get(attrs, :event_data)
+    }
+    |> CanonicalJSON.encode!()
+    |> sha256()
+  end
+
+  defp sign_entry(attrs) do
+    attrs
+    |> signature_content(Map.get(attrs, :hash_version, 1))
+    |> hmac()
+  end
+
+  defp verify_signature(log) do
+    expected_signature =
+      log
+      |> signature_content(log.hash_version)
+      |> hmac()
+
+    log.signature == expected_signature
+  end
+
+  defp signature_content(attrs, 1) do
+    [
+      Map.get(attrs, :event_id),
+      Map.get(attrs, :sequence_number),
+      Map.get(attrs, :current_hash)
+    ]
+    |> Enum.join("|")
+  end
+
+  defp signature_content(attrs, 2) do
+    [
+      Map.get(attrs, :event_id),
+      Map.get(attrs, :sequence_number),
+      Map.get(attrs, :hash_version),
+      Map.get(attrs, :current_hash)
+    ]
+    |> Enum.join("|")
+  end
+
+  defp sha256(content) do
     :crypto.hash(:sha256, content)
     |> Base.encode16(case: :lower)
   end
 
-  defp sign_entry(attrs) do
-    content =
-      [
-        attrs[:event_id],
-        attrs[:sequence_number],
-        attrs[:current_hash]
-      ]
-      |> Enum.join("|")
-
+  defp hmac(content) do
     :crypto.mac(:hmac, :sha256, @hmac_secret, content)
     |> Base.encode16(case: :lower)
   end
 
-  defp verify_signature(log) do
-    content =
-      [
-        log.event_id,
-        log.sequence_number,
-        log.current_hash
-      ]
-      |> Enum.join("|")
+  defp verify_entry(%AuditLog{hash_version: hash_version} = log)
+       when hash_version in [1, 2] do
+    cond do
+      log.current_hash != calculate_entry_hash(log) ->
+        {:error, "Current hash mismatch at sequence #{log.sequence_number}"}
 
-    expected_signature =
-      :crypto.mac(:hmac, :sha256, @hmac_secret, content)
-      |> Base.encode16(case: :lower)
+      !verify_signature(log) ->
+        {:error, "Invalid signature at sequence #{log.sequence_number}"}
 
-    log.signature == expected_signature
+      true ->
+        :ok
+    end
+  end
+
+  defp verify_entry(log) do
+    {:error,
+     "Unsupported hash version #{inspect(log.hash_version)} at sequence #{log.sequence_number}"}
   end
 
   defp verify_chain_recursive(_prev, [], _expected_seq), do: {:ok, :valid}
@@ -518,11 +581,10 @@ defmodule SecretHub.Core.Audit do
         {:error,
          "Hash chain broken at sequence #{current.sequence_number}: previous_hash mismatch"}
 
-      !verify_signature(current) ->
-        {:error, "Invalid signature at sequence #{current.sequence_number}"}
-
       true ->
-        verify_chain_recursive(current, rest, expected_seq + 1)
+        with :ok <- verify_entry(current) do
+          verify_chain_recursive(current, rest, expected_seq + 1)
+        end
     end
   end
 end
