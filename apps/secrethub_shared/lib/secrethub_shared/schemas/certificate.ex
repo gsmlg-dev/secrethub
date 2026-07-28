@@ -213,7 +213,10 @@ defmodule SecretHub.Shared.Schemas.Certificate do
   end
 
   @doc """
-  Calculate the SHA-256 fingerprint of a DER-encoded certificate.
+  Calculate the legacy colon-delimited SHA-256 fingerprint of a DER-encoded certificate.
+
+  New authorization code must use `SecretHub.Core.PKI.CertificateIdentity` canonical
+  fingerprints instead.
   """
   @spec fingerprint(binary()) :: String.t()
   def fingerprint(cert_der) when is_binary(cert_der) do
