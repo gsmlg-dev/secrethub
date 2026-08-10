@@ -347,22 +347,23 @@ defmodule SecretHub.Web.Router do
     post "/certificates/:id/revoke", PKIController, :revoke_certificate
   end
 
-  # Application management API routes (token-authenticated)
+  # Application lifecycle mutations (operator/admin only)
+  scope "/v1/apps", SecretHub.Web do
+    pipe_through :admin_api
+
+    post "/", AppsController, :register_app
+    put "/:id", AppsController, :update_app
+    delete "/:id", AppsController, :delete_app
+    post "/:id/suspend", AppsController, :suspend_app
+    post "/:id/activate", AppsController, :activate_app
+  end
+
+  # Application management reads (token-authenticated)
   scope "/v1/apps", SecretHub.Web do
     pipe_through :vault_token
 
-    # Application registration and management
-    post "/", AppsController, :register_app
     get "/", AppsController, :list_apps
     get "/:id", AppsController, :get_app
-    put "/:id", AppsController, :update_app
-    delete "/:id", AppsController, :delete_app
-
-    # Application lifecycle
-    post "/:id/suspend", AppsController, :suspend_app
-    post "/:id/activate", AppsController, :activate_app
-
-    # Application certificates
     get "/:id/certificates", AppsController, :list_certificates
   end
 

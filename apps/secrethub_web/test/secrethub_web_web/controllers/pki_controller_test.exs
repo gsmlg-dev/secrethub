@@ -3,7 +3,14 @@ defmodule SecretHub.Web.PKIControllerTest do
 
   alias SecretHub.Core.{Apps, Repo}
   alias SecretHub.Core.PKI.{AppCertificates, CA}
-  alias SecretHub.Shared.Schemas.{Agent, AppCertificate, Certificate}
+
+  alias SecretHub.Shared.Schemas.{
+    Agent,
+    AppBootstrapToken,
+    AppCertificate,
+    Application,
+    Certificate
+  }
 
   @rate_limiter_table :rate_limiter_table
 
@@ -62,6 +69,131 @@ defmodule SecretHub.Web.PKIControllerTest do
     assert redirected_to(intermediate_response, 302) == "/admin/auth/login"
     assert Repo.aggregate(Certificate, :count) == certificate_count
     assert Repo.aggregate(AppCertificate, :count) == app_certificate_count
+  end
+
+  test "an Agent Vault token cannot register an application" do
+    target_agent = active_agent!("registration-target")
+    unique = System.unique_integer([:positive])
+    application_count = Repo.aggregate(Application, :count)
+    bootstrap_token_count = Repo.aggregate(AppBootstrapToken, :count)
+
+    response =
+      vault_token!()
+      |> authed_conn()
+      |> post("/v1/apps", %{
+        "name" => "privileged-app-#{unique}",
+        "description" => "Agent-created privileged application",
+        "agent_id" => target_agent.id,
+        "policies" => ["root", "admin-all-secrets"]
+      })
+
+    assert redirected_to(response, 302) == "/admin/auth/login"
+    assert Repo.aggregate(Application, :count) == application_count
+    assert Repo.aggregate(AppBootstrapToken, :count) == bootstrap_token_count
+  end
+
+  test "an Agent Vault token cannot delete a bootstrap-issued application" do
+    fixture = renewal_fixture!()
+    application = Repo.get!(Application, fixture.app.id)
+    certificate = Repo.get!(Certificate, fixture.current.cert_record.id)
+    app_certificate = Repo.get!(AppCertificate, fixture.current.app_certificate.id)
+
+    response =
+      vault_token!()
+      |> authed_conn()
+      |> delete("/v1/apps/#{fixture.app.id}")
+
+    assert redirected_to(response, 302) == "/admin/auth/login"
+    assert Repo.get!(Application, application.id) == application
+    assert Repo.get!(Certificate, certificate.id) == certificate
+    assert Repo.get!(AppCertificate, app_certificate.id) == app_certificate
+  end
+
+  test "Agent Vault tokens cannot update, suspend, or activate applications" do
+    fixture = renewal_fixture!()
+    token = vault_token!()
+    active_application = Repo.get!(Application, fixture.app.id)
+
+    update_response =
+      token
+      |> authed_conn()
+      |> put("/v1/apps/#{fixture.app.id}", %{
+        "description" => "unauthorized update",
+        "policies" => ["root"]
+      })
+
+    assert redirected_to(update_response, 302) == "/admin/auth/login"
+    assert Repo.get!(Application, fixture.app.id) == active_application
+
+    suspend_response =
+      token
+      |> authed_conn()
+      |> post("/v1/apps/#{fixture.app.id}/suspend", %{})
+
+    assert redirected_to(suspend_response, 302) == "/admin/auth/login"
+    assert Repo.get!(Application, fixture.app.id) == active_application
+
+    {:ok, _application} = Apps.suspend_app(fixture.app.id)
+    suspended_application = Repo.get!(Application, fixture.app.id)
+
+    activate_response =
+      token
+      |> authed_conn()
+      |> post("/v1/apps/#{fixture.app.id}/activate", %{})
+
+    assert redirected_to(activate_response, 302) == "/admin/auth/login"
+    assert Repo.get!(Application, fixture.app.id) == suspended_application
+  end
+
+  test "an authenticated admin can manage an application lifecycle" do
+    target_agent = active_agent!("admin-lifecycle-target")
+    unique = System.unique_integer([:positive])
+
+    registered =
+      admin_conn()
+      |> post("/v1/apps", %{
+        "name" => "admin-lifecycle-app-#{unique}",
+        "description" => "Initial description",
+        "agent_id" => target_agent.id,
+        "policies" => ["secrets-read"]
+      })
+      |> json_response(201)
+
+    assert registered["app_token"]
+    app_id = registered["app_id"]
+
+    updated =
+      admin_conn()
+      |> put("/v1/apps/#{app_id}", %{
+        "description" => "Updated by admin",
+        "policies" => ["secrets-read", "secrets-write"]
+      })
+      |> json_response(200)
+
+    assert updated["description"] == "Updated by admin"
+    assert updated["policies"] == ["secrets-read", "secrets-write"]
+
+    suspended =
+      admin_conn()
+      |> post("/v1/apps/#{app_id}/suspend", %{})
+      |> json_response(200)
+
+    assert suspended["status"] == "suspended"
+
+    activated =
+      admin_conn()
+      |> post("/v1/apps/#{app_id}/activate", %{})
+      |> json_response(200)
+
+    assert activated["status"] == "active"
+
+    deleted =
+      admin_conn()
+      |> delete("/v1/apps/#{app_id}")
+      |> json_response(200)
+
+    assert deleted == %{"app_id" => app_id, "message" => "Application deleted"}
+    assert Repo.get(Application, app_id) == nil
   end
 
   test "PKI API creates CA hierarchy, signs CSR, lists, fetches, and revokes certificates" do
@@ -878,6 +1010,25 @@ defmodule SecretHub.Web.PKIControllerTest do
   defp authed_conn(token) do
     Phoenix.ConnTest.build_conn()
     |> Plug.Conn.put_req_header("x-vault-token", token)
+  end
+
+  defp admin_conn do
+    Phoenix.ConnTest.build_conn()
+    |> init_test_session(%{admin_id: "test-admin"})
+  end
+
+  defp active_agent!(scope) do
+    unique = System.unique_integer([:positive])
+
+    %Agent{}
+    |> Agent.changeset(%{
+      agent_id: "#{scope}-#{unique}",
+      name: "#{scope} #{unique}",
+      status: :active,
+      ip_address: "127.0.0.1",
+      metadata: %{}
+    })
+    |> Repo.insert!()
   end
 
   defp bootstrap_conn do
