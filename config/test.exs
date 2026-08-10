@@ -142,6 +142,11 @@ human_db_config =
 
 config :secrethub_human, SecretHub.Human.Repo, human_db_config
 
+config :secrethub_human, SecretHub.HumanWeb.Endpoint,
+  http: [ip: {127, 0, 0, 1}, port: 4667],
+  secret_key_base: "b4XuH5agpw/45VP/t2/eD6YEUuHGuSHTTWTj3ZWIt7/Dmnrk5MQE2GtEJa+kyUtX",
+  server: false
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :secrethub_web, SecretHub.Web.Endpoint,

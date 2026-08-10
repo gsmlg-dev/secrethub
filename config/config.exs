@@ -25,7 +25,15 @@ config :secrethub_core,
 config :secrethub_human,
   env: config_env(),
   enabled: true,
-  ecto_repos: [SecretHub.Human.Repo]
+  ecto_repos: [SecretHub.Human.Repo],
+  namespace: SecretHub.Human,
+  generators: [timestamp_type: :utc_datetime]
+
+config :secrethub_human, SecretHub.HumanWeb.Endpoint,
+  url: [host: "localhost"],
+  adapter: Bandit.PhoenixAdapter,
+  render_errors: [formats: [json: SecretHub.HumanWeb.ErrorJSON], layout: false],
+  pubsub_server: SecretHub.Human.PubSub
 
 config :secrethub_web,
   namespace: SecretHub.Web,

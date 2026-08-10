@@ -91,6 +91,14 @@ human_db_config =
 
 config :secrethub_human, SecretHub.Human.Repo, human_db_config
 
+config :secrethub_human, SecretHub.HumanWeb.Endpoint,
+  http: [
+    ip: {127, 0, 0, 1},
+    port: String.to_integer(System.get_env("HUMAN_ENDPOINT_PORT") || "4666")
+  ],
+  check_origin: false,
+  secret_key_base: "c4ypdWls54atI5OI7oPG9uXVcc4zJxPMhTJ2Banl+7X9aBTUsgGi/fCnpdPuoDmr"
+
 config :secrethub_core,
   dev_pki_unsealed_fallback: true,
   cluster_node_id: System.get_env("SECRET_HUB_CLUSTER_NODE_ID") || "secrethub-dev"
