@@ -163,6 +163,38 @@ defmodule SecretHub.Web.PKIControllerTest do
     assert json_response(conn, 400)["error"] == "csr is required"
   end
 
+  test "an Agent Vault token cannot mint an app certificate through generic signing" do
+    fixture = renewal_fixture!()
+    {_private_key, csr_pem} = new_csr(fixture.app.id)
+    certificate_count = Repo.aggregate(Certificate, :count)
+    app_certificate_count = Repo.aggregate(AppCertificate, :count)
+    test_pid = self()
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        response =
+          vault_token!()
+          |> authed_conn()
+          |> post("/v1/pki/sign-request", %{
+            "csr" => csr_pem,
+            "ca_id" => fixture.current.cert_record.issuer_id,
+            "cert_type" => "app_client",
+            "validity_days" => 90
+          })
+
+        send(test_pid, {:generic_app_signing_response, response})
+      end)
+
+    assert_receive {:generic_app_signing_response, response}
+    assert json_response(response, 403) == %{"error" => "FORBIDDEN"}
+    assert Repo.aggregate(Certificate, :count) == certificate_count
+    assert Repo.aggregate(AppCertificate, :count) == app_certificate_count
+
+    for private_value <- [csr_pem | pem_log_leak_markers(csr_pem)] do
+      refute log =~ private_value
+    end
+  end
+
   test "application certificate issuance maps an invalid bootstrap token without Vault auth", %{
     conn: _conn
   } do

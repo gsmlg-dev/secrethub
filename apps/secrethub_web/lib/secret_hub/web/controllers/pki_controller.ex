@@ -203,10 +203,15 @@ defmodule SecretHub.Web.PKIController do
         |> put_status(:bad_request)
         |> json(%{error: "ca_id is required"})
 
+      cert_type == "app_client" ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "FORBIDDEN"})
+
       not valid_cert_type?(cert_type) ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "cert_type must be one of: agent_client, app_client, admin_client"})
+        |> json(%{error: "cert_type must be one of: agent_client, admin_client"})
 
       true ->
         cert_type_atom = String.to_existing_atom(cert_type)
@@ -496,7 +501,7 @@ defmodule SecretHub.Web.PKIController do
   end
 
   defp valid_cert_type?(cert_type) do
-    cert_type in ["agent_client", "app_client", "admin_client"]
+    cert_type in ["agent_client", "admin_client"]
   end
 
   @doc """
