@@ -7,10 +7,10 @@ defmodule SecretHub.Human.Release do
   ## Usage
 
       # Run all pending migrations
-      bin/secrethub_human eval "SecretHub.Human.Release.migrate()"
+      bin/secrethub_core eval "SecretHub.Human.Release.migrate()"
 
       # Rollback to a migration version
-      bin/secrethub_human eval "SecretHub.Human.Release.rollback(SecretHub.Human.Repo, 1)"
+      bin/secrethub_core eval "SecretHub.Human.Release.rollback(SecretHub.Human.Repo, 1)"
   """
 
   @app :secrethub_human
