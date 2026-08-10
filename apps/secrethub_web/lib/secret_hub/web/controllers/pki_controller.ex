@@ -377,6 +377,7 @@ defmodule SecretHub.Web.PKIController do
     reason = Map.get(params, "reason", "unspecified")
 
     with {:ok, cert} <- fetch_certificate(id),
+         :ok <- allow_generic_certificate_revocation(cert),
          :ok <- check_not_revoked(cert),
          {:ok, updated_cert} <- do_revoke_certificate(cert, reason) do
       Logger.info("Certificate revoked: #{cert.common_name}")
@@ -397,6 +398,11 @@ defmodule SecretHub.Web.PKIController do
         conn
         |> put_status(:bad_request)
         |> json(%{error: "Certificate is already revoked"})
+
+      {:error, :forbidden} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "FORBIDDEN"})
 
       {:error, %Ecto.Changeset{} = changeset} ->
         conn
@@ -431,6 +437,11 @@ defmodule SecretHub.Web.PKIController do
 
   defp check_not_revoked(%{revoked: true}), do: {:error, :already_revoked}
   defp check_not_revoked(_cert), do: :ok
+
+  defp allow_generic_certificate_revocation(%Certificate{cert_type: :app_client}),
+    do: {:error, :forbidden}
+
+  defp allow_generic_certificate_revocation(%Certificate{}), do: :ok
 
   defp do_revoke_certificate(cert, reason), do: CA.revoke_certificate(cert.id, reason)
 

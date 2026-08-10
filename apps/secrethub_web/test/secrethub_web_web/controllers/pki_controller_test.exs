@@ -84,7 +84,7 @@ defmodule SecretHub.Web.PKIControllerTest do
       |> post("/v1/pki/sign-request", %{
         "csr" => service_csr_pem,
         "ca_id" => intermediate_response["cert_id"],
-        "cert_type" => "app_client",
+        "cert_type" => "agent_client",
         "validity_days" => 90
       })
       |> json_response(201)
@@ -98,14 +98,14 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     assert %Certificate{} = service_record = Repo.get(Certificate, signed_response["cert_id"])
     assert service_record.common_name == service_cn
-    assert service_record.cert_type == :app_client
+    assert service_record.cert_type == :agent_client
     assert service_record.issuer_id == intermediate_response["cert_id"]
     assert service_record.revoked == false
 
     list_response =
       token
       |> authed_conn()
-      |> get("/v1/pki/certificates", %{"cert_type" => "app_client", "revoked" => "false"})
+      |> get("/v1/pki/certificates", %{"cert_type" => "agent_client", "revoked" => "false"})
       |> json_response(200)
 
     assert Enum.any?(list_response["certificates"], &(&1["id"] == signed_response["cert_id"]))
@@ -118,7 +118,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     assert detail_response["id"] == signed_response["cert_id"]
     assert detail_response["common_name"] == service_cn
-    assert detail_response["cert_type"] == "app_client"
+    assert detail_response["cert_type"] == "agent_client"
     assert detail_response["certificate"] == signed_response["certificate"]
     assert detail_response["revoked"] == false
 
@@ -410,6 +410,25 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     assert redirected_to(response, 302) == "/admin/auth/login"
     assert Repo.get!(Certificate, fixture.current.cert_record.id).revoked == false
+  end
+
+  test "an Agent Vault token cannot revoke an app certificate through generic PKI" do
+    fixture = renewal_fixture!()
+
+    response =
+      vault_token!()
+      |> authed_conn()
+      |> post("/v1/pki/certificates/#{fixture.current.cert_record.id}/revoke", %{
+        "reason" => "keyCompromise"
+      })
+
+    assert json_response(response, 403) == %{"error" => "FORBIDDEN"}
+
+    assert %Certificate{revoked: false, revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(Certificate, fixture.current.cert_record.id)
+
+    assert %AppCertificate{revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(AppCertificate, fixture.current.app_certificate.id)
   end
 
   test "an authenticated admin can revoke application certificates" do
