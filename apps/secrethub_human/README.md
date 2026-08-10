@@ -24,7 +24,7 @@ Human currently exposes `GET /` and `GET /health`.
 Set `SECRETHUB_ROLE` to one of `all`, `core`, `human`, or `agent`:
 
 - `all` and `human` enable the Human Repo, PubSub, and Endpoint.
-- `core` and `agent` disable the entire Human supervision tree.
+- `core` and `agent` disable all Human service children (Repo, PubSub, and Endpoint).
 - The default is `core` in production and `all` in development and test.
 
 In Milestone 0, roles select Human enablement only. Core and Web are not gated. The `human`
@@ -70,8 +70,14 @@ mix ecto.migrations -r SecretHub.Human.Repo
 ```
 
 The existing `db-setup`, `db-reset`, and `db-migrate` commands manage both Repos while keeping
-the Core seed script Core-only. In a built release, migrate Human independently with:
+the Core seed script Core-only.
+
+The production default role is `core`, which leaves Human runtime configuration disabled.
+To migrate Human in a built release, set `SECRETHUB_ROLE` to `all` or `human`. The deployment's
+required Core variables (`SECRET_HUB_CLUSTER_NODE_ID`, `DATABASE_URL`, and `SECRET_KEY_BASE`)
+and `HUMAN_DATABASE_URL` and `HUMAN_SECRET_KEY_BASE` must also be available when the command
+runs. For example, with those deployment variables already exported:
 
 ```sh
-bin/secrethub_core eval "SecretHub.Human.Release.migrate()"
+SECRETHUB_ROLE=human bin/secrethub_core eval "SecretHub.Human.Release.migrate()"
 ```

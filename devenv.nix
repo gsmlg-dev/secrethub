@@ -177,13 +177,13 @@ in
     '';
     
     db-reset.exec = ''
+      mix ecto.drop -r SecretHub.Human.Repo
       mix ecto.drop -r SecretHub.Core.Repo
       mix ecto.create -r SecretHub.Core.Repo
-      mix ecto.migrate -r SecretHub.Core.Repo
-      mix run apps/secrethub_core/priv/repo/seeds.exs
-      mix ecto.drop -r SecretHub.Human.Repo
       mix ecto.create -r SecretHub.Human.Repo
+      mix ecto.migrate -r SecretHub.Core.Repo
       mix ecto.migrate -r SecretHub.Human.Repo
+      mix run apps/secrethub_core/priv/repo/seeds.exs
     '';
     
     db-migrate.exec = ''
