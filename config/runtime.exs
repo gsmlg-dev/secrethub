@@ -10,7 +10,7 @@ import Config
 secrethub_role =
   SecretHub.Human.RuntimeRole.resolve!(System.get_env("SECRETHUB_ROLE"), config_env())
 
-human_enabled = secrethub_role in [:all, :human]
+human_enabled = SecretHub.Human.RuntimeRole.human_enabled?(secrethub_role)
 
 config :secrethub_human, enabled: human_enabled
 

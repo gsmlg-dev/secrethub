@@ -24,4 +24,14 @@ defmodule SecretHub.Human.RuntimeRoleTest do
       RuntimeRole.resolve!("Human", :prod)
     end
   end
+
+  test "enables Human for all and human roles" do
+    assert RuntimeRole.human_enabled?(:all)
+    assert RuntimeRole.human_enabled?(:human)
+  end
+
+  test "disables Human for core and agent roles" do
+    refute RuntimeRole.human_enabled?(:core)
+    refute RuntimeRole.human_enabled?(:agent)
+  end
 end

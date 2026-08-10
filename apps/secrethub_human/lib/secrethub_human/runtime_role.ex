@@ -16,4 +16,7 @@ defmodule SecretHub.Human.RuntimeRole do
       raise ArgumentError,
             "invalid SECRETHUB_ROLE #{inspect(role)}; expected all, core, human, or agent"
   end
+
+  def human_enabled?(role) when role in [:all, :human], do: true
+  def human_enabled?(role) when role in [:core, :agent], do: false
 end
