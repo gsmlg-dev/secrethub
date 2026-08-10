@@ -114,13 +114,15 @@ MIX_ENV=test mix test \
   apps/secrethub_human/test/secrethub_human/runtime_config_integration_test.exs
 ```
 
-Result: 5 tests, 0 failures. Each case evaluates `config/runtime.exs` with
-`Config.Reader.read!/2` in an isolated `elixir` OS subprocess. The subprocess receives only
-inert Core/Human values, emits only selected non-secret configuration facts, and confirms no
-SecretHub application started. The cases prove:
+Result: 6 tests, 0 failures. Each case evaluates `config/runtime.exs` with
+`Config.Reader.read!/2` in an isolated `elixir` OS subprocess. The test launches that process
+through `env -i`, supplies only inert Core/Human values, emits only selected non-secret
+configuration facts, and confirms no SecretHub application started. The cases prove:
 
 - production with `SECRETHUB_ROLE` unset defaults to Core, applies `enabled: false`, and does
   not require any `HUMAN_*` variable;
+- unrelated caller values such as an invalid `POOL_SIZE` and a `DNS_CLUSTER_QUERY` do not leak
+  into runtime evaluation;
 - production `all` applies `enabled: true`, the default Human port `4666`,
   `HUMAN_DB_POOL_SIZE=17`, `check_origin: :conn`, and independent Repo/Endpoint secrets;
 - the enabled Human Endpoint has `server: true` only when `PHX_SERVER` is present;
@@ -142,7 +144,7 @@ MIX_ENV=test mix test \
 
 Results:
 
-- Human: 25 tests, 0 failures. This includes the real simultaneous-listener coverage for
+- Human: 26 tests, 0 failures. This includes the real simultaneous-listener coverage for
   Core and Human plus the subprocess runtime configuration coverage.
 - Core application: 6 tests, 0 failures.
 - Web root page: 1 test, 0 failures.

@@ -27,7 +27,10 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
 
   @probe """
   config = Config.Reader.read!(#{inspect(@runtime_config)}, env: :prod)
+  core_config = Keyword.fetch!(config, :secrethub_core)
   human_config = Keyword.fetch!(config, :secrethub_human)
+  web_config = Keyword.fetch!(config, :secrethub_web)
+  core_repo_config = Keyword.get(core_config, SecretHub.Core.Repo, [])
   repo_config = Keyword.get(human_config, SecretHub.Human.Repo, [])
   endpoint_config = Keyword.get(human_config, SecretHub.HumanWeb.Endpoint, [])
 
@@ -38,6 +41,8 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
 
   payload = %{
     check_origin: endpoint_config[:check_origin],
+    core_pool_size: core_repo_config[:pool_size],
+    dns_cluster_query: Keyword.get(web_config, :dns_cluster_query),
     enabled: Keyword.fetch!(human_config, :enabled),
     endpoint_configured?:
       Keyword.has_key?(human_config, SecretHub.HumanWeb.Endpoint),
@@ -62,6 +67,19 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
              server: nil,
              started_apps: []
            } = read_runtime_config()
+  end
+
+  test "runtime configuration ignores unrelated caller environment" do
+    assert %{
+             core_pool_size: 10,
+             dns_cluster_query: nil,
+             enabled: false,
+             started_apps: []
+           } =
+             read_runtime_config([], [
+               {"DNS_CLUSTER_QUERY", "ambient.example"},
+               {"POOL_SIZE", "not-a-number"}
+             ])
   end
 
   test "production all role applies independent Human runtime configuration" do
@@ -113,8 +131,8 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
     ]
   end
 
-  defp read_runtime_config(env \\ []) do
-    {output, status} = run_runtime_config(env)
+  defp read_runtime_config(env \\ [], caller_env \\ []) do
+    {output, status} = run_runtime_config(env, caller_env)
     assert status == 0, output
 
     assert [_, encoded] = String.split(output, @result_prefix, parts: 2)
@@ -123,21 +141,24 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
     :erlang.binary_to_term(payload, [:safe])
   end
 
-  defp run_runtime_config(overrides) do
+  defp run_runtime_config(overrides, caller_env \\ []) do
     Code.ensure_loaded!(RuntimeRole)
     runtime_role_ebin = RuntimeRole |> :code.which() |> List.to_string() |> Path.dirname()
+    elixir = System.find_executable("elixir")
+    env = System.find_executable("env")
 
-    env =
+    runtime_env =
       @base_env
       |> Map.new()
       |> Map.merge(Map.new(overrides))
-      |> Map.to_list()
+      |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+      |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
 
     System.cmd(
-      System.find_executable("elixir"),
-      ["--erl", "+S 2:2", "-pa", runtime_role_ebin, "-e", @probe],
+      env,
+      ["-i" | runtime_env] ++ [elixir, "--erl", "+S 2:2", "-pa", runtime_role_ebin, "-e", @probe],
       cd: @project_root,
-      env: env,
+      env: caller_env,
       stderr_to_stdout: true
     )
   end
