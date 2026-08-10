@@ -30,7 +30,7 @@ config :secrethub_core, SecretHub.Core.Repo,
   ]
 
 config :secrethub_human, SecretHub.Human.Repo,
-  pool_size: String.to_integer(System.get_env("HUMAN_DB_POOL_SIZE") || "40"),
+  pool_size: 40,
   queue_target: 50,
   queue_interval: 1000,
   timeout: 15_000,
