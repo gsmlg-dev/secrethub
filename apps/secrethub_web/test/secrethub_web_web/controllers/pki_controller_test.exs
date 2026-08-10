@@ -20,13 +20,48 @@ defmodule SecretHub.Web.PKIControllerTest do
   end
 
   test "PKI API rejects missing vault token", %{conn: conn} do
-    conn =
-      post(conn, "/v1/pki/ca/root/generate", %{
-        "common_name" => "Missing Token Root CA",
-        "organization" => "SecretHub Web Test"
-      })
+    conn = get(conn, "/v1/pki/certificates")
 
     assert json_response(conn, 401)["error"] == "Missing or empty X-Vault-Token header"
+  end
+
+  test "an Agent Vault token cannot access generic CA generation routes" do
+    unique = System.unique_integer([:positive])
+
+    {:ok, %{cert_record: trusted_root}} =
+      CA.generate_root_ca(
+        "Trusted Route Boundary Root #{unique}",
+        "SecretHub Web Test",
+        key_size: 2048
+      )
+
+    certificate_count = Repo.aggregate(Certificate, :count)
+    app_certificate_count = Repo.aggregate(AppCertificate, :count)
+    token = vault_token!()
+
+    root_response =
+      token
+      |> authed_conn()
+      |> post("/v1/pki/ca/root/generate", %{
+        "common_name" => "Forbidden Root #{unique}",
+        "organization" => "SecretHub Web Test",
+        "key_size" => 2048
+      })
+
+    intermediate_response =
+      token
+      |> authed_conn()
+      |> post("/v1/pki/ca/intermediate/generate", %{
+        "common_name" => "Forbidden Intermediate #{unique}",
+        "organization" => "SecretHub Web Test",
+        "root_ca_id" => trusted_root.id,
+        "key_size" => 2048
+      })
+
+    assert redirected_to(root_response, 302) == "/admin/auth/login"
+    assert redirected_to(intermediate_response, 302) == "/admin/auth/login"
+    assert Repo.aggregate(Certificate, :count) == certificate_count
+    assert Repo.aggregate(AppCertificate, :count) == app_certificate_count
   end
 
   test "PKI API creates CA hierarchy, signs CSR, lists, fetches, and revokes certificates" do
@@ -36,8 +71,8 @@ defmodule SecretHub.Web.PKIControllerTest do
     service_cn = unique_name("web-service")
 
     root_response =
-      token
-      |> authed_conn()
+      Phoenix.ConnTest.build_conn()
+      |> init_test_session(%{admin_id: "test-admin"})
       |> post("/v1/pki/ca/root/generate", %{
         "common_name" => root_cn,
         "organization" => "SecretHub Web Test",
@@ -56,8 +91,8 @@ defmodule SecretHub.Web.PKIControllerTest do
     assert X509.Certificate.issuer(root_cert, "CN") == [root_cn]
 
     intermediate_response =
-      token
-      |> authed_conn()
+      Phoenix.ConnTest.build_conn()
+      |> init_test_session(%{admin_id: "test-admin"})
       |> post("/v1/pki/ca/intermediate/generate", %{
         "common_name" => intermediate_cn,
         "organization" => "SecretHub Web Test",
@@ -79,8 +114,8 @@ defmodule SecretHub.Web.PKIControllerTest do
     {_service_key, service_csr_pem} = new_csr(service_cn)
 
     signed_response =
-      token
-      |> authed_conn()
+      Phoenix.ConnTest.build_conn()
+      |> init_test_session(%{admin_id: "test-admin"})
       |> post("/v1/pki/sign-request", %{
         "csr" => service_csr_pem,
         "ca_id" => intermediate_response["cert_id"],
@@ -156,14 +191,14 @@ defmodule SecretHub.Web.PKIControllerTest do
 
   test "sign request validates required CSR parameters" do
     conn =
-      vault_token!()
-      |> authed_conn()
+      Phoenix.ConnTest.build_conn()
+      |> init_test_session(%{admin_id: "test-admin"})
       |> post("/v1/pki/sign-request", %{"ca_id" => Ecto.UUID.generate()})
 
     assert json_response(conn, 400)["error"] == "csr is required"
   end
 
-  test "an Agent Vault token cannot mint an app certificate through generic signing" do
+  test "an Agent Vault token cannot generic-sign a UUID-CN client certificate" do
     fixture = renewal_fixture!()
     {_private_key, csr_pem} = new_csr(fixture.app.id)
     certificate_count = Repo.aggregate(Certificate, :count)
@@ -175,6 +210,38 @@ defmodule SecretHub.Web.PKIControllerTest do
         response =
           vault_token!()
           |> authed_conn()
+          |> post("/v1/pki/sign-request", %{
+            "csr" => csr_pem,
+            "ca_id" => fixture.current.cert_record.issuer_id,
+            "cert_type" => "agent_client",
+            "validity_days" => 90
+          })
+
+        send(test_pid, {:generic_uuid_client_signing_response, response})
+      end)
+
+    assert_receive {:generic_uuid_client_signing_response, response}
+    assert redirected_to(response, 302) == "/admin/auth/login"
+    assert Repo.aggregate(Certificate, :count) == certificate_count
+    assert Repo.aggregate(AppCertificate, :count) == app_certificate_count
+
+    for private_value <- [csr_pem | pem_log_leak_markers(csr_pem)] do
+      refute log =~ private_value
+    end
+  end
+
+  test "an authenticated admin cannot mint an app certificate through generic signing" do
+    fixture = renewal_fixture!()
+    {_private_key, csr_pem} = new_csr(fixture.app.id)
+    certificate_count = Repo.aggregate(Certificate, :count)
+    app_certificate_count = Repo.aggregate(AppCertificate, :count)
+    test_pid = self()
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        response =
+          Phoenix.ConnTest.build_conn()
+          |> init_test_session(%{admin_id: "test-admin"})
           |> post("/v1/pki/sign-request", %{
             "csr" => csr_pem,
             "ca_id" => fixture.current.cert_record.issuer_id,
