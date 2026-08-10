@@ -25,9 +25,7 @@ config :secrethub_core,
 config :secrethub_human,
   env: config_env(),
   enabled: true,
-  ecto_repos: [SecretHub.Human.Repo],
-  namespace: SecretHub.Human,
-  generators: [timestamp_type: :utc_datetime]
+  ecto_repos: [SecretHub.Human.Repo]
 
 config :secrethub_human, SecretHub.HumanWeb.Endpoint,
   url: [host: "localhost"],
