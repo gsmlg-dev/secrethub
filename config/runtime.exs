@@ -7,6 +7,13 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+secrethub_role =
+  SecretHub.Human.RuntimeRole.resolve!(System.get_env("SECRETHUB_ROLE"), config_env())
+
+human_enabled = secrethub_role in [:all, :human]
+
+config :secrethub_human, enabled: human_enabled
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server
@@ -18,6 +25,10 @@ import Config
 # script that automatically sets the env var above.
 if System.get_env("PHX_SERVER") do
   config :secrethub_web, SecretHub.Web.Endpoint, server: true
+
+  if human_enabled do
+    config :secrethub_human, SecretHub.HumanWeb.Endpoint, server: true
+  end
 end
 
 if System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) do
@@ -86,6 +97,40 @@ if config_env() == :prod do
       """
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
+
+  if human_enabled do
+    human_database_url =
+      System.get_env("HUMAN_DATABASE_URL") ||
+        raise """
+        environment variable HUMAN_DATABASE_URL is missing.
+        For example: postgresql://user:password@host/secrethub_human
+        """
+
+    human_secret_key_base =
+      System.get_env("HUMAN_SECRET_KEY_BASE") ||
+        raise """
+        environment variable HUMAN_SECRET_KEY_BASE is missing.
+        You can generate one by calling: mix phx.gen.secret
+        """
+
+    human_host = System.get_env("HUMAN_ENDPOINT_HOST") || "localhost"
+    human_port = String.to_integer(System.get_env("HUMAN_ENDPOINT_PORT") || "4666")
+    human_pool_size = String.to_integer(System.get_env("HUMAN_DB_POOL_SIZE") || "40")
+
+    config :secrethub_human, SecretHub.Human.Repo,
+      url: human_database_url,
+      pool_size: human_pool_size,
+      socket_options: maybe_ipv6
+
+    config :secrethub_human, SecretHub.HumanWeb.Endpoint,
+      url: [host: human_host, port: human_port],
+      http: [
+        ip: {0, 0, 0, 0, 0, 0, 0, 0},
+        port: human_port
+      ],
+      secret_key_base: human_secret_key_base,
+      check_origin: :conn
+  end
 
   config :secrethub_core, SecretHub.Core.Repo,
     url: database_url,

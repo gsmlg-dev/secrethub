@@ -102,6 +102,7 @@ jobs:
             apps/secrethub_agent/mix.exs
             apps/secrethub_shared/mix.exs
             apps/secrethub_cli/mix.exs
+            apps/secrethub_human/mix.exs
           )
 
           for file in "${version_files[@]}"; do

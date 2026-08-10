@@ -163,7 +163,8 @@ defmodule SecretHub.MixProject do
         applications: [
           secrethub_core: :permanent,
           secrethub_web: :permanent,
-          secrethub_shared: :permanent
+          secrethub_shared: :permanent,
+          secrethub_human: :permanent
         ],
         include_executables_for: [:unix],
         steps: [:assemble, :tar]

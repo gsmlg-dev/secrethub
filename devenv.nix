@@ -47,11 +47,15 @@ in
       initialDatabases = [
         { name = "secrethub_dev"; }
         { name = "secrethub_test"; }
+        { name = "secrethub_human_dev"; }
+        { name = "secrethub_human_test"; }
       ];
       initialScript = ''
         CREATE USER secrethub WITH PASSWORD 'secrethub_dev_password' SUPERUSER;
         GRANT ALL PRIVILEGES ON DATABASE secrethub_dev TO secrethub;
         GRANT ALL PRIVILEGES ON DATABASE secrethub_test TO secrethub;
+        GRANT ALL PRIVILEGES ON DATABASE secrethub_human_dev TO secrethub;
+        GRANT ALL PRIVILEGES ON DATABASE secrethub_human_test TO secrethub;
 
         -- Connect to secrethub_dev and set up extensions
         \c secrethub_dev
@@ -92,6 +96,7 @@ in
     # Database URLs (using Unix domain socket for security and performance)
     DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=${config.devenv.root}/.devenv/state/postgres";
     DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=${config.devenv.root}/.devenv/state/postgres";
+    HUMAN_DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_human_dev?host=${config.devenv.root}/.devenv/state/postgres";
 
     # Asset tooling — tells Mix hex packages to use Nix-managed binaries
     MIX_BUN_PATH = lib.getExe pkgs-stable.bun;
@@ -104,6 +109,7 @@ in
     # Phoenix
     PHX_HOST = "localhost";
     PHX_PORT = "4664";
+    HUMAN_ENDPOINT_PORT = "4666";
 
     # Development flags
     ELIXIR_ERL_OPTIONS = "+sbwt none +sbwtdcpu none +sbwtdio none";
@@ -147,29 +153,42 @@ in
         psql -h "$SOCKET_DIR" -U "$USER" -d secrethub_test -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"; CREATE EXTENSION IF NOT EXISTS \"pgcrypto\"; CREATE SCHEMA IF NOT EXISTS audit; GRANT ALL ON SCHEMA audit TO secrethub;"
       fi
 
+      if ! psql -h "$SOCKET_DIR" -U "$USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='secrethub_human_dev'" | grep -q 1; then
+        echo "📦 Creating secrethub_human_dev database..."
+        psql -h "$SOCKET_DIR" -U "$USER" -d postgres -c "CREATE DATABASE secrethub_human_dev OWNER secrethub;"
+      fi
+
+      if ! psql -h "$SOCKET_DIR" -U "$USER" -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='secrethub_human_test'" | grep -q 1; then
+        echo "📦 Creating secrethub_human_test database..."
+        psql -h "$SOCKET_DIR" -U "$USER" -d postgres -c "CREATE DATABASE secrethub_human_test OWNER secrethub;"
+      fi
+
       echo "✅ Database initialized successfully!"
     '';
 
     # Database management
     db-setup.exec = ''
       db-init
-      cd apps/secrethub_core
-      mix ecto.create 2>/dev/null || true
-      mix ecto.migrate
-      mix run priv/repo/seeds.exs
+      mix ecto.create -r SecretHub.Core.Repo 2>/dev/null || true
+      mix ecto.migrate -r SecretHub.Core.Repo
+      mix run apps/secrethub_core/priv/repo/seeds.exs
+      mix ecto.create -r SecretHub.Human.Repo 2>/dev/null || true
+      mix ecto.migrate -r SecretHub.Human.Repo
     '';
     
     db-reset.exec = ''
-      cd apps/secrethub_core
-      mix ecto.drop
-      mix ecto.create
-      mix ecto.migrate
-      mix run priv/repo/seeds.exs
+      mix ecto.drop -r SecretHub.Core.Repo
+      mix ecto.create -r SecretHub.Core.Repo
+      mix ecto.migrate -r SecretHub.Core.Repo
+      mix run apps/secrethub_core/priv/repo/seeds.exs
+      mix ecto.drop -r SecretHub.Human.Repo
+      mix ecto.create -r SecretHub.Human.Repo
+      mix ecto.migrate -r SecretHub.Human.Repo
     '';
     
     db-migrate.exec = ''
-      cd apps/secrethub_core
-      mix ecto.migrate
+      mix ecto.migrate -r SecretHub.Core.Repo
+      mix ecto.migrate -r SecretHub.Human.Repo
     '';
     
     # Asset management (using Bun workspaces)
