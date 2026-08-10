@@ -9,6 +9,7 @@ defmodule SecretHub.Core.PKI.AppCertificatesTest do
     Agent,
     AppBootstrapToken,
     AppCertificate,
+    AppCertificateRenewal,
     AuditLog,
     Certificate
   }
@@ -41,6 +42,689 @@ defmodule SecretHub.Core.PKI.AppCertificatesTest do
       })
 
     %{agent: agent, app: app, token: token, ca: ca.cert_record}
+  end
+
+  test "builds the exact domain-separated application certificate renewal transcript" do
+    app_id = "00000000-0000-4000-8000-000000000001"
+    request_id = "00000000-0000-4000-8000-000000000002"
+    current_fingerprint = String.duplicate("ab", 32)
+
+    csr_pem =
+      "-----BEGIN CERTIFICATE REQUEST-----\nAA==\n-----END CERTIFICATE REQUEST-----\n"
+
+    csr_sha256 = :crypto.hash(:sha256, csr_pem)
+
+    canonical_json =
+      ~s({"app_id":"#{app_id}","csr_sha256":"#{Base.encode16(csr_sha256, case: :lower)}","current_fingerprint":"#{current_fingerprint}","request_id":"#{request_id}"})
+
+    normalized_payload_sha256 = :crypto.hash(:sha256, canonical_json)
+    fingerprint_bytes = Base.decode16!(current_fingerprint, case: :lower)
+
+    expected =
+      for value <- [
+            "secrethub-app-cert-renewal-v1",
+            app_id,
+            fingerprint_bytes,
+            csr_sha256,
+            request_id,
+            normalized_payload_sha256
+          ],
+          into: <<>> do
+        <<byte_size(value)::unsigned-big-32, value::binary>>
+      end
+
+    assert {:ok, ^expected} =
+             AppCertificates.renewal_signing_payload(
+               app_id,
+               current_fingerprint,
+               csr_pem,
+               request_id
+             )
+  end
+
+  test "renews a canonical application certificate with an RSA-PSS possession proof", %{
+    app: app,
+    token: token
+  } do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    replacement_key = X509.PrivateKey.new_rsa(2048)
+    replacement_csr = replacement_key |> X509.CSR.new("/CN=replacement") |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        current_key,
+        "rsa-pss-sha256"
+      )
+
+    assert {:ok,
+            %{
+              certificate: replacement_pem,
+              cert_record: %Certificate{} = replacement,
+              app_certificate: %AppCertificate{} = replacement_association,
+              replayed: false
+            }} = AppCertificates.renew(request)
+
+    assert X509.Certificate.public_key(X509.Certificate.from_pem!(replacement_pem)) ==
+             X509.PublicKey.derive(replacement_key)
+
+    assert %AppCertificate{
+             revoked_at: %DateTime{},
+             revocation_reason: "superseded"
+           } = Repo.get!(AppCertificate, current.app_certificate.id)
+
+    assert %Certificate{revoked: true, revocation_reason: "superseded"} =
+             Repo.get!(Certificate, current.cert_record.id)
+
+    assert replacement_association.certificate_id == replacement.id
+    refute replacement.revoked
+
+    assert %AppCertificateRenewal{
+             app_id: app_id,
+             current_certificate_id: current_certificate_id,
+             issued_certificate_id: issued_certificate_id,
+             request_id: request_id,
+             original_fingerprint: original_fingerprint,
+             proof_algorithm: "rsa-pss-sha256"
+           } = Repo.get_by!(AppCertificateRenewal, app_id: app.id, request_id: request.request_id)
+
+    assert app_id == app.id
+    assert current_certificate_id == current.cert_record.id
+    assert issued_certificate_id == replacement.id
+    assert request_id == request.request_id
+    assert original_fingerprint == current.cert_record.canonical_fingerprint
+  end
+
+  test "renews a canonical application certificate with an ECDSA possession proof", %{
+    app: app,
+    token: token
+  } do
+    current_key = X509.PrivateKey.new_ec(:secp256r1)
+    current_csr = current_key |> X509.CSR.new("/CN=current-ec") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    replacement_key = X509.PrivateKey.new_ec(:secp384r1)
+
+    replacement_csr =
+      replacement_key |> X509.CSR.new("/CN=replacement-ec") |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        current_key,
+        "ecdsa-sha256"
+      )
+
+    assert {:ok, %{certificate: replacement_pem, replayed: false}} =
+             AppCertificates.renew(request)
+
+    assert X509.Certificate.public_key(X509.Certificate.from_pem!(replacement_pem)) ==
+             X509.PublicKey.derive(replacement_key)
+  end
+
+  test "rejects a renewal proof signed by a different private key", %{
+    app: app,
+    token: token
+  } do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    replacement_csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=replacement")
+      |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        X509.PrivateKey.new_rsa(2048),
+        "rsa-pss-sha256"
+      )
+
+    assert {:error, :invalid_proof} = AppCertificates.renew(request)
+    assert Repo.aggregate(AppCertificateRenewal, :count) == 0
+    assert Repo.aggregate(AppCertificate, :count) == 1
+
+    assert %AppCertificate{revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(AppCertificate, current.app_certificate.id)
+
+    assert %Certificate{revoked: false, revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(Certificate, current.cert_record.id)
+
+    assert %AuditLog{
+             event_type: "auth.app_certificate_renewal_denied",
+             access_granted: false,
+             denial_reason: "invalid_proof",
+             correlation_id: request_id,
+             event_data: %{
+               "app_certificate_renewal" => %{
+                 "request_id" => request_id,
+                 "result_code" => "invalid_proof"
+               }
+             }
+           } =
+             denied =
+             Repo.one!(
+               from(a in AuditLog,
+                 where: a.event_type == "auth.app_certificate_renewal_denied"
+               )
+             )
+
+    assert request_id == request.request_id
+    refute inspect(denied) =~ replacement_csr
+    refute inspect(denied) =~ Base.encode64(request.proof)
+  end
+
+  test "replays the exact stored renewal after the original certificate is superseded", %{
+    app: app,
+    token: token
+  } do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    replacement_csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=replacement")
+      |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        current_key,
+        "rsa-pss-sha256"
+      )
+
+    assert {:ok, first} = AppCertificates.renew(request)
+    assert Repo.get!(Certificate, current.cert_record.id).revoked
+
+    assert {:ok, replay} = AppCertificates.renew(request)
+    assert replay.replayed
+    assert replay.certificate == first.certificate
+    assert replay.ca_chain == first.ca_chain
+    assert replay.cert_record.id == first.cert_record.id
+    assert replay.app_certificate.id == first.app_certificate.id
+    assert Repo.aggregate(AppCertificateRenewal, :count) == 1
+    assert Repo.aggregate(AppCertificate, :count) == 2
+  end
+
+  test "audits renewal, supersession, and replay with only sanitized lifecycle evidence", %{
+    app: app,
+    token: token
+  } do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current-audit") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    replacement_csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=replacement-audit")
+      |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        current_key,
+        "rsa-pss-sha256"
+      )
+
+    assert {:ok, renewed} = AppCertificates.renew(request)
+    assert {:ok, %{replayed: true}} = AppCertificates.renew(request)
+
+    assert [revocation] =
+             Repo.all(
+               from(a in AuditLog,
+                 where: a.event_type == "auth.app_certificate_revoked"
+               )
+             )
+
+    assert revocation.event_data == %{
+             "app_certificate_revocation" => %{
+               "app_id" => app.id,
+               "certificate_id" => current.cert_record.id,
+               "reason" => "superseded",
+               "result_code" => "revoked"
+             }
+           }
+
+    assert [allowed, replayed] =
+             Repo.all(
+               from(a in AuditLog,
+                 where: a.event_type == "auth.app_certificate_renewal_allowed",
+                 order_by: [asc: a.sequence_number]
+               )
+             )
+
+    assert allowed.correlation_id == request.request_id
+    assert replayed.correlation_id == request.request_id
+
+    assert allowed.event_data == %{
+             "app_certificate_renewal" => %{
+               "app_id" => app.id,
+               "current_certificate_id" => current.cert_record.id,
+               "issued_certificate_id" => renewed.cert_record.id,
+               "request_id" => request.request_id,
+               "result_code" => "renewed"
+             }
+           }
+
+    assert replayed.event_data ==
+             put_in(
+               allowed.event_data,
+               ["app_certificate_renewal", "result_code"],
+               "replayed"
+             )
+
+    lifecycle_audits =
+      Repo.all(
+        from(a in AuditLog,
+          where:
+            a.event_type in [
+              "auth.app_certificate_renewal_allowed",
+              "auth.app_certificate_revoked"
+            ]
+        )
+      )
+
+    refute inspect(lifecycle_audits) =~ replacement_csr
+    refute inspect(lifecycle_audits) =~ Base.encode64(replacement_csr)
+    refute inspect(lifecycle_audits) =~ Base.encode64(request.proof)
+  end
+
+  test "returns an idempotency conflict when a replay changes the signed payload", %{
+    app: app,
+    token: token
+  } do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    first_csr =
+      X509.PrivateKey.new_rsa(2048) |> X509.CSR.new("/CN=first") |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        first_csr,
+        current_key,
+        "rsa-pss-sha256"
+      )
+
+    assert {:ok, first} = AppCertificates.renew(request)
+
+    changed_csr =
+      X509.PrivateKey.new_rsa(2048) |> X509.CSR.new("/CN=changed") |> X509.CSR.to_pem()
+
+    changed_request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        changed_csr,
+        current_key,
+        "rsa-pss-sha256",
+        request.request_id
+      )
+
+    assert {:error, :idempotency_conflict} = AppCertificates.renew(changed_request)
+    assert Repo.aggregate(AppCertificateRenewal, :count) == 1
+    assert Repo.aggregate(AppCertificate, :count) == 2
+    assert Repo.get!(Certificate, first.cert_record.id).revoked == false
+  end
+
+  test "rejects renewal with an expired current certificate", %{app: app, token: token} do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    expired_at = DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.truncate(:second)
+
+    current.cert_record
+    |> Ecto.Changeset.change(valid_until: expired_at)
+    |> Repo.update!()
+
+    replacement_csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=replacement")
+      |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        current_key,
+        "rsa-pss-sha256"
+      )
+
+    assert {:error, :invalid_current_certificate} = AppCertificates.renew(request)
+    assert Repo.aggregate(AppCertificateRenewal, :count) == 0
+    assert Repo.aggregate(AppCertificate, :count) == 1
+  end
+
+  test "rejects renewal with a revoked current certificate", %{app: app, token: token} do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    current.cert_record
+    |> Certificate.revoke_changeset("compromised")
+    |> Repo.update!()
+
+    replacement_csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=replacement")
+      |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        current_key,
+        "rsa-pss-sha256"
+      )
+
+    assert {:error, :invalid_current_certificate} = AppCertificates.renew(request)
+    assert Repo.aggregate(AppCertificateRenewal, :count) == 0
+    assert Repo.aggregate(AppCertificate, :count) == 1
+  end
+
+  test "revokes the association and underlying certificate for every canonical reason", %{
+    app: app,
+    token: first_token
+  } do
+    reasons = ~w(superseded compromised operator_revoked app_suspended)
+
+    Enum.with_index(reasons)
+    |> Enum.each(fn {reason, index} ->
+      token =
+        if index == 0 do
+          first_token
+        else
+          {:ok, token, _record} = Apps.generate_bootstrap_token(app.id)
+          token
+        end
+
+      csr =
+        X509.PrivateKey.new_rsa(2048)
+        |> X509.CSR.new("/CN=revoke-#{reason}")
+        |> X509.CSR.to_pem()
+
+      assert {:ok, issued} =
+               AppCertificates.issue_from_bootstrap(token, csr, Ecto.UUID.generate())
+
+      assert {:ok,
+              %AppCertificate{
+                revoked_at: %DateTime{},
+                revocation_reason: ^reason
+              }} = AppCertificates.revoke(app.id, issued.cert_record.id, reason)
+
+      assert %AppCertificate{revoked_at: %DateTime{}, revocation_reason: ^reason} =
+               Repo.get!(AppCertificate, issued.app_certificate.id)
+
+      assert %Certificate{
+               revoked: true,
+               revoked_at: %DateTime{},
+               revocation_reason: ^reason
+             } = Repo.get!(Certificate, issued.cert_record.id)
+
+      assert {:error, :not_found} =
+               AppCertificates.revoke(app.id, issued.cert_record.id, reason)
+    end)
+  end
+
+  test "Apps delegates single-certificate revocation with the canonical default", %{
+    app: app,
+    token: token
+  } do
+    csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=apps-revoke")
+      |> X509.CSR.to_pem()
+
+    assert {:ok, issued} =
+             AppCertificates.issue_from_bootstrap(token, csr, Ecto.UUID.generate())
+
+    assert {:ok, %AppCertificate{revocation_reason: "operator_revoked"}} =
+             Apps.revoke_app_certificate(app.id, issued.cert_record.id)
+
+    assert %Certificate{revoked: true, revocation_reason: "operator_revoked"} =
+             Repo.get!(Certificate, issued.cert_record.id)
+  end
+
+  test "Apps delegates all-certificate revocation atomically and preserves the count", %{
+    app: app,
+    token: first_token
+  } do
+    {:ok, second_token, _record} = Apps.generate_bootstrap_token(app.id)
+
+    issued =
+      Enum.map([first_token, second_token], fn token ->
+        csr =
+          X509.PrivateKey.new_rsa(2048)
+          |> X509.CSR.new("/CN=apps-revoke-all")
+          |> X509.CSR.to_pem()
+
+        {:ok, result} =
+          AppCertificates.issue_from_bootstrap(token, csr, Ecto.UUID.generate())
+
+        result
+      end)
+
+    assert {:ok, 2} = Apps.revoke_all_app_certificates(app.id)
+
+    Enum.each(issued, fn result ->
+      assert %AppCertificate{revocation_reason: "operator_revoked"} =
+               Repo.get!(AppCertificate, result.app_certificate.id)
+
+      assert %Certificate{revoked: true, revocation_reason: "operator_revoked"} =
+               Repo.get!(Certificate, result.cert_record.id)
+    end)
+
+    assert {:ok, 0} = Apps.revoke_all_app_certificates(app.id)
+  end
+
+  test "rolls back every renewal mutation and records a sanitized failure", %{
+    app: app,
+    token: token
+  } do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current-fault") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    replacement_csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=replacement-fault")
+      |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        current_key,
+        "rsa-pss-sha256"
+      )
+
+    Process.put(
+      :secrethub_app_certificate_renewal_fault,
+      :before_original_revocation
+    )
+
+    assert {:error, :renewal_failed} = AppCertificates.renew(request)
+    assert Repo.aggregate(AppCertificateRenewal, :count) == 0
+    assert Repo.aggregate(AppCertificate, :count) == 1
+
+    assert %AppCertificate{revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(AppCertificate, current.app_certificate.id)
+
+    assert %Certificate{revoked: false, revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(Certificate, current.cert_record.id)
+
+    assert %AuditLog{
+             event_type: "auth.app_certificate_renewal_failed",
+             access_granted: false,
+             denial_reason: "renewal_failed",
+             correlation_id: request_id,
+             event_data: %{
+               "app_certificate_renewal" => %{
+                 "request_id" => request_id,
+                 "result_code" => "renewal_failed"
+               }
+             }
+           } =
+             failed =
+             Repo.one!(
+               from(a in AuditLog,
+                 where: a.event_type == "auth.app_certificate_renewal_failed"
+               )
+             )
+
+    assert request_id == request.request_id
+    refute inspect(failed) =~ replacement_csr
+    refute inspect(failed) =~ Base.encode64(request.proof)
+  end
+
+  test "rolls back renewal when its transactional success audit fails", %{
+    app: app,
+    token: token
+  } do
+    current_key = X509.PrivateKey.new_rsa(2048)
+    current_csr = current_key |> X509.CSR.new("/CN=current-audit-fault") |> X509.CSR.to_pem()
+
+    assert {:ok, current} =
+             AppCertificates.issue_from_bootstrap(token, current_csr, Ecto.UUID.generate())
+
+    replacement_csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=replacement-audit-fault")
+      |> X509.CSR.to_pem()
+
+    request =
+      renewal_request(
+        app.id,
+        current.cert_record.canonical_fingerprint,
+        replacement_csr,
+        current_key,
+        "rsa-pss-sha256"
+      )
+
+    Process.put(:secrethub_app_certificate_renewal_fault, :success_audit)
+
+    assert {:error, :renewal_failed} = AppCertificates.renew(request)
+    assert Repo.aggregate(AppCertificateRenewal, :count) == 0
+    assert Repo.aggregate(AppCertificate, :count) == 1
+
+    assert %Certificate{revoked: false, revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(Certificate, current.cert_record.id)
+
+    assert Repo.aggregate(
+             from(a in AuditLog,
+               where:
+                 a.event_type in [
+                   "auth.app_certificate_renewal_allowed",
+                   "auth.app_certificate_revoked"
+                 ]
+             ),
+             :count
+           ) == 0
+
+    assert Repo.aggregate(
+             from(a in AuditLog,
+               where: a.event_type == "auth.app_certificate_renewal_failed"
+             ),
+             :count
+           ) == 1
+  end
+
+  test "rolls back both revocation records when the transactional audit fails", %{
+    app: app,
+    token: token
+  } do
+    csr =
+      X509.PrivateKey.new_rsa(2048)
+      |> X509.CSR.new("/CN=revocation-audit-fault")
+      |> X509.CSR.to_pem()
+
+    assert {:ok, issued} =
+             AppCertificates.issue_from_bootstrap(token, csr, Ecto.UUID.generate())
+
+    Process.put(:secrethub_app_certificate_revocation_fault, :success_audit)
+
+    assert {:error, :revocation_failed} =
+             AppCertificates.revoke(app.id, issued.cert_record.id, "compromised")
+
+    assert %AppCertificate{revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(AppCertificate, issued.app_certificate.id)
+
+    assert %Certificate{revoked: false, revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(Certificate, issued.cert_record.id)
+
+    assert Repo.aggregate(
+             from(a in AuditLog,
+               where: a.event_type == "auth.app_certificate_revoked"
+             ),
+             :count
+           ) == 0
+  end
+
+  test "keeps a renewal denial stable when post-rollback audit raises", %{app: app} do
+    private_csr = "private-renewal-csr-material"
+    private_proof = "private-renewal-proof-material"
+    private_fingerprint = "private-renewal-fingerprint"
+
+    Process.put(:secrethub_app_certificate_renewal_audit_fault, :raise)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert {:error, :invalid_fingerprint} =
+                 AppCertificates.renew(%{
+                   app_id: app.id,
+                   current_fingerprint: private_fingerprint,
+                   csr: private_csr,
+                   request_id: Ecto.UUID.generate(),
+                   signature_algorithm: "rsa-pss-sha256",
+                   proof: private_proof
+                 })
+      end)
+
+    assert log =~ @post_rollback_audit_failure_log
+    refute log =~ private_csr
+    refute log =~ private_proof
+    refute log =~ private_fingerprint
   end
 
   test "issues and persists a canonical RSA-2048 application certificate", %{
@@ -1137,6 +1821,46 @@ defmodule SecretHub.Core.PKI.AppCertificatesTest do
 
     refute inspect(Repo.all(AuditLog)) =~ token
     refute inspect(Repo.all(AuditLog)) =~ csr_pem
+  end
+
+  defp renewal_request(
+         app_id,
+         current_fingerprint,
+         csr_pem,
+         current_private_key,
+         signature_algorithm,
+         request_id \\ Ecto.UUID.generate()
+       ) do
+    {:ok, payload} =
+      AppCertificates.renewal_signing_payload(
+        app_id,
+        current_fingerprint,
+        csr_pem,
+        request_id
+      )
+
+    proof = renewal_proof(payload, current_private_key, signature_algorithm)
+
+    %{
+      app_id: app_id,
+      current_fingerprint: current_fingerprint,
+      csr: csr_pem,
+      request_id: request_id,
+      signature_algorithm: signature_algorithm,
+      proof: proof
+    }
+  end
+
+  defp renewal_proof(payload, private_key, "rsa-pss-sha256") do
+    :public_key.sign(payload, :sha256, private_key,
+      rsa_padding: :rsa_pkcs1_pss_padding,
+      rsa_pss_saltlen: 32,
+      rsa_mgf1_md: :sha256
+    )
+  end
+
+  defp renewal_proof(payload, private_key, "ecdsa-sha256") do
+    :public_key.sign(payload, :sha256, private_key)
   end
 
   defp forged_even_exponent_csr do

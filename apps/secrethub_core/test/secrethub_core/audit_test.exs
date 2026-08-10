@@ -262,6 +262,145 @@ defmodule SecretHub.Core.AuditTest do
                "auth.app_certificate_issuance_failed"
              ]
     end
+
+    test "accepts exact sanitized application-certificate renewal evidence" do
+      app_id = Ecto.UUID.generate()
+      current_certificate_id = Ecto.UUID.generate()
+      issued_certificate_id = Ecto.UUID.generate()
+      request_id = Ecto.UUID.generate()
+
+      assert {:ok, renewed} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_renewal_allowed",
+                 actor_type: "app",
+                 actor_id: app_id,
+                 app_id: app_id,
+                 access_granted: true,
+                 correlation_id: request_id,
+                 event_data: %{
+                   app_certificate_renewal: %{
+                     app_id: app_id,
+                     current_certificate_id: current_certificate_id,
+                     issued_certificate_id: issued_certificate_id,
+                     request_id: request_id,
+                     result_code: "renewed"
+                   }
+                 }
+               })
+
+      assert renewed.event_data == %{
+               "app_certificate_renewal" => %{
+                 "app_id" => app_id,
+                 "current_certificate_id" => current_certificate_id,
+                 "issued_certificate_id" => issued_certificate_id,
+                 "request_id" => request_id,
+                 "result_code" => "renewed"
+               }
+             }
+
+      assert {:error, changeset} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_renewal_allowed",
+                 actor_type: "app",
+                 actor_id: app_id,
+                 app_id: app_id,
+                 access_granted: true,
+                 correlation_id: request_id,
+                 event_data: %{
+                   "app_certificate_renewal" => %{
+                     "app_id" => app_id,
+                     "current_certificate_id" => current_certificate_id,
+                     "issued_certificate_id" => issued_certificate_id,
+                     "request_id" => request_id,
+                     "result_code" => "renewed",
+                     "proof" => "must-not-be-persisted"
+                   }
+                 }
+               })
+
+      assert "must contain exactly the sanitized application certificate lifecycle evidence" in errors_on(
+               changeset
+             ).event_data
+    end
+
+    test "accepts exact renewal denial, failure, and revocation evidence" do
+      request_id = Ecto.UUID.generate()
+      app_id = Ecto.UUID.generate()
+      certificate_id = Ecto.UUID.generate()
+
+      assert {:ok, denied} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_renewal_denied",
+                 actor_type: "app",
+                 access_granted: false,
+                 denial_reason: "invalid_proof",
+                 correlation_id: request_id,
+                 event_data: %{
+                   "app_certificate_renewal" => %{
+                     "request_id" => request_id,
+                     "result_code" => "invalid_proof"
+                   }
+                 }
+               })
+
+      assert denied.event_data["app_certificate_renewal"]["result_code"] ==
+               "invalid_proof"
+
+      assert {:ok, failed} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_renewal_failed",
+                 actor_type: "app",
+                 access_granted: false,
+                 denial_reason: "renewal_failed",
+                 correlation_id: request_id,
+                 event_data: %{
+                   "app_certificate_renewal" => %{
+                     "request_id" => request_id,
+                     "result_code" => "renewal_failed"
+                   }
+                 }
+               })
+
+      assert failed.event_data["app_certificate_renewal"]["result_code"] ==
+               "renewal_failed"
+
+      assert {:ok, revoked} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_revoked",
+                 actor_type: "app",
+                 actor_id: app_id,
+                 app_id: app_id,
+                 access_granted: true,
+                 event_data: %{
+                   "app_certificate_revocation" => %{
+                     "app_id" => app_id,
+                     "certificate_id" => certificate_id,
+                     "reason" => "compromised",
+                     "result_code" => "revoked"
+                   }
+                 }
+               })
+
+      assert revoked.event_data == %{
+               "app_certificate_revocation" => %{
+                 "app_id" => app_id,
+                 "certificate_id" => certificate_id,
+                 "reason" => "compromised",
+                 "result_code" => "revoked"
+               }
+             }
+
+      assert Enum.filter(
+               AuditLog.valid_event_types(),
+               &String.starts_with?(&1, "auth.app_certificate_renewal_")
+             ) == [
+               "auth.app_certificate_renewal_allowed",
+               "auth.app_certificate_renewal_denied",
+               "auth.app_certificate_renewal_failed"
+             ]
+
+      assert "auth.app_certificate_revoked" in AuditLog.valid_event_types()
+    end
   end
 
   describe "get_last_audit_entry/0" do

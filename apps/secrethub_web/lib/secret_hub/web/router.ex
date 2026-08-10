@@ -33,6 +33,8 @@ defmodule SecretHub.Web.Router do
 
   pipeline :admin_api do
     plug :api
+    plug :fetch_session
+    plug :fetch_live_flash
     plug :require_admin_auth
   end
 
@@ -79,6 +81,16 @@ defmodule SecretHub.Web.Router do
       max_requests: 5,
       window_ms: 60_000,
       scope: :app_certificate_bootstrap
+  end
+
+  pipeline :app_certificate_renewal_api do
+    plug :api
+    plug :discard_untrusted_forwarded_for
+
+    plug SecretHub.Web.Plugs.RateLimiter,
+      max_requests: 5,
+      window_ms: 60_000,
+      scope: :app_certificate_renewal
   end
 
   scope "/", SecretHub.Web do
@@ -289,6 +301,20 @@ defmodule SecretHub.Web.Router do
     post "/issue", PKIController, :issue_app_certificate
   end
 
+  # Application certificate renewal (public, current-key proof, rate limited)
+  scope "/v1/pki/app", SecretHub.Web do
+    pipe_through :app_certificate_renewal_api
+
+    post "/renew", PKIController, :renew_app_certificate
+  end
+
+  # Application certificate revocation (operator/admin only)
+  scope "/v1/pki", SecretHub.Web do
+    pipe_through :admin_api
+
+    post "/app/revoke", PKIController, :revoke_app_certificate
+  end
+
   # Dynamic Secrets API routes (token-authenticated)
   scope "/v1/secrets/dynamic", SecretHub.Web do
     pipe_through :vault_token
@@ -321,10 +347,6 @@ defmodule SecretHub.Web.Router do
     get "/certificates", PKIController, :list_certificates
     get "/certificates/:id", PKIController, :get_certificate
     post "/certificates/:id/revoke", PKIController, :revoke_certificate
-
-    # Application certificate operations
-    post "/app/renew", PKIController, :renew_app_certificate
-    post "/app/revoke", PKIController, :revoke_app_certificate
   end
 
   # Application management API routes (token-authenticated)
