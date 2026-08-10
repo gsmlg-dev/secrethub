@@ -78,6 +78,19 @@ db_config =
 
 config :secrethub_core, SecretHub.Core.Repo, db_config
 
+human_db_config =
+  case System.get_env("HUMAN_DATABASE_URL") do
+    nil ->
+      Keyword.put(db_config, :database, "secrethub_human_dev")
+
+    database_url ->
+      db_config
+      |> Keyword.take([:stacktrace, :show_sensitive_data_on_connection_error, :pool_size])
+      |> Keyword.put(:url, database_url)
+  end
+
+config :secrethub_human, SecretHub.Human.Repo, human_db_config
+
 config :secrethub_core,
   dev_pki_unsealed_fallback: true,
   cluster_node_id: System.get_env("SECRET_HUB_CLUSTER_NODE_ID") || "secrethub-dev"

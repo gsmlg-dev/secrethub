@@ -29,6 +29,15 @@ config :secrethub_core, SecretHub.Core.Repo,
     jit: "on"
   ]
 
+config :secrethub_human, SecretHub.Human.Repo,
+  pool_size: String.to_integer(System.get_env("HUMAN_DB_POOL_SIZE") || "40"),
+  queue_target: 50,
+  queue_interval: 1000,
+  timeout: 15_000,
+  ownership_timeout: 60_000,
+  prepare: :named,
+  parameters: [jit: "on"]
+
 # Configures Swoosh API Client
 config :swoosh, api_client: Swoosh.ApiClient.Req
 

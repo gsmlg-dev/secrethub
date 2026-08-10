@@ -22,6 +22,11 @@ config :secrethub_core,
   ecto_repos: [SecretHub.Core.Repo],
   cluster_node_freshness_timeout_seconds: 30
 
+config :secrethub_human,
+  env: config_env(),
+  enabled: true,
+  ecto_repos: [SecretHub.Human.Repo]
+
 config :secrethub_web,
   namespace: SecretHub.Web,
   generators: [timestamp_type: :utc_datetime],

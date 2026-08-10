@@ -133,6 +133,15 @@ db_config =
 
 config :secrethub_core, SecretHub.Core.Repo, db_config
 
+human_db_config =
+  Keyword.put(
+    db_config,
+    :database,
+    "secrethub_human_test#{System.get_env("MIX_TEST_PARTITION")}"
+  )
+
+config :secrethub_human, SecretHub.Human.Repo, human_db_config
+
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :secrethub_web, SecretHub.Web.Endpoint,
