@@ -21,6 +21,11 @@ defmodule SecretHub.Web.Router do
     @admin_auth_controller.require_admin_auth(conn, [])
   end
 
+  defp discard_untrusted_forwarded_for(conn, _opts) do
+    # Forwarded IP is untrusted until normalized by a trusted-proxy layer.
+    Plug.Conn.delete_req_header(conn, "x-forwarded-for")
+  end
+
   pipeline :admin_browser do
     plug :browser
     plug :require_admin_auth
@@ -64,6 +69,16 @@ defmodule SecretHub.Web.Router do
       max_requests: 30,
       window_ms: 60_000,
       scope: :agent_enrollment
+  end
+
+  pipeline :app_certificate_bootstrap_api do
+    plug :api
+    plug :discard_untrusted_forwarded_for
+
+    plug SecretHub.Web.Plugs.RateLimiter,
+      max_requests: 5,
+      window_ms: 60_000,
+      scope: :app_certificate_bootstrap
   end
 
   scope "/", SecretHub.Web do
@@ -267,6 +282,13 @@ defmodule SecretHub.Web.Router do
     post "/certificate/renew", AgentCertController, :renew
   end
 
+  # Application certificate bootstrap (public, strictly rate limited)
+  scope "/v1/pki/app", SecretHub.Web do
+    pipe_through :app_certificate_bootstrap_api
+
+    post "/issue", PKIController, :issue_app_certificate
+  end
+
   # Dynamic Secrets API routes (token-authenticated)
   scope "/v1/secrets/dynamic", SecretHub.Web do
     pipe_through :vault_token
@@ -301,7 +323,6 @@ defmodule SecretHub.Web.Router do
     post "/certificates/:id/revoke", PKIController, :revoke_certificate
 
     # Application certificate operations
-    post "/app/issue", PKIController, :issue_app_certificate
     post "/app/renew", PKIController, :renew_app_certificate
     post "/app/revoke", PKIController, :revoke_app_certificate
   end

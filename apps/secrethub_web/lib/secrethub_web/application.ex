@@ -22,6 +22,7 @@ defmodule SecretHub.Web.Application do
         {Phoenix.PubSub, name: SecretHub.Web.PubSub},
         # Start a worker by calling: SecretHub.Web.Worker.start_link(arg)
         # {SecretHub.Web.Worker, arg},
+        {SecretHub.Web.Plugs.RateLimiter, :server},
         # Start to serve requests, typically the last entry
         SecretHub.Web.Endpoint
       ] ++ agent_endpoint_children()

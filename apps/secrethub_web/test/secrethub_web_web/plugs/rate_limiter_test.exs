@@ -5,9 +5,32 @@ defmodule SecretHub.Web.Plugs.RateLimiterTest do
 
   @table_name :rate_limiter_table
 
+  describe "supervised lifecycle" do
+    test "the supervised limiter owns the table after a short-lived caller initializes the plug" do
+      limiter = Process.whereis(RateLimiter)
+
+      assert is_pid(limiter)
+      assert :ets.info(@table_name, :owner) == limiter
+
+      task =
+        Task.async(fn ->
+          RateLimiter.init(max_requests: 1, window_ms: 1_000, scope: :short_lived)
+        end)
+
+      assert %{
+               max_requests: 1,
+               window_ms: 1_000,
+               scope: :short_lived
+             } = Task.await(task)
+
+      refute Process.alive?(task.pid)
+      assert :ets.info(@table_name, :owner) == limiter
+    end
+  end
+
   describe "RateLimiter plug" do
     setup do
-      # Ensure the ETS table exists (init creates it if not present)
+      # Build Plug options; the application-supervised limiter owns the table.
       opts = RateLimiter.init(max_requests: 3, window_ms: 60_000, scope: :test)
 
       # Clean up any existing entries for our test scope before each test
@@ -123,7 +146,7 @@ defmodule SecretHub.Web.Plugs.RateLimiterTest do
 
   describe "cleanup_old_entries/1" do
     setup do
-      # Ensure the ETS table exists
+      # The application-supervised limiter owns the ETS table.
       _opts = RateLimiter.init(scope: :test_cleanup)
       cleanup_test_entries(:test_cleanup)
 
@@ -157,6 +180,86 @@ defmodule SecretHub.Web.Plugs.RateLimiterTest do
 
       # Clean up
       :ets.delete(@table_name, {:test_cleanup, "new-ip"})
+    end
+  end
+
+  describe "application certificate bootstrap route" do
+    setup do
+      cleanup_test_entries(:app_certificate_bootstrap)
+
+      on_exit(fn ->
+        cleanup_test_entries(:app_certificate_bootstrap)
+      end)
+
+      :ok
+    end
+
+    test "has exactly one public issuance route" do
+      routes =
+        SecretHub.Web.Router
+        |> Phoenix.Router.routes()
+        |> Enum.filter(&(&1.verb == :post and &1.path == "/v1/pki/app/issue"))
+
+      assert [
+               %{
+                 plug: SecretHub.Web.PKIController,
+                 plug_opts: :issue_app_certificate,
+                 verb: :post
+               }
+             ] = routes
+    end
+
+    test "is public and rate limited without a Vault-token bypass" do
+      remote_ip = {198, 51, 100, 42}
+
+      for request <- 1..5 do
+        response =
+          build_conn()
+          |> Map.put(:remote_ip, remote_ip)
+          |> put_req_header("x-forwarded-for", "203.0.113.#{request}")
+          |> post("/v1/pki/app/issue", %{})
+
+        assert json_response(response, 400) == %{"error" => "INVALID_REQUEST"}
+      end
+
+      response =
+        build_conn()
+        |> Map.put(:remote_ip, remote_ip)
+        |> put_req_header("x-forwarded-for", "203.0.113.250")
+        |> put_req_header("x-vault-token", "vault-token-bypass-attempt")
+        |> post("/v1/pki/app/issue", %{})
+
+      assert json_response(response, 429)["error"] == "Too many requests"
+    end
+
+    test "atomically limits concurrent requests from one remote peer" do
+      remote_ip = {198, 51, 100, 99}
+      test_process = self()
+
+      tasks =
+        for request <- 1..20 do
+          Task.async(fn ->
+            send(test_process, :ready)
+
+            receive do
+              :go ->
+                build_conn()
+                |> Map.put(:remote_ip, remote_ip)
+                |> put_req_header("x-forwarded-for", "203.0.113.#{request}")
+                |> post("/v1/pki/app/issue", %{})
+                |> Map.fetch!(:status)
+            end
+          end)
+        end
+
+      for _task <- tasks do
+        assert_receive :ready, 5_000
+      end
+
+      Enum.each(tasks, &send(&1.pid, :go))
+      statuses = Task.await_many(tasks, 15_000)
+
+      assert %{400 => 5, 429 => 15} = Enum.frequencies(statuses)
     end
   end
 

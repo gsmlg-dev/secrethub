@@ -15,7 +15,7 @@ defmodule SecretHub.Web.PKIController do
   use SecretHub.Web, :controller
   require Logger
 
-  alias SecretHub.Core.{Apps, PKI.CA, Repo}
+  alias SecretHub.Core.{Apps, PKI.AppCertificates, PKI.CA, Repo}
   alias SecretHub.Shared.Schemas.Certificate
 
   @doc """
@@ -494,15 +494,9 @@ defmodule SecretHub.Web.PKIController do
   Request body:
   ```json
   {
-    "app_id": "uuid",
-    "app_token": "hvs.CAESIJ...",
+    "token": "hvs.CAESIJ...",
     "csr": "-----BEGIN CERTIFICATE REQUEST-----...",
-    "ttl": 2592000,
-    "metadata": {
-      "hostname": "prod-payment-01",
-      "environment": "production",
-      "version": "v1.2.3"
-    }
+    "request_id": "uuid"
   }
   ```
 
@@ -514,69 +508,25 @@ defmodule SecretHub.Web.PKIController do
     "serial_number": "1A:2B:3C:4D",
     "expires_at": "2025-11-27T10:00:00Z",
     "issued_at": "2025-10-27T10:00:00Z",
-    "ttl": 2592000
+    "replayed": false
   }
   ```
   """
   def issue_app_certificate(
         conn,
-        %{
-          "app_id" => app_id,
-          "app_token" => app_token,
-          "csr" => csr_pem
-        } = params
-      ) do
-    Logger.info("App certificate issuance requested", app_id: app_id)
-
-    with {:ok, validated_app_id} <- Apps.validate_bootstrap_token(app_token),
-         :ok <- verify_app_id_match(app_id, validated_app_id),
-         {:ok, app} <- Apps.get_app(app_id),
-         {:ok, intermediate_ca} <- get_intermediate_ca(),
-         ttl <- Map.get(params, "ttl", 2_592_000),
-         validity_days <- div(ttl, 86_400),
-         {:ok, %{certificate: cert_pem, cert_record: cert_record}} <-
-           CA.sign_csr(csr_pem, intermediate_ca.id, :app_client, validity_days: validity_days),
-         {:ok, _app_cert} <-
-           Apps.associate_certificate(app.id, cert_record.id, cert_record.valid_until),
-         {:ok, ca_chain} <- CA.get_ca_chain() do
-      Logger.info("App certificate issued successfully",
-        app_id: app.id,
-        certificate_id: cert_record.id
+        %{"token" => token, "csr" => csr, "request_id" => request_id} = params
       )
+      when map_size(params) == 3 and is_binary(token) and byte_size(token) > 0 and
+             is_binary(csr) and byte_size(csr) > 0 and is_binary(request_id) and
+             byte_size(request_id) > 0 do
+    result = AppCertificates.issue_from_bootstrap(token, csr, request_id)
+    respond_to_app_certificate_issuance(conn, result)
+  end
 
-      conn
-      |> put_status(:ok)
-      |> json(%{
-        certificate: cert_pem,
-        ca_chain: String.split(ca_chain, "\n\n", trim: true),
-        serial_number: cert_record.serial_number,
-        expires_at: cert_record.valid_until,
-        issued_at: cert_record.valid_from,
-        ttl: ttl
-      })
-    else
-      {:error, :invalid_token} ->
-        conn
-        |> put_status(:unauthorized)
-        |> json(%{error: "Invalid or expired bootstrap token"})
-
-      {:error, :app_id_mismatch} ->
-        conn
-        |> put_status(:forbidden)
-        |> json(%{error: "App ID does not match token"})
-
-      {:error, :not_found} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Application not found"})
-
-      {:error, reason} ->
-        Logger.error("Failed to issue app certificate", reason: inspect(reason))
-
-        conn
-        |> put_status(:internal_server_error)
-        |> json(%{error: "Certificate issuance failed"})
-    end
+  def issue_app_certificate(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "INVALID_REQUEST"})
   end
 
   @doc """
@@ -694,12 +644,62 @@ defmodule SecretHub.Web.PKIController do
 
   # Private helper functions for app certificate endpoints
 
-  defp verify_app_id_match(provided_app_id, validated_app_id) do
-    if provided_app_id == validated_app_id do
-      :ok
-    else
-      {:error, :app_id_mismatch}
-    end
+  defp respond_to_app_certificate_issuance(
+         conn,
+         {:ok,
+          %{
+            certificate: certificate,
+            ca_chain: ca_chain,
+            cert_record: cert_record,
+            replayed: replayed
+          }}
+       ) do
+    json(conn, %{
+      certificate: certificate,
+      ca_chain: ca_chain,
+      serial_number: cert_record.serial_number,
+      expires_at: cert_record.valid_until,
+      issued_at: cert_record.valid_from,
+      replayed: replayed
+    })
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :invalid_request_id}) do
+    app_certificate_issuance_error(conn, :bad_request, "INVALID_REQUEST_ID")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :invalid_token}) do
+    app_certificate_issuance_error(conn, :unauthorized, "INVALID_TOKEN")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :idempotency_conflict}) do
+    app_certificate_issuance_error(conn, :conflict, "IDEMPOTENCY_CONFLICT")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :invalid_csr}) do
+    app_certificate_issuance_error(conn, :bad_request, "INVALID_CSR")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :unsupported_key}) do
+    app_certificate_issuance_error(conn, :bad_request, "UNSUPPORTED_KEY")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :invalid_agent_assignment}) do
+    app_certificate_issuance_error(conn, :forbidden, "INVALID_AGENT_ASSIGNMENT")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :ca_unavailable}) do
+    app_certificate_issuance_error(conn, :service_unavailable, "ISSUANCE_FAILED")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, _reason}) do
+    app_certificate_issuance_error(conn, :internal_server_error, "ISSUANCE_FAILED")
+  end
+
+  defp app_certificate_issuance_error(conn, status, error) do
+    conn
+    |> put_status(status)
+    |> json(%{error: error})
   end
 
   defp verify_current_certificate(_current_cert_pem, _app_id) do

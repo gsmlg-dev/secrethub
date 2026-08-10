@@ -198,7 +198,7 @@ defmodule SecretHub.Core.Apps do
     token_string = "#{@bootstrap_token_prefix}.#{Base.url_encode64(token_data, padding: false)}"
 
     # Hash token for storage
-    token_hash = hash_token(token_string)
+    token_hash = bootstrap_token_hash(token_string)
 
     # Create token record
     expires_at =
@@ -237,7 +237,7 @@ defmodule SecretHub.Core.Apps do
   Returns: {:ok, app_id} or {:error, reason}
   """
   def validate_bootstrap_token(token_string) do
-    token_hash = hash_token(token_string)
+    token_hash = bootstrap_token_hash(token_string)
 
     Repo.transaction(fn ->
       query =
@@ -600,7 +600,8 @@ defmodule SecretHub.Core.Apps do
     end
   end
 
-  defp hash_token(token) do
+  @doc false
+  def bootstrap_token_hash(token) when is_binary(token) do
     :crypto.hash(:sha256, token)
     |> Base.encode16(case: :lower)
   end

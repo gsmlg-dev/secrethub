@@ -21,9 +21,13 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 
+  @rate_limiter_table :rate_limiter_table
+
   setup do
     # Use shared mode for database access
     Sandbox.mode(Repo, {:shared, self()})
+    ensure_current_audit_partition!()
+    cleanup_rate_limit_scope(:auth)
 
     # Start SealState for E2E tests
     {:ok, _pid} = start_supervised(SealState)
@@ -75,10 +79,31 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
     token = json_response(conn, 200)["token"]
 
     on_exit(fn ->
+      cleanup_rate_limit_scope(:auth)
       Sandbox.mode(Repo, :manual)
     end)
 
     %{token: token, agent: agent, policy: policy}
+  end
+
+  defp ensure_current_audit_partition! do
+    today = Date.utc_today()
+    month = String.pad_leading(to_string(today.month), 2, "0")
+    partition_name = "audit_logs_y#{today.year}m#{month}"
+    from_date = %Date{today | day: 1}
+    to_date = Date.add(from_date, Date.days_in_month(from_date))
+
+    Repo.query!("""
+    CREATE TABLE IF NOT EXISTS #{partition_name} PARTITION OF audit_logs
+    FOR VALUES FROM ('#{Date.to_iso8601(from_date)}') TO ('#{Date.to_iso8601(to_date)}')
+    """)
+  end
+
+  defp cleanup_rate_limit_scope(scope) do
+    case :ets.whereis(@rate_limiter_table) do
+      :undefined -> :ok
+      _table -> :ets.match_delete(@rate_limiter_table, {{scope, :_}, :_, :_})
+    end
   end
 
   describe "E2E: Static secret management" do

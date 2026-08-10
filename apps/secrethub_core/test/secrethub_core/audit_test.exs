@@ -15,6 +15,7 @@ defmodule SecretHub.Core.AuditTest do
   use SecretHub.Core.DataCase, async: false
 
   alias SecretHub.Core.Audit
+  alias SecretHub.Shared.Schemas.AuditLog
 
   defp base_event(overrides \\ %{}) do
     Map.merge(
@@ -115,6 +116,151 @@ defmodule SecretHub.Core.AuditTest do
 
       assert log.access_granted == false
       assert log.denial_reason == "no matching policy"
+    end
+
+    test "rejects sensitive or unrecognized application-certificate issuance evidence" do
+      request_id = Ecto.UUID.generate()
+
+      assert {:error, changeset} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_issuance_allowed",
+                 actor_type: "app",
+                 actor_id: Ecto.UUID.generate(),
+                 access_granted: true,
+                 correlation_id: request_id,
+                 event_data: %{
+                   "app_certificate_issuance" => %{
+                     "agent_id" => Ecto.UUID.generate(),
+                     "app_id" => Ecto.UUID.generate(),
+                     "certificate_id" => Ecto.UUID.generate(),
+                     "request_id" => request_id,
+                     "result_code" => "issued",
+                     "token" => "must-not-be-persisted",
+                     "csr" => "must-not-be-persisted"
+                   }
+                 }
+               })
+
+      assert "must contain exactly the sanitized application certificate issuance evidence" in errors_on(
+               changeset
+             ).event_data
+    end
+
+    test "accepts exact sanitized application-certificate replay evidence" do
+      request_id = Ecto.UUID.generate()
+      app_id = Ecto.UUID.generate()
+      agent_id = Ecto.UUID.generate()
+      certificate_id = Ecto.UUID.generate()
+
+      assert {:ok, replayed} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_issuance_allowed",
+                 actor_type: "app",
+                 actor_id: app_id,
+                 app_id: app_id,
+                 agent_id: agent_id,
+                 access_granted: true,
+                 correlation_id: request_id,
+                 event_data: %{
+                   "app_certificate_issuance" => %{
+                     "agent_id" => agent_id,
+                     "app_id" => app_id,
+                     "certificate_id" => certificate_id,
+                     "request_id" => request_id,
+                     "result_code" => "replayed"
+                   }
+                 }
+               })
+
+      assert replayed.event_data == %{
+               "app_certificate_issuance" => %{
+                 "agent_id" => agent_id,
+                 "app_id" => app_id,
+                 "certificate_id" => certificate_id,
+                 "request_id" => request_id,
+                 "result_code" => "replayed"
+               }
+             }
+    end
+
+    test "accepts only the exact sanitized application-certificate lifecycle events" do
+      request_id = Ecto.UUID.generate()
+      app_id = Ecto.UUID.generate()
+      agent_id = Ecto.UUID.generate()
+      certificate_id = Ecto.UUID.generate()
+
+      assert {:ok, allowed} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_issuance_allowed",
+                 actor_type: "app",
+                 actor_id: app_id,
+                 app_id: app_id,
+                 agent_id: agent_id,
+                 access_granted: true,
+                 correlation_id: request_id,
+                 event_data: %{
+                   app_certificate_issuance: %{
+                     agent_id: agent_id,
+                     app_id: app_id,
+                     certificate_id: certificate_id,
+                     request_id: request_id,
+                     result_code: "issued"
+                   }
+                 }
+               })
+
+      assert allowed.event_data == %{
+               "app_certificate_issuance" => %{
+                 "agent_id" => agent_id,
+                 "app_id" => app_id,
+                 "certificate_id" => certificate_id,
+                 "request_id" => request_id,
+                 "result_code" => "issued"
+               }
+             }
+
+      assert {:ok, denied} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_issuance_denied",
+                 actor_type: "app_bootstrap",
+                 access_granted: false,
+                 denial_reason: "invalid_token",
+                 correlation_id: request_id,
+                 event_data: %{
+                   "app_certificate_issuance" => %{
+                     "request_id" => request_id,
+                     "result_code" => "invalid_token"
+                   }
+                 }
+               })
+
+      assert denied.event_data["app_certificate_issuance"]["result_code"] == "invalid_token"
+
+      assert {:ok, failed} =
+               Audit.log_event(%{
+                 event_type: "auth.app_certificate_issuance_failed",
+                 actor_type: "app_bootstrap",
+                 access_granted: false,
+                 denial_reason: "issuance_failed",
+                 correlation_id: request_id,
+                 event_data: %{
+                   "app_certificate_issuance" => %{
+                     "request_id" => request_id,
+                     "result_code" => "issuance_failed"
+                   }
+                 }
+               })
+
+      assert failed.event_data["app_certificate_issuance"]["result_code"] == "issuance_failed"
+
+      assert Enum.filter(
+               AuditLog.valid_event_types(),
+               &String.starts_with?(&1, "auth.app_certificate_issuance_")
+             ) == [
+               "auth.app_certificate_issuance_allowed",
+               "auth.app_certificate_issuance_denied",
+               "auth.app_certificate_issuance_failed"
+             ]
     end
   end
 
