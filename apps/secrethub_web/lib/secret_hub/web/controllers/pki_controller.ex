@@ -15,8 +15,10 @@ defmodule SecretHub.Web.PKIController do
   use SecretHub.Web, :controller
   require Logger
 
-  alias SecretHub.Core.{Apps, PKI.CA, Repo}
+  alias SecretHub.Core.{Apps, PKI.AppCertificates, PKI.CA, Repo}
   alias SecretHub.Shared.Schemas.Certificate
+
+  @app_certificate_revocation_reasons ~w(superseded compromised operator_revoked app_suspended)
 
   @doc """
   POST /v1/pki/ca/root/generate
@@ -201,10 +203,15 @@ defmodule SecretHub.Web.PKIController do
         |> put_status(:bad_request)
         |> json(%{error: "ca_id is required"})
 
+      cert_type == "app_client" ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "FORBIDDEN"})
+
       not valid_cert_type?(cert_type) ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: "cert_type must be one of: agent_client, app_client, admin_client"})
+        |> json(%{error: "cert_type must be one of: agent_client, admin_client"})
 
       true ->
         cert_type_atom = String.to_existing_atom(cert_type)
@@ -375,6 +382,7 @@ defmodule SecretHub.Web.PKIController do
     reason = Map.get(params, "reason", "unspecified")
 
     with {:ok, cert} <- fetch_certificate(id),
+         :ok <- allow_generic_certificate_revocation(cert),
          :ok <- check_not_revoked(cert),
          {:ok, updated_cert} <- do_revoke_certificate(cert, reason) do
       Logger.info("Certificate revoked: #{cert.common_name}")
@@ -395,6 +403,11 @@ defmodule SecretHub.Web.PKIController do
         conn
         |> put_status(:bad_request)
         |> json(%{error: "Certificate is already revoked"})
+
+      {:error, :forbidden} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "FORBIDDEN"})
 
       {:error, %Ecto.Changeset{} = changeset} ->
         conn
@@ -429,6 +442,11 @@ defmodule SecretHub.Web.PKIController do
 
   defp check_not_revoked(%{revoked: true}), do: {:error, :already_revoked}
   defp check_not_revoked(_cert), do: :ok
+
+  defp allow_generic_certificate_revocation(%Certificate{cert_type: :app_client}),
+    do: {:error, :forbidden}
+
+  defp allow_generic_certificate_revocation(%Certificate{}), do: :ok
 
   defp do_revoke_certificate(cert, reason), do: CA.revoke_certificate(cert.id, reason)
 
@@ -483,7 +501,7 @@ defmodule SecretHub.Web.PKIController do
   end
 
   defp valid_cert_type?(cert_type) do
-    cert_type in ["agent_client", "app_client", "admin_client"]
+    cert_type in ["agent_client", "admin_client"]
   end
 
   @doc """
@@ -494,15 +512,9 @@ defmodule SecretHub.Web.PKIController do
   Request body:
   ```json
   {
-    "app_id": "uuid",
-    "app_token": "hvs.CAESIJ...",
+    "token": "hvs.CAESIJ...",
     "csr": "-----BEGIN CERTIFICATE REQUEST-----...",
-    "ttl": 2592000,
-    "metadata": {
-      "hostname": "prod-payment-01",
-      "environment": "production",
-      "version": "v1.2.3"
-    }
+    "request_id": "uuid"
   }
   ```
 
@@ -514,83 +526,41 @@ defmodule SecretHub.Web.PKIController do
     "serial_number": "1A:2B:3C:4D",
     "expires_at": "2025-11-27T10:00:00Z",
     "issued_at": "2025-10-27T10:00:00Z",
-    "ttl": 2592000
+    "replayed": false
   }
   ```
   """
   def issue_app_certificate(
         conn,
-        %{
-          "app_id" => app_id,
-          "app_token" => app_token,
-          "csr" => csr_pem
-        } = params
-      ) do
-    Logger.info("App certificate issuance requested", app_id: app_id)
-
-    with {:ok, validated_app_id} <- Apps.validate_bootstrap_token(app_token),
-         :ok <- verify_app_id_match(app_id, validated_app_id),
-         {:ok, app} <- Apps.get_app(app_id),
-         {:ok, intermediate_ca} <- get_intermediate_ca(),
-         ttl <- Map.get(params, "ttl", 2_592_000),
-         validity_days <- div(ttl, 86_400),
-         {:ok, %{certificate: cert_pem, cert_record: cert_record}} <-
-           CA.sign_csr(csr_pem, intermediate_ca.id, :app_client, validity_days: validity_days),
-         {:ok, _app_cert} <-
-           Apps.associate_certificate(app.id, cert_record.id, cert_record.valid_until),
-         {:ok, ca_chain} <- CA.get_ca_chain() do
-      Logger.info("App certificate issued successfully",
-        app_id: app.id,
-        certificate_id: cert_record.id
+        %{"token" => token, "csr" => csr, "request_id" => request_id} = params
       )
+      when map_size(params) == 3 and is_binary(token) and byte_size(token) > 0 and
+             is_binary(csr) and byte_size(csr) > 0 and is_binary(request_id) and
+             byte_size(request_id) > 0 do
+    result = AppCertificates.issue_from_bootstrap(token, csr, request_id)
+    respond_to_app_certificate_issuance(conn, result)
+  end
 
-      conn
-      |> put_status(:ok)
-      |> json(%{
-        certificate: cert_pem,
-        ca_chain: String.split(ca_chain, "\n\n", trim: true),
-        serial_number: cert_record.serial_number,
-        expires_at: cert_record.valid_until,
-        issued_at: cert_record.valid_from,
-        ttl: ttl
-      })
-    else
-      {:error, :invalid_token} ->
-        conn
-        |> put_status(:unauthorized)
-        |> json(%{error: "Invalid or expired bootstrap token"})
-
-      {:error, :app_id_mismatch} ->
-        conn
-        |> put_status(:forbidden)
-        |> json(%{error: "App ID does not match token"})
-
-      {:error, :not_found} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Application not found"})
-
-      {:error, reason} ->
-        Logger.error("Failed to issue app certificate", reason: inspect(reason))
-
-        conn
-        |> put_status(:internal_server_error)
-        |> json(%{error: "Certificate issuance failed"})
-    end
+  def issue_app_certificate(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "INVALID_REQUEST"})
   end
 
   @doc """
   POST /v1/pki/app/renew
 
-  Renew an application certificate.
+  Renew an application certificate using a current-key possession proof.
 
   Request body:
   ```json
   {
     "app_id": "uuid",
-    "current_cert": "-----BEGIN CERTIFICATE-----...",
-    "csr": "-----BEGIN CERTIFICATE REQUEST-----...",
-    "ttl": 2592000
+    "current_fingerprint": "lowercase DER SHA-256 hex",
+    "csr": "base64 PEM bytes",
+    "request_id": "uuid",
+    "signature_algorithm": "rsa-pss-sha256",
+    "proof": "base64 signature bytes"
   }
   ```
   """
@@ -598,55 +568,71 @@ defmodule SecretHub.Web.PKIController do
         conn,
         %{
           "app_id" => app_id,
-          "current_cert" => current_cert_pem,
-          "csr" => csr_pem
+          "current_fingerprint" => current_fingerprint,
+          "csr" => encoded_csr,
+          "request_id" => request_id,
+          "signature_algorithm" => signature_algorithm
         } = params
-      ) do
-    Logger.info("App certificate renewal requested", app_id: app_id)
-
-    with {:ok, app} <- Apps.get_app(app_id),
-         :ok <- verify_current_certificate(current_cert_pem, app_id),
-         {:ok, intermediate_ca} <- get_intermediate_ca(),
-         ttl <- Map.get(params, "ttl", 2_592_000),
-         validity_days <- div(ttl, 86_400),
-         {:ok, %{certificate: cert_pem, cert_record: cert_record}} <-
-           CA.sign_csr(csr_pem, intermediate_ca.id, :app_client, validity_days: validity_days),
-         {:ok, _app_cert} <-
-           Apps.associate_certificate(app.id, cert_record.id, cert_record.valid_until),
-         {:ok, ca_chain} <- CA.get_ca_chain() do
-      Logger.info("App certificate renewed successfully",
-        app_id: app.id,
-        certificate_id: cert_record.id
       )
+      when map_size(params) == 5 and is_binary(app_id) and
+             is_binary(current_fingerprint) and is_binary(encoded_csr) and
+             is_binary(request_id) and is_binary(signature_algorithm) do
+    app_certificate_renewal_error(conn, :unauthorized, "PROOF_REQUIRED")
+  end
 
-      conn
-      |> put_status(:ok)
-      |> json(%{
-        certificate: cert_pem,
-        ca_chain: String.split(ca_chain, "\n\n", trim: true),
-        serial_number: cert_record.serial_number,
-        expires_at: cert_record.valid_until,
-        issued_at: cert_record.valid_from,
-        ttl: ttl
+  def renew_app_certificate(
+        conn,
+        %{
+          "app_id" => app_id,
+          "current_fingerprint" => current_fingerprint,
+          "csr" => encoded_csr,
+          "request_id" => request_id,
+          "signature_algorithm" => signature_algorithm,
+          "proof" => proof
+        } = params
+      )
+      when map_size(params) == 6 and is_binary(app_id) and
+             is_binary(current_fingerprint) and is_binary(encoded_csr) and
+             is_binary(request_id) and is_binary(signature_algorithm) and
+             (not is_binary(proof) or byte_size(proof) == 0) do
+    app_certificate_renewal_error(conn, :unauthorized, "PROOF_REQUIRED")
+  end
+
+  def renew_app_certificate(
+        conn,
+        %{
+          "app_id" => app_id,
+          "current_fingerprint" => current_fingerprint,
+          "csr" => encoded_csr,
+          "request_id" => request_id,
+          "signature_algorithm" => signature_algorithm,
+          "proof" => encoded_proof
+        } = params
+      )
+      when map_size(params) == 6 and is_binary(app_id) and byte_size(app_id) > 0 and
+             is_binary(current_fingerprint) and byte_size(current_fingerprint) > 0 and
+             is_binary(encoded_csr) and byte_size(encoded_csr) > 0 and
+             is_binary(request_id) and byte_size(request_id) > 0 and
+             is_binary(signature_algorithm) and byte_size(signature_algorithm) > 0 and
+             is_binary(encoded_proof) and byte_size(encoded_proof) > 0 do
+    with {:ok, csr} <- decode_padded_base64(encoded_csr),
+         {:ok, proof} <- decode_padded_base64(encoded_proof) do
+      AppCertificates.renew(%{
+        app_id: app_id,
+        current_fingerprint: current_fingerprint,
+        csr: csr,
+        request_id: request_id,
+        signature_algorithm: signature_algorithm,
+        proof: proof
       })
+      |> then(&respond_to_app_certificate_renewal(conn, &1))
     else
-      {:error, :not_found} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Application not found"})
-
-      {:error, :invalid_certificate} ->
-        conn
-        |> put_status(:unauthorized)
-        |> json(%{error: "Invalid current certificate"})
-
-      {:error, reason} ->
-        Logger.error("Failed to renew app certificate", reason: inspect(reason))
-
-        conn
-        |> put_status(:internal_server_error)
-        |> json(%{error: "Certificate renewal failed"})
+      :error -> app_certificate_renewal_error(conn, :bad_request, "INVALID_REQUEST")
     end
+  end
+
+  def renew_app_certificate(conn, _params) do
+    app_certificate_renewal_error(conn, :bad_request, "INVALID_REQUEST")
   end
 
   @doc """
@@ -658,73 +644,206 @@ defmodule SecretHub.Web.PKIController do
   ```json
   {
     "app_id": "uuid",
-    "reason": "key_compromise"
+    "reason": "operator_revoked"
   }
   ```
   """
-  def revoke_app_certificate(conn, %{"app_id" => app_id} = params) do
-    reason = Map.get(params, "reason", "unspecified")
+  def revoke_app_certificate(conn, %{"app_id" => app_id} = params)
+      when map_size(params) == 1 and is_binary(app_id) and byte_size(app_id) > 0 do
+    perform_app_certificate_revocation(conn, app_id, "operator_revoked")
+  end
 
-    Logger.info("App certificate revocation requested", app_id: app_id, reason: reason)
+  def revoke_app_certificate(
+        conn,
+        %{"app_id" => app_id, "reason" => reason} = params
+      )
+      when map_size(params) == 2 and is_binary(app_id) and byte_size(app_id) > 0 and
+             reason in @app_certificate_revocation_reasons do
+    perform_app_certificate_revocation(conn, app_id, reason)
+  end
 
-    with {:ok, _app} <- Apps.get_app(app_id),
-         {:ok, count} <- Apps.revoke_all_app_certificates(app_id, reason) do
-      Logger.info("App certificates revoked", app_id: app_id, count: count)
+  def revoke_app_certificate(
+        conn,
+        %{"app_id" => app_id, "reason" => _reason} = params
+      )
+      when map_size(params) == 2 and is_binary(app_id) and byte_size(app_id) > 0 do
+    app_certificate_revocation_error(conn, :bad_request, "INVALID_REVOCATION_REASON")
+  end
 
-      conn
-      |> put_status(:ok)
-      |> json(%{
-        message: "Application certificates revoked",
-        revoked_count: count
-      })
-    else
+  def revoke_app_certificate(conn, _params) do
+    app_certificate_revocation_error(conn, :bad_request, "INVALID_REQUEST")
+  end
+
+  defp perform_app_certificate_revocation(conn, app_id, reason) do
+    case Apps.revoke_all_app_certificates(app_id, reason) do
+      {:ok, count} ->
+        json(conn, %{
+          message: "Application certificates revoked",
+          revoked_count: count
+        })
+
       {:error, :not_found} ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Application not found"})
+        app_certificate_revocation_error(conn, :not_found, "APPLICATION_NOT_FOUND")
 
-      {:error, reason} ->
-        Logger.error("Failed to revoke app certificate", reason: inspect(reason))
+      {:error, :invalid_reason} ->
+        app_certificate_revocation_error(conn, :bad_request, "INVALID_REVOCATION_REASON")
 
-        conn
-        |> put_status(:internal_server_error)
-        |> json(%{error: "Certificate revocation failed"})
+      {:error, _reason} ->
+        app_certificate_revocation_error(conn, :internal_server_error, "REVOCATION_FAILED")
     end
+  end
+
+  defp app_certificate_revocation_error(conn, status, error) do
+    conn
+    |> put_status(status)
+    |> json(%{error: error})
   end
 
   # Private helper functions for app certificate endpoints
 
-  defp verify_app_id_match(provided_app_id, validated_app_id) do
-    if provided_app_id == validated_app_id do
-      :ok
-    else
-      {:error, :app_id_mismatch}
-    end
+  defp respond_to_app_certificate_issuance(
+         conn,
+         {:ok,
+          %{
+            certificate: certificate,
+            ca_chain: ca_chain,
+            cert_record: cert_record,
+            replayed: replayed
+          }}
+       ) do
+    json(conn, %{
+      certificate: certificate,
+      ca_chain: ca_chain,
+      serial_number: cert_record.serial_number,
+      expires_at: cert_record.valid_until,
+      issued_at: cert_record.valid_from,
+      replayed: replayed
+    })
   end
 
-  defp verify_current_certificate(_current_cert_pem, _app_id) do
-    # TODO: Implement certificate verification
-    # 1. Parse certificate
-    # 2. Verify it's not revoked
-    # 3. Verify it's issued to this app_id
-    # 4. Verify it's still valid
-    :ok
+  defp respond_to_app_certificate_issuance(conn, {:error, :invalid_request_id}) do
+    app_certificate_issuance_error(conn, :bad_request, "INVALID_REQUEST_ID")
   end
 
-  defp get_intermediate_ca do
-    # Get the intermediate CA for signing client certificates
-    import Ecto.Query
+  defp respond_to_app_certificate_issuance(conn, {:error, :invalid_token}) do
+    app_certificate_issuance_error(conn, :unauthorized, "INVALID_TOKEN")
+  end
 
-    query =
-      from(c in Certificate,
-        where: c.cert_type == "intermediate_ca" and c.revoked == false,
-        order_by: [desc: c.inserted_at],
-        limit: 1
-      )
+  defp respond_to_app_certificate_issuance(conn, {:error, :idempotency_conflict}) do
+    app_certificate_issuance_error(conn, :conflict, "IDEMPOTENCY_CONFLICT")
+  end
 
-    case Repo.one(query) do
-      nil -> {:error, :no_intermediate_ca}
-      cert -> {:ok, cert}
+  defp respond_to_app_certificate_issuance(conn, {:error, :invalid_csr}) do
+    app_certificate_issuance_error(conn, :bad_request, "INVALID_CSR")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :unsupported_key}) do
+    app_certificate_issuance_error(conn, :bad_request, "UNSUPPORTED_KEY")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :invalid_agent_assignment}) do
+    app_certificate_issuance_error(conn, :forbidden, "INVALID_AGENT_ASSIGNMENT")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, :ca_unavailable}) do
+    app_certificate_issuance_error(conn, :service_unavailable, "ISSUANCE_FAILED")
+  end
+
+  defp respond_to_app_certificate_issuance(conn, {:error, _reason}) do
+    app_certificate_issuance_error(conn, :internal_server_error, "ISSUANCE_FAILED")
+  end
+
+  defp app_certificate_issuance_error(conn, status, error) do
+    conn
+    |> put_status(status)
+    |> json(%{error: error})
+  end
+
+  defp respond_to_app_certificate_renewal(
+         conn,
+         {:ok,
+          %{
+            certificate: certificate,
+            ca_chain: ca_chain,
+            cert_record: cert_record,
+            replayed: replayed
+          }}
+       ) do
+    json(conn, %{
+      certificate: certificate,
+      ca_chain: ca_chain,
+      serial_number: cert_record.serial_number,
+      expires_at: cert_record.valid_until,
+      issued_at: cert_record.valid_from,
+      replayed: replayed
+    })
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :invalid_request}) do
+    app_certificate_renewal_error(conn, :bad_request, "INVALID_REQUEST")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :invalid_app_id}) do
+    app_certificate_renewal_error(conn, :bad_request, "INVALID_REQUEST")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :invalid_fingerprint}) do
+    app_certificate_renewal_error(conn, :unauthorized, "INVALID_CERTIFICATE")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :invalid_request_id}) do
+    app_certificate_renewal_error(conn, :bad_request, "INVALID_REQUEST_ID")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :unsupported_algorithm}) do
+    app_certificate_renewal_error(conn, :unauthorized, "PROOF_FAILED")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :invalid_csr}) do
+    app_certificate_renewal_error(conn, :bad_request, "INVALID_CSR")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :unsupported_key}) do
+    app_certificate_renewal_error(conn, :bad_request, "UNSUPPORTED_KEY")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :invalid_proof}) do
+    app_certificate_renewal_error(conn, :unauthorized, "PROOF_FAILED")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :invalid_current_certificate}) do
+    app_certificate_renewal_error(conn, :unauthorized, "INVALID_CERTIFICATE")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :invalid_agent_assignment}) do
+    app_certificate_renewal_error(conn, :forbidden, "FORBIDDEN")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :idempotency_conflict}) do
+    app_certificate_renewal_error(conn, :conflict, "IDEMPOTENCY_CONFLICT")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, :ca_unavailable}) do
+    app_certificate_renewal_error(conn, :service_unavailable, "UNAVAILABLE")
+  end
+
+  defp respond_to_app_certificate_renewal(conn, {:error, _reason}) do
+    app_certificate_renewal_error(conn, :internal_server_error, "UNAVAILABLE")
+  end
+
+  defp app_certificate_renewal_error(conn, status, error) do
+    conn
+    |> put_status(status)
+    |> json(%{error: error})
+  end
+
+  defp decode_padded_base64(value) when is_binary(value) do
+    case Base.decode64(value) do
+      {:ok, decoded} when byte_size(decoded) > 0 ->
+        if Base.encode64(decoded) == value, do: {:ok, decoded}, else: :error
+
+      _other ->
+        :error
     end
   end
 end

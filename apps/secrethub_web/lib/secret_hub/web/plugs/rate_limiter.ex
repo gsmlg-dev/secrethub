@@ -10,6 +10,8 @@ defmodule SecretHub.Web.Plugs.RateLimiter do
   - scope: Identifier for this rate limiter (e.g., :login, :api)
   """
 
+  use GenServer
+
   import Plug.Conn
   require Logger
 
@@ -17,16 +19,24 @@ defmodule SecretHub.Web.Plugs.RateLimiter do
 
   @table_name :rate_limiter_table
 
-  def init(opts) do
-    # Ensure ETS table exists
-    case :ets.whereis(@table_name) do
-      :undefined ->
-        :ets.new(@table_name, [:set, :public, :named_table, read_concurrency: true])
+  def start_link(:server) do
+    GenServer.start_link(__MODULE__, :server, name: __MODULE__)
+  end
 
-      _ ->
-        :ok
-    end
+  @impl GenServer
+  def init(:server) do
+    table =
+      :ets.new(@table_name, [
+        :set,
+        :public,
+        :named_table,
+        read_concurrency: true
+      ])
 
+    {:ok, table}
+  end
+
+  def init(opts) when is_list(opts) do
     %{
       max_requests: Keyword.get(opts, :max_requests, 10),
       window_ms: Keyword.get(opts, :window_ms, 60_000),
@@ -78,35 +88,51 @@ defmodule SecretHub.Web.Plugs.RateLimiter do
   end
 
   defp check_rate_limit(key, now, opts) do
-    case :ets.lookup(@table_name, key) do
-      [] ->
-        # First request
-        :ets.insert(@table_name, {key, now, 1})
-        :ok
+    GenServer.call(__MODULE__, {:check_rate_limit, key, now, opts})
+  end
 
-      [{^key, first_request_time, count}] ->
-        window_start = now - opts.window_ms
+  @impl GenServer
+  def handle_call({:check_rate_limit, key, now, opts}, _from, table) do
+    result =
+      case :ets.lookup(table, key) do
+        [] ->
+          :ets.insert(table, {key, now, 1})
+          :ok
 
-        cond do
-          # Window has passed, reset counter
-          first_request_time < window_start ->
-            :ets.insert(@table_name, {key, now, 1})
-            :ok
+        [{^key, first_request_time, count}] ->
+          window_start = now - opts.window_ms
 
-          # Within window and under limit
-          count < opts.max_requests ->
-            :ets.update_counter(@table_name, key, {3, 1})
-            :ok
+          cond do
+            first_request_time < window_start ->
+              :ets.insert(table, {key, now, 1})
+              :ok
 
-          # Rate limit exceeded
-          true ->
-            time_until_reset = opts.window_ms - (now - first_request_time)
-            # Convert to seconds, round up
-            retry_after = div(time_until_reset, 1000) + 1
+            count < opts.max_requests ->
+              :ets.update_counter(table, key, {3, 1})
+              :ok
 
-            {:error, :rate_limited, retry_after}
-        end
-    end
+            true ->
+              time_until_reset = opts.window_ms - (now - first_request_time)
+              retry_after = div(time_until_reset, 1000) + 1
+
+              {:error, :rate_limited, retry_after}
+          end
+      end
+
+    {:reply, result, table}
+  end
+
+  @impl GenServer
+  def handle_call({:cleanup_old_entries, cutoff}, _from, table) do
+    match_spec = [
+      {
+        {:"$1", :"$2", :"$3"},
+        [{:<, :"$2", cutoff}],
+        [true]
+      }
+    ]
+
+    {:reply, :ets.select_delete(table, match_spec), table}
   end
 
   defp get_client_ip(conn) do
@@ -132,16 +158,8 @@ defmodule SecretHub.Web.Plugs.RateLimiter do
   def cleanup_old_entries(max_age_ms \\ 3_600_000) do
     now = System.monotonic_time(:millisecond)
     cutoff = now - max_age_ms
+    deleted = GenServer.call(__MODULE__, {:cleanup_old_entries, cutoff})
 
-    match_spec = [
-      {
-        {:"$1", :"$2", :"$3"},
-        [{:<, :"$2", cutoff}],
-        [true]
-      }
-    ]
-
-    deleted = :ets.select_delete(@table_name, match_spec)
     Logger.debug("Cleaned up rate limiter entries", deleted: deleted)
 
     {:ok, deleted}

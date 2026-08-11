@@ -21,6 +21,11 @@ defmodule SecretHub.Web.Router do
     @admin_auth_controller.require_admin_auth(conn, [])
   end
 
+  defp discard_untrusted_forwarded_for(conn, _opts) do
+    # Forwarded IP is untrusted until normalized by a trusted-proxy layer.
+    Plug.Conn.delete_req_header(conn, "x-forwarded-for")
+  end
+
   pipeline :admin_browser do
     plug :browser
     plug :require_admin_auth
@@ -28,6 +33,8 @@ defmodule SecretHub.Web.Router do
 
   pipeline :admin_api do
     plug :api
+    plug :fetch_session
+    plug :fetch_live_flash
     plug :require_admin_auth
   end
 
@@ -64,6 +71,26 @@ defmodule SecretHub.Web.Router do
       max_requests: 30,
       window_ms: 60_000,
       scope: :agent_enrollment
+  end
+
+  pipeline :app_certificate_bootstrap_api do
+    plug :api
+    plug :discard_untrusted_forwarded_for
+
+    plug SecretHub.Web.Plugs.RateLimiter,
+      max_requests: 5,
+      window_ms: 60_000,
+      scope: :app_certificate_bootstrap
+  end
+
+  pipeline :app_certificate_renewal_api do
+    plug :api
+    plug :discard_untrusted_forwarded_for
+
+    plug SecretHub.Web.Plugs.RateLimiter,
+      max_requests: 5,
+      window_ms: 60_000,
+      scope: :app_certificate_renewal
   end
 
   scope "/", SecretHub.Web do
@@ -267,6 +294,30 @@ defmodule SecretHub.Web.Router do
     post "/certificate/renew", AgentCertController, :renew
   end
 
+  # Application certificate bootstrap (public, strictly rate limited)
+  scope "/v1/pki/app", SecretHub.Web do
+    pipe_through :app_certificate_bootstrap_api
+
+    post "/issue", PKIController, :issue_app_certificate
+  end
+
+  # Application certificate renewal (public, current-key proof, rate limited)
+  scope "/v1/pki/app", SecretHub.Web do
+    pipe_through :app_certificate_renewal_api
+
+    post "/renew", PKIController, :renew_app_certificate
+  end
+
+  # PKI trust mutations and application certificate revocation (operator/admin only)
+  scope "/v1/pki", SecretHub.Web do
+    pipe_through :admin_api
+
+    post "/ca/root/generate", PKIController, :generate_root_ca
+    post "/ca/intermediate/generate", PKIController, :generate_intermediate_ca
+    post "/sign-request", PKIController, :sign_csr
+    post "/app/revoke", PKIController, :revoke_app_certificate
+  end
+
   # Dynamic Secrets API routes (token-authenticated)
   scope "/v1/secrets/dynamic", SecretHub.Web do
     pipe_through :vault_token
@@ -286,42 +337,33 @@ defmodule SecretHub.Web.Router do
     get "/stats", DynamicSecretsController, :stats
   end
 
-  # PKI API routes (token-authenticated)
+  # PKI read and non-application revocation routes (token-authenticated)
   scope "/v1/pki", SecretHub.Web do
     pipe_through :vault_token
 
-    # CA generation
-    post "/ca/root/generate", PKIController, :generate_root_ca
-    post "/ca/intermediate/generate", PKIController, :generate_intermediate_ca
-
     # Certificate operations
-    post "/sign-request", PKIController, :sign_csr
     get "/certificates", PKIController, :list_certificates
     get "/certificates/:id", PKIController, :get_certificate
     post "/certificates/:id/revoke", PKIController, :revoke_certificate
-
-    # Application certificate operations
-    post "/app/issue", PKIController, :issue_app_certificate
-    post "/app/renew", PKIController, :renew_app_certificate
-    post "/app/revoke", PKIController, :revoke_app_certificate
   end
 
-  # Application management API routes (token-authenticated)
+  # Application lifecycle mutations (operator/admin only)
+  scope "/v1/apps", SecretHub.Web do
+    pipe_through :admin_api
+
+    post "/", AppsController, :register_app
+    put "/:id", AppsController, :update_app
+    delete "/:id", AppsController, :delete_app
+    post "/:id/suspend", AppsController, :suspend_app
+    post "/:id/activate", AppsController, :activate_app
+  end
+
+  # Application management reads (token-authenticated)
   scope "/v1/apps", SecretHub.Web do
     pipe_through :vault_token
 
-    # Application registration and management
-    post "/", AppsController, :register_app
     get "/", AppsController, :list_apps
     get "/:id", AppsController, :get_app
-    put "/:id", AppsController, :update_app
-    delete "/:id", AppsController, :delete_app
-
-    # Application lifecycle
-    post "/:id/suspend", AppsController, :suspend_app
-    post "/:id/activate", AppsController, :activate_app
-
-    # Application certificates
     get "/:id/certificates", AppsController, :list_certificates
   end
 

@@ -198,7 +198,7 @@ defmodule SecretHub.Core.Apps do
     token_string = "#{@bootstrap_token_prefix}.#{Base.url_encode64(token_data, padding: false)}"
 
     # Hash token for storage
-    token_hash = hash_token(token_string)
+    token_hash = bootstrap_token_hash(token_string)
 
     # Create token record
     expires_at =
@@ -237,7 +237,7 @@ defmodule SecretHub.Core.Apps do
   Returns: {:ok, app_id} or {:error, reason}
   """
   def validate_bootstrap_token(token_string) do
-    token_hash = hash_token(token_string)
+    token_hash = bootstrap_token_hash(token_string)
 
     Repo.transaction(fn ->
       query =
@@ -329,58 +329,15 @@ defmodule SecretHub.Core.Apps do
   @doc """
   Revoke an application certificate.
   """
-  def revoke_app_certificate(app_id, certificate_id, reason \\ "unspecified") do
-    query =
-      from(ac in AppCertificate,
-        where: ac.app_id == ^app_id,
-        where: ac.certificate_id == ^certificate_id,
-        where: is_nil(ac.revoked_at)
-      )
-
-    case Repo.one(query) do
-      nil ->
-        {:error, :not_found}
-
-      app_cert ->
-        changeset =
-          AppCertificate.changeset(app_cert, %{
-            revoked_at: DateTime.utc_now() |> DateTime.truncate(:second),
-            revocation_reason: reason
-          })
-
-        case Repo.update(changeset) do
-          {:ok, updated_cert} ->
-            Logger.info("Application certificate revoked",
-              app_id: app_id,
-              certificate_id: certificate_id,
-              reason: reason
-            )
-
-            {:ok, updated_cert}
-
-          {:error, changeset} ->
-            {:error, changeset}
-        end
-    end
+  def revoke_app_certificate(app_id, certificate_id, reason \\ "operator_revoked") do
+    SecretHub.Core.PKI.AppCertificates.revoke(app_id, certificate_id, reason)
   end
 
   @doc """
   Revoke all certificates for an application.
   """
-  def revoke_all_app_certificates(app_id, reason \\ "app_deleted") do
-    query =
-      from(ac in AppCertificate,
-        where: ac.app_id == ^app_id,
-        where: is_nil(ac.revoked_at)
-      )
-
-    certs = Repo.all(query)
-
-    Enum.each(certs, fn cert ->
-      revoke_app_certificate(app_id, cert.certificate_id, reason)
-    end)
-
-    {:ok, length(certs)}
+  def revoke_all_app_certificates(app_id, reason \\ "operator_revoked") do
+    SecretHub.Core.PKI.AppCertificates.revoke_all(app_id, reason)
   end
 
   ## Statistics
@@ -559,24 +516,28 @@ defmodule SecretHub.Core.Apps do
   ## Private Helpers
 
   defp perform_app_deletion(app, id) do
-    revoke_all_app_certificates(id)
+    case revoke_all_app_certificates(id, "operator_revoked") do
+      {:ok, _count} ->
+        delete_changeset =
+          app
+          |> Ecto.Changeset.change()
+          |> Ecto.Changeset.no_assoc_constraint(:certificate_renewals)
 
-    delete_changeset =
-      app
-      |> Ecto.Changeset.change()
-      |> Ecto.Changeset.no_assoc_constraint(:certificate_renewals)
+        case Repo.delete(delete_changeset) do
+          {:ok, deleted_app} ->
+            Logger.info("Application deleted",
+              app_id: deleted_app.id,
+              app_name: deleted_app.name
+            )
 
-    case Repo.delete(delete_changeset) do
-      {:ok, deleted_app} ->
-        Logger.info("Application deleted",
-          app_id: deleted_app.id,
-          app_name: deleted_app.name
-        )
+            deleted_app
 
-        deleted_app
+          {:error, changeset} ->
+            Repo.rollback(changeset)
+        end
 
-      {:error, changeset} ->
-        Repo.rollback(changeset)
+      {:error, reason} ->
+        Repo.rollback(reason)
     end
   end
 
@@ -600,7 +561,8 @@ defmodule SecretHub.Core.Apps do
     end
   end
 
-  defp hash_token(token) do
+  @doc false
+  def bootstrap_token_hash(token) when is_binary(token) do
     :crypto.hash(:sha256, token)
     |> Base.encode16(case: :lower)
   end

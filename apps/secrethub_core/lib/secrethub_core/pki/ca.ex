@@ -30,7 +30,7 @@ defmodule SecretHub.Core.PKI.CA do
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.Certificate
-  alias X509.Certificate.Extension
+  alias X509.Certificate.{Extension, Validity}
 
   # Certificate validity periods
   # 10 years
@@ -247,7 +247,381 @@ defmodule SecretHub.Core.PKI.CA do
     end
   end
 
+  @doc """
+  Signs a canonical application client certificate from an already verified
+  public key.
+
+  The certificate identity and authorization extensions are owned entirely by
+  Core. This helper does not persist the certificate or any private key.
+  """
+  @spec issue_canonical_app_certificate(term(), Ecto.UUID.t()) ::
+          {:ok, %{certificate: binary(), ca_chain: [binary()], issuer: Certificate.t()}}
+          | {:error, :ca_unavailable | :issuance_failed}
+  def issue_canonical_app_certificate(public_key, app_id) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    with {:ok, ca, ca_chain, chain_valid_until} <- lock_validated_issuance_chain(now),
+         {:ok, ca_key} <- decrypt_private_key(ca.private_key_encrypted),
+         {:ok, certificate_pem} <-
+           build_canonical_app_certificate(
+             public_key,
+             app_id,
+             ca,
+             ca_key,
+             now,
+             chain_valid_until
+           ),
+         :ok <- verify_issued_certificate(certificate_pem, ca) do
+      {:ok, %{certificate: certificate_pem, ca_chain: ca_chain, issuer: ca}}
+    else
+      {:error, :issuance_failed} -> {:error, :issuance_failed}
+      {:error, _reason} -> {:error, :ca_unavailable}
+    end
+  rescue
+    _error -> {:error, :ca_unavailable}
+  end
+
+  @doc """
+  Returns active, non-revoked CA certificates as individual PEM values.
+  """
+  @spec get_ca_chain_pems() :: {:ok, [binary()]} | {:error, :ca_unavailable}
+  def get_ca_chain_pems do
+    case Repo.all(active_ca_chain_query()) do
+      [] -> {:error, :ca_unavailable}
+      certificates -> {:ok, certificates}
+    end
+  end
+
+  @doc """
+  Returns the exact persisted issuer chain starting at a signing CA.
+  """
+  @spec get_ca_chain_pems(Certificate.t() | Ecto.UUID.t()) ::
+          {:ok, [binary()]} | {:error, :ca_unavailable}
+  def get_ca_chain_pems(%Certificate{} = signing_ca) do
+    persisted_ca_chain(signing_ca, MapSet.new())
+  end
+
+  def get_ca_chain_pems(signing_ca_id) when is_binary(signing_ca_id) do
+    case Repo.get(Certificate, signing_ca_id) do
+      %Certificate{} = signing_ca -> get_ca_chain_pems(signing_ca)
+      nil -> {:error, :ca_unavailable}
+    end
+  end
+
   # Private helper functions
+
+  defp build_canonical_app_certificate(
+         public_key,
+         app_id,
+         ca,
+         ca_key,
+         now,
+         chain_valid_until
+       ) do
+    extensions = [
+      basic_constraints: Extension.basic_constraints(false),
+      key_usage: Extension.key_usage([:digitalSignature]),
+      ext_key_usage: Extension.ext_key_usage([:clientAuth]),
+      subject_alt_name:
+        Extension.subject_alt_name([
+          {:uniformResourceIdentifier, ~c"urn:secrethub:app:" ++ to_charlist(app_id)}
+        ])
+    ]
+
+    certificate =
+      X509.Certificate.new(
+        public_key,
+        "/O=SecretHub Applications/CN=#{app_id}",
+        X509.Certificate.from_pem!(ca.certificate_pem),
+        ca_key,
+        extensions: extensions,
+        validity: canonical_client_validity(now, chain_valid_until)
+      )
+
+    {:ok, X509.Certificate.to_pem(certificate)}
+  rescue
+    _error -> {:error, :issuance_failed}
+  end
+
+  defp lock_validated_issuance_chain(now) do
+    case lock_preferred_signing_ca(now) do
+      %Certificate{} = signing_ca ->
+        with {:ok, chain} <-
+               validate_issuance_chain(signing_ca, now, MapSet.new()),
+             :ok <- validate_path_length_constraints(chain) do
+          ca_chain = Enum.map(chain, fn {certificate, _parsed} -> certificate.certificate_pem end)
+
+          chain_valid_until =
+            chain
+            |> Enum.flat_map(fn {certificate, parsed} ->
+              [certificate.valid_until, parsed_valid_until(parsed)]
+            end)
+            |> Enum.min_by(&DateTime.to_unix/1)
+
+          {:ok, signing_ca, ca_chain, chain_valid_until}
+        end
+
+      nil ->
+        {:error, :ca_unavailable}
+    end
+  rescue
+    _error -> {:error, :ca_unavailable}
+  end
+
+  defp lock_preferred_signing_ca(now) do
+    lock_active_ca(:intermediate_ca, now) || lock_active_ca(:root_ca, now)
+  end
+
+  defp lock_active_ca(cert_type, now) do
+    Repo.one(
+      from(c in Certificate,
+        where: c.cert_type == ^cert_type,
+        where: c.revoked == false,
+        where: c.valid_from <= ^now,
+        where: c.valid_until > ^now,
+        order_by: [desc: c.inserted_at, desc: c.id],
+        limit: 1,
+        lock: "FOR SHARE"
+      )
+    )
+  end
+
+  defp validate_issuance_chain(%Certificate{id: id} = certificate, now, seen) do
+    with false <- MapSet.member?(seen, id),
+         :ok <- validate_issuance_ca_record(certificate, now),
+         {:ok, parsed} <- X509.Certificate.from_pem(certificate.certificate_pem) do
+      validate_issuance_chain_link(
+        certificate,
+        parsed,
+        now,
+        MapSet.put(seen, id)
+      )
+    else
+      _other -> {:error, :ca_unavailable}
+    end
+  rescue
+    _error -> {:error, :ca_unavailable}
+  end
+
+  defp validate_issuance_chain_link(
+         %Certificate{cert_type: :root_ca, issuer_id: nil} = root,
+         parsed_root,
+         now,
+         _seen
+       ) do
+    with :ok <- validate_parsed_ca(parsed_root, now),
+         true <- :public_key.pkix_is_self_signed(parsed_root),
+         true <-
+           :public_key.pkix_verify(
+             X509.Certificate.to_der(parsed_root),
+             X509.Certificate.public_key(parsed_root)
+           ) do
+      {:ok, [{root, parsed_root}]}
+    else
+      _other -> {:error, :ca_unavailable}
+    end
+  end
+
+  defp validate_issuance_chain_link(
+         %Certificate{cert_type: :intermediate_ca, issuer_id: issuer_id} = intermediate,
+         parsed_intermediate,
+         now,
+         seen
+       )
+       when is_binary(issuer_id) do
+    with :ok <- validate_parsed_ca(parsed_intermediate, now),
+         %Certificate{} = issuer <- lock_ca(issuer_id),
+         {:ok, [{_issuer, parsed_issuer} | _rest] = issuer_chain} <-
+           validate_issuance_chain(issuer, now, seen),
+         true <- :public_key.pkix_is_issuer(parsed_intermediate, parsed_issuer),
+         true <-
+           :public_key.pkix_verify(
+             X509.Certificate.to_der(parsed_intermediate),
+             X509.Certificate.public_key(parsed_issuer)
+           ) do
+      {:ok, [{intermediate, parsed_intermediate} | issuer_chain]}
+    else
+      _other -> {:error, :ca_unavailable}
+    end
+  end
+
+  defp validate_issuance_chain_link(_certificate, _parsed, _now, _seen) do
+    {:error, :ca_unavailable}
+  end
+
+  defp lock_ca(certificate_id) do
+    Repo.one(
+      from(c in Certificate,
+        where: c.id == ^certificate_id,
+        lock: "FOR SHARE"
+      )
+    )
+  end
+
+  defp validate_issuance_ca_record(
+         %Certificate{
+           cert_type: cert_type,
+           certificate_pem: certificate_pem,
+           key_usage: key_usage,
+           revoked: false,
+           revoked_at: nil,
+           revocation_reason: nil,
+           valid_from: valid_from,
+           valid_until: valid_until
+         },
+         now
+       )
+       when cert_type in [:root_ca, :intermediate_ca] and is_binary(certificate_pem) and
+              is_list(key_usage) do
+    if "keyCertSign" in key_usage and datetime_contains?(valid_from, valid_until, now),
+      do: :ok,
+      else: {:error, :ca_unavailable}
+  end
+
+  defp validate_issuance_ca_record(_certificate, _now), do: {:error, :ca_unavailable}
+
+  defp validate_path_length_constraints(chain) do
+    case Enum.reduce_while(chain, 0, &validate_ca_path_length/2) do
+      {:error, :ca_unavailable} = error -> error
+      _non_self_issued_count -> :ok
+    end
+  end
+
+  defp validate_ca_path_length({_certificate, parsed}, non_self_issued_below) do
+    case parsed_ca_path_length(parsed) do
+      {:ok, :unlimited} ->
+        continue_path_length_validation(parsed, non_self_issued_below)
+
+      {:ok, limit} when non_self_issued_below <= limit ->
+        continue_path_length_validation(parsed, non_self_issued_below)
+
+      _other ->
+        {:halt, {:error, :ca_unavailable}}
+    end
+  end
+
+  defp continue_path_length_validation(parsed, non_self_issued_below) do
+    next_count =
+      if :public_key.pkix_is_self_signed(parsed),
+        do: non_self_issued_below,
+        else: non_self_issued_below + 1
+
+    {:cont, next_count}
+  end
+
+  defp parsed_ca_path_length(parsed_certificate) do
+    case X509.Certificate.extension(parsed_certificate, :basic_constraints) do
+      {:Extension, _, true, {:BasicConstraints, true, :asn1_NOVALUE}} ->
+        {:ok, :unlimited}
+
+      {:Extension, _, true, {:BasicConstraints, true, limit}}
+      when is_integer(limit) and limit >= 0 ->
+        {:ok, limit}
+
+      _other ->
+        {:error, :ca_unavailable}
+    end
+  end
+
+  defp validate_parsed_ca(parsed_certificate, now) do
+    with {:Extension, _, true, {:BasicConstraints, true, _path_length}} <-
+           X509.Certificate.extension(parsed_certificate, :basic_constraints),
+         {:Extension, _, true, key_usage} <-
+           X509.Certificate.extension(parsed_certificate, :key_usage),
+         true <- :keyCertSign in key_usage,
+         {:Validity, not_before, not_after} <-
+           X509.Certificate.validity(parsed_certificate),
+         true <-
+           datetime_contains?(
+             X509.DateTime.to_datetime(not_before),
+             X509.DateTime.to_datetime(not_after),
+             now
+           ) do
+      :ok
+    else
+      _other -> {:error, :ca_unavailable}
+    end
+  end
+
+  defp parsed_valid_until(parsed_certificate) do
+    {:Validity, _not_before, not_after} =
+      X509.Certificate.validity(parsed_certificate)
+
+    X509.DateTime.to_datetime(not_after)
+  end
+
+  defp datetime_contains?(%DateTime{} = valid_from, %DateTime{} = valid_until, now) do
+    DateTime.compare(valid_from, now) in [:lt, :eq] and
+      DateTime.compare(valid_until, now) == :gt
+  end
+
+  defp datetime_contains?(_valid_from, _valid_until, _now), do: false
+
+  defp canonical_client_validity(now, chain_valid_until) do
+    requested_valid_until =
+      DateTime.add(now, @client_cert_validity_days * 24 * 60 * 60, :second)
+
+    valid_until =
+      if DateTime.compare(requested_valid_until, chain_valid_until) == :gt,
+        do: chain_valid_until,
+        else: requested_valid_until
+
+    Validity.new(now, valid_until)
+  end
+
+  defp verify_issued_certificate(certificate_pem, issuer) do
+    with {:ok, parsed_certificate} <- X509.Certificate.from_pem(certificate_pem),
+         {:ok, parsed_issuer} <- X509.Certificate.from_pem(issuer.certificate_pem),
+         true <- :public_key.pkix_is_issuer(parsed_certificate, parsed_issuer),
+         true <-
+           :public_key.pkix_verify(
+             X509.Certificate.to_der(parsed_certificate),
+             X509.Certificate.public_key(parsed_issuer)
+           ) do
+      :ok
+    else
+      _other -> {:error, :ca_unavailable}
+    end
+  rescue
+    _error -> {:error, :ca_unavailable}
+  end
+
+  defp persisted_ca_chain(
+         %Certificate{
+           id: id,
+           certificate_pem: certificate_pem,
+           cert_type: cert_type
+         } = certificate,
+         seen
+       )
+       when cert_type in [:root_ca, :intermediate_ca] and is_binary(certificate_pem) do
+    if MapSet.member?(seen, id) do
+      {:error, :ca_unavailable}
+    else
+      continue_persisted_ca_chain(certificate, MapSet.put(seen, id))
+    end
+  end
+
+  defp persisted_ca_chain(_certificate, _seen), do: {:error, :ca_unavailable}
+
+  defp continue_persisted_ca_chain(
+         %Certificate{certificate_pem: certificate_pem, issuer_id: nil},
+         _seen
+       ) do
+    {:ok, [certificate_pem]}
+  end
+
+  defp continue_persisted_ca_chain(
+         %Certificate{certificate_pem: certificate_pem, issuer_id: issuer_id},
+         seen
+       ) do
+    with %Certificate{} = issuer <- Repo.get(Certificate, issuer_id),
+         {:ok, issuer_chain} <- persisted_ca_chain(issuer, seen) do
+      {:ok, [certificate_pem | issuer_chain]}
+    else
+      _other -> {:error, :ca_unavailable}
+    end
+  end
 
   defp validate_cn(cn) when is_binary(cn) and byte_size(cn) > 0, do: :ok
   defp validate_cn(_), do: {:error, "Common name cannot be empty"}
@@ -1053,23 +1427,18 @@ defmodule SecretHub.Core.PKI.CA do
   """
   @spec get_ca_chain() :: {:ok, String.t()} | {:error, term()}
   def get_ca_chain do
-    # Query all CA certificates (root and intermediate) ordered by hierarchy
-    query =
-      from(c in Certificate,
-        where: c.cert_type in [:root_ca, :intermediate_ca] and c.revoked == false,
-        order_by: [desc: c.cert_type, asc: c.inserted_at],
-        select: c.certificate_pem
-      )
-
-    case Repo.all(query) do
-      [] ->
-        {:error, "No CA certificates found"}
-
-      certs when is_list(certs) ->
-        # Concatenate all CA certificates into a chain
-        ca_chain = Enum.join(certs, "\n")
-        {:ok, ca_chain}
+    case get_ca_chain_pems() do
+      {:ok, certificates} -> {:ok, Enum.join(certificates, "\n")}
+      {:error, :ca_unavailable} -> {:error, "No CA certificates found"}
     end
+  end
+
+  defp active_ca_chain_query do
+    from(c in Certificate,
+      where: c.cert_type in [:root_ca, :intermediate_ca] and c.revoked == false,
+      order_by: [desc: c.cert_type, asc: c.inserted_at],
+      select: c.certificate_pem
+    )
   end
 
   @doc """

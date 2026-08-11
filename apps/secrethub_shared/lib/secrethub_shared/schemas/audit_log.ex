@@ -28,6 +28,84 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     "gate",
     "report_hash"
   ]
+  @app_certificate_issuance_rules %{
+    "auth.app_certificate_issuance_allowed" => %{
+      evidence_keys: ["agent_id", "app_id", "certificate_id", "request_id", "result_code"],
+      result_codes: ["issued", "replayed"],
+      uuid_keys: ["agent_id", "app_id", "certificate_id", "request_id"]
+    },
+    "auth.app_certificate_issuance_denied" => %{
+      evidence_keys: ["request_id", "result_code"],
+      result_codes: [
+        "idempotency_conflict",
+        "invalid_agent_assignment",
+        "invalid_csr",
+        "invalid_request_id",
+        "invalid_token",
+        "unsupported_key"
+      ],
+      requestless_result_codes: ["invalid_request_id"],
+      uuid_keys: ["request_id"]
+    },
+    "auth.app_certificate_issuance_failed" => %{
+      evidence_keys: ["request_id", "result_code"],
+      result_codes: ["ca_unavailable", "issuance_failed"],
+      uuid_keys: ["request_id"]
+    }
+  }
+  @app_certificate_issuance_evidence_error "must contain exactly the sanitized application certificate issuance evidence"
+  @app_certificate_lifecycle_rules %{
+    "auth.app_certificate_renewal_allowed" => %{
+      evidence_root: "app_certificate_renewal",
+      evidence_keys: [
+        "app_id",
+        "current_certificate_id",
+        "issued_certificate_id",
+        "request_id",
+        "result_code"
+      ],
+      result_codes: ["renewed", "replayed"],
+      uuid_keys: [
+        "app_id",
+        "current_certificate_id",
+        "issued_certificate_id",
+        "request_id"
+      ]
+    },
+    "auth.app_certificate_renewal_denied" => %{
+      evidence_root: "app_certificate_renewal",
+      evidence_keys: ["request_id", "result_code"],
+      result_codes: [
+        "idempotency_conflict",
+        "invalid_agent_assignment",
+        "invalid_app_id",
+        "invalid_csr",
+        "invalid_current_certificate",
+        "invalid_fingerprint",
+        "invalid_proof",
+        "invalid_request",
+        "invalid_request_id",
+        "unsupported_algorithm",
+        "unsupported_key"
+      ],
+      requestless_result_codes: ["invalid_request", "invalid_request_id"],
+      uuid_keys: ["request_id"]
+    },
+    "auth.app_certificate_renewal_failed" => %{
+      evidence_root: "app_certificate_renewal",
+      evidence_keys: ["request_id", "result_code"],
+      result_codes: ["ca_unavailable", "renewal_failed"],
+      uuid_keys: ["request_id"]
+    },
+    "auth.app_certificate_revoked" => %{
+      evidence_root: "app_certificate_revocation",
+      evidence_keys: ["app_id", "certificate_id", "reason", "result_code"],
+      result_codes: ["revoked"],
+      reason_codes: ["app_suspended", "compromised", "operator_revoked", "superseded"],
+      uuid_keys: ["app_id", "certificate_id"]
+    }
+  }
+  @app_certificate_lifecycle_evidence_error "must contain exactly the sanitized application certificate lifecycle evidence"
   @sha256_hex ~r/\A[0-9a-f]{64}\z/
   @control_characters ~r/[\x00-\x1F\x7F]/u
 
@@ -124,6 +202,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     |> validate_inclusion(:hash_version, @hash_versions)
     |> validate_hash_version_event_type()
     |> validate_upgrade_gate_evidence()
+    |> validate_app_certificate_issuance_evidence()
+    |> validate_app_certificate_lifecycle_evidence()
     |> unique_constraint(:event_id, name: :unique_event_id_timestamp)
     |> unique_constraint([:sequence_number, :timestamp], name: :unique_sequence_number_timestamp)
   end
@@ -148,6 +228,13 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "auth.agent_certificate_issued",
       "auth.agent_login",
       "auth.admin_login",
+      "auth.app_certificate_issuance_allowed",
+      "auth.app_certificate_issuance_denied",
+      "auth.app_certificate_issuance_failed",
+      "auth.app_certificate_renewal_allowed",
+      "auth.app_certificate_renewal_denied",
+      "auth.app_certificate_renewal_failed",
+      "auth.app_certificate_revoked",
       "auth.failed",
       # AppRole authentication events
       "approle_created",
@@ -212,6 +299,126 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     end
   end
 
+  defp validate_app_certificate_issuance_evidence(changeset) do
+    event_type = get_field(changeset, :event_type)
+
+    case Map.fetch(@app_certificate_issuance_rules, event_type) do
+      {:ok, rule} ->
+        case normalize_app_certificate_issuance_evidence(
+               get_field(changeset, :event_data),
+               rule
+             ) do
+          {:ok, event_data} ->
+            put_change(changeset, :event_data, event_data)
+
+          :error ->
+            add_error(
+              changeset,
+              :event_data,
+              @app_certificate_issuance_evidence_error
+            )
+        end
+
+      :error ->
+        changeset
+    end
+  end
+
+  defp validate_app_certificate_lifecycle_evidence(changeset) do
+    event_type = get_field(changeset, :event_type)
+
+    case Map.fetch(@app_certificate_lifecycle_rules, event_type) do
+      {:ok, rule} ->
+        case normalize_app_certificate_lifecycle_evidence(
+               get_field(changeset, :event_data),
+               rule
+             ) do
+          {:ok, event_data} ->
+            put_change(changeset, :event_data, event_data)
+
+          :error ->
+            add_error(
+              changeset,
+              :event_data,
+              @app_certificate_lifecycle_evidence_error
+            )
+        end
+
+      :error ->
+        changeset
+    end
+  end
+
+  defp normalize_app_certificate_lifecycle_evidence(event_data, rule) do
+    evidence_root = rule.evidence_root
+
+    with {:ok, %{^evidence_root => evidence}} <-
+           normalize_exact_map(event_data, [evidence_root]),
+         {:ok, evidence_pairs} <- normalize_pairs(evidence),
+         evidence = Map.new(evidence_pairs),
+         evidence_keys <- lifecycle_evidence_keys(rule, evidence),
+         {:ok, normalized_evidence} <- normalize_exact_map(evidence, evidence_keys),
+         true <- normalized_evidence["result_code"] in rule.result_codes,
+         true <- valid_lifecycle_reason?(normalized_evidence, rule),
+         {:ok, normalized_evidence} <-
+           normalize_uuid_evidence(
+             normalized_evidence,
+             Enum.filter(rule.uuid_keys, &Map.has_key?(normalized_evidence, &1))
+           ) do
+      {:ok, %{evidence_root => normalized_evidence}}
+    else
+      _other -> :error
+    end
+  end
+
+  defp lifecycle_evidence_keys(rule, evidence) do
+    if evidence["result_code"] in Map.get(rule, :requestless_result_codes, []),
+      do: ["result_code"],
+      else: rule.evidence_keys
+  end
+
+  defp valid_lifecycle_reason?(evidence, rule) do
+    case Map.fetch(rule, :reason_codes) do
+      {:ok, reasons} -> evidence["reason"] in reasons
+      :error -> not Map.has_key?(evidence, "reason")
+    end
+  end
+
+  defp normalize_app_certificate_issuance_evidence(event_data, rule) do
+    with {:ok, %{"app_certificate_issuance" => issuance}} <-
+           normalize_exact_map(event_data, ["app_certificate_issuance"]),
+         {:ok, issuance_pairs} <- normalize_pairs(issuance),
+         issuance = Map.new(issuance_pairs),
+         evidence_keys <- app_certificate_issuance_evidence_keys(rule, issuance),
+         {:ok, normalized_issuance} <-
+           normalize_exact_map(issuance, evidence_keys),
+         true <- normalized_issuance["result_code"] in rule.result_codes,
+         {:ok, normalized_issuance} <-
+           normalize_uuid_evidence(
+             normalized_issuance,
+             Enum.filter(rule.uuid_keys, &Map.has_key?(normalized_issuance, &1))
+           ) do
+      {:ok, %{"app_certificate_issuance" => normalized_issuance}}
+    else
+      _other -> :error
+    end
+  end
+
+  defp app_certificate_issuance_evidence_keys(rule, issuance) do
+    if issuance["result_code"] in Map.get(rule, :requestless_result_codes, []),
+      do: ["result_code"],
+      else: rule.evidence_keys
+  end
+
+  defp normalize_uuid_evidence(evidence, uuid_keys) do
+    Enum.reduce_while(uuid_keys, {:ok, evidence}, fn key, {:ok, normalized} ->
+      case Ecto.UUID.cast(normalized[key]) do
+        {:ok, uuid} -> {:cont, {:ok, Map.put(normalized, key, uuid)}}
+        :error -> {:halt, :error}
+      end
+    end)
+  end
+
   defp normalize_upgrade_gate_evidence(event_data) do
     with {:ok, %{"upgrade_gate" => upgrade_gate}} <-
            normalize_exact_map(event_data, ["upgrade_gate"]),
@@ -243,7 +450,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     {:error, "must contain exactly the sanitized upgrade gate evidence"}
   end
 
-  defp normalize_pairs(value) do
+  defp normalize_pairs(value) when is_map(value) do
     pairs =
       Enum.map(value, fn {key, nested_value} ->
         {normalize_key(key), nested_value}
@@ -260,6 +467,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
         {:ok, pairs}
     end
   end
+
+  defp normalize_pairs(_value), do: {:error, "must be a map"}
 
   defp normalize_key(key) when is_binary(key), do: key
   defp normalize_key(key) when is_atom(key), do: Atom.to_string(key)

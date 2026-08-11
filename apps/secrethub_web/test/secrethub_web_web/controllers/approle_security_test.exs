@@ -17,11 +17,13 @@ defmodule SecretHub.Web.AppRoleSecurityTest do
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
 
+  @rate_limiter_table :rate_limiter_table
   @moduletag :security
 
   setup do
     Sandbox.mode(Repo, {:shared, self()})
     ensure_current_audit_partition!()
+    cleanup_rate_limit_scope(:auth)
 
     {:ok, _pid} = start_supervised(SealState)
     Process.sleep(100)
@@ -35,7 +37,11 @@ defmodule SecretHub.Web.AppRoleSecurityTest do
         :ok
     end
 
-    on_exit(fn -> Sandbox.mode(Repo, :manual) end)
+    on_exit(fn ->
+      cleanup_rate_limit_scope(:auth)
+      Sandbox.mode(Repo, :manual)
+    end)
+
     :ok
   end
 
@@ -50,6 +56,13 @@ defmodule SecretHub.Web.AppRoleSecurityTest do
     CREATE TABLE IF NOT EXISTS #{partition_name} PARTITION OF audit_logs
     FOR VALUES FROM ('#{Date.to_iso8601(from_date)}') TO ('#{Date.to_iso8601(to_date)}')
     """)
+  end
+
+  defp cleanup_rate_limit_scope(scope) do
+    case :ets.whereis(@rate_limiter_table) do
+      :undefined -> :ok
+      _table -> :ets.match_delete(@rate_limiter_table, {{scope, :_}, :_, :_})
+    end
   end
 
   describe "P0: Token validation edge cases" do
