@@ -151,6 +151,7 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
       @base_env
       |> Map.new()
       |> Map.merge(Map.new(overrides))
+      |> Map.put("PATH", System.fetch_env!("PATH"))
       |> Enum.reject(fn {_key, value} -> is_nil(value) end)
       |> Enum.map(fn {key, value} -> "#{key}=#{value}" end)
 
