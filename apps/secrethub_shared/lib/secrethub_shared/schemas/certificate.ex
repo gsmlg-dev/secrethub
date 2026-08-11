@@ -79,6 +79,8 @@ defmodule SecretHub.Shared.Schemas.Certificate do
     timestamps(type: :utc_datetime)
   end
 
+  @type t :: %__MODULE__{}
+
   @doc """
   Changeset for creating or updating a certificate.
   """

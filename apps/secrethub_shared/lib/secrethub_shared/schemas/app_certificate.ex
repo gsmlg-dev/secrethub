@@ -29,6 +29,8 @@ defmodule SecretHub.Shared.Schemas.AppCertificate do
     timestamps(type: :utc_datetime, updated_at: false)
   end
 
+  @type t :: %__MODULE__{}
+
   @doc """
   Changeset for app certificate association.
   """
