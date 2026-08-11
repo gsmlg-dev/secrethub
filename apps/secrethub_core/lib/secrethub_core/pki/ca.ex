@@ -298,7 +298,7 @@ defmodule SecretHub.Core.PKI.CA do
   @spec get_ca_chain_pems(Certificate.t() | Ecto.UUID.t()) ::
           {:ok, [binary()]} | {:error, :ca_unavailable}
   def get_ca_chain_pems(%Certificate{} = signing_ca) do
-    persisted_ca_chain(signing_ca, MapSet.new())
+    persisted_ca_chain(signing_ca, [])
   end
 
   def get_ca_chain_pems(signing_ca_id) when is_binary(signing_ca_id) do
@@ -347,7 +347,7 @@ defmodule SecretHub.Core.PKI.CA do
     case lock_preferred_signing_ca(now) do
       %Certificate{} = signing_ca ->
         with {:ok, chain} <-
-               validate_issuance_chain(signing_ca, now, MapSet.new()),
+               validate_issuance_chain(signing_ca, now, []),
              :ok <- validate_path_length_constraints(chain) do
           ca_chain = Enum.map(chain, fn {certificate, _parsed} -> certificate.certificate_pem end)
 
@@ -387,14 +387,14 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   defp validate_issuance_chain(%Certificate{id: id} = certificate, now, seen) do
-    with false <- MapSet.member?(seen, id),
+    with false <- id in seen,
          :ok <- validate_issuance_ca_record(certificate, now),
          {:ok, parsed} <- X509.Certificate.from_pem(certificate.certificate_pem) do
       validate_issuance_chain_link(
         certificate,
         parsed,
         now,
-        MapSet.put(seen, id)
+        [id | seen]
       )
     else
       _other -> {:error, :ca_unavailable}
@@ -595,10 +595,10 @@ defmodule SecretHub.Core.PKI.CA do
          seen
        )
        when cert_type in [:root_ca, :intermediate_ca] and is_binary(certificate_pem) do
-    if MapSet.member?(seen, id) do
+    if id in seen do
       {:error, :ca_unavailable}
     else
-      continue_persisted_ca_chain(certificate, MapSet.put(seen, id))
+      continue_persisted_ca_chain(certificate, [id | seen])
     end
   end
 

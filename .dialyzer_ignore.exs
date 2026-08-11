@@ -39,7 +39,6 @@
   {"lib/secrethub_core/distributed_lock.ex", :pattern_match},
   {"lib/secrethub_core/health_alerts.ex", :unknown_type},
   {"lib/secrethub_core/node_health_collector.ex", :pattern_match_cov},
-  {"lib/secrethub_core/pki/ca.ex", :unknown_type},
   {"lib/secrethub_core/pki/csr.ex", :pattern_match_cov},
   {"lib/secrethub_core/policies.ex", :unknown_type},
   {"lib/secrethub_core/secrets.ex", :call_without_opaque},
