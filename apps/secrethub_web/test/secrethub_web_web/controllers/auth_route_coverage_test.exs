@@ -134,7 +134,7 @@ defmodule SecretHub.Web.AuthRouteCoverageTest do
       end
     end
 
-    test "POST /v1/pki/ca/root/generate with valid token succeeds", %{token: token} do
+    test "POST /v1/pki/ca/root/generate rejects a non-admin Vault token", %{token: token} do
       conn =
         build_conn()
         |> put_req_header("x-vault-token", token)
@@ -143,8 +143,7 @@ defmodule SecretHub.Web.AuthRouteCoverageTest do
           "ttl" => "87600h"
         })
 
-      # Should succeed or return a business logic error, not 401
-      assert conn.status != 401
+      assert json_response(conn, 401) == %{"error" => "Admin authentication required"}
     end
   end
 end

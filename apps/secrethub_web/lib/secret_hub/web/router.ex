@@ -21,6 +21,10 @@ defmodule SecretHub.Web.Router do
     @admin_auth_controller.require_admin_auth(conn, [])
   end
 
+  defp require_admin_api_auth(conn, _opts) do
+    @admin_auth_controller.require_admin_api_auth(conn, [])
+  end
+
   defp discard_untrusted_forwarded_for(conn, _opts) do
     # Forwarded IP is untrusted until normalized by a trusted-proxy layer.
     Plug.Conn.delete_req_header(conn, "x-forwarded-for")
@@ -28,14 +32,21 @@ defmodule SecretHub.Web.Router do
 
   pipeline :admin_browser do
     plug :browser
+    plug SecretHub.Web.Plugs.VerifyClientCertificate, required: false
     plug :require_admin_auth
+  end
+
+  pipeline :admin_login do
+    plug :browser
+    plug SecretHub.Web.Plugs.VerifyClientCertificate, required: false
   end
 
   pipeline :admin_api do
     plug :api
+    plug SecretHub.Web.Plugs.VerifyClientCertificate, required: false
     plug :fetch_session
     plug :fetch_live_flash
-    plug :require_admin_auth
+    plug :require_admin_api_auth
   end
 
   # AppRole management pipeline (requires authentication)
@@ -116,7 +127,7 @@ defmodule SecretHub.Web.Router do
 
   # Admin authentication routes (no auth required)
   scope "/admin/auth", SecretHub.Web do
-    pipe_through :browser
+    pipe_through :admin_login
 
     get "/login", AdminPageController, :login_form
     post "/login", AdminAuthController, :login

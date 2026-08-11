@@ -93,8 +93,8 @@ RUN mkdir -p /app/var/log && \
     mkdir -p /app/tmp && \
     chown -R secrethub:secrethub /app
 
-# Expose port
-EXPOSE 4664
+# Expose the public HTTP, trusted Agent mTLS, and admin mTLS listeners.
+EXPOSE 4664 4665 4667
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \

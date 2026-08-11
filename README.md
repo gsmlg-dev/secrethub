@@ -439,6 +439,7 @@ For production, run migrations before starting Core, expose the trusted Agent mT
 |---------|----------|
 | Core | `PHX_SERVER=true`, `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST`, `SECRET_HUB_CLUSTER_NODE_ID` |
 | Core trusted Agent endpoint | `SECRET_HUB_AGENT_ENDPOINT_SERVER=true`, endpoint cert/key/CA paths |
+| Core admin mTLS endpoint | `SECRET_HUB_ADMIN_ENDPOINT_SERVER=true`, endpoint cert/key/client-CA paths, canonical admin certificate fingerprints |
 | Agent | `SECRET_HUB_AGENT_CORE_URL` |
 
 `SECRET_HUB_CLUSTER_NODE_ID` must be stable across restarts and unique to each

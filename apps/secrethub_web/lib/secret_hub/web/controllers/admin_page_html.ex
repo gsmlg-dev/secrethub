@@ -4,7 +4,6 @@ defmodule SecretHub.Web.AdminPageHTML do
   """
 
   use SecretHub.Web, :html
-  import Plug.Conn, only: [get_req_header: 2]
 
   embed_templates "../templates/admin_page/*"
 end

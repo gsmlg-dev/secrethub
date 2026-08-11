@@ -33,7 +33,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
 
   ## Configuration
 
-  Configure in config/prod.exs:
+  Configure a dedicated HTTPS listener in runtime configuration:
 
       config :secrethub_web, SecretHub.Web.Endpoint,
         https: [
@@ -41,9 +41,13 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
           cipher_suite: :strong,
           certfile: "priv/cert/server.pem",
           keyfile: "priv/cert/server-key.pem",
-          cacertfile: "priv/cert/ca-chain.pem",
-          verify: :verify_peer,
-          fail_if_no_peer_cert: true
+          thousand_island_options: [
+            transport_options: [
+              cacertfile: ~c"priv/cert/ca-chain.pem",
+              verify: :verify_peer,
+              fail_if_no_peer_cert: true
+            ]
+          ]
         ]
 
   ## Assigns
@@ -60,7 +64,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
   import Ecto.Query
   require Logger
 
-  alias SecretHub.Core.PKI.CA
+  alias SecretHub.Core.PKI.{CA, CertificateIdentity}
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Certificate
 
@@ -118,22 +122,21 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
         {:ok, cert_der}
 
       _ ->
-        # Extract peer certificate from TLS connection
-        # This works with Cowboy/Phoenix HTTPS connections
+        # Extract the certificate that the Plug adapter received from TLS.
         extract_tls_peer_certificate(conn)
     end
   end
 
   defp extract_tls_peer_certificate(conn) do
-    case :ssl.peercert(conn.adapter |> elem(0)) do
-      {:ok, cert_der} ->
+    case get_peer_data(conn) do
+      %{ssl_cert: cert_der} when is_binary(cert_der) ->
         {:ok, cert_der}
 
-      {:error, :no_peercert} ->
+      %{ssl_cert: nil} ->
         {:error, :no_certificate}
 
-      {:error, reason} ->
-        {:error, reason}
+      _peer_data ->
+        {:error, :no_certificate}
     end
   rescue
     # Handle cases where connection is not TLS (e.g., development HTTP)
@@ -191,7 +194,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
         |> assign(:mtls_authenticated, true)
         |> assign(:agent_id, agent_id)
         |> assign(:certificate_serial, serial_number)
-        |> assign(:client_certificate, parse_cert_info(cert))
+        |> assign(:client_certificate, parse_cert_info(cert, cert_der))
 
       {:invalid, reason} ->
         Logger.warning("Client certificate validation failed",
@@ -336,11 +339,13 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
     else
       otp_cert = :public_key.pkix_decode_cert(cert_der, :otp)
 
-      case :public_key.pkix_path_validation(hd(trusted_certs), [otp_cert], []) do
-        {:ok, _} ->
-          :valid
-
+      with {:ok, _} <- validate_certificate_path(otp_cert, trusted_certs) do
+        :valid
+      else
         {:error, {:bad_cert, reason}} ->
+          {:invalid, "Certificate chain validation failed: #{inspect(reason)}"}
+
+        {:error, reason} ->
           {:invalid, "Certificate chain validation failed: #{inspect(reason)}"}
       end
     end
@@ -349,13 +354,40 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
       {:invalid, "Certificate chain verification error: #{inspect(e)}"}
   end
 
-  defp parse_cert_info(cert) do
+  defp validate_certificate_path(certificate, trusted_certs) do
+    certificate
+    |> build_validation_paths(trusted_certs, [], [])
+    |> Enum.reduce_while({:error, :invalid_issuer}, fn {trust_anchor, certification_path},
+                                                       _error ->
+      case :public_key.pkix_path_validation(trust_anchor, certification_path, []) do
+        {:ok, _} = valid -> {:halt, valid}
+        {:error, _} = error -> {:cont, error}
+      end
+    end)
+  end
+
+  defp build_validation_paths(certificate, trusted_certs, path, seen) do
+    trusted_certs
+    |> Enum.filter(fn candidate ->
+      candidate not in seen and :public_key.pkix_is_issuer(certificate, candidate)
+    end)
+    |> Enum.flat_map(fn issuer ->
+      if :public_key.pkix_is_self_signed(issuer) do
+        [{issuer, [certificate | path]}]
+      else
+        build_validation_paths(issuer, trusted_certs, [certificate | path], [issuer | seen])
+      end
+    end)
+  end
+
+  defp parse_cert_info(cert, cert_der) do
     {:OTPCertificate, {:OTPTBSCertificate, _, serial, _, _, validity, subject, _, _, _, _}, _, _} =
       cert
 
     {:Validity, not_before, not_after} = validity
 
     %{
+      fingerprint: CertificateIdentity.canonical_fingerprint_from_der(cert_der),
       serial_number: Integer.to_string(serial, 16),
       subject: format_rdnsequence(subject),
       valid_from: parse_asn1_time(not_before),

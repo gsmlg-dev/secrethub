@@ -66,7 +66,7 @@
             </div>
 
             <div class="flex items-center">
-              <%= if get_req_header(@conn, "x-ssl-client-cert") != [] do %>
+              <%= if @conn.assigns[:mtls_authenticated] == true do %>
                 <.dm_mdi name="check-circle" class="h-5 w-5 text-success mr-2" />
                 <span class="text-sm text-success font-medium">
                   Client Certificate Detected
@@ -138,7 +138,7 @@
 
         <!-- Action Buttons -->
         <div class="space-y-3">
-          <%= if get_req_header(@conn, "x-ssl-client-cert") != [] do %>
+          <%= if @conn.assigns[:mtls_authenticated] == true do %>
             <form action="/admin/auth/login" method="post" class="w-full">
               <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
               <.button

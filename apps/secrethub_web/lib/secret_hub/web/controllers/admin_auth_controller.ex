@@ -10,17 +10,26 @@ defmodule SecretHub.Web.AdminAuthController do
   use SecretHub.Web, :controller
   require Logger
 
-  alias SecretHub.Shared.Schemas.Certificate
-
   @doc """
   Plug to require admin authentication.
   """
   def require_admin_auth(conn, _opts) do
+    require_admin(conn, :redirect)
+  end
+
+  @doc """
+  Plug to require admin authentication for JSON APIs.
+  """
+  def require_admin_api_auth(conn, _opts) do
+    require_admin(conn, :json)
+  end
+
+  defp require_admin(conn, failure_mode) do
     # First check if already authenticated via session
     case get_session(conn, :admin_id) do
       nil ->
         # No session, try certificate authentication
-        authenticate_with_certificate(conn)
+        authenticate_with_certificate(conn, failure_mode)
 
       _admin_id ->
         # Already authenticated via session
@@ -28,14 +37,10 @@ defmodule SecretHub.Web.AdminAuthController do
     end
   end
 
-  defp authenticate_with_certificate(conn) do
+  defp authenticate_with_certificate(conn, failure_mode) do
     case get_client_certificate(conn) do
       nil ->
-        # No certificate - redirect to login page for browser requests
-        conn
-        |> put_flash(:error, "Please log in to access the admin area")
-        |> redirect(to: "/admin/auth/login")
-        |> halt()
+        reject_admin_auth(conn, failure_mode, "Please log in to access the admin area")
 
       cert ->
         case verify_admin_certificate(cert) do
@@ -47,12 +52,23 @@ defmodule SecretHub.Web.AdminAuthController do
           {:error, reason} ->
             Logger.warning("Admin auth failed: #{reason}")
 
-            conn
-            |> put_flash(:error, "Authentication failed: #{reason}")
-            |> redirect(to: "/admin/auth/login")
-            |> halt()
+            reject_admin_auth(conn, failure_mode, "Authentication failed: #{reason}")
         end
     end
+  end
+
+  defp reject_admin_auth(conn, :json, _message) do
+    conn
+    |> put_status(:unauthorized)
+    |> json(%{error: "Admin authentication required"})
+    |> halt()
+  end
+
+  defp reject_admin_auth(conn, :redirect, message) do
+    conn
+    |> put_flash(:error, message)
+    |> redirect(to: "/admin/auth/login")
+    |> halt()
   end
 
   @doc """
@@ -147,51 +163,13 @@ defmodule SecretHub.Web.AdminAuthController do
 
   # Private functions
 
-  defp get_client_certificate(conn) do
-    with nil <- get_cert_from_header(conn),
-         nil <- get_cert_from_chain(conn) do
-      get_cert_from_auth_token(conn)
-    end
-  end
+  defp get_client_certificate(%{
+         assigns: %{mtls_authenticated: true, client_certificate: certificate}
+       })
+       when is_map(certificate),
+       do: certificate
 
-  defp get_cert_from_header(conn) do
-    case get_req_header(conn, "x-ssl-client-cert") do
-      [pem] -> Certificate.from_pem(pem)
-      _ -> nil
-    end
-  end
-
-  defp get_cert_from_chain(conn) do
-    case get_req_header(conn, "x-ssl-client-cert-chain") do
-      [chain] -> extract_cert_from_chain(chain)
-      _ -> nil
-    end
-  end
-
-  defp get_cert_from_auth_token(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> _dev_token] ->
-        Logger.info("Using dev token for admin authentication")
-        dev_admin_id()
-
-      _ ->
-        nil
-    end
-  end
-
-  defp extract_cert_from_chain(chain) do
-    case String.split(chain, "\n") do
-      [first_line | _] ->
-        first_line
-        |> String.trim_leading("-----BEGIN CERTIFICATE-----")
-        |> String.trim_trailing("-----END CERTIFICATE-----")
-        |> String.replace("\r\n", "\n")
-        |> then(&Certificate.from_pem/1)
-
-      _ ->
-        nil
-    end
-  end
+  defp get_client_certificate(_conn), do: nil
 
   defp verify_admin_certificate(cert) do
     if dev_mode?() do
@@ -201,15 +179,15 @@ defmodule SecretHub.Web.AdminAuthController do
     end
   end
 
-  defp verify_dev_certificate(cert) do
-    subject = cert.subject
-
+  defp verify_dev_certificate(%{subject: subject}) when is_binary(subject) do
     if String.contains?(subject, "admin") do
       {:ok, String.split(subject, "@") |> List.first()}
     else
       {:error, "Invalid certificate for development"}
     end
   end
+
+  defp verify_dev_certificate(_cert), do: {:error, "Invalid client certificate"}
 
   defp verify_prod_certificate(cert) do
     expected_fingerprints = Application.get_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS, "")
@@ -226,21 +204,21 @@ defmodule SecretHub.Web.AdminAuthController do
     end
   end
 
-  defp check_fingerprint_match(cert, fingerprints) do
+  defp check_fingerprint_match(%{subject: subject} = cert, fingerprints)
+       when is_binary(subject) do
     cert_fingerprint = cert_fingerprint(cert)
 
     if cert_fingerprint in fingerprints do
-      {:ok, String.split(cert.subject, "@") |> List.first()}
+      {:ok, String.split(subject, "@") |> List.first()}
     else
       {:error, "Certificate not authorized"}
     end
   end
 
-  defp cert_fingerprint(cert) do
-    # Return fingerprint from certificate struct
-    # Note: Certificate.from_pem/1 is not yet implemented, so this is placeholder code
-    cert.fingerprint || ""
-  end
+  defp check_fingerprint_match(_cert, _fingerprints), do: {:error, "Invalid client certificate"}
+
+  defp cert_fingerprint(%{fingerprint: fingerprint}) when is_binary(fingerprint), do: fingerprint
+  defp cert_fingerprint(_cert), do: ""
 
   defp configure_session_timeout(conn) do
     # Set session timeout to 1 hour
@@ -251,11 +229,6 @@ defmodule SecretHub.Web.AdminAuthController do
       DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
     )
     |> put_session(:max_age, 3600)
-  end
-
-  defp dev_admin_id do
-    # Mock admin ID for development
-    "dev-admin-001"
   end
 
   defp dev_mode? do

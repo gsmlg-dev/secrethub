@@ -163,6 +163,86 @@ if config_env() == :prod do
     secret_key_base: secret_key_base,
     check_origin: :conn
 
+  if System.get_env("SECRET_HUB_ADMIN_ENDPOINT_SERVER") in ~w(true 1) do
+    admin_port =
+      String.to_integer(System.get_env("SECRET_HUB_ADMIN_ENDPOINT_PORT") || "4667")
+
+    conflicting_port =
+      cond do
+        admin_port == port ->
+          "PORT"
+
+        System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) and
+            admin_port ==
+              String.to_integer(System.get_env("SECRET_HUB_AGENT_ENDPOINT_PORT") || "4665") ->
+          "SECRET_HUB_AGENT_ENDPOINT_PORT"
+
+        human_enabled and
+            admin_port == String.to_integer(System.get_env("HUMAN_ENDPOINT_PORT") || "4666") ->
+          "HUMAN_ENDPOINT_PORT"
+
+        true ->
+          nil
+      end
+
+    if conflicting_port do
+      raise "SECRET_HUB_ADMIN_ENDPOINT_PORT must differ from #{conflicting_port}"
+    end
+
+    admin_certfile =
+      System.get_env("SECRET_HUB_ADMIN_ENDPOINT_CERT_PATH") ||
+        raise "SECRET_HUB_ADMIN_ENDPOINT_CERT_PATH is required when the admin mTLS endpoint is enabled"
+
+    admin_keyfile =
+      System.get_env("SECRET_HUB_ADMIN_ENDPOINT_KEY_PATH") ||
+        raise "SECRET_HUB_ADMIN_ENDPOINT_KEY_PATH is required when the admin mTLS endpoint is enabled"
+
+    admin_cacertfile =
+      System.get_env("SECRET_HUB_ADMIN_ENDPOINT_CA_CERT_PATH") ||
+        raise "SECRET_HUB_ADMIN_ENDPOINT_CA_CERT_PATH is required when the admin mTLS endpoint is enabled"
+
+    admin_fingerprints =
+      case System.get_env("SECRET_HUB_ADMIN_CERT_FINGERPRINTS") do
+        nil ->
+          raise "SECRET_HUB_ADMIN_CERT_FINGERPRINTS is required when the admin mTLS endpoint is enabled"
+
+        fingerprints ->
+          fingerprints
+          |> String.split(~r/[\s,]+/, trim: true)
+          |> Enum.map(&String.downcase/1)
+          |> Enum.uniq()
+      end
+
+    if admin_fingerprints == [] or
+         Enum.any?(admin_fingerprints, &(not Regex.match?(~r/\A[0-9a-f]{64}\z/, &1))) do
+      raise "SECRET_HUB_ADMIN_CERT_FINGERPRINTS must contain comma-separated SHA-256 fingerprints"
+    end
+
+    config :secrethub_web, :ADMIN_CERT_FINGERPRINTS, admin_fingerprints
+
+    # This is a second, direct-TLS listener on the Core endpoint. The normal
+    # HTTP listener above remains available for browser/API traffic behind a
+    # reverse proxy, while this dedicated port requires a client certificate.
+    config :secrethub_web, SecretHub.Web.Endpoint,
+      server: true,
+      https: [
+        ip: {0, 0, 0, 0, 0, 0, 0, 0},
+        port: admin_port,
+        cipher_suite: :strong,
+        certfile: admin_certfile,
+        keyfile: admin_keyfile,
+        thousand_island_options: [
+          transport_options: [
+            cacertfile: String.to_charlist(admin_cacertfile),
+            verify: :verify_peer,
+            fail_if_no_peer_cert: true,
+            versions: [:"tlsv1.2", :"tlsv1.3"],
+            ipv6_v6only: false
+          ]
+        ]
+      ]
+  end
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key

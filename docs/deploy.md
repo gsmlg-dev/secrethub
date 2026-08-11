@@ -105,13 +105,66 @@ Verify Core:
 curl -f "http://localhost:4664/v1/sys/health/live"
 ```
 
-The admin UI is available at:
+The local admin UI route is available at:
 
 ```text
 http://localhost:4664/admin
 ```
 
 Put Core behind HTTPS for production. If your reverse proxy terminates TLS, forward the normal web/API listener to port `4664`.
+
+## Enable the Admin mTLS Endpoint
+
+Production certificate login uses a second, direct-TLS listener on port `4667`.
+It requires both a client certificate trusted by the configured client CA and an
+exact certificate fingerprint in the runtime allowlist. The normal browser/API
+listener remains on `4664`, and the trusted Agent endpoint remains on `4665`.
+
+This opt-in listener is for installations where the SecretHub CA and first admin
+client certificate have already been provisioned through a trusted operator
+process. It does not bootstrap the first CA or first admin credential.
+
+Calculate the canonical SHA-256 fingerprint from the exact DER certificate:
+
+```bash
+export ADMIN_CERT_FINGERPRINT="$(openssl x509 -in admin-client.pem -outform DER | openssl dgst -sha256 -r | awk '{print $1}')"
+```
+
+Enable the listener when starting Core:
+
+```bash
+docker run -d \
+  --name secrethub-core \
+  --restart unless-stopped \
+  -p 4664:4664 \
+  -p 4667:4667 \
+  -v /etc/secrethub/admin-endpoint:/etc/secrethub/admin-endpoint:ro \
+  -e PHX_SERVER=true \
+  -e PORT=4664 \
+  -e PHX_HOST="$SECRETHUB_HOST" \
+  -e DATABASE_URL="$DATABASE_URL" \
+  -e SECRET_KEY_BASE="$SECRET_KEY_BASE" \
+  -e SECRET_HUB_CLUSTER_NODE_ID="$SECRET_HUB_CLUSTER_NODE_ID" \
+  -e SECRET_HUB_ADMIN_ENDPOINT_SERVER=true \
+  -e SECRET_HUB_ADMIN_ENDPOINT_PORT=4667 \
+  -e SECRET_HUB_ADMIN_ENDPOINT_CERT_PATH=/etc/secrethub/admin-endpoint/server.pem \
+  -e SECRET_HUB_ADMIN_ENDPOINT_KEY_PATH=/etc/secrethub/admin-endpoint/server-key.pem \
+  -e SECRET_HUB_ADMIN_ENDPOINT_CA_CERT_PATH=/etc/secrethub/admin-endpoint/client-ca-chain.pem \
+  -e SECRET_HUB_ADMIN_CERT_FINGERPRINTS="$ADMIN_CERT_FINGERPRINT" \
+  ghcr.io/gsmlg-dev/secrethub/core:$SECRETHUB_VERSION
+```
+
+Open `https://$SECRETHUB_HOST:4667/admin`. The server certificate must be valid
+for that hostname. The client CA chain must also match the active SecretHub CA
+chain used for application-level verification. Multiple fingerprints may be
+separated by commas or whitespace; each value is 64 hexadecimal characters
+without colons or a `sha256:` prefix.
+
+Terminate TLS in Core or use L4/TCP passthrough for port `4667`. An HTTP reverse
+proxy that terminates TLS removes the peer-certificate identity and is not
+supported for this listener. Forwarded certificate headers such as
+`x-ssl-client-cert` are deliberately ignored. Keep health checks on `4664`,
+because `4667` rejects clients that do not present a certificate.
 
 ## Enable the Trusted Agent Endpoint
 

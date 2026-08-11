@@ -65,8 +65,8 @@ defmodule SecretHub.Web.PKIControllerTest do
         "key_size" => 2048
       })
 
-    assert redirected_to(root_response, 302) == "/admin/auth/login"
-    assert redirected_to(intermediate_response, 302) == "/admin/auth/login"
+    assert_admin_unauthorized(root_response)
+    assert_admin_unauthorized(intermediate_response)
     assert Repo.aggregate(Certificate, :count) == certificate_count
     assert Repo.aggregate(AppCertificate, :count) == app_certificate_count
   end
@@ -87,7 +87,7 @@ defmodule SecretHub.Web.PKIControllerTest do
         "policies" => ["root", "admin-all-secrets"]
       })
 
-    assert redirected_to(response, 302) == "/admin/auth/login"
+    assert_admin_unauthorized(response)
     assert Repo.aggregate(Application, :count) == application_count
     assert Repo.aggregate(AppBootstrapToken, :count) == bootstrap_token_count
   end
@@ -103,7 +103,7 @@ defmodule SecretHub.Web.PKIControllerTest do
       |> authed_conn()
       |> delete("/v1/apps/#{fixture.app.id}")
 
-    assert redirected_to(response, 302) == "/admin/auth/login"
+    assert_admin_unauthorized(response)
     assert Repo.get!(Application, application.id) == application
     assert Repo.get!(Certificate, certificate.id) == certificate
     assert Repo.get!(AppCertificate, app_certificate.id) == app_certificate
@@ -122,7 +122,7 @@ defmodule SecretHub.Web.PKIControllerTest do
         "policies" => ["root"]
       })
 
-    assert redirected_to(update_response, 302) == "/admin/auth/login"
+    assert_admin_unauthorized(update_response)
     assert Repo.get!(Application, fixture.app.id) == active_application
 
     suspend_response =
@@ -130,7 +130,7 @@ defmodule SecretHub.Web.PKIControllerTest do
       |> authed_conn()
       |> post("/v1/apps/#{fixture.app.id}/suspend", %{})
 
-    assert redirected_to(suspend_response, 302) == "/admin/auth/login"
+    assert_admin_unauthorized(suspend_response)
     assert Repo.get!(Application, fixture.app.id) == active_application
 
     {:ok, _application} = Apps.suspend_app(fixture.app.id)
@@ -141,7 +141,7 @@ defmodule SecretHub.Web.PKIControllerTest do
       |> authed_conn()
       |> post("/v1/apps/#{fixture.app.id}/activate", %{})
 
-    assert redirected_to(activate_response, 302) == "/admin/auth/login"
+    assert_admin_unauthorized(activate_response)
     assert Repo.get!(Application, fixture.app.id) == suspended_application
   end
 
@@ -353,7 +353,7 @@ defmodule SecretHub.Web.PKIControllerTest do
       end)
 
     assert_receive {:generic_uuid_client_signing_response, response}
-    assert redirected_to(response, 302) == "/admin/auth/login"
+    assert_admin_unauthorized(response)
     assert Repo.aggregate(Certificate, :count) == certificate_count
     assert Repo.aggregate(AppCertificate, :count) == app_certificate_count
 
@@ -639,7 +639,7 @@ defmodule SecretHub.Web.PKIControllerTest do
         "reason" => "operator_revoked"
       })
 
-    assert redirected_to(response, 302) == "/admin/auth/login"
+    assert_admin_unauthorized(response)
     assert Repo.get!(Certificate, fixture.current.cert_record.id).revoked == false
   end
 
@@ -1015,6 +1015,10 @@ defmodule SecretHub.Web.PKIControllerTest do
   defp admin_conn do
     Phoenix.ConnTest.build_conn()
     |> init_test_session(%{admin_id: "test-admin"})
+  end
+
+  defp assert_admin_unauthorized(conn) do
+    assert json_response(conn, 401) == %{"error" => "Admin authentication required"}
   end
 
   defp active_agent!(scope) do

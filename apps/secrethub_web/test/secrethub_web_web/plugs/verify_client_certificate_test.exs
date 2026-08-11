@@ -1,6 +1,7 @@
 defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
   use SecretHub.Web.ConnCase, async: false
 
+  alias SecretHub.Core.PKI.CertificateIdentity
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.Certificate
   alias SecretHub.Web.Plugs.VerifyClientCertificate
@@ -121,6 +122,79 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
       serial_number: serial,
       cn: cn
     }
+  end
+
+  defp generate_intermediate_ca(tmp, root, cn) do
+    suffix = :erlang.unique_integer([:positive])
+    key_path = Path.join(tmp, "intermediate_#{suffix}.key")
+    csr_path = Path.join(tmp, "intermediate_#{suffix}.csr")
+    cert_path = Path.join(tmp, "intermediate_#{suffix}.crt")
+    extensions_path = Path.join(tmp, "intermediate_#{suffix}.ext")
+
+    File.write!(extensions_path, """
+    basicConstraints=critical,CA:TRUE,pathlen:0
+    keyUsage=critical,keyCertSign,cRLSign
+    subjectKeyIdentifier=hash
+    authorityKeyIdentifier=keyid,issuer
+    """)
+
+    {_, 0} = System.cmd("openssl", ["genrsa", "-out", key_path, "2048"], stderr_to_stdout: true)
+
+    {_, 0} =
+      System.cmd(
+        "openssl",
+        [
+          "req",
+          "-new",
+          "-key",
+          key_path,
+          "-out",
+          csr_path,
+          "-subj",
+          "/CN=#{cn}/O=SecretHub Test"
+        ],
+        stderr_to_stdout: true
+      )
+
+    {_, 0} =
+      System.cmd(
+        "openssl",
+        [
+          "x509",
+          "-req",
+          "-in",
+          csr_path,
+          "-CA",
+          root.cert_path,
+          "-CAkey",
+          root.key_path,
+          "-CAcreateserial",
+          "-out",
+          cert_path,
+          "-days",
+          "1825",
+          "-extfile",
+          extensions_path
+        ],
+        stderr_to_stdout: true
+      )
+
+    pem = File.read!(cert_path)
+    [{:Certificate, der, _}] = :public_key.pem_decode(pem)
+
+    %{
+      key_path: key_path,
+      cert_path: cert_path,
+      pem: pem,
+      der: der,
+      cn: cn
+    }
+  end
+
+  defp with_certificate_chain(client, certificates) do
+    chain_path = client.cert_path <> ".chain.pem"
+    File.write!(chain_path, client.pem <> Enum.map_join(certificates, & &1.pem))
+    %{client | cert_path: chain_path}
   end
 
   defp generate_expired_cert(tmp, ca, cn) do
@@ -332,19 +406,76 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
     Plug.Conn.put_private(conn, :peer_cert_der, cert_der)
   end
 
-  defp store_ca_cert!(ca) do
+  defp put_peer_cert(conn, cert_der) do
+    {adapter, payload} = conn.adapter
+    peer_data = Map.put(payload.peer_data, :ssl_cert, cert_der)
+    %{conn | adapter: {adapter, %{payload | peer_data: peer_data}}}
+  end
+
+  defp mtls_get(port, client, path, headers \\ []) do
+    ssl_options = [
+      certfile: String.to_charlist(client.cert_path),
+      keyfile: String.to_charlist(client.key_path),
+      verify: :verify_none,
+      active: false,
+      mode: :binary,
+      versions: [:"tlsv1.2", :"tlsv1.3"]
+    ]
+
+    {:ok, socket} = :ssl.connect(~c"localhost", port, ssl_options, 5_000)
+
+    request =
+      [
+        "GET #{path} HTTP/1.1\r\n",
+        "Host: localhost\r\n",
+        Enum.map(headers, fn {name, value} -> "#{name}: #{value}\r\n" end),
+        "Connection: close\r\n\r\n"
+      ]
+
+    :ok = :ssl.send(socket, request)
+    receive_ssl_response(socket, "")
+  end
+
+  defp receive_ssl_response(socket, response) do
+    case :ssl.recv(socket, 0, 5_000) do
+      {:ok, data} -> receive_ssl_response(socket, response <> data)
+      {:error, :closed} -> response
+    end
+  end
+
+  defp assert_client_certificate_required(port) do
+    options = [verify: :verify_none, active: false, mode: :binary]
+
+    case :ssl.connect(~c"localhost", port, options, 5_000) do
+      {:error, _reason} ->
+        :ok
+
+      {:ok, socket} ->
+        case :ssl.send(socket, "GET /admin HTTP/1.1\r\nHost: localhost\r\n\r\n") do
+          {:error, _reason} ->
+            :ok
+
+          :ok ->
+            assert {:error, _reason} = :ssl.recv(socket, 0, 5_000)
+            :ok
+        end
+    end
+  end
+
+  defp store_ca_cert!(ca, opts \\ []) do
     insert_certificate_record!(%{
       serial_number: extract_serial(:public_key.pkix_decode_cert(ca.der, :otp)),
       fingerprint: calculate_fingerprint(ca.pem),
       certificate_pem: ca.pem,
       subject: "CN=#{ca.cn}, O=SecretHub Test",
-      issuer: "CN=#{ca.cn}, O=SecretHub Test",
+      issuer: Keyword.get(opts, :issuer, "CN=#{ca.cn}, O=SecretHub Test"),
+      issuer_id: Keyword.get(opts, :issuer_id),
       common_name: ca.cn,
       valid_from:
         DateTime.utc_now() |> DateTime.add(-3600, :second) |> DateTime.truncate(:second),
       valid_until:
         DateTime.utc_now() |> DateTime.add(3650 * 86_400, :second) |> DateTime.truncate(:second),
-      cert_type: :root_ca,
+      cert_type: Keyword.get(opts, :cert_type, :root_ca),
       revoked: false
     })
   end
@@ -451,6 +582,141 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
       assert %DateTime{} = cert_info.valid_from
       assert %DateTime{} = cert_info.valid_until
       assert is_binary(cert_info.subject)
+
+      assert cert_info.fingerprint ==
+               CertificateIdentity.canonical_fingerprint_from_der(client.der)
+    end
+
+    test "reads the certificate from connection peer data", %{conn: conn, client: client} do
+      opts = VerifyClientCertificate.init(required: true, check_revocation: true)
+
+      conn =
+        conn
+        |> put_peer_cert(client.der)
+        |> VerifyClientCertificate.call(opts)
+
+      refute conn.halted
+      assert conn.assigns.mtls_authenticated
+
+      assert conn.assigns.client_certificate.fingerprint ==
+               CertificateIdentity.canonical_fingerprint_from_der(client.der)
+    end
+
+    test "verified peer certificates authenticate configured production admins", %{
+      conn: conn,
+      client: client
+    } do
+      previous_dev_mode = Application.get_env(:secrethub_web, :dev_mode)
+      previous_fingerprints = Application.get_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS)
+      fingerprint = CertificateIdentity.canonical_fingerprint_from_der(client.der)
+
+      Application.put_env(:secrethub_web, :dev_mode, false)
+      Application.put_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS, [fingerprint])
+
+      on_exit(fn ->
+        restore_app_env(:dev_mode, previous_dev_mode)
+        restore_app_env(:ADMIN_CERT_FINGERPRINTS, previous_fingerprints)
+      end)
+
+      conn =
+        conn
+        |> init_test_session(%{})
+        |> put_peer_cert(client.der)
+        |> post(~p"/admin/auth/login", %{})
+
+      assert redirected_to(conn, 302) == ~p"/admin/dashboard"
+      assert get_session(conn, :admin_id) =~ "test-agent-01"
+    end
+
+    test "dedicated HTTPS listener authenticates the allowlisted TLS peer after CA rotation", %{
+      ca: ca,
+      client: root_signed_client
+    } do
+      previous_dev_mode = Application.get_env(:secrethub_web, :dev_mode)
+      previous_fingerprints = Application.get_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS)
+      intermediate_tmp = setup_temp_dir()
+      old_intermediate = generate_intermediate_ca(intermediate_tmp, ca, "Admin Intermediate CA")
+      intermediate = generate_intermediate_ca(intermediate_tmp, ca, "Admin Intermediate CA")
+
+      root_record =
+        Repo.get_by!(Certificate,
+          serial_number: extract_serial(:public_key.pkix_decode_cert(ca.der, :otp))
+        )
+
+      old_intermediate_record =
+        store_ca_cert!(old_intermediate,
+          cert_type: :intermediate_ca,
+          issuer: "CN=#{ca.cn}, O=SecretHub Test",
+          issuer_id: root_record.id
+        )
+
+      old_intermediate_record
+      |> Ecto.Changeset.change(
+        inserted_at:
+          DateTime.utc_now() |> DateTime.add(-60, :second) |> DateTime.truncate(:second)
+      )
+      |> Repo.update!()
+
+      store_ca_cert!(intermediate,
+        cert_type: :intermediate_ca,
+        issuer: "CN=#{ca.cn}, O=SecretHub Test",
+        issuer_id: root_record.id
+      )
+
+      admin_client =
+        intermediate_tmp
+        |> generate_client_cert(intermediate, "admin@example.com")
+        |> with_certificate_chain([intermediate])
+
+      unlisted_client =
+        intermediate_tmp
+        |> generate_client_cert(intermediate, "unlisted-admin@example.com")
+        |> with_certificate_chain([intermediate])
+
+      store_client_cert!(admin_client, intermediate.cn)
+      fingerprint = CertificateIdentity.canonical_fingerprint_from_der(admin_client.der)
+
+      Application.put_env(:secrethub_web, :dev_mode, false)
+      Application.put_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS, [fingerprint])
+
+      on_exit(fn ->
+        restore_app_env(:dev_mode, previous_dev_mode)
+        restore_app_env(:ADMIN_CERT_FINGERPRINTS, previous_fingerprints)
+        File.rm_rf!(intermediate_tmp)
+      end)
+
+      {:ok, server} =
+        Bandit.start_link(
+          plug: SecretHub.Web.Endpoint,
+          scheme: :https,
+          ip: {127, 0, 0, 1},
+          port: 0,
+          cipher_suite: :strong,
+          certfile: ca.cert_path,
+          keyfile: ca.key_path,
+          startup_log: false,
+          thousand_island_options: [
+            transport_options: [
+              cacertfile: String.to_charlist(ca.cert_path),
+              verify: :verify_peer,
+              fail_if_no_peer_cert: true,
+              versions: [:"tlsv1.2", :"tlsv1.3"]
+            ]
+          ]
+        )
+
+      {:ok, {_address, port}} = ThousandIsland.listener_info(server)
+
+      assert mtls_get(port, admin_client, "/admin") =~ "location: /admin/dashboard"
+
+      response =
+        mtls_get(port, unlisted_client, "/admin", [
+          {"x-ssl-client-cert", Base.encode64(root_signed_client.der)}
+        ])
+
+      assert response =~ "location: /admin/auth/login"
+
+      assert :ok = assert_client_certificate_required(port)
     end
 
     test "allows request without revocation check", %{conn: conn, client: client} do
@@ -466,6 +732,9 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
       assert conn.assigns[:agent_id] == "test-agent-01"
     end
   end
+
+  defp restore_app_env(key, nil), do: Application.delete_env(:secrethub_web, key)
+  defp restore_app_env(key, value), do: Application.put_env(:secrethub_web, key, value)
 
   describe "connection with expired certificate" do
     setup do

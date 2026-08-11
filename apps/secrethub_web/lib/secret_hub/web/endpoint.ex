@@ -4,12 +4,10 @@ defmodule SecretHub.Web.Endpoint do
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
-  @session_options [
-    store: :cookie,
-    key: "_secrethub_web_key",
-    signing_salt: "2X2uayL9",
-    same_site: "Lax"
-  ]
+  @session_options Application.compile_env!(
+                     :secrethub_web,
+                     [SecretHub.Web.Endpoint, :session_options]
+                   )
 
   socket "/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],

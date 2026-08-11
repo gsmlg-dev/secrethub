@@ -6,7 +6,8 @@ import Config
 # which you should run after static files are built and
 # before starting your production server.
 config :secrethub_web, SecretHub.Web.Endpoint,
-  cache_static_manifest: "priv/static/cache_manifest.json"
+  cache_static_manifest: "priv/static/cache_manifest.json",
+  session_options: [secure: true]
 
 # Database connection pool configuration (production)
 config :secrethub_core, SecretHub.Core.Repo,
