@@ -134,9 +134,6 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificate do
 
       %{ssl_cert: nil} ->
         {:error, :no_certificate}
-
-      _peer_data ->
-        {:error, :no_certificate}
     end
   rescue
     # Handle cases where connection is not TLS (e.g., development HTTP)
