@@ -80,6 +80,9 @@ jobs:
       - name: Compile
         run: mix compile --warnings-as-errors
 
+      - name: Create databases
+        run: mix ecto.create
+
       - name: Setup PostgreSQL extensions
         run: |
           PGPASSWORD=secrethub_test_password psql -h localhost -U secrethub -d secrethub_test -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
