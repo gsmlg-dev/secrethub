@@ -5,7 +5,7 @@ defmodule SecretHub.Web.RuntimeConfigIntegrationTest do
 
   @project_root Path.expand("../../../..", __DIR__)
   @compile_config Path.join(@project_root, "config/config.exs")
-  @runtime_config Path.join(@project_root, "config/runtime.exs")
+  @runtime_config Path.join(@project_root, "config/core_runtime.exs")
   @result_prefix "SECRET_HUB_WEB_RUNTIME_CONFIG="
 
   @base_env [

@@ -166,6 +166,7 @@ defmodule SecretHub.MixProject do
           secrethub_shared: :permanent,
           secrethub_human: :permanent
         ],
+        runtime_config_path: "config/core_runtime.exs",
         include_executables_for: [:unix],
         steps: [:assemble, :tar]
       ],

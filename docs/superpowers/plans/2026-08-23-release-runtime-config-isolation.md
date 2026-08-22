@@ -43,7 +43,7 @@ defmodule SecretHub.Core.ReleaseRuntimeConfigTest do
   end
 
   test "default runtime entrypoint delegates to Core runtime config" do
-    assert "import Config\n\nimport_config \"core_runtime.exs\"\n" ==
+    assert "import Config\n\nCode.eval_file(Path.join(__DIR__, \"core_runtime.exs\"))\n" ==
              File.read!(Path.join(@project_root, "config/runtime.exs"))
   end
 end
@@ -67,8 +67,11 @@ Move the complete existing contents of `config/runtime.exs` to `config/core_runt
 ```elixir
 import Config
 
-import_config "core_runtime.exs"
+Code.eval_file(Path.join(__DIR__, "core_runtime.exs"))
 ```
+
+Runtime config evaluation disables `import_config/1`, so the compatibility entrypoint
+evaluates the canonical file in the same config process instead.
 
 Add the explicit Core path in `mix.exs`:
 

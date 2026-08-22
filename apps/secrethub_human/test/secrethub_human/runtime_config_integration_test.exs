@@ -4,7 +4,7 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
   alias SecretHub.Human.RuntimeRole
 
   @project_root Path.expand("../../../..", __DIR__)
-  @runtime_config Path.join(@project_root, "config/runtime.exs")
+  @runtime_config Path.join(@project_root, "config/core_runtime.exs")
   @result_prefix "SECRET_HUB_RUNTIME_CONFIG="
 
   @base_env [

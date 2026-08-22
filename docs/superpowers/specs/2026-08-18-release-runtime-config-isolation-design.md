@@ -11,7 +11,7 @@ The runtime boundary must be explicit so Agent and CLI artifacts never require C
 - Keep the existing `secrethub_core` and `secrethub_agent` OTP releases. Do not create a CLI OTP release.
 - Make `config/core_runtime.exs` the canonical runtime configuration for the Core release and its bundled Web and Human applications.
 - Keep `config/agent_runtime.exs` as the canonical Agent release runtime configuration.
-- Keep `config/runtime.exs` as a compatibility entrypoint that imports `core_runtime.exs`. This preserves direct production debugging with commands such as `MIX_ENV=prod mix phx.server`.
+- Keep `config/runtime.exs` as a compatibility entrypoint that evaluates `core_runtime.exs` in the same config process. This preserves direct production debugging with commands such as `MIX_ENV=prod mix phx.server`.
 - Give the CLI an app-local config directory containing its own compile config and an empty runtime config. The CLI will continue to obtain operational settings from command-line flags and its local TOML configuration.
 - Remove Core-only placeholder environment variables from Agent build paths once tests prove that Agent assembly is isolated.
 
@@ -23,7 +23,7 @@ The root release definition explicitly sets `runtime_config_path: "config/core_r
 
 ### Direct production execution
 
-Mix continues to discover `config/runtime.exs` for source-based production commands. That file contains only `import Config` and `import_config "core_runtime.exs"`, so direct execution uses the same canonical Core configuration without duplicating it.
+Mix continues to discover `config/runtime.exs` for source-based production commands. Runtime config evaluation disables `import_config/1`, so that file uses `Code.eval_file(Path.join(__DIR__, "core_runtime.exs"))` to evaluate the canonical Core file in the same config process. Direct execution therefore uses the same canonical Core configuration without duplicating it.
 
 ### Agent release
 
