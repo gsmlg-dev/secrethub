@@ -66,6 +66,7 @@ defmodule SecretHub.CLI.MixProject do
   defp package do
     [
       files: [
+        "config",
         "lib",
         "priv",
         "mix.exs",
@@ -86,7 +87,7 @@ defmodule SecretHub.CLI.MixProject do
     if File.exists?(Path.expand("../../mix.exs", __DIR__)) do
       [
         build_path: "../../_build",
-        config_path: "../../config/config.exs",
+        config_path: "config/config.exs",
         deps_path: "../../deps",
         lockfile: "../../mix.lock"
       ]
