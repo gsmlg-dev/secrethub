@@ -18,7 +18,7 @@ export SECRETHUB_HOST=secrethub.example.com
 | SecretHub Agent | Beside applications | Enrolls with Core, maintains mTLS runtime link, serves local Unix socket secrets |
 | SecretHub CLI | Operator workstation or automation | Login, secret reads/writes, admin workflows |
 
-Core and Agent are separate OTP releases. Core uses `config/runtime.exs` and requires database and Phoenix runtime secrets. The standalone Agent release uses `config/agent_runtime.exs` and requires only `SECRET_HUB_AGENT_CORE_URL` at boot.
+Core and Agent are separate OTP releases. Core uses `config/core_runtime.exs` in packaged releases, while `config/runtime.exs` preserves direct production execution from source. The standalone Agent release uses `config/agent_runtime.exs` and requires only `SECRET_HUB_AGENT_CORE_URL` at boot. CLI builds use an app-local empty runtime config and do not require Core runtime variables.
 
 ## Release Artifacts
 

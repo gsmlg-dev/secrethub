@@ -324,17 +324,9 @@ jobs:
           mix deps.get --only prod
 
       - name: Compile application
-        env:
-          DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
-          SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
-          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
         run: mix compile
 
       - name: Build Agent release
-        env:
-          DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
-          SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
-          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
         run: mix release secrethub_agent
 
       - name: Package Agent tarball
@@ -391,9 +383,6 @@ jobs:
             set -e
             export PATH="/usr/local/lib/erlang28/bin:$PATH"
             export MIX_ENV=prod
-            export DATABASE_URL="${{ env.BUILD_DATABASE_URL }}"
-            export SECRET_KEY_BASE="${{ env.BUILD_SECRET_KEY_BASE }}"
-            export SECRET_HUB_CLUSTER_NODE_ID="${{ env.BUILD_CLUSTER_NODE_ID }}"
             export RELEASE_TAG="${{ needs.prepare-release.outputs.tag }}"
 
             mix local.hex --force
