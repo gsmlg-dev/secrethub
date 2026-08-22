@@ -1,7 +1,7 @@
 import Config
 
-# Runtime config for the standalone agent release. The core release keeps
-# config/runtime.exs because it needs database and Phoenix endpoint secrets.
+# Dedicated runtime config for standalone Agent releases. Packaged Core uses
+# config/core_runtime.exs for DB/Phoenix secrets; config/runtime.exs is the source-execution compatibility entrypoint.
 core_url =
   case System.get_env("SECRET_HUB_AGENT_CORE_URL") do
     value when is_binary(value) and value != "" ->
