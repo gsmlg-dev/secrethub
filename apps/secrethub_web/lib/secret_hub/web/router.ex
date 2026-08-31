@@ -367,13 +367,6 @@ defmodule SecretHub.Web.Router do
     get "/authority/status", ClientAuthPKIController, :authority_status
   end
 
-  # Client Auth PKI agent receipt submission endpoint (vault_token / agent authenticated)
-  scope "/v1/pki/client-auth", SecretHub.Web do
-    pipe_through :vault_token
-
-    post "/bundle/receipt", ClientAuthPKIController, :record_receipt
-  end
-
   # Client Auth PKI authenticated management and issuance (operator/admin only)
   scope "/v1/pki/client-auth", SecretHub.Web do
     pipe_through :admin_api

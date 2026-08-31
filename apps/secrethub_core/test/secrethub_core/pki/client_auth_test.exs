@@ -404,4 +404,63 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert length(receipts) == 1
     end
   end
+
+  describe "Lock ordering & Concurrency" do
+    setup do
+      {:ok, initialized} = ClientAuth.initialize_authority()
+      {:ok, identity} = ClientAuth.create_identity(%{"name" => "concurrent-agent"})
+
+      %{
+        authority: initialized.authority,
+        ca: initialized.ca_certificate,
+        identity: identity
+      }
+    end
+
+    test "concurrent issuance and disable_identity do not deadlock", %{identity: identity} do
+      key = X509.PrivateKey.new_ec(:secp256r1)
+      csr_pem = key |> X509.CSR.new("/CN=concurrent") |> X509.CSR.to_pem()
+
+      task1 =
+        Task.async(fn ->
+          ClientAuth.issue_certificate(identity.id, csr_pem, Ecto.UUID.generate())
+        end)
+
+      task2 =
+        Task.async(fn ->
+          ClientAuth.disable_identity(identity.id, "concurrent_test")
+        end)
+
+      res1 = Task.await(task1, 5_000)
+      res2 = Task.await(task2, 5_000)
+
+      # Both tasks succeed or return clean business logic results without deadlock
+      assert match?({:ok, _}, res1) or match?({:error, :identity_disabled}, res1)
+      assert match?({:ok, _}, res2)
+    end
+  end
+
+  describe "Authority Initialization Validation" do
+    test "validates ca_validity_days parameter" do
+      # Reject < 30 days
+      assert {:error, {:invalid_ca_validity_days, _}} =
+               ClientAuth.initialize_authority(%{"ca_validity_days" => 10})
+
+      # Reject > 3650 days
+      assert {:error, {:invalid_ca_validity_days, _}} =
+               ClientAuth.initialize_authority(%{"ca_validity_days" => 5000})
+
+      # Reject non-integer
+      assert {:error, {:invalid_ca_validity_days, _}} =
+               ClientAuth.initialize_authority(%{"ca_validity_days" => "infinite"})
+
+      # Reject CA validity <= max_ttl_seconds
+      assert {:error, {:ca_validity_too_short, _}} =
+               ClientAuth.initialize_authority(%{
+                 "ca_validity_days" => 30,
+                 "default_ttl_seconds" => 86_400,
+                 "max_ttl_seconds" => 40 * 86_400
+               })
+    end
+  end
 end

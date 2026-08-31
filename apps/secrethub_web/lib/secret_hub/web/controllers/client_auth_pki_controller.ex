@@ -287,35 +287,6 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   end
 
   @doc """
-  POST /v1/pki/client-auth/bundle/receipt
-  Records convergence receipt from an agent.
-  """
-  def record_receipt(conn, params) do
-    # If authenticated as an agent, bind agent_id from assigns to prevent spoofing
-    params =
-      if agent_id = conn.assigns[:agent_id] do
-        Map.put(params, "agent_id", agent_id)
-      else
-        params
-      end
-
-    case ClientAuth.record_bundle_receipt(params) do
-      {:ok, receipt} ->
-        json(conn, %{data: render_receipt(receipt)})
-
-      {:error, %Ecto.Changeset{} = changeset} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "Validation failed", details: format_changeset_errors(changeset)})
-
-      {:error, reason} ->
-        conn
-        |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
-    end
-  end
-
-  @doc """
   GET /v1/pki/client-auth/bundle/receipts
   Lists bundle receipts for authority.
   """
@@ -328,16 +299,19 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   defp get_actor(conn) do
     admin_id = get_session(conn, :admin_id) || conn.assigns[:current_admin_id] || "admin"
 
-    client_ip =
+    source_ip =
       case conn.remote_ip do
-        {a, b, c, d} -> "#{a}.#{b}.#{c}.#{d}"
-        ip -> to_string(ip)
+        ip_tuple when is_tuple(ip_tuple) ->
+          :inet.ntoa(ip_tuple) |> to_string()
+
+        _ ->
+          "127.0.0.1"
       end
 
     %{
       actor_type: "admin",
       actor_id: to_string(admin_id),
-      client_ip: client_ip
+      source_ip: source_ip
     }
   end
 

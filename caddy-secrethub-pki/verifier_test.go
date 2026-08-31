@@ -1,13 +1,19 @@
 package secrethubpki
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"go.uber.org/zap"
 )
@@ -49,7 +56,7 @@ func newTestHarness(t *testing.T) *testHarness {
 	caTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
-			Organization: []string{"SecretHub"},
+			Organization: []string{"SecretHub Client Authentication"},
 			CommonName:   "SecretHub Test CA",
 		},
 		NotBefore:             time.Now().Add(-1 * time.Hour),
@@ -108,6 +115,18 @@ func (h *testHarness) issueClientCert(t *testing.T, identityID string, serial in
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  false,
+		ExtraExtensions: []pkix.Extension{
+			{
+				Id:       asn1.ObjectIdentifier{2, 5, 29, 19},
+				Critical: true,
+				Value:    []byte{0x30, 0x00}, // BasicConstraints CA:FALSE
+			},
+			{
+				Id:       asn1.ObjectIdentifier{2, 5, 29, 15},
+				Critical: true,
+				Value:    []byte{0x03, 0x02, 0x07, 0x80}, // KeyUsage digitalSignature
+			},
+		},
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, template, h.caCert, &clientKey.PublicKey, h.caKey)
@@ -123,7 +142,7 @@ func (h *testHarness) issueClientCert(t *testing.T, identityID string, serial in
 	return cert, clientKey
 }
 
-func (h *testHarness) writeCRL(t *testing.T, revokedSerials []*big.Int, crlNumber int64, nextUpdate time.Time) []byte {
+func (h *testHarness) writeBundle(t *testing.T, generation, crlNumber int64, revokedSerials []*big.Int, nextUpdate time.Time) {
 	t.Helper()
 	var entries []x509.RevocationListEntry
 	for _, s := range revokedSerials {
@@ -155,15 +174,62 @@ func (h *testHarness) writeCRL(t *testing.T, revokedSerials []*big.Int, crlNumbe
 	if err := os.WriteFile(filepath.Join(h.currentDir, "crl.pem"), crlPEM, 0644); err != nil {
 		t.Fatalf("failed to write crl.pem: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(h.currentDir, "ca.crt"), h.caPEM, 0644); err != nil {
+		t.Fatalf("failed to write ca.crt: %v", err)
+	}
 
-	return crlPEM
+	caDERHash := sha256.Sum256(h.caCert.Raw)
+	caFingerprint := hex.EncodeToString(caDERHash[:])
+
+	crlDERHash := sha256.Sum256(crlDER)
+	crlDERHashHex := hex.EncodeToString(crlDERHash[:])
+
+	thisUpdateStr := thisUpdate.UTC().Format(time.RFC3339)
+	nextUpdateStr := nextUpdate.UTC().Format(time.RFC3339)
+
+	transcript := fmt.Sprintf("%d|%s|%d|%s|%d|%s|%s|%s|%s|%s",
+		1,
+		"client-auth",
+		generation,
+		caFingerprint,
+		crlNumber,
+		crlDERHashHex,
+		thisUpdateStr,
+		nextUpdateStr,
+		string(h.caPEM),
+		string(crlPEM),
+	)
+
+	bundleHash := sha256.Sum256([]byte(transcript))
+	bundleHashHex := hex.EncodeToString(bundleHash[:])
+
+	manifest := BundleManifest{
+		SchemaVersion: 1,
+		Authority:     "client-auth",
+		Generation:    generation,
+		CRLNumber:     crlNumber,
+		CAFingerprint: caFingerprint,
+		CRLDerSHA256:  crlDERHashHex,
+		BundleSHA256:  bundleHashHex,
+		ThisUpdate:    thisUpdateStr,
+		NextUpdate:    nextUpdateStr,
+	}
+
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("failed to marshal manifest: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(h.currentDir, "manifest.json"), manifestBytes, 0644); err != nil {
+		t.Fatalf("failed to write manifest.json: %v", err)
+	}
 }
 
 func TestVerifierValidCertificate(t *testing.T) {
 	h := newTestHarness(t)
 	defer os.RemoveAll(h.tmpDir)
 
-	h.writeCRL(t, nil, 1, time.Now().Add(48*time.Hour))
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
 	v := NewVerifier(h.tmpDir)
 	if _, err := v.LoadFromDisk(); err != nil {
@@ -191,7 +257,7 @@ func TestVerifierRevokedCertificate(t *testing.T) {
 	defer os.RemoveAll(h.tmpDir)
 
 	revokedSerial := big.NewInt(2002)
-	h.writeCRL(t, []*big.Int{revokedSerial}, 2, time.Now().Add(48*time.Hour))
+	h.writeBundle(t, 1, 2, []*big.Int{revokedSerial}, time.Now().Add(48*time.Hour))
 
 	v := NewVerifier(h.tmpDir)
 	if _, err := v.LoadFromDisk(); err != nil {
@@ -211,7 +277,7 @@ func TestVerifierExpiredCRL(t *testing.T) {
 	defer os.RemoveAll(h.tmpDir)
 
 	// NextUpdate expired 1 hour ago
-	h.writeCRL(t, nil, 1, time.Now().Add(-1*time.Hour))
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(-1*time.Hour))
 
 	v := NewVerifier(h.tmpDir)
 	if _, err := v.LoadFromDisk(); err != nil {
@@ -230,7 +296,7 @@ func TestVerifierForeignCA(t *testing.T) {
 	h := newTestHarness(t)
 	defer os.RemoveAll(h.tmpDir)
 
-	h.writeCRL(t, nil, 1, time.Now().Add(48*time.Hour))
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
 	v := NewVerifier(h.tmpDir)
 	if _, err := v.LoadFromDisk(); err != nil {
@@ -248,11 +314,53 @@ func TestVerifierForeignCA(t *testing.T) {
 	}
 }
 
+func TestVerifierMonotonicityAndRollbackRejection(t *testing.T) {
+	h := newTestHarness(t)
+	defer os.RemoveAll(h.tmpDir)
+
+	// Start at Generation 2, CRL number 2
+	h.writeBundle(t, 2, 2, nil, time.Now().Add(48*time.Hour))
+
+	v := NewVerifier(h.tmpDir)
+	snap1, err := v.LoadFromDisk()
+	if err != nil {
+		t.Fatalf("failed to load gen 2: %v", err)
+	}
+	if snap1.Generation != 2 {
+		t.Fatalf("expected gen 2, got %d", snap1.Generation)
+	}
+
+	// 1. Re-loading same generation 2 is OK
+	if _, err := v.LoadFromDisk(); err != nil {
+		t.Fatalf("re-loading same generation should succeed: %v", err)
+	}
+
+	// 2. Generation downgrade: attempt to switch to Generation 1
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+	if _, err := v.LoadFromDisk(); err == nil {
+		t.Fatalf("expected error on generation downgrade, got nil")
+	}
+
+	// 3. Equivocation: same generation 2 with differing hash
+	manifestPath := filepath.Join(h.currentDir, "manifest.json")
+	var manifest BundleManifest
+	manifestBytes, _ := os.ReadFile(manifestPath)
+	json.Unmarshal(manifestBytes, &manifest)
+	manifest.Generation = 2
+	manifest.BundleSHA256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	corruptedBytes, _ := json.Marshal(manifest)
+	os.WriteFile(manifestPath, corruptedBytes, 0644)
+
+	if _, err := v.LoadFromDisk(); err == nil {
+		t.Fatalf("expected error on equivocation, got nil")
+	}
+}
+
 func TestVerifierCanonicalProfileNegative(t *testing.T) {
 	h := newTestHarness(t)
 	defer os.RemoveAll(h.tmpDir)
 
-	h.writeCRL(t, nil, 1, time.Now().Add(48*time.Hour))
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
 	v := NewVerifier(h.tmpDir)
 	if _, err := v.LoadFromDisk(); err != nil {
@@ -265,24 +373,28 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 		t.Errorf("expected ErrInvalidCommonName, got: %v", err)
 	}
 
-	// 2. Wrong Organization
+	// 2. Extra Subject RDN (e.g. Country)
 	validID := "e57c6bc1-1a3b-4882-9f37-1424e88383e2"
 	clientKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	uri, _ := url.Parse("urn:secrethub:client:" + validID)
-	wrongOrgTemplate := &x509.Certificate{
+	extraRDNTemplate := &x509.Certificate{
 		SerialNumber:          big.NewInt(5002),
-		Subject:               pkix.Name{Organization: []string{"Wrong Org"}, CommonName: validID},
+		Subject:               pkix.Name{Organization: []string{"SecretHub Client Authentication"}, CommonName: validID, Country: []string{"US"}},
 		URIs:                  []*url.URL{uri},
 		NotBefore:             time.Now().Add(-5 * time.Minute),
 		NotAfter:              time.Now().Add(30 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
+		ExtraExtensions: []pkix.Extension{
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: true, Value: []byte{0x30, 0x00}},
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 15}, Critical: true, Value: []byte{0x03, 0x02, 0x07, 0x80}},
+		},
 	}
-	der, _ := x509.CreateCertificate(rand.Reader, wrongOrgTemplate, h.caCert, &clientKey.PublicKey, h.caKey)
-	wrongOrgCert, _ := x509.ParseCertificate(der)
-	if _, err := v.VerifyCertificate(wrongOrgCert, time.Now()); err != ErrInvalidOrganization {
-		t.Errorf("expected ErrInvalidOrganization, got: %v", err)
+	der, _ := x509.CreateCertificate(rand.Reader, extraRDNTemplate, h.caCert, &clientKey.PublicKey, h.caKey)
+	extraRDNCert, _ := x509.ParseCertificate(der)
+	if _, err := v.VerifyCertificate(extraRDNCert, time.Now()); err != ErrExtraSubjectAttributes {
+		t.Errorf("expected ErrExtraSubjectAttributes, got: %v", err)
 	}
 
 	// 3. Extra DNS SAN
@@ -296,6 +408,10 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
+		ExtraExtensions: []pkix.Extension{
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: true, Value: []byte{0x30, 0x00}},
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 15}, Critical: true, Value: []byte{0x03, 0x02, 0x07, 0x80}},
+		},
 	}
 	der, _ = x509.CreateCertificate(rand.Reader, extraSANTemplate, h.caCert, &clientKey.PublicKey, h.caKey)
 	extraSANCert, _ := x509.ParseCertificate(der)
@@ -314,6 +430,10 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
+		ExtraExtensions: []pkix.Extension{
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: true, Value: []byte{0x30, 0x03, 0x01, 0x01, 0xFF}},
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 15}, Critical: true, Value: []byte{0x03, 0x02, 0x07, 0x80}},
+		},
 	}
 	der, _ = x509.CreateCertificate(rand.Reader, isCATemplate, h.caCert, &clientKey.PublicKey, h.caKey)
 	isCACert, _ := x509.ParseCertificate(der)
@@ -322,12 +442,31 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 	}
 }
 
+func TestProvisionFailsOnMissingBundle(t *testing.T) {
+	emptyDir, err := os.MkdirTemp("", "empty-bundle-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(emptyDir)
+
+	ctx, cancel := caddy.NewContext(caddy.Context{Context: context.Background()})
+	defer cancel()
+
+	tv := &TLSVerifier{
+		BundleDir: emptyDir,
+	}
+
+	if err := tv.Provision(ctx); err == nil {
+		t.Fatalf("expected Provision to fail on empty bundle directory, got nil error")
+	}
+}
+
 func TestTLSVerifierRealHandshake(t *testing.T) {
 	h := newTestHarness(t)
 	defer os.RemoveAll(h.tmpDir)
 
 	revokedSerial := big.NewInt(9999)
-	h.writeCRL(t, []*big.Int{revokedSerial}, 1, time.Now().Add(48*time.Hour))
+	h.writeBundle(t, 1, 1, []*big.Int{revokedSerial}, time.Now().Add(48*time.Hour))
 
 	v := NewVerifier(h.tmpDir)
 	if _, err := v.LoadFromDisk(); err != nil {
@@ -339,7 +478,6 @@ func TestTLSVerifierRealHandshake(t *testing.T) {
 		logger:   zap.NewNop(),
 	}
 
-	// Create test server with custom VerifyPeerCertificate
 	serverCert, err := tls.X509KeyPair(h.caPEM, pem.EncodeToMemory(&pem.Block{
 		Type:  "EC PRIVATE KEY",
 		Bytes: mustMarshalECKey(h.caKey),
@@ -422,7 +560,7 @@ func TestCaddyMiddlewareIntegration(t *testing.T) {
 	defer os.RemoveAll(h.tmpDir)
 
 	revokedSerial := big.NewInt(9999)
-	h.writeCRL(t, []*big.Int{revokedSerial}, 1, time.Now().Add(48*time.Hour))
+	h.writeBundle(t, 1, 1, []*big.Int{revokedSerial}, time.Now().Add(48*time.Hour))
 
 	v := NewVerifier(h.tmpDir)
 	if _, err := v.LoadFromDisk(); err != nil {

@@ -128,143 +128,145 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
       Map.get(attrs, "max_ttl_seconds") || Map.get(attrs, :max_ttl_seconds) ||
         @default_max_ttl_seconds
 
-    Repo.transaction(fn ->
-      # Check if authority already exists
-      existing =
-        Repo.one(
-          from(a in ClientAuthAuthority,
-            where: a.slug == "client-auth",
-            lock: "FOR UPDATE"
+    with :ok <- validate_ca_validity_params(ca_validity_days, default_ttl, max_ttl) do
+      Repo.transaction(fn ->
+        # Check if authority already exists
+        existing =
+          Repo.one(
+            from(a in ClientAuthAuthority,
+              where: a.slug == "client-auth",
+              lock: "FOR UPDATE"
+            )
           )
-        )
 
-      if existing do
-        Repo.rollback(:authority_already_initialized)
+        if existing do
+          Repo.rollback(:authority_already_initialized)
+        end
+
+        # Generate CA keypair
+        private_key = generate_ca_private_key(key_algo)
+        private_key_pem = X509.PrivateKey.to_pem(private_key)
+
+        {:ok, encrypted_key} = Encryption.encrypt_to_blob(private_key_pem, master_key)
+
+        not_before = DateTime.add(now, -@clock_skew_seconds, :second)
+        not_after = DateTime.add(now, ca_validity_days * 86_400, :second)
+
+        # Build self-signed CA certificate
+        subject_str = "/O=#{@default_ca_org}/CN=#{name}"
+
+        ca_extensions = [
+          basic_constraints: CertExtension.basic_constraints(true),
+          key_usage: CertExtension.key_usage([:keyCertSign, :cRLSign])
+        ]
+
+        hash_algo = if key_algo == "ecdsa_p384", do: :sha384, else: :sha256
+
+        ca_cert_struct =
+          X509.Certificate.self_signed(
+            private_key,
+            subject_str,
+            template: :root_ca,
+            extensions: ca_extensions,
+            hash: hash_algo,
+            validity: Validity.new(not_before, not_after)
+          )
+
+        ca_cert_pem = X509.Certificate.to_pem(ca_cert_struct)
+        ca_cert_der = X509.Certificate.to_der(ca_cert_struct)
+        canonical_fingerprint = CertificateIdentity.canonical_fingerprint_from_der(ca_cert_der)
+        legacy_fingerprint = Certificate.fingerprint(ca_cert_der)
+        serial_int = X509.Certificate.serial(ca_cert_struct)
+        serial_hex = format_serial_hex(serial_int)
+
+        ca_cert_attrs = %{
+          serial_number: serial_hex,
+          common_name: name,
+          organization: @default_ca_org,
+          subject: subject_str,
+          issuer: subject_str,
+          cert_type: :client_auth_ca,
+          certificate_pem: ca_cert_pem,
+          private_key_encrypted: encrypted_key,
+          fingerprint: legacy_fingerprint,
+          canonical_fingerprint: canonical_fingerprint,
+          valid_from: not_before,
+          valid_until: not_after,
+          status: "active",
+          key_usage: ["keyCertSign", "cRLSign"],
+          extended_key_usage: []
+        }
+
+        ca_cert_record =
+          %Certificate{}
+          |> Certificate.changeset(ca_cert_attrs)
+          |> Repo.insert!()
+
+        # Create or activate Authority record
+        authority_attrs = %{
+          slug: "client-auth",
+          name: name,
+          status: "initializing",
+          ca_certificate_id: ca_cert_record.id,
+          current_generation: 0,
+          current_crl_number: 0,
+          key_algorithm: key_algo,
+          default_ttl_seconds: default_ttl,
+          max_ttl_seconds: max_ttl
+        }
+
+        authority_record =
+          %ClientAuthAuthority{}
+          |> ClientAuthAuthority.changeset(authority_attrs)
+          |> Repo.insert!()
+
+        # Update CA cert with client_auth_authority_id
+        ca_cert_record =
+          ca_cert_record
+          |> Certificate.changeset(%{client_auth_authority_id: authority_record.id})
+          |> Repo.update!()
+
+        # Generate initial empty CRL (generation 1, crl_number 1)
+        {:ok, initial_crl, active_authority} =
+          CRLManager.generate_crl_locked(
+            authority_record,
+            private_key,
+            ca_cert_record,
+            now: now,
+            actor: opts[:actor]
+          )
+
+        # Activate authority
+        {:ok, active_authority} =
+          active_authority
+          |> ClientAuthAuthority.changeset(%{status: "active"})
+          |> Repo.update()
+
+        # Record audit
+        actor = Keyword.get(opts, :actor, %{})
+
+        :ok =
+          record_authority_initialized_audit(active_authority, ca_cert_record, initial_crl, actor)
+
+        %{
+          authority: active_authority,
+          ca_certificate: ca_cert_record,
+          initial_crl: initial_crl
+        }
+      end)
+      |> case do
+        {:ok, result} ->
+          Notifier.notify_bundle_updated(
+            result.authority.current_generation,
+            result.authority.current_crl_number,
+            "authority_initialized"
+          )
+
+          {:ok, result}
+
+        {:error, reason} ->
+          {:error, reason}
       end
-
-      # Generate CA keypair
-      private_key = generate_ca_private_key(key_algo)
-      private_key_pem = X509.PrivateKey.to_pem(private_key)
-
-      {:ok, encrypted_key} = Encryption.encrypt_to_blob(private_key_pem, master_key)
-
-      not_before = DateTime.add(now, -@clock_skew_seconds, :second)
-      not_after = DateTime.add(now, ca_validity_days * 86_400, :second)
-
-      # Build self-signed CA certificate
-      subject_str = "/O=#{@default_ca_org}/CN=#{name}"
-
-      ca_extensions = [
-        basic_constraints: CertExtension.basic_constraints(true),
-        key_usage: CertExtension.key_usage([:keyCertSign, :cRLSign])
-      ]
-
-      hash_algo = if key_algo == "ecdsa_p384", do: :sha384, else: :sha256
-
-      ca_cert_struct =
-        X509.Certificate.self_signed(
-          private_key,
-          subject_str,
-          template: :root_ca,
-          extensions: ca_extensions,
-          hash: hash_algo,
-          validity: Validity.new(not_before, not_after)
-        )
-
-      ca_cert_pem = X509.Certificate.to_pem(ca_cert_struct)
-      ca_cert_der = X509.Certificate.to_der(ca_cert_struct)
-      canonical_fingerprint = CertificateIdentity.canonical_fingerprint_from_der(ca_cert_der)
-      legacy_fingerprint = Certificate.fingerprint(ca_cert_der)
-      serial_int = X509.Certificate.serial(ca_cert_struct)
-      serial_hex = format_serial_hex(serial_int)
-
-      ca_cert_attrs = %{
-        serial_number: serial_hex,
-        common_name: name,
-        organization: @default_ca_org,
-        subject: subject_str,
-        issuer: subject_str,
-        cert_type: :client_auth_ca,
-        certificate_pem: ca_cert_pem,
-        private_key_encrypted: encrypted_key,
-        fingerprint: legacy_fingerprint,
-        canonical_fingerprint: canonical_fingerprint,
-        valid_from: not_before,
-        valid_until: not_after,
-        status: "active",
-        key_usage: ["keyCertSign", "cRLSign"],
-        extended_key_usage: []
-      }
-
-      ca_cert_record =
-        %Certificate{}
-        |> Certificate.changeset(ca_cert_attrs)
-        |> Repo.insert!()
-
-      # Create or activate Authority record
-      authority_attrs = %{
-        slug: "client-auth",
-        name: name,
-        status: "initializing",
-        ca_certificate_id: ca_cert_record.id,
-        current_generation: 0,
-        current_crl_number: 0,
-        key_algorithm: key_algo,
-        default_ttl_seconds: default_ttl,
-        max_ttl_seconds: max_ttl
-      }
-
-      authority_record =
-        %ClientAuthAuthority{}
-        |> ClientAuthAuthority.changeset(authority_attrs)
-        |> Repo.insert!()
-
-      # Update CA cert with client_auth_authority_id
-      ca_cert_record =
-        ca_cert_record
-        |> Certificate.changeset(%{client_auth_authority_id: authority_record.id})
-        |> Repo.update!()
-
-      # Generate initial empty CRL (generation 1, crl_number 1)
-      {:ok, initial_crl, active_authority} =
-        CRLManager.generate_crl_locked(
-          authority_record,
-          private_key,
-          ca_cert_record,
-          now: now,
-          actor: opts[:actor]
-        )
-
-      # Activate authority
-      {:ok, active_authority} =
-        active_authority
-        |> ClientAuthAuthority.changeset(%{status: "active"})
-        |> Repo.update()
-
-      # Record audit
-      actor = Keyword.get(opts, :actor, %{})
-
-      :ok =
-        record_authority_initialized_audit(active_authority, ca_cert_record, initial_crl, actor)
-
-      %{
-        authority: active_authority,
-        ca_certificate: ca_cert_record,
-        initial_crl: initial_crl
-      }
-    end)
-    |> case do
-      {:ok, result} ->
-        Notifier.notify_bundle_updated(
-          result.authority.current_generation,
-          result.authority.current_crl_number,
-          "authority_initialized"
-        )
-
-        {:ok, result}
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 
@@ -399,16 +401,39 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
     :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
   end
 
+  defp validate_ca_validity_params(ca_validity_days, default_ttl, max_ttl) do
+    cond do
+      not is_integer(ca_validity_days) or ca_validity_days < 30 or ca_validity_days > 3650 ->
+        {:error,
+         {:invalid_ca_validity_days,
+          "ca_validity_days must be an integer between 30 and 3650 days"}}
+
+      not is_integer(default_ttl) or default_ttl < 60 ->
+        {:error, {:invalid_default_ttl, "default_ttl_seconds must be an integer >= 60"}}
+
+      not is_integer(max_ttl) or max_ttl < default_ttl ->
+        {:error, {:invalid_max_ttl, "max_ttl_seconds must be >= default_ttl_seconds"}}
+
+      ca_validity_days * 86_400 <= max_ttl ->
+        {:error, {:ca_validity_too_short, "CA validity duration must exceed max_ttl_seconds"}}
+
+      true ->
+        :ok
+    end
+  end
+
   defp record_authority_initialized_audit(authority, ca_cert, crl, actor) do
     actor_type = Map.get(actor, :actor_type) || Map.get(actor, "actor_type") || "admin"
     actor_id = Map.get(actor, :actor_id) || Map.get(actor, "actor_id") || "admin"
-    ip_address = Map.get(actor, :client_ip) || Map.get(actor, "client_ip")
+
+    source_ip =
+      Map.get(actor, :source_ip) || Map.get(actor, "source_ip") || Map.get(actor, :client_ip)
 
     attrs = %{
       event_type: "pki.client_auth.authority_initialized",
       actor_type: actor_type,
       actor_id: actor_id,
-      ip_address: ip_address,
+      source_ip: source_ip,
       access_granted: true,
       correlation_id: authority.id,
       event_data: %{
@@ -422,9 +447,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
       }
     }
 
-    case Audit.log_event(attrs) do
-      {:ok, _} -> :ok
-      {:error, _} -> :ok
-    end
+    Audit.log_event(attrs)
+    :ok
   end
 end

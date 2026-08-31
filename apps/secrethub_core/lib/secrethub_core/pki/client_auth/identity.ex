@@ -115,6 +115,8 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
     actor = Keyword.get(opts, :actor, %{})
 
     Repo.transaction(fn ->
+      authority = lock_authority()
+
       case Repo.one(
              from(i in ClientAuthIdentity, where: i.id == ^identity_id, lock: "FOR UPDATE")
            ) do
@@ -142,7 +144,6 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
             :ok = record_identity_disabled_audit(disabled_identity, 0, reason, actor)
             %{identity: disabled_identity, crl_updated: false}
           else
-            authority = lock_authority()
             {:ok, ca_key} = decrypt_ca_key(authority.ca_certificate)
 
             # Mark all active certs revoked
@@ -278,13 +279,15 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
   defp record_identity_created_audit(identity, actor) do
     actor_type = Map.get(actor, :actor_type) || Map.get(actor, "actor_type") || "admin"
     actor_id = Map.get(actor, :actor_id) || Map.get(actor, "actor_id") || "admin"
-    ip_address = Map.get(actor, :client_ip) || Map.get(actor, "client_ip")
+
+    source_ip =
+      Map.get(actor, :source_ip) || Map.get(actor, "source_ip") || Map.get(actor, :client_ip)
 
     attrs = %{
       event_type: "pki.client_auth.identity_created",
       actor_type: actor_type,
       actor_id: actor_id,
-      ip_address: ip_address,
+      source_ip: source_ip,
       access_granted: true,
       correlation_id: identity.id,
       event_data: %{
@@ -294,22 +297,22 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
       }
     }
 
-    case Audit.log_event(attrs) do
-      {:ok, _} -> :ok
-      {:error, _} -> :ok
-    end
+    Audit.log_event(attrs)
+    :ok
   end
 
   defp record_identity_disabled_audit(identity, revoked_count, reason, actor) do
     actor_type = Map.get(actor, :actor_type) || Map.get(actor, "actor_type") || "admin"
     actor_id = Map.get(actor, :actor_id) || Map.get(actor, "actor_id") || "admin"
-    ip_address = Map.get(actor, :client_ip) || Map.get(actor, "client_ip")
+
+    source_ip =
+      Map.get(actor, :source_ip) || Map.get(actor, "source_ip") || Map.get(actor, :client_ip)
 
     attrs = %{
       event_type: "pki.client_auth.identity_disabled",
       actor_type: actor_type,
       actor_id: actor_id,
-      ip_address: ip_address,
+      source_ip: source_ip,
       access_granted: true,
       correlation_id: identity.id,
       event_data: %{
@@ -320,9 +323,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
       }
     }
 
-    case Audit.log_event(attrs) do
-      {:ok, _} -> :ok
-      {:error, _} -> :ok
-    end
+    Audit.log_event(attrs)
+    :ok
   end
 end

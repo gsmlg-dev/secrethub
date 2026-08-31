@@ -1,38 +1,77 @@
 package secrethubpki
 
 import (
+	"crypto/sha256"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 )
 
 var (
-	ErrNoClientCert          = errors.New("no client certificate provided in TLS handshake")
-	ErrCADerivationFailed    = errors.New("failed to load root CA certificate")
-	ErrCRLParseFailed        = errors.New("failed to parse certificate revocation list")
-	ErrCRLSignatureInvalid   = errors.New("CRL signature does not match CA")
-	ErrCRLNotYetValid        = errors.New("CRL thisUpdate is in the future")
-	ErrCRLExpired            = errors.New("CRL nextUpdate has expired")
-	ErrCertRevoked           = errors.New("client certificate has been revoked")
-	ErrCertInvalidChain      = errors.New("client certificate chain is invalid")
-	ErrMissingSAN            = errors.New("client certificate must contain exactly one SecretHub URI SAN")
-	ErrCNMismatch            = errors.New("client certificate CN does not match URI SAN identity")
-	ErrNoClientAuthEKU       = errors.New("client certificate does not permit clientAuth key usage")
-	ErrInvalidExtKeyUsage    = errors.New("client certificate contains unauthorized extended key usages")
-	ErrInvalidKeyUsage       = errors.New("client certificate key usage must be digitalSignature only")
-	ErrInvalidOrganization   = errors.New("client certificate organization must be 'SecretHub Client Authentication'")
-	ErrInvalidCommonName     = errors.New("client certificate CN must be a valid canonical UUID")
-	ErrExtraSANsDisallowed   = errors.New("client certificate contains unauthorized SANs (DNS, IP, or Email)")
-	ErrIsCACertificate       = errors.New("client certificate cannot have IsCA=true")
-	ErrBundleNotLoaded       = errors.New("trust bundle is not loaded")
+	ErrNoClientCert            = errors.New("no client certificate provided in TLS handshake")
+	ErrCADerivationFailed      = errors.New("failed to load root CA certificate")
+	ErrCRLParseFailed          = errors.New("failed to parse certificate revocation list")
+	ErrCRLSignatureInvalid     = errors.New("CRL signature does not match CA")
+	ErrCRLNotYetValid          = errors.New("CRL thisUpdate is in the future")
+	ErrCRLExpired              = errors.New("CRL nextUpdate has expired")
+	ErrCertRevoked             = errors.New("client certificate has been revoked")
+	ErrCertInvalidChain        = errors.New("client certificate chain is invalid")
+	ErrMissingSAN              = errors.New("client certificate must contain exactly one SecretHub URI SAN")
+	ErrCNMismatch              = errors.New("client certificate CN does not match URI SAN identity")
+	ErrNoClientAuthEKU         = errors.New("client certificate does not permit clientAuth key usage")
+	ErrInvalidExtKeyUsage      = errors.New("client certificate contains unauthorized extended key usages")
+	ErrInvalidKeyUsage         = errors.New("client certificate key usage must be digitalSignature only and marked critical")
+	ErrMissingBasicConstraints = errors.New("client certificate must contain critical BasicConstraints CA=false")
+	ErrInvalidOrganization     = errors.New("client certificate organization must be 'SecretHub Client Authentication'")
+	ErrInvalidCommonName       = errors.New("client certificate CN must be a valid canonical UUID")
+	ErrExtraSubjectAttributes  = errors.New("client certificate contains unauthorized subject RDN attributes")
+	ErrExtraSANsDisallowed     = errors.New("client certificate contains unauthorized SANs (DNS, IP, or Email)")
+	ErrIsCACertificate         = errors.New("client certificate cannot have IsCA=true")
+	ErrBundleNotLoaded         = errors.New("trust bundle is not loaded")
+	ErrManifestMissing         = errors.New("manifest.json missing from trust bundle")
+	ErrManifestInvalid         = errors.New("manifest.json is invalid or corrupted")
+	ErrTranscriptMismatch      = errors.New("calculated transcript hash does not match bundle_sha256")
+	ErrCAFingerprintMismatch   = errors.New("CA certificate fingerprint does not match manifest or pinned CA")
+	ErrCRLFingerprintMismatch  = errors.New("CRL DER hash does not match manifest")
+	ErrCRLMetadataMismatch     = errors.New("signed CRL number or timestamps do not match manifest")
+	ErrGenerationDowngrade     = errors.New("trust bundle generation downgrade rejected")
+	ErrEquivocation            = errors.New("equivocation detected: differing bundle hash for same generation")
+	ErrCRLNumberDowngrade      = errors.New("CRL number downgrade rejected")
 )
+
+var (
+	oidBasicConstraints      = asn1.ObjectIdentifier{2, 5, 29, 19}
+	oidKeyUsage              = asn1.ObjectIdentifier{2, 5, 29, 15}
+	oidExtKeyUsage           = asn1.ObjectIdentifier{2, 5, 29, 37}
+	oidExtKeyUsageClientAuth = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 2}
+	oidCommonName            = asn1.ObjectIdentifier{2, 5, 4, 3}
+	oidOrganization          = asn1.ObjectIdentifier{2, 5, 4, 10}
+)
+
+// BundleManifest represents the manifest.json published with every trust bundle generation.
+type BundleManifest struct {
+	SchemaVersion int    `json:"schema_version"`
+	Authority     string `json:"authority"`
+	Generation    int64  `json:"generation"`
+	CRLNumber     int64  `json:"crl_number"`
+	CAFingerprint string `json:"ca_fingerprint"`
+	CRLDerSHA256  string `json:"crl_der_sha256"`
+	BundleSHA256  string `json:"bundle_sha256"`
+	ThisUpdate    string `json:"this_update"`
+	NextUpdate    string `json:"next_update"`
+}
 
 // ValidatedIdentity contains authenticated client identity info.
 type ValidatedIdentity struct {
@@ -47,13 +86,15 @@ type ValidatedIdentity struct {
 
 // BundleSnapshot represents an immutable in-memory snapshot of the trust bundle.
 type BundleSnapshot struct {
-	Generation int64
-	CRLNumber  int64
-	CACert     *x509.Certificate
-	CAPool     *x509.CertPool
-	CRL        *x509.RevocationList
-	RevokedMap map[string]struct{} // Hex-encoded serial -> struct{}
-	LoadedAt   time.Time
+	Generation    int64
+	CRLNumber     int64
+	CAFingerprint string
+	BundleSHA256  string
+	CACert        *x509.Certificate
+	CAPool        *x509.CertPool
+	CRL           *x509.RevocationList
+	RevokedMap    map[string]struct{} // Hex-encoded serial -> struct{}
+	LoadedAt      time.Time
 }
 
 // Verifier handles offline validation of client certificates against local trust bundles.
@@ -71,11 +112,22 @@ func NewVerifier(bundleDir string) *Verifier {
 	}
 }
 
-// LoadFromDisk reads the current trust bundle from disk and atomically updates the snapshot.
+// LoadFromDisk reads the trust bundle from disk, enforces full validation & monotonicity,
+// and atomically updates the snapshot.
 func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
-	currentDir := filepath.Join(v.bundleDir, "current")
-	caPath := filepath.Join(currentDir, "ca.crt")
-	crlPath := filepath.Join(currentDir, "crl.pem")
+	bundlePath, err := v.resolveBundlePath()
+	if err != nil {
+		return nil, err
+	}
+
+	manifestPath := filepath.Join(bundlePath, "manifest.json")
+	caPath := filepath.Join(bundlePath, "ca.crt")
+	crlPath := filepath.Join(bundlePath, "crl.pem")
+
+	manifestBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to read %s: %v", ErrManifestMissing, manifestPath, err)
+	}
 
 	caPEM, err := os.ReadFile(caPath)
 	if err != nil {
@@ -87,39 +139,137 @@ func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 		return nil, fmt.Errorf("failed to read %s: %w", crlPath, err)
 	}
 
-	snapshot, err := ParseBundle(caPEM, crlPEM)
+	var manifest BundleManifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrManifestInvalid, err)
+	}
+
+	snapshot, err := ParseAndValidateBundle(&manifest, caPEM, crlPEM)
 	if err != nil {
 		return nil, err
+	}
+
+	// Monotonicity checks against existing active snapshot
+	current := v.snapshot.Load()
+	if current != nil {
+		if snapshot.Generation < current.Generation {
+			return nil, fmt.Errorf("%w: new gen %d < current gen %d", ErrGenerationDowngrade, snapshot.Generation, current.Generation)
+		}
+		if snapshot.Generation == current.Generation && snapshot.BundleSHA256 != current.BundleSHA256 {
+			return nil, fmt.Errorf("%w: gen %d hash mismatch (%s != %s)", ErrEquivocation, snapshot.Generation, snapshot.BundleSHA256, current.BundleSHA256)
+		}
+		if snapshot.Generation >= current.Generation && snapshot.CRLNumber < current.CRLNumber {
+			return nil, fmt.Errorf("%w: new crl_number %d < current crl_number %d", ErrCRLNumberDowngrade, snapshot.CRLNumber, current.CRLNumber)
+		}
+		if current.CAFingerprint != "" && snapshot.CAFingerprint != current.CAFingerprint {
+			return nil, fmt.Errorf("%w: established CA %s replaced with %s", ErrCAFingerprintMismatch, current.CAFingerprint, snapshot.CAFingerprint)
+		}
 	}
 
 	v.snapshot.Store(snapshot)
 	return snapshot, nil
 }
 
-// ParseBundle parses and cross-verifies CA and CRL PEM buffers.
-func ParseBundle(caPEM, crlPEM []byte) (*BundleSnapshot, error) {
+func (v *Verifier) resolveBundlePath() (string, error) {
+	currentDir := filepath.Join(v.bundleDir, "current")
+	if fi, err := os.Stat(currentDir); err == nil && fi.IsDir() {
+		return currentDir, nil
+	}
+
+	// If current symlink not yet created, scan generations directory for highest valid generation
+	generationsDir := filepath.Join(v.bundleDir, "generations")
+	entries, err := os.ReadDir(generationsDir)
+	if err != nil {
+		return "", fmt.Errorf("bundle directory %s has no current symlink or generations: %w", v.bundleDir, err)
+	}
+
+	var highestGen int64 = -1
+	var highestPath string
+	for _, entry := range entries {
+		if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+			gen, err := strconv.ParseInt(entry.Name(), 10, 64)
+			if err == nil && gen > highestGen {
+				highestGen = gen
+				highestPath = filepath.Join(generationsDir, entry.Name())
+			}
+		}
+	}
+
+	if highestPath == "" {
+		return "", fmt.Errorf("no valid generations found in %s", generationsDir)
+	}
+	return highestPath, nil
+}
+
+// ParseAndValidateBundle parses CA, CRL and validates against the manifest metadata and transcript hash.
+func ParseAndValidateBundle(manifest *BundleManifest, caPEM, crlPEM []byte) (*BundleSnapshot, error) {
+	if manifest.SchemaVersion != 1 {
+		return nil, fmt.Errorf("%w: unsupported schema_version %d", ErrManifestInvalid, manifest.SchemaVersion)
+	}
+
+	// 1. Verify transcript SHA-256 hash
+	transcript := fmt.Sprintf("%d|%s|%d|%s|%d|%s|%s|%s|%s|%s",
+		manifest.SchemaVersion,
+		manifest.Authority,
+		manifest.Generation,
+		manifest.CAFingerprint,
+		manifest.CRLNumber,
+		manifest.CRLDerSHA256,
+		manifest.ThisUpdate,
+		manifest.NextUpdate,
+		string(caPEM),
+		string(crlPEM),
+	)
+	calcHash := sha256.Sum256([]byte(transcript))
+	calcHashHex := hex.EncodeToString(calcHash[:])
+
+	if strings.ToLower(calcHashHex) != strings.ToLower(manifest.BundleSHA256) {
+		return nil, fmt.Errorf("%w: calculated %s != manifest %s", ErrTranscriptMismatch, calcHashHex, manifest.BundleSHA256)
+	}
+
+	// 2. Parse CA certificate
 	caBlock, _ := pem.Decode(caPEM)
 	if caBlock == nil {
 		return nil, ErrCADerivationFailed
 	}
-
 	caCert, err := x509.ParseCertificate(caBlock.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCADerivationFailed, err)
 	}
 
+	caDERHash := sha256.Sum256(caCert.Raw)
+	caFingerprint := hex.EncodeToString(caDERHash[:])
+	if strings.ToLower(caFingerprint) != strings.ToLower(manifest.CAFingerprint) {
+		return nil, fmt.Errorf("%w: parsed CA %s != manifest %s", ErrCAFingerprintMismatch, caFingerprint, manifest.CAFingerprint)
+	}
+
+	// 3. Parse and verify CRL
 	crlBlock, _ := pem.Decode(crlPEM)
 	if crlBlock == nil {
 		return nil, ErrCRLParseFailed
 	}
-
 	crl, err := x509.ParseRevocationList(crlBlock.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCRLParseFailed, err)
 	}
 
+	crlDERHash := sha256.Sum256(crl.Raw)
+	crlDERHashHex := hex.EncodeToString(crlDERHash[:])
+	if strings.ToLower(crlDERHashHex) != strings.ToLower(manifest.CRLDerSHA256) {
+		return nil, fmt.Errorf("%w: parsed CRL %s != manifest %s", ErrCRLFingerprintMismatch, crlDERHashHex, manifest.CRLDerSHA256)
+	}
+
 	if err := crl.CheckSignatureFrom(caCert); err != nil {
 		return nil, ErrCRLSignatureInvalid
+	}
+
+	// Check CRL Number extension matches manifest
+	crlNum := int64(0)
+	if crl.Number != nil {
+		crlNum = crl.Number.Int64()
+	}
+	if crlNum != manifest.CRLNumber {
+		return nil, fmt.Errorf("%w: signed CRL number %d != manifest %d", ErrCRLMetadataMismatch, crlNum, manifest.CRLNumber)
 	}
 
 	caPool := x509.NewCertPool()
@@ -132,24 +282,22 @@ func ParseBundle(caPEM, crlPEM []byte) (*BundleSnapshot, error) {
 		}
 	}
 
-	crlNumber := int64(0)
-	if crl.Number != nil {
-		crlNumber = crl.Number.Int64()
-	}
-
 	snapshot := &BundleSnapshot{
-		CRLNumber:  crlNumber,
-		CACert:     caCert,
-		CAPool:     caPool,
-		CRL:        crl,
-		RevokedMap: revokedMap,
-		LoadedAt:   time.Now(),
+		Generation:    manifest.Generation,
+		CRLNumber:     crlNum,
+		CAFingerprint: caFingerprint,
+		BundleSHA256:  manifest.BundleSHA256,
+		CACert:        caCert,
+		CAPool:        caPool,
+		CRL:           crl,
+		RevokedMap:    revokedMap,
+		LoadedAt:      time.Now(),
 	}
 
 	return snapshot, nil
 }
 
-// SetSnapshot manually sets the current in-memory snapshot (useful for testing or dynamic loading).
+// SetSnapshot manually sets the current in-memory snapshot (useful for testing).
 func (v *Verifier) SetSnapshot(snapshot *BundleSnapshot) {
 	v.snapshot.Store(snapshot)
 }
@@ -183,12 +331,11 @@ func (v *Verifier) VerifyCertificate(cert *x509.Certificate, now time.Time) (*Va
 		return nil, ErrIsCACertificate
 	}
 
-	// Must have Organization = ["SecretHub Client Authentication"]
-	if len(cert.Subject.Organization) != 1 || cert.Subject.Organization[0] != "SecretHub Client Authentication" {
-		return nil, ErrInvalidOrganization
+	// Must have exact Subject RDN: Only Organization = "SecretHub Client Authentication" and CommonName = UUID
+	if err := validateSubjectRDN(cert.Subject); err != nil {
+		return nil, err
 	}
 
-	// Common Name must be a canonical UUID
 	cn := cert.Subject.CommonName
 	if !isCanonicalUUID(cn) {
 		return nil, ErrInvalidCommonName
@@ -208,19 +355,19 @@ func (v *Verifier) VerifyCertificate(cert *x509.Certificate, now time.Time) (*Va
 		return nil, ErrExtraSANsDisallowed
 	}
 
-	// Key Usage must be digitalSignature only (if specified)
-	if cert.KeyUsage != 0 && cert.KeyUsage != x509.KeyUsageDigitalSignature {
-		return nil, ErrInvalidKeyUsage
+	// Check Basic Constraints extension presence and criticality
+	if err := validateBasicConstraintsExtension(cert); err != nil {
+		return nil, err
 	}
 
-	// Extended Key Usage must be clientAuth only
-	if len(cert.ExtKeyUsage) == 0 {
-		return nil, ErrNoClientAuthEKU
+	// Key Usage must be present, marked critical, and digitalSignature only
+	if err := validateKeyUsageExtension(cert); err != nil {
+		return nil, err
 	}
-	for _, eku := range cert.ExtKeyUsage {
-		if eku != x509.ExtKeyUsageClientAuth {
-			return nil, ErrInvalidExtKeyUsage
-		}
+
+	// Extended Key Usage must be present, exactly clientAuth, with no unknown EKUs
+	if err := validateExtKeyUsageExtension(cert); err != nil {
+		return nil, err
 	}
 
 	// 3. Verify certificate chain against CA pool
@@ -251,6 +398,67 @@ func (v *Verifier) VerifyCertificate(cert *x509.Certificate, now time.Time) (*Va
 		NotAfter:      cert.NotAfter,
 		RevocationGen: snapshot.Generation,
 	}, nil
+}
+
+func validateSubjectRDN(subject pkix.Name) error {
+	if len(subject.Organization) != 1 || subject.Organization[0] != "SecretHub Client Authentication" {
+		return ErrInvalidOrganization
+	}
+	if len(subject.Country) > 0 || len(subject.Province) > 0 || len(subject.Locality) > 0 ||
+		len(subject.StreetAddress) > 0 || len(subject.PostalCode) > 0 || len(subject.OrganizationalUnit) > 0 {
+		return ErrExtraSubjectAttributes
+	}
+	// Verify raw names contain only CN and O
+	for _, atv := range subject.Names {
+		if !atv.Type.Equal(oidCommonName) && !atv.Type.Equal(oidOrganization) {
+			return ErrExtraSubjectAttributes
+		}
+	}
+	return nil
+}
+
+func validateBasicConstraintsExtension(cert *x509.Certificate) error {
+	found := false
+	for _, ext := range cert.Extensions {
+		if ext.Id.Equal(oidBasicConstraints) {
+			found = true
+			if !ext.Critical {
+				return errors.New("BasicConstraints extension must be marked critical")
+			}
+			break
+		}
+	}
+	if !found || cert.IsCA {
+		return ErrMissingBasicConstraints
+	}
+	return nil
+}
+
+func validateKeyUsageExtension(cert *x509.Certificate) error {
+	found := false
+	for _, ext := range cert.Extensions {
+		if ext.Id.Equal(oidKeyUsage) {
+			found = true
+			if !ext.Critical {
+				return errors.New("KeyUsage extension must be marked critical")
+			}
+			break
+		}
+	}
+	if !found || cert.KeyUsage != x509.KeyUsageDigitalSignature {
+		return ErrInvalidKeyUsage
+	}
+	return nil
+}
+
+func validateExtKeyUsageExtension(cert *x509.Certificate) error {
+	if len(cert.UnknownExtKeyUsage) > 0 {
+		return ErrInvalidExtKeyUsage
+	}
+	if len(cert.ExtKeyUsage) != 1 || cert.ExtKeyUsage[0] != x509.ExtKeyUsageClientAuth {
+		return ErrNoClientAuthEKU
+	}
+	return nil
 }
 
 func isCanonicalUUID(s string) bool {

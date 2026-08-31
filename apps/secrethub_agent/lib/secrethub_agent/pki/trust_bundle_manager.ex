@@ -45,7 +45,13 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
   @impl true
   def init(opts) do
     state_dir = Keyword.get(opts, :state_dir, Path.expand("~/.local/state/secrethub/agent"))
-    base_dir = Path.join(state_dir, "pki/client-auth")
+
+    base_dir =
+      Keyword.get(opts, :bundle_dir) ||
+        System.get_env("SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR") ||
+        Application.get_env(:secrethub_agent, :client_auth_bundle_dir) ||
+        Path.join(state_dir, "pki/client-auth")
+
     agent_id = Keyword.get(opts, :agent_id)
     conn_mod = Keyword.get(opts, :connection_mod, SecretHub.Agent.Connection)
 
@@ -149,8 +155,9 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
   @impl true
   def handle_info(:retry_sync, state) do
+    state = %{state | retry_timer: nil}
     new_state = do_sync(state, [])
-    {:noreply, %{new_state | retry_timer: nil}}
+    {:noreply, new_state}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}
@@ -165,9 +172,10 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     with {:ok, validated} <- BundleValidator.validate(bundle, val_opts),
          :ok <- check_monotonicity_and_invariants(state, validated, force) do
       if !force and validated.generation == state.lkg_generation and
-           validated.bundle_sha256 == state.lkg_bundle_sha256 and state.status == "applied" do
-        receipt = build_receipt(state, "applied", now)
-        {:ok, receipt, state}
+           validated.bundle_sha256 == state.lkg_bundle_sha256 do
+        new_state = %{state | status: "applied", last_error_code: nil, last_error_detail: nil}
+        receipt = build_receipt(new_state, "applied", now)
+        {:ok, receipt, new_state}
       else
         case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
           {:ok, _result} ->

@@ -9,13 +9,16 @@ defmodule SecretHub.Web.ClientAuthLive do
   alias SecretHub.Core.PKI.ClientAuth
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(_params, session, socket) do
     if connected?(socket) do
       SecretHub.Core.PKI.ClientAuth.Notifier.subscribe()
     end
 
+    current_admin_id = session["admin_id"] || session[:admin_id] || "admin"
+
     socket =
       socket
+      |> assign(:current_admin_id, to_string(current_admin_id))
       |> assign(:page_title, "Client Auth PKI")
       |> assign(:active_tab, "overview")
       |> assign(:authority, nil)
@@ -68,6 +71,7 @@ defmodule SecretHub.Web.ClientAuthLive do
   def handle_event("init_authority", %{"init" => params}, socket) do
     ttl_seconds = String.to_integer(params["default_ttl_days"] || "30") * 86_400
     max_ttl_seconds = String.to_integer(params["max_ttl_days"] || "90") * 86_400
+    actor = get_live_actor(socket)
 
     attrs = %{
       "name" => params["name"],
@@ -76,7 +80,7 @@ defmodule SecretHub.Web.ClientAuthLive do
       "max_ttl_seconds" => max_ttl_seconds
     }
 
-    case ClientAuth.init_authority(attrs) do
+    case ClientAuth.init_authority(attrs, actor: actor) do
       {:ok, _auth} ->
         socket =
           socket
@@ -94,7 +98,9 @@ defmodule SecretHub.Web.ClientAuthLive do
   end
 
   def handle_event("force_crl_refresh", _params, socket) do
-    case ClientAuth.force_refresh_crl() do
+    actor = get_live_actor(socket)
+
+    case ClientAuth.force_refresh_crl("client-auth", actor: actor) do
       {:ok, crl} ->
         socket =
           socket
@@ -121,12 +127,14 @@ defmodule SecretHub.Web.ClientAuthLive do
   end
 
   def handle_event("create_identity", %{"identity" => params}, socket) do
+    actor = get_live_actor(socket)
+
     attrs = %{
       "name" => params["name"],
       "metadata" => %{"description" => params["description"]}
     }
 
-    case ClientAuth.create_identity(attrs) do
+    case ClientAuth.create_identity(attrs, actor: actor) do
       {:ok, identity} ->
         socket =
           socket
@@ -146,7 +154,9 @@ defmodule SecretHub.Web.ClientAuthLive do
   end
 
   def handle_event("disable_identity", %{"id" => id}, socket) do
-    case ClientAuth.disable_identity(id, %{"reason" => "identity_disabled"}) do
+    actor = get_live_actor(socket)
+
+    case ClientAuth.disable_identity(id, %{"reason" => "identity_disabled"}, actor: actor) do
       {:ok, identity} ->
         socket =
           socket
@@ -188,6 +198,7 @@ defmodule SecretHub.Web.ClientAuthLive do
   def handle_event("issue_certificate", %{"issue" => params}, socket) do
     ttl_seconds = String.to_integer(params["ttl_days"] || "30") * 86_400
     request_id = socket.assigns.issue_request_id || Ecto.UUID.generate()
+    actor = get_live_actor(socket)
 
     attrs = %{
       "identity_id" => params["identity_id"],
@@ -196,7 +207,7 @@ defmodule SecretHub.Web.ClientAuthLive do
       "request_id" => request_id
     }
 
-    case ClientAuth.issue_certificate(attrs) do
+    case ClientAuth.issue_certificate(attrs, actor: actor) do
       {:ok, result} ->
         socket =
           socket
@@ -234,8 +245,9 @@ defmodule SecretHub.Web.ClientAuthLive do
   def handle_event("revoke_certificate", %{"revoke" => params}, socket) do
     cert_id = socket.assigns.selected_cert.id
     reason = params["reason"] || "keyCompromise"
+    actor = get_live_actor(socket)
 
-    case ClientAuth.revoke_certificate(cert_id, %{"reason" => reason}) do
+    case ClientAuth.revoke_certificate(cert_id, %{"reason" => reason}, actor: actor) do
       {:ok, _cert} ->
         socket =
           socket
@@ -256,6 +268,14 @@ defmodule SecretHub.Web.ClientAuthLive do
   @impl true
   def handle_info({:client_auth_bundle_updated, _payload}, socket) do
     {:noreply, load_data(socket)}
+  end
+
+  defp get_live_actor(socket) do
+    %{
+      actor_type: "admin",
+      actor_id: socket.assigns[:current_admin_id] || "admin",
+      source_ip: "127.0.0.1"
+    }
   end
 
   # Data Loader
@@ -766,7 +786,7 @@ defmodule SecretHub.Web.ClientAuthLive do
 
                 <div class="modal-action flex justify-between items-center">
                   <a
-                    href={"data:application/x-pem-file;charset=utf-8," <> URI.encode_www_form(@issued_cert_result.certificate)}
+                    href={"data:application/x-pem-file;base64," <> Base.encode64(@issued_cert_result.certificate)}
                     download="client.crt"
                     class="btn btn-secondary btn-sm"
                   >

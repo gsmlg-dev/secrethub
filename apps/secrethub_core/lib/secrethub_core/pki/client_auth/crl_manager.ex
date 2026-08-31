@@ -480,13 +480,15 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
   defp record_revocation_audit(cert, reason, actor) do
     actor_type = Map.get(actor, :actor_type) || Map.get(actor, "actor_type") || "admin"
     actor_id = Map.get(actor, :actor_id) || Map.get(actor, "actor_id") || "admin"
-    ip_address = Map.get(actor, :client_ip) || Map.get(actor, "client_ip")
+
+    source_ip =
+      Map.get(actor, :source_ip) || Map.get(actor, "source_ip") || Map.get(actor, :client_ip)
 
     attrs = %{
       event_type: "pki.client_auth.certificate_revoked",
       actor_type: actor_type,
       actor_id: actor_id,
-      ip_address: ip_address,
+      source_ip: source_ip,
       access_granted: true,
       correlation_id: cert.id,
       event_data: %{
@@ -499,9 +501,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
       }
     }
 
-    case Audit.log_event(attrs) do
-      {:ok, _} -> :ok
-      {:error, _} -> :ok
-    end
+    Audit.log_event(attrs)
+    :ok
   end
 end

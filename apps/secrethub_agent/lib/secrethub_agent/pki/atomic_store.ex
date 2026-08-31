@@ -2,14 +2,19 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   @moduledoc """
   Manages atomic directory structure and symlink rotation for trust bundles.
 
-  Directory layout:
-  <base_dir>/
-    generations/
-      <gen>/
-        ca.crt
-        crl.pem
-        manifest.json
-    current -> generations/<gen>
+  Publication sequence:
+  1. generations/.tmp-<uuid>/
+       ca.crt
+       crl.pem
+       manifest.json
+         ↓ validate written bytes
+         ↓ fsync files and temporary directory
+  2. rename .tmp-<uuid> → generations/<generation> (or reuse existing immutable match)
+         ↓ fsync generations/
+  3. create current.tmp symlink
+  4. rename current.tmp → current
+         ↓ fsync base directory
+  5. best-effort pruning
   """
 
   require Logger
@@ -17,7 +22,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   @generations_to_keep 4
 
   @doc """
-  Atomically writes a validated trust bundle to disk and updates the `current` symlink.
+  Atomically writes a validated trust bundle to disk following the strict publication sequence.
   """
   @spec write_bundle(Path.t(), map(), keyword()) ::
           {:ok, %{current_path: Path.t(), generation: pos_integer(), manifest: map()}}
@@ -28,22 +33,35 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     generations_dir = Path.join(base_dir, "generations")
     gen_dir = Path.join(generations_dir, to_string(generation))
 
-    with :ok <- File.mkdir_p(gen_dir),
-         :ok <-
-           write_file(
-             Path.join(gen_dir, "ca.crt"),
-             bundle["ca_bundle_pem"] || bundle[:ca_bundle_pem]
-           ),
-         :ok <- write_file(Path.join(gen_dir, "crl.pem"), bundle["crl_pem"] || bundle[:crl_pem]),
-         {:ok, manifest} <- write_manifest(gen_dir, bundle, now),
+    ca_pem = bundle["ca_bundle_pem"] || bundle[:ca_bundle_pem]
+    crl_pem = bundle["crl_pem"] || bundle[:crl_pem]
+
+    tmp_id = ".tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+    tmp_dir = Path.join(generations_dir, tmp_id)
+
+    with :ok <- File.mkdir_p(generations_dir),
+         :ok <- File.mkdir_p(tmp_dir),
+         :ok <- write_and_fsync_file(Path.join(tmp_dir, "ca.crt"), ca_pem),
+         :ok <- write_and_fsync_file(Path.join(tmp_dir, "crl.pem"), crl_pem),
+         {:ok, manifest} <- write_and_fsync_manifest(tmp_dir, bundle, now),
+         :ok <- fsync_dir(tmp_dir),
+         :ok <- publish_generation_dir(tmp_dir, gen_dir, manifest),
+         :ok <- fsync_dir(generations_dir),
          :ok <- switch_symlink(base_dir, generation),
-         :ok <- prune_old_generations(base_dir, generations_dir) do
+         :ok <- fsync_dir(base_dir) do
+      # Best effort pruning: log warning on error but do not fail published bundle
+      _ = prune_old_generations(base_dir, generations_dir)
+
       {:ok,
        %{
          current_path: Path.join(base_dir, "current"),
          generation: generation,
          manifest: manifest
        }}
+    else
+      {:error, reason} ->
+        File.rm_rf(tmp_dir)
+        {:error, reason}
     end
   end
 
@@ -71,13 +89,19 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
   # Helpers
 
-  defp write_file(path, content) when is_binary(content) do
-    with :ok <- File.write(path, content) do
-      File.chmod(path, 0o644)
+  defp write_and_fsync_file(path, content) when is_binary(content) do
+    with :ok <- File.write(path, content),
+         :ok <- File.chmod(path, 0o644),
+         {:ok, read_content} when read_content == content <- File.read(path),
+         :ok <- fsync_file(path) do
+      :ok
+    else
+      {:ok, _mismatch} -> {:error, {:file_content_mismatch, path}}
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp write_manifest(gen_dir, bundle, now) do
+  defp write_and_fsync_manifest(gen_dir, bundle, now) do
     manifest = %{
       "schema_version" => bundle["schema_version"] || bundle[:schema_version] || 1,
       "authority" => bundle["authority"] || bundle[:authority] || "client-auth",
@@ -95,8 +119,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     case Jason.encode(manifest, pretty: true) do
       {:ok, json} ->
-        with :ok <- File.write(manifest_path, json),
-             :ok <- File.chmod(manifest_path, 0o644) do
+        with :ok <- write_and_fsync_file(manifest_path, json) do
           {:ok, manifest}
         end
 
@@ -105,12 +128,47 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
+  defp publish_generation_dir(tmp_dir, gen_dir, manifest) do
+    if File.exists?(gen_dir) do
+      # If gen_dir already exists, check if it's identical (immutable)
+      case File.read(Path.join(gen_dir, "manifest.json")) do
+        {:ok, content} ->
+          case Jason.decode(content) do
+            {:ok, existing_manifest} ->
+              if existing_manifest["bundle_sha256"] == manifest["bundle_sha256"] do
+                File.rm_rf(tmp_dir)
+                :ok
+              else
+                File.rm_rf(tmp_dir)
+                {:error, :generation_conflict}
+              end
+
+            _ ->
+              File.rm_rf(tmp_dir)
+              {:error, :corrupted_existing_generation}
+          end
+
+        {:error, _} ->
+          File.rm_rf(tmp_dir)
+          {:error, :corrupted_existing_generation}
+      end
+    else
+      case File.rename(tmp_dir, gen_dir) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          File.rm_rf(tmp_dir)
+          {:error, reason}
+      end
+    end
+  end
+
   defp switch_symlink(base_dir, generation) do
     target = Path.join("generations", to_string(generation))
     tmp_symlink = Path.join(base_dir, "current.tmp")
     current_symlink = Path.join(base_dir, "current")
 
-    # Clean up any leftover temporary symlink
     File.rm(tmp_symlink)
 
     with :ok <- File.ln_s(target, tmp_symlink),
@@ -120,6 +178,31 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
       {:error, reason} ->
         File.rm(tmp_symlink)
         {:error, reason}
+    end
+  end
+
+  defp fsync_file(path) do
+    case :file.open(to_charlist(path), [:read, :write, :raw]) do
+      {:ok, fd} ->
+        res = :file.sync(fd)
+        :file.close(fd)
+        res
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp fsync_dir(dir_path) do
+    case :file.open(to_charlist(dir_path), [:read, :raw]) do
+      {:ok, fd} ->
+        res = :file.sync(fd)
+        :file.close(fd)
+        res
+
+      {:error, _} ->
+        # Directory fsync may be unsupported on some OS/filesystems, safe fallback
+        :ok
     end
   end
 

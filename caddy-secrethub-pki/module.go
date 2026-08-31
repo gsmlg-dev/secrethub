@@ -56,8 +56,11 @@ func (tv *TLSVerifier) Provision(ctx caddy.Context) error {
 	}
 
 	tv.verifier = NewVerifier(tv.BundleDir)
-	tv.loader = NewAutoLoader(tv.verifier, pollDuration, tv.logger)
+	if _, err := tv.verifier.LoadFromDisk(); err != nil {
+		return fmt.Errorf("failed to load initial trust bundle from %s: %w", tv.BundleDir, err)
+	}
 
+	tv.loader = NewAutoLoader(tv.verifier, pollDuration, tv.logger)
 	tv.ctx, tv.cancel = context.WithCancel(ctx)
 	tv.loader.Start(tv.ctx)
 
@@ -128,8 +131,11 @@ func (m *SecretHubClientAuth) Provision(ctx caddy.Context) error {
 	}
 
 	m.verifier = NewVerifier(m.BundleDir)
-	m.loader = NewAutoLoader(m.verifier, pollDuration, m.logger)
+	if _, err := m.verifier.LoadFromDisk(); err != nil {
+		return fmt.Errorf("failed to load initial trust bundle from %s: %w", m.BundleDir, err)
+	}
 
+	m.loader = NewAutoLoader(m.verifier, pollDuration, m.logger)
 	m.ctx, m.cancel = context.WithCancel(ctx)
 	m.loader.Start(m.ctx)
 

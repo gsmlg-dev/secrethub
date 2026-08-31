@@ -129,6 +129,10 @@ defmodule SecretHub.Core.Repo.Migrations.CreateClientAuthPki do
   end
 
   def down do
+    # Cleanly remove Client Auth certificates in dependency order so older releases can read certificates table
+    execute("DELETE FROM certificates WHERE cert_type = 'client_auth_client'")
+    execute("DELETE FROM certificates WHERE cert_type = 'client_auth_ca'")
+
     drop(index(:certificates, [:client_auth_identity_id, :revoked]))
     drop(index(:certificates, [:client_auth_identity_id]))
     drop(index(:certificates, [:client_auth_authority_id]))

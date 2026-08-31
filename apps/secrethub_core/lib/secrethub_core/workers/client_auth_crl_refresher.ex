@@ -27,20 +27,48 @@ defmodule SecretHub.Core.Workers.ClientAuthCRLRefresher do
     enabled = Keyword.get(opts, :enabled, true)
 
     if enabled do
-      schedule_next_check(interval)
+      send(self(), :reconcile_startup)
     end
 
-    {:ok, %{interval: interval, enabled: enabled}}
+    {:ok, %{interval: interval, enabled: enabled, retry_attempt: 0, timer: nil}}
+  end
+
+  @doc """
+  Triggers immediate reconciliation of the CRL.
+  """
+  def reconcile_now do
+    send(__MODULE__, :reconcile_startup)
+    :ok
+  end
+
+  @impl true
+  def handle_info(:reconcile_startup, state) do
+    if state.enabled do
+      case perform_refresh() do
+        {:error, :vault_sealed} ->
+          attempt = state.retry_attempt + 1
+          backoff = min(60_000, 5_000 * trunc(:math.pow(2, min(attempt, 4))))
+          timer = Process.send_after(self(), :reconcile_startup, backoff)
+          {:noreply, %{state | retry_attempt: attempt, timer: timer}}
+
+        _ ->
+          timer = schedule_next_check(state.interval)
+          {:noreply, %{state | retry_attempt: 0, timer: timer}}
+      end
+    else
+      {:noreply, state}
+    end
   end
 
   @impl true
   def handle_info(:check_crl, state) do
     if state.enabled do
       perform_refresh()
-      schedule_next_check(state.interval)
+      timer = schedule_next_check(state.interval)
+      {:noreply, %{state | timer: timer}}
+    else
+      {:noreply, state}
     end
-
-    {:noreply, state}
   end
 
   def handle_info(_msg, state), do: {:noreply, state}

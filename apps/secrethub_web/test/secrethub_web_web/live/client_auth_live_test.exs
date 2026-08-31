@@ -86,6 +86,14 @@ defmodule SecretHub.Web.ClientAuthLiveTest do
     assert issued_modal_html =~ "Download Certificate (.crt)"
     assert issued_modal_html =~ "-----BEGIN CERTIFICATE-----"
 
+    # Verify download link data URI contains valid base64 matching cert PEM
+    [_, b64_data] =
+      Regex.run(~r/href="data:application\/x-pem-file;base64,([^"]+)"/, issued_modal_html)
+
+    assert {:ok, decoded_pem} = Base.decode64(b64_data)
+    assert String.starts_with?(decoded_pem, "-----BEGIN CERTIFICATE-----")
+    assert String.ends_with?(String.trim(decoded_pem), "-----END CERTIFICATE-----")
+
     # Close modal
     render_click(view, :close_issue_modal, %{})
     closed_modal_html = render(view)

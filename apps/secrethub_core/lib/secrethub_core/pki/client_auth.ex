@@ -57,7 +57,7 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   Lists client identities with optional filtering and pagination.
   """
   def list_identities(opts \\ []) do
-    opts = if is_map(opts), do: Map.to_list(opts), else: opts
+    opts = normalize_opts(opts)
     Identity.list_identities(opts)
   end
 
@@ -130,7 +130,7 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   Lists certificates with optional filters.
   """
   def list_certificates(opts \\ []) do
-    opts = if is_map(opts), do: Map.to_list(opts), else: opts
+    opts = normalize_opts(opts)
     identity_id = Keyword.get(opts, :identity_id)
     revoked = Keyword.get(opts, :revoked)
     limit = Keyword.get(opts, :limit, 100)
@@ -284,4 +284,42 @@ defmodule SecretHub.Core.PKI.ClientAuth do
       authority -> {:ok, authority}
     end
   end
+
+  defp normalize_opts(opts) when is_map(opts) do
+    Enum.reduce(opts, [], fn
+      {"identity_id", val}, acc -> Keyword.put(acc, :identity_id, val)
+      {:identity_id, val}, acc -> Keyword.put(acc, :identity_id, val)
+      {"status", val}, acc -> Keyword.put(acc, :status, to_string(val))
+      {:status, val}, acc -> Keyword.put(acc, :status, to_string(val))
+      {"search", val}, acc -> Keyword.put(acc, :search, to_string(val))
+      {:search, val}, acc -> Keyword.put(acc, :search, to_string(val))
+      {"revoked", val}, acc -> Keyword.put(acc, :revoked, parse_bool(val))
+      {:revoked, val}, acc -> Keyword.put(acc, :revoked, parse_bool(val))
+      {"limit", val}, acc -> Keyword.put(acc, :limit, parse_int(val, 100))
+      {:limit, val}, acc -> Keyword.put(acc, :limit, parse_int(val, 100))
+      {"offset", val}, acc -> Keyword.put(acc, :offset, parse_int(val, 0))
+      {:offset, val}, acc -> Keyword.put(acc, :offset, parse_int(val, 0))
+      {k, v}, acc when is_atom(k) -> Keyword.put(acc, k, v)
+      {_k, _v}, acc -> acc
+    end)
+  end
+
+  defp normalize_opts(opts) when is_list(opts), do: opts
+
+  defp parse_bool(true), do: true
+  defp parse_bool(false), do: false
+  defp parse_bool("true"), do: true
+  defp parse_bool("false"), do: false
+  defp parse_bool(_), do: nil
+
+  defp parse_int(val, _default) when is_integer(val), do: val
+
+  defp parse_int(val, default) when is_binary(val) do
+    case Integer.parse(val) do
+      {int, ""} -> int
+      _ -> default
+    end
+  end
+
+  defp parse_int(_, default), do: default
 end
