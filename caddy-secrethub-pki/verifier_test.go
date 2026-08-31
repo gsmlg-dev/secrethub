@@ -133,11 +133,16 @@ func (h *testHarness) writeCRL(t *testing.T, revokedSerials []*big.Int, crlNumbe
 		})
 	}
 
+	thisUpdate := time.Now().Add(-1 * time.Hour)
+	if nextUpdate.Before(thisUpdate) {
+		thisUpdate = nextUpdate.Add(-24 * time.Hour)
+	}
+
 	crlTemplate := &x509.RevocationList{
 		SignatureAlgorithm:        x509.ECDSAWithSHA384,
 		RevokedCertificateEntries: entries,
 		Number:                    big.NewInt(crlNumber),
-		ThisUpdate:                nextUpdate.Add(-24 * time.Hour),
+		ThisUpdate:                thisUpdate,
 		NextUpdate:                nextUpdate,
 	}
 
@@ -193,7 +198,7 @@ func TestVerifierRevokedCertificate(t *testing.T) {
 		t.Fatalf("failed to load bundle: %v", err)
 	}
 
-	cert, _ := h.issueClientCert(t, "revoked-agent-uuid", 2002)
+	cert, _ := h.issueClientCert(t, "f47ac10b-58cc-4372-a567-0e02b2c3d479", 2002)
 
 	_, err := v.VerifyCertificate(cert, time.Now())
 	if err != ErrCertRevoked {
@@ -213,7 +218,7 @@ func TestVerifierExpiredCRL(t *testing.T) {
 		t.Fatalf("failed to load bundle: %v", err)
 	}
 
-	cert, _ := h.issueClientCert(t, "test-agent-uuid", 3003)
+	cert, _ := h.issueClientCert(t, "f47ac10b-58cc-4372-a567-0e02b2c3d479", 3003)
 
 	_, err := v.VerifyCertificate(cert, time.Now())
 	if err != ErrCRLExpired {
@@ -235,12 +240,181 @@ func TestVerifierForeignCA(t *testing.T) {
 	// Issue cert with another CA
 	foreignHarness := newTestHarness(t)
 	defer os.RemoveAll(foreignHarness.tmpDir)
-	foreignCert, _ := foreignHarness.issueClientCert(t, "foreign-agent", 4004)
+	foreignCert, _ := foreignHarness.issueClientCert(t, "f47ac10b-58cc-4372-a567-0e02b2c3d479", 4004)
 
 	_, err := v.VerifyCertificate(foreignCert, time.Now())
 	if err == nil {
 		t.Fatalf("expected error for foreign cert, got nil")
 	}
+}
+
+func TestVerifierCanonicalProfileNegative(t *testing.T) {
+	h := newTestHarness(t)
+	defer os.RemoveAll(h.tmpDir)
+
+	h.writeCRL(t, nil, 1, time.Now().Add(48*time.Hour))
+
+	v := NewVerifier(h.tmpDir)
+	if _, err := v.LoadFromDisk(); err != nil {
+		t.Fatalf("failed to load bundle: %v", err)
+	}
+
+	// 1. Non-canonical UUID
+	nonUUIDCert, _ := h.issueClientCert(t, "invalid-non-uuid-name", 5001)
+	if _, err := v.VerifyCertificate(nonUUIDCert, time.Now()); err != ErrInvalidCommonName {
+		t.Errorf("expected ErrInvalidCommonName, got: %v", err)
+	}
+
+	// 2. Wrong Organization
+	validID := "e57c6bc1-1a3b-4882-9f37-1424e88383e2"
+	clientKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	uri, _ := url.Parse("urn:secrethub:client:" + validID)
+	wrongOrgTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(5002),
+		Subject:               pkix.Name{Organization: []string{"Wrong Org"}, CommonName: validID},
+		URIs:                  []*url.URL{uri},
+		NotBefore:             time.Now().Add(-5 * time.Minute),
+		NotAfter:              time.Now().Add(30 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+	der, _ := x509.CreateCertificate(rand.Reader, wrongOrgTemplate, h.caCert, &clientKey.PublicKey, h.caKey)
+	wrongOrgCert, _ := x509.ParseCertificate(der)
+	if _, err := v.VerifyCertificate(wrongOrgCert, time.Now()); err != ErrInvalidOrganization {
+		t.Errorf("expected ErrInvalidOrganization, got: %v", err)
+	}
+
+	// 3. Extra DNS SAN
+	extraSANTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(5003),
+		Subject:               pkix.Name{Organization: []string{"SecretHub Client Authentication"}, CommonName: validID},
+		URIs:                  []*url.URL{uri},
+		DNSNames:              []string{"example.com"},
+		NotBefore:             time.Now().Add(-5 * time.Minute),
+		NotAfter:              time.Now().Add(30 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+	der, _ = x509.CreateCertificate(rand.Reader, extraSANTemplate, h.caCert, &clientKey.PublicKey, h.caKey)
+	extraSANCert, _ := x509.ParseCertificate(der)
+	if _, err := v.VerifyCertificate(extraSANCert, time.Now()); err != ErrExtraSANsDisallowed {
+		t.Errorf("expected ErrExtraSANsDisallowed, got: %v", err)
+	}
+
+	// 4. IsCA = true
+	isCATemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(5004),
+		Subject:               pkix.Name{Organization: []string{"SecretHub Client Authentication"}, CommonName: validID},
+		URIs:                  []*url.URL{uri},
+		NotBefore:             time.Now().Add(-5 * time.Minute),
+		NotAfter:              time.Now().Add(30 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, _ = x509.CreateCertificate(rand.Reader, isCATemplate, h.caCert, &clientKey.PublicKey, h.caKey)
+	isCACert, _ := x509.ParseCertificate(der)
+	if _, err := v.VerifyCertificate(isCACert, time.Now()); err != ErrIsCACertificate {
+		t.Errorf("expected ErrIsCACertificate, got: %v", err)
+	}
+}
+
+func TestTLSVerifierRealHandshake(t *testing.T) {
+	h := newTestHarness(t)
+	defer os.RemoveAll(h.tmpDir)
+
+	revokedSerial := big.NewInt(9999)
+	h.writeCRL(t, []*big.Int{revokedSerial}, 1, time.Now().Add(48*time.Hour))
+
+	v := NewVerifier(h.tmpDir)
+	if _, err := v.LoadFromDisk(); err != nil {
+		t.Fatalf("failed to load bundle: %v", err)
+	}
+
+	tv := &TLSVerifier{
+		verifier: v,
+		logger:   zap.NewNop(),
+	}
+
+	// Create test server with custom VerifyPeerCertificate
+	serverCert, err := tls.X509KeyPair(h.caPEM, pem.EncodeToMemory(&pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: mustMarshalECKey(h.caKey),
+	}))
+	if err != nil {
+		t.Fatalf("failed to create server cert: %v", err)
+	}
+
+	tlsServer := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("HANDSHAKE_OK"))
+	}))
+
+	tlsServer.TLS = &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth:   tls.RequireAnyClientCert,
+		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+			return tv.VerifyClientCertificate(rawCerts, verifiedChains)
+		},
+	}
+	tlsServer.StartTLS()
+	defer tlsServer.Close()
+
+	// 1. Client with valid certificate
+	validID := "e57c6bc1-1a3b-4882-9f37-1424e88383e2"
+	validCert, validKey := h.issueClientCert(t, validID, 1234)
+	validClientCert := tls.Certificate{
+		Certificate: [][]byte{validCert.Raw},
+		PrivateKey:  validKey,
+	}
+
+	client := tlsServer.Client()
+	client.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // skip server CA check in test
+			Certificates:       []tls.Certificate{validClientCert},
+		},
+	}
+
+	resp, err := client.Get(tlsServer.URL)
+	if err != nil {
+		t.Fatalf("expected TLS handshake to succeed for valid cert, got error: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 OK, got: %d", resp.StatusCode)
+	}
+
+	// 2. Client with revoked certificate
+	revokedCert, revokedKey := h.issueClientCert(t, "f47ac10b-58cc-4372-a567-0e02b2c3d479", 9999)
+	revokedClientCert := tls.Certificate{
+		Certificate: [][]byte{revokedCert.Raw},
+		PrivateKey:  revokedKey,
+	}
+
+	clientRevoked := tlsServer.Client()
+	clientRevoked.Transport = &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{revokedClientCert},
+		},
+	}
+
+	_, err = clientRevoked.Get(tlsServer.URL)
+	if err == nil {
+		t.Fatalf("expected TLS handshake to fail for revoked cert, got nil error")
+	}
+}
+
+func mustMarshalECKey(k *ecdsa.PrivateKey) []byte {
+	b, err := x509.MarshalECPrivateKey(k)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 func TestCaddyMiddlewareIntegration(t *testing.T) {
@@ -281,7 +455,7 @@ func TestCaddyMiddlewareIntegration(t *testing.T) {
 	}
 
 	// 2. Valid client cert -> 200 with X-SecretHub-Client-ID header
-	validID := "valid-agent-uuid-1234"
+	validID := "e57c6bc1-1a3b-4882-9f37-1424e88383e2"
 	validCert, _ := h.issueClientCert(t, validID, 1234)
 	req2 := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 	req2.TLS = &tls.ConnectionState{
@@ -300,7 +474,7 @@ func TestCaddyMiddlewareIntegration(t *testing.T) {
 	}
 
 	// 3. Revoked client cert -> 403
-	revokedCert, _ := h.issueClientCert(t, "revoked-agent", 9999)
+	revokedCert, _ := h.issueClientCert(t, "f47ac10b-58cc-4372-a567-0e02b2c3d479", 9999)
 	req3 := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 	req3.TLS = &tls.ConnectionState{
 		PeerCertificates: []*x509.Certificate{revokedCert},

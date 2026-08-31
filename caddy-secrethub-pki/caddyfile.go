@@ -59,5 +59,37 @@ func (m *SecretHubClientAuth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-// Interface guard
-var _ caddyfile.Unmarshaler = (*SecretHubClientAuth)(nil)
+// UnmarshalCaddyfile sets up the TLSVerifier module from Caddyfile tokens.
+func (tv *TLSVerifier) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "bundle_dir":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				tv.BundleDir = d.Val()
+
+			case "poll_interval":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := time.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid poll_interval: %v", err)
+				}
+				tv.PollInterval = caddy.Duration(dur)
+
+			default:
+				return d.Errf("unrecognized subdirective: %s", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
+// Interface guards
+var (
+	_ caddyfile.Unmarshaler = (*SecretHubClientAuth)(nil)
+	_ caddyfile.Unmarshaler = (*TLSVerifier)(nil)
+)

@@ -13,7 +13,9 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   Initializes the Client Auth PKI Root CA authority.
   """
   def init_authority(conn, params) do
-    case ClientAuth.init_authority(params) do
+    actor = get_actor(conn)
+
+    case ClientAuth.init_authority(params, actor: actor) do
       {:ok, %{authority: authority}} ->
         conn
         |> put_status(:created)
@@ -87,7 +89,9 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   Creates a new client identity.
   """
   def create_identity(conn, params) do
-    case ClientAuth.create_identity(params) do
+    actor = get_actor(conn)
+
+    case ClientAuth.create_identity(params, actor: actor) do
       {:ok, identity} ->
         conn
         |> put_status(:created)
@@ -135,7 +139,9 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   Disables an identity and revokes all its active certificates.
   """
   def disable_identity(conn, %{"id" => id} = params) do
-    case ClientAuth.disable_identity(id, params) do
+    actor = get_actor(conn)
+
+    case ClientAuth.disable_identity(id, params, actor: actor) do
       {:ok, identity} ->
         json(conn, %{data: render_identity(identity)})
 
@@ -153,34 +159,55 @@ defmodule SecretHub.Web.ClientAuthPKIController do
 
   @doc """
   POST /v1/pki/client-auth/issue
-  Issues a canonical client certificate from a CSR.
+  Issues a canonical client certificate from a CSR. Requires UUID request_id.
   """
   def issue_certificate(conn, params) do
-    case ClientAuth.issue_certificate(params) do
-      {:ok, %{cert_record: cert_record} = result} ->
-        data = %{
-          cert_id: cert_record.id,
-          certificate_pem: result.certificate,
-          ca_bundle_pem: result.ca_bundle_pem,
-          serial_number: cert_record.serial_number,
-          fingerprint: cert_record.fingerprint,
-          replayed: Map.get(result, :replayed, false),
-          expires_at: cert_record.valid_until
-        }
+    request_id = Map.get(params, "request_id") || Map.get(params, :request_id)
 
-        conn
-        |> put_status(:created)
-        |> json(%{data: data})
+    case Ecto.UUID.cast(request_id || "") do
+      {:ok, valid_request_id} ->
+        actor = get_actor(conn)
+        params_with_id = Map.put(params, "request_id", valid_request_id)
 
-      {:error, %Ecto.Changeset{} = changeset} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: "Validation failed", details: format_changeset_errors(changeset)})
+        case ClientAuth.issue_certificate(params_with_id, actor: actor) do
+          {:ok, %{cert_record: cert_record} = result} ->
+            data = %{
+              cert_id: cert_record.id,
+              certificate_pem: result.certificate,
+              ca_bundle_pem: result.ca_bundle_pem,
+              serial_number: cert_record.serial_number,
+              fingerprint: cert_record.fingerprint,
+              replayed: Map.get(result, :replayed, false),
+              expires_at: cert_record.valid_until
+            }
 
-      {:error, reason} ->
+            conn
+            |> put_status(:created)
+            |> json(%{data: data})
+
+          {:error, :idempotency_conflict} ->
+            conn
+            |> put_status(:conflict)
+            |> json(%{
+              error:
+                "Idempotency conflict: request_id was previously used with different parameters"
+            })
+
+          {:error, %Ecto.Changeset{} = changeset} ->
+            conn
+            |> put_status(:unprocessable_entity)
+            |> json(%{error: "Validation failed", details: format_changeset_errors(changeset)})
+
+          {:error, reason} ->
+            conn
+            |> put_status(:bad_request)
+            |> json(%{error: to_string(reason)})
+        end
+
+      :error ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
+        |> json(%{error: "Missing or invalid request_id (must be a valid UUID)"})
     end
   end
 
@@ -214,7 +241,9 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   Revokes a client certificate and publishes a new CRL.
   """
   def revoke_certificate(conn, %{"id" => id} = params) do
-    case ClientAuth.revoke_certificate(id, params) do
+    actor = get_actor(conn)
+
+    case ClientAuth.revoke_certificate(id, params, actor: actor) do
       {:ok, %{certificate: cert}} ->
         json(conn, %{data: render_certificate(cert)})
 
@@ -236,8 +265,9 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   """
   def refresh_crl(conn, params) do
     slug = Map.get(params, "slug", "client-auth")
+    actor = get_actor(conn)
 
-    case ClientAuth.force_refresh_crl(slug) do
+    case ClientAuth.force_refresh_crl(slug, actor: actor) do
       {:ok, %{crl: crl, generation: gen, crl_number: crl_num}} ->
         json(conn, %{
           data: %{
@@ -261,6 +291,14 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   Records convergence receipt from an agent.
   """
   def record_receipt(conn, params) do
+    # If authenticated as an agent, bind agent_id from assigns to prevent spoofing
+    params =
+      if agent_id = conn.assigns[:agent_id] do
+        Map.put(params, "agent_id", agent_id)
+      else
+        params
+      end
+
     case ClientAuth.record_bundle_receipt(params) do
       {:ok, receipt} ->
         json(conn, %{data: render_receipt(receipt)})
@@ -285,6 +323,22 @@ defmodule SecretHub.Web.ClientAuthPKIController do
     slug = Map.get(params, "slug", "client-auth")
     receipts = ClientAuth.list_bundle_receipts(slug)
     json(conn, %{data: Enum.map(receipts, &render_receipt/1)})
+  end
+
+  defp get_actor(conn) do
+    admin_id = get_session(conn, :admin_id) || conn.assigns[:current_admin_id] || "admin"
+
+    client_ip =
+      case conn.remote_ip do
+        {a, b, c, d} -> "#{a}.#{b}.#{c}.#{d}"
+        ip -> to_string(ip)
+      end
+
+    %{
+      actor_type: "admin",
+      actor_id: to_string(admin_id),
+      client_ip: client_ip
+    }
   end
 
   # Rendering Helpers

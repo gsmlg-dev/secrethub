@@ -148,6 +148,18 @@ defmodule SecretHub.Agent.PKIBundleTest do
       future_now = DateTime.utc_now() |> DateTime.add(10 * 86_400, :second)
       assert {:error, :crl_expired, _} = BundleValidator.validate(bundle, now: future_now)
     end
+
+    test "validates on-disk bundle via validate_disk_bundle", %{
+      tmp_dir: tmp_dir,
+      bundle: bundle,
+      now: now
+    } do
+      base_dir = Path.join(tmp_dir, "pki/client-auth")
+      assert {:ok, _} = AtomicStore.write_bundle(base_dir, bundle, now: now)
+
+      assert {:ok, manifest} = BundleValidator.validate_disk_bundle(base_dir, now: now)
+      assert manifest.generation == 1
+    end
   end
 
   describe "AtomicStore" do
@@ -193,7 +205,7 @@ defmodule SecretHub.Agent.PKIBundleTest do
     end
   end
 
-  describe "TrustBundleManager GenServer" do
+  describe "TrustBundleManager GenServer & Monotonicity" do
     test "processes valid bundle and reports applied receipt", %{
       tmp_dir: tmp_dir,
       bundle: bundle,
@@ -216,9 +228,11 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert status.current_generation == 1
     end
 
-    test "skips re-applying older or duplicate generation", %{
+    test "strictly rejects generation downgrade and equivocation", %{
       tmp_dir: tmp_dir,
       bundle: bundle,
+      ca_key: ca_key,
+      ca_cert: ca_cert,
       now: now
     } do
       {:ok, manager} =
@@ -228,11 +242,91 @@ defmodule SecretHub.Agent.PKIBundleTest do
           name: :test_trust_bundle_manager_2
         )
 
-      assert {:ok, _} = TrustBundleManager.process_bundle(manager, bundle, now: now)
+      gen2_bundle = Map.put(bundle, "generation", 2)
 
-      # Duplicate call does not error, returns applied receipt
-      assert {:ok, receipt} = TrustBundleManager.process_bundle(manager, bundle, now: now)
+      transcript2 =
+        [
+          gen2_bundle["schema_version"],
+          gen2_bundle["authority"],
+          gen2_bundle["generation"],
+          gen2_bundle["ca_fingerprint"],
+          gen2_bundle["crl_number"],
+          gen2_bundle["crl_der_sha256"],
+          gen2_bundle["this_update"],
+          gen2_bundle["next_update"],
+          gen2_bundle["ca_bundle_pem"],
+          gen2_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      gen2_hash = :crypto.hash(:sha256, transcript2) |> Base.encode16(case: :lower)
+      gen2_bundle = Map.put(gen2_bundle, "bundle_sha256", gen2_hash)
+
+      # 1. Apply Gen 2
+      assert {:ok, receipt} = TrustBundleManager.process_bundle(manager, gen2_bundle, now: now)
       assert receipt["status"] == "applied"
+      assert receipt["generation"] == 2
+
+      # 2. Re-applying identical Gen 2 is a no-op return
+      assert {:ok, dup_receipt} =
+               TrustBundleManager.process_bundle(manager, gen2_bundle, now: now)
+
+      assert dup_receipt["status"] == "applied"
+
+      # 3. Attempting downgrade to Gen 1 is strictly rejected
+      assert {:error, :generation_downgrade_rejected, failed_receipt} =
+               TrustBundleManager.process_bundle(manager, bundle, now: now)
+
+      assert failed_receipt["status"] == "failed"
+      assert failed_receipt["last_error_code"] == "generation_downgrade_rejected"
+
+      # 4. Equivocation: same generation 2 with differing valid CRL and hash is strictly rejected
+      crl2 =
+        X509.CRL.new(
+          [],
+          ca_cert,
+          ca_key,
+          this_update: DateTime.add(now, -100, :second),
+          next_update: DateTime.add(now, 48 * 3600, :second),
+          extensions: [crl_number: X509.CRL.Extension.crl_number(2)]
+        )
+
+      crl2_pem = X509.CRL.to_pem(crl2)
+      crl2_der = X509.CRL.to_der(crl2)
+      crl2_hash = :crypto.hash(:sha256, crl2_der) |> Base.encode16(case: :lower)
+
+      equivocating_bundle =
+        gen2_bundle
+        |> Map.put("crl_number", 2)
+        |> Map.put("this_update", DateTime.to_iso8601(DateTime.add(now, -100, :second)))
+        |> Map.put("crl_pem", crl2_pem)
+        |> Map.put("crl_der_sha256", crl2_hash)
+
+      transcript_eq =
+        [
+          equivocating_bundle["schema_version"],
+          equivocating_bundle["authority"],
+          equivocating_bundle["generation"],
+          equivocating_bundle["ca_fingerprint"],
+          equivocating_bundle["crl_number"],
+          equivocating_bundle["crl_der_sha256"],
+          equivocating_bundle["this_update"],
+          equivocating_bundle["next_update"],
+          equivocating_bundle["ca_bundle_pem"],
+          equivocating_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      eq_hash = :crypto.hash(:sha256, transcript_eq) |> Base.encode16(case: :lower)
+      equivocating_bundle = Map.put(equivocating_bundle, "bundle_sha256", eq_hash)
+
+      assert {:error, :equivocation_detected, eq_receipt} =
+               TrustBundleManager.process_bundle(manager, equivocating_bundle, now: now)
+
+      assert eq_receipt["status"] == "failed"
+      assert eq_receipt["last_error_code"] == "equivocation_detected"
     end
 
     test "handles invalid bundle with failed receipt", %{

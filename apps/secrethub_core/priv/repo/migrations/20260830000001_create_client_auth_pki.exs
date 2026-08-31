@@ -2,8 +2,6 @@ defmodule SecretHub.Core.Repo.Migrations.CreateClientAuthPki do
   use Ecto.Migration
 
   def up do
-    # 1. Ensure monthly partitions for audit_logs exist
-    execute("DROP TABLE IF EXISTS audit_logs_default;")
 
     for year <- [2025, 2026, 2027, 2028], month <- 1..12 do
       next_month = if month == 12, do: 1, else: month + 1

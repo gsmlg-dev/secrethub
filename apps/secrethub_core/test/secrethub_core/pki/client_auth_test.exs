@@ -46,7 +46,7 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert ca_cert.cert_type == :client_auth_ca
       assert ca_cert.common_name == "Test Client Auth CA"
       assert ca_cert.organization == "SecretHub"
-      assert String.starts_with?(ca_cert.subject, "O=SecretHub, CN=Test Client Auth CA")
+      assert ca_cert.subject == "/O=SecretHub/CN=Test Client Auth CA"
       assert String.length(ca_cert.canonical_fingerprint) == 64
       assert "keyCertSign" in ca_cert.key_usage
       assert "cRLSign" in ca_cert.key_usage

@@ -59,7 +59,11 @@ defmodule SecretHub.Web.ClientAuthLiveTest do
     identity = Enum.find(identities, &(&1.name == "api-worker-test"))
     assert identity != nil
 
-    # 2. Issue Certificate
+    # 2. Issue Certificate via Modal
+    render_click(view, :open_issue_modal, %{"identity_id" => identity.id})
+    modal_html = render(view)
+    assert modal_html =~ "Issue Client Certificate"
+
     client_key = X509.PrivateKey.new_ec(:secp384r1)
     csr = X509.CSR.new(client_key, "/O=Custom/CN=custom")
     csr_pem = X509.CSR.to_pem(csr)
@@ -71,6 +75,21 @@ defmodule SecretHub.Web.ClientAuthLiveTest do
         "ttl_days" => "10"
       }
     })
+
+    # Verify modal now shows the PEMs, copy buttons, and download button
+    issued_modal_html = render(view)
+    assert issued_modal_html =~ "Certificate Issued Successfully"
+    assert issued_modal_html =~ "Client Certificate PEM"
+    assert issued_modal_html =~ "CA Bundle PEM"
+    assert issued_modal_html =~ "Copy Certificate"
+    assert issued_modal_html =~ "Copy CA Chain"
+    assert issued_modal_html =~ "Download Certificate (.crt)"
+    assert issued_modal_html =~ "-----BEGIN CERTIFICATE-----"
+
+    # Close modal
+    render_click(view, :close_issue_modal, %{})
+    closed_modal_html = render(view)
+    refute closed_modal_html =~ "Certificate Issued Successfully"
 
     render_click(view, :switch_tab, %{"tab" => "certificates"})
     certs_html = render(view)

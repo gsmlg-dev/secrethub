@@ -2,17 +2,89 @@ package secrethubpki
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/caddyserver/caddy/v2/modules/caddytls"
 	"go.uber.org/zap"
 )
 
 func init() {
 	caddy.RegisterModule(SecretHubClientAuth{})
+	caddy.RegisterModule(TLSVerifier{})
+}
+
+// TLSVerifier is a Caddy TLS client authentication verifier that enforces
+// SecretHub Client Auth PKI policies during the TLS handshake.
+type TLSVerifier struct {
+	// BundleDir is the path to the directory containing trust bundles (e.g. /var/lib/secrethub/pki/client-auth)
+	BundleDir string `json:"bundle_dir,omitempty"`
+
+	// PollInterval is how often to check for updated trust bundle files on disk (default 5s)
+	PollInterval caddy.Duration `json:"poll_interval,omitempty"`
+
+	verifier *Verifier
+	loader   *AutoLoader
+	ctx      context.Context
+	cancel   context.CancelFunc
+	logger   *zap.Logger
+}
+
+// CaddyModule returns the Caddy module information.
+func (TLSVerifier) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "tls.client_auth.verifier.secrethub_client_auth",
+		New: func() caddy.Module { return new(TLSVerifier) },
+	}
+}
+
+// Provision sets up the TLSVerifier.
+func (tv *TLSVerifier) Provision(ctx caddy.Context) error {
+	tv.logger = ctx.Logger()
+
+	if tv.BundleDir == "" {
+		tv.BundleDir = "/var/lib/secrethub/pki/client-auth"
+	}
+
+	pollDuration := time.Duration(tv.PollInterval)
+	if pollDuration <= 0 {
+		pollDuration = 5 * time.Second
+	}
+
+	tv.verifier = NewVerifier(tv.BundleDir)
+	tv.loader = NewAutoLoader(tv.verifier, pollDuration, tv.logger)
+
+	tv.ctx, tv.cancel = context.WithCancel(ctx)
+	tv.loader.Start(tv.ctx)
+
+	return nil
+}
+
+// Cleanup stops the background auto-loader goroutine.
+func (tv *TLSVerifier) Cleanup() error {
+	if tv.cancel != nil {
+		tv.cancel()
+	}
+	return nil
+}
+
+// VerifyClientCertificate verifies the client certificates presented during the TLS handshake.
+func (tv *TLSVerifier) VerifyClientCertificate(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+	if len(rawCerts) == 0 {
+		return ErrNoClientCert
+	}
+
+	cert, err := x509.ParseCertificate(rawCerts[0])
+	if err != nil {
+		return fmt.Errorf("failed to parse client certificate: %w", err)
+	}
+
+	_, err = tv.verifier.VerifyCertificate(cert, time.Now())
+	return err
 }
 
 // SecretHubClientAuth is a Caddy HTTP middleware that verifies incoming mTLS
@@ -121,6 +193,10 @@ func (m *SecretHubClientAuth) ServeHTTP(w http.ResponseWriter, r *http.Request, 
 
 // Interface guards
 var (
+	_ caddy.Provisioner                  = (*TLSVerifier)(nil)
+	_ caddy.CleanerUpper                 = (*TLSVerifier)(nil)
+	_ caddytls.ClientCertificateVerifier = (*TLSVerifier)(nil)
+
 	_ caddy.Provisioner           = (*SecretHubClientAuth)(nil)
 	_ caddy.CleanerUpper          = (*SecretHubClientAuth)(nil)
 	_ caddyhttp.MiddlewareHandler = (*SecretHubClientAuth)(nil)

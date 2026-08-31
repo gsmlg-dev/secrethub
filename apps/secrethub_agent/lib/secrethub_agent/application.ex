@@ -41,6 +41,18 @@ defmodule SecretHub.Agent.Application do
          enrollment_opts: Application.get_env(:secrethub_agent, :enrollment_opts, [])
        ]},
 
+      # Client Auth PKI Trust Bundle Manager (manages local Caddy trust material)
+      {SecretHub.Agent.PKI.TrustBundleManager,
+       [
+         state_dir:
+           System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
+             Application.get_env(
+               :secrethub_agent,
+               :state_dir,
+               Path.expand("~/.local/state/secrethub/agent")
+             )
+       ]},
+
       # Lease renewer for dynamic secrets
       {SecretHub.Agent.LeaseRenewer,
        [

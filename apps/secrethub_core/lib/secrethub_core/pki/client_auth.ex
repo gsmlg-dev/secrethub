@@ -49,8 +49,8 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   @doc """
   Creates a new client identity.
   """
-  def create_identity(attrs) do
-    Identity.create_identity(attrs)
+  def create_identity(attrs, opts \\ []) do
+    Identity.create_identity(attrs, opts)
   end
 
   @doc """
@@ -87,17 +87,26 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   @doc """
   Issues a canonical client certificate for an identity from a CSR.
   """
-  def issue_certificate(attrs) when is_map(attrs) do
+  def issue_certificate(attrs, extra_opts \\ [])
+
+  def issue_certificate(attrs, extra_opts) when is_map(attrs) do
     identity_id = Map.get(attrs, "identity_id") || Map.get(attrs, :identity_id)
     csr_pem = Map.get(attrs, "csr_pem") || Map.get(attrs, :csr_pem)
     request_id = Map.get(attrs, "request_id") || Map.get(attrs, :request_id)
     ttl_seconds = Map.get(attrs, "ttl_seconds") || Map.get(attrs, :ttl_seconds)
 
-    opts = if ttl_seconds, do: [ttl_seconds: ttl_seconds], else: []
+    opts =
+      extra_opts
+      |> Keyword.put_new(:ttl_seconds, ttl_seconds)
+
     Issuer.issue_certificate(identity_id, csr_pem, request_id, opts)
   end
 
-  def issue_certificate(identity_id, csr_pem, request_id \\ nil, opts \\ []) do
+  def issue_certificate(identity_id, csr_pem, request_id) when is_binary(csr_pem) do
+    Issuer.issue_certificate(identity_id, csr_pem, request_id, [])
+  end
+
+  def issue_certificate(identity_id, csr_pem, request_id, opts) do
     Issuer.issue_certificate(identity_id, csr_pem, request_id, opts)
   end
 
@@ -178,8 +187,16 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   @doc """
   Forces an immediate CRL refresh and generation bump.
   """
-  def force_refresh_crl(slug \\ @default_authority_slug) do
-    CRLManager.refresh_crl(authority_slug: slug, force: true)
+  def force_refresh_crl(slug_or_opts \\ @default_authority_slug, opts \\ [])
+
+  def force_refresh_crl(slug, opts) when is_binary(slug) do
+    opts = Keyword.merge(opts, authority_slug: slug, force: true)
+    CRLManager.refresh_crl(opts)
+  end
+
+  def force_refresh_crl(opts, []) when is_list(opts) do
+    opts = Keyword.put(opts, :force, true)
+    CRLManager.refresh_crl(opts)
   end
 
   @doc """

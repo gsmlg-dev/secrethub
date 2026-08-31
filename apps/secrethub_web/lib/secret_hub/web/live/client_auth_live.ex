@@ -27,6 +27,8 @@ defmodule SecretHub.Web.ClientAuthLive do
       |> assign(:show_identity_modal, false)
       |> assign(:show_issue_modal, false)
       |> assign(:show_revoke_modal, false)
+      |> assign(:issued_cert_result, nil)
+      |> assign(:issue_request_id, nil)
       |> assign(:init_form, %{
         "name" => "SecretHub Client Authentication Root CA",
         "key_algorithm" => "ecdsa_p384",
@@ -166,29 +168,43 @@ defmodule SecretHub.Web.ClientAuthLive do
   def handle_event("open_issue_modal", params, socket) do
     identity_id = Map.get(params, "identity_id", "")
     issue_form = Map.put(socket.assigns.issue_form, "identity_id", identity_id)
+    request_id = Ecto.UUID.generate()
 
-    {:noreply, assign(socket, show_issue_modal: true, issue_form: issue_form, action_error: nil)}
+    {:noreply,
+     assign(socket,
+       show_issue_modal: true,
+       issue_form: issue_form,
+       issue_request_id: request_id,
+       issued_cert_result: nil,
+       action_error: nil
+     )}
   end
 
   def handle_event("close_issue_modal", _params, socket) do
-    {:noreply, assign(socket, :show_issue_modal, false)}
+    {:noreply,
+     assign(socket, show_issue_modal: false, issued_cert_result: nil, issue_request_id: nil)}
   end
 
   def handle_event("issue_certificate", %{"issue" => params}, socket) do
     ttl_seconds = String.to_integer(params["ttl_days"] || "30") * 86_400
+    request_id = socket.assigns.issue_request_id || Ecto.UUID.generate()
 
     attrs = %{
       "identity_id" => params["identity_id"],
       "csr_pem" => params["csr_pem"],
-      "ttl_seconds" => ttl_seconds
+      "ttl_seconds" => ttl_seconds,
+      "request_id" => request_id
     }
 
     case ClientAuth.issue_certificate(attrs) do
-      {:ok, _result} ->
+      {:ok, result} ->
         socket =
           socket
-          |> assign(:show_issue_modal, false)
-          |> assign(:action_success, "Certificate issued successfully")
+          |> assign(:issued_cert_result, result)
+          |> assign(
+            :action_success,
+            "Certificate issued successfully! Copy or download the PEM below."
+          )
           |> assign(:action_error, nil)
           |> load_data()
 
@@ -693,48 +709,114 @@ defmodule SecretHub.Web.ClientAuthLive do
       <!-- Issue Certificate Modal -->
       <%= if @show_issue_modal do %>
         <div class="modal modal-open">
-          <div class="modal-box max-w-2xl">
-            <h3 class="font-bold text-lg">Issue Client Certificate</h3>
-            <form phx-submit="issue_certificate" class="space-y-4 mt-4">
-              <div class="form-control">
-                <label class="label"><span class="label-text">Identity ID (UUID)</span></label>
-                <select name="issue[identity_id]" class="select select-bordered w-full" required>
-                  <option value="">Select Identity...</option>
-                  <%= for id <- @identities do %>
-                    <option
-                      value={id.id}
-                      selected={id.id == @issue_form["identity_id"]}
-                      disabled={id.status != "active"}
+          <div class="modal-box max-w-3xl">
+            <h3 class="font-bold text-lg">
+              <%= if @issued_cert_result do %>
+                Certificate Issued Successfully
+              <% else %>
+                Issue Client Certificate
+              <% end %>
+            </h3>
+
+            <%= if @issued_cert_result do %>
+              <div class="space-y-4 mt-4">
+                <div class="alert alert-success text-sm">
+                  <span>Certificate was generated and signed by the Client CA. Copy or download your credentials now.</span>
+                </div>
+
+                <div class="form-control">
+                  <div class="flex justify-between items-center mb-1">
+                    <label class="label-text font-medium">Client Certificate PEM</label>
+                    <button
+                      type="button"
+                      id="copy-cert-btn"
+                      onclick="navigator.clipboard.writeText(document.getElementById('issued-cert-pem').value)"
+                      class="btn btn-xs btn-outline"
                     >
-                      {id.name} ({id.id}) {if id.status != "active", do: "- DISABLED"}
-                    </option>
-                  <% end %>
-                </select>
+                      Copy Certificate
+                    </button>
+                  </div>
+                  <textarea
+                    id="issued-cert-pem"
+                    readonly
+                    rows="8"
+                    class="textarea textarea-bordered font-mono text-xs w-full bg-base-200"
+                  ><%= @issued_cert_result.certificate %></textarea>
+                </div>
+
+                <div class="form-control">
+                  <div class="flex justify-between items-center mb-1">
+                    <label class="label-text font-medium">CA Bundle PEM</label>
+                    <button
+                      type="button"
+                      id="copy-ca-btn"
+                      onclick="navigator.clipboard.writeText(document.getElementById('issued-ca-pem').value)"
+                      class="btn btn-xs btn-outline"
+                    >
+                      Copy CA Chain
+                    </button>
+                  </div>
+                  <textarea
+                    id="issued-ca-pem"
+                    readonly
+                    rows="6"
+                    class="textarea textarea-bordered font-mono text-xs w-full bg-base-200"
+                  ><%= @issued_cert_result.ca_bundle_pem %></textarea>
+                </div>
+
+                <div class="modal-action flex justify-between items-center">
+                  <a
+                    href={"data:application/x-pem-file;charset=utf-8," <> URI.encode_www_form(@issued_cert_result.certificate)}
+                    download="client.crt"
+                    class="btn btn-secondary btn-sm"
+                  >
+                    Download Certificate (.crt)
+                  </a>
+                  <button type="button" phx-click="close_issue_modal" class="btn btn-primary">Done</button>
+                </div>
               </div>
-              <div class="form-control">
-                <label class="label"><span class="label-text">Certificate Signing Request (CSR PEM)</span></label>
-                <textarea
-                  name="issue[csr_pem]"
-                  rows="6"
-                  placeholder="-----BEGIN CERTIFICATE REQUEST-----..."
-                  required
-                  class="textarea textarea-bordered font-mono text-xs w-full"
-                ></textarea>
-              </div>
-              <div class="form-control">
-                <label class="label"><span class="label-text">TTL (Days)</span></label>
-                <input
-                  type="number"
-                  name="issue[ttl_days]"
-                  value={@issue_form["ttl_days"]}
-                  class="input input-bordered w-full"
-                />
-              </div>
-              <div class="modal-action">
-                <button type="button" phx-click="close_issue_modal" class="btn btn-ghost">Cancel</button>
-                <button type="submit" class="btn btn-primary">Sign & Issue</button>
-              </div>
-            </form>
+            <% else %>
+              <form phx-submit="issue_certificate" class="space-y-4 mt-4">
+                <div class="form-control">
+                  <label class="label"><span class="label-text">Identity ID (UUID)</span></label>
+                  <select name="issue[identity_id]" class="select select-bordered w-full" required>
+                    <option value="">Select Identity...</option>
+                    <%= for id <- @identities do %>
+                      <option
+                        value={id.id}
+                        selected={id.id == @issue_form["identity_id"]}
+                        disabled={id.status != "active"}
+                      >
+                        {id.name} ({id.id}) {if id.status != "active", do: "- DISABLED"}
+                      </option>
+                    <% end %>
+                  </select>
+                </div>
+                <div class="form-control">
+                  <label class="label"><span class="label-text">Certificate Signing Request (CSR PEM)</span></label>
+                  <textarea
+                    name="issue[csr_pem]"
+                    rows="6"
+                    placeholder="-----BEGIN CERTIFICATE REQUEST-----..."
+                    required
+                    class="textarea textarea-bordered font-mono text-xs w-full"
+                  ></textarea>
+                </div>
+                <div class="form-control">
+                  <label class="label"><span class="label-text">TTL (Days)</span></label>
+                  <input
+                    type="number"
+                    name="issue[ttl_days]"
+                    value={@issue_form["ttl_days"]}
+                    class="input input-bordered w-full"
+                  />
+                </div>
+                <div class="modal-action">
+                  <button type="button" phx-click="close_issue_modal" class="btn btn-ghost">Cancel</button>
+                  <button type="submit" class="btn btn-primary">Sign & Issue</button>
+                </div>
+              </form>
+            <% end %>
           </div>
         </div>
       <% end %>

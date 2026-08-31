@@ -1,7 +1,7 @@
 defmodule SecretHub.Agent.PKI.TrustBundleManager do
   @moduledoc """
   Coordinates Agent-side Client Auth PKI trust bundle receipt, validation,
-  atomic disk application, and status reporting.
+  atomic disk application, periodic synchronization, and convergence receipts.
   """
 
   use GenServer
@@ -9,17 +9,30 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
   alias SecretHub.Agent.PKI.{AtomicStore, BundleValidator}
 
+  # 15 minutes
+  @periodic_sync_interval_ms 900_000
+  # 5 minutes
+  @max_retry_interval_ms 300_000
+
   defstruct [
     :state_dir,
     :base_dir,
     :agent_id,
-    current_generation: 0,
-    current_crl_number: 0,
-    bundle_sha256: nil,
+    :connection_mod,
+    # Last-Known-Good state
+    lkg_generation: 0,
+    lkg_crl_number: 0,
+    lkg_ca_fingerprint: nil,
+    lkg_bundle_sha256: nil,
     last_applied_at: nil,
+    # Synchronization status
+    status: "initializing",
     last_error_code: nil,
     last_error_detail: nil,
-    status: "initializing"
+    # Timers
+    sync_timer: nil,
+    retry_timer: nil,
+    retry_attempt: 0
   ]
 
   @type t :: %__MODULE__{}
@@ -34,19 +47,22 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     state_dir = Keyword.get(opts, :state_dir, Path.expand("~/.local/state/secrethub/agent"))
     base_dir = Path.join(state_dir, "pki/client-auth")
     agent_id = Keyword.get(opts, :agent_id)
+    conn_mod = Keyword.get(opts, :connection_mod, SecretHub.Agent.Connection)
 
-    # Initialize from current manifest on disk if it exists
+    # Initialize from current manifest and files on disk if they exist and are valid
     state =
-      case AtomicStore.read_current_manifest(base_dir) do
-        {:ok, manifest} ->
+      case BundleValidator.validate_disk_bundle(Path.join(base_dir, "current")) do
+        {:ok, validated} ->
           %__MODULE__{
             state_dir: state_dir,
             base_dir: base_dir,
             agent_id: agent_id,
-            current_generation: manifest["generation"] || 0,
-            current_crl_number: manifest["crl_number"] || 0,
-            bundle_sha256: manifest["bundle_sha256"],
-            last_applied_at: parse_datetime(manifest["applied_at"]),
+            connection_mod: conn_mod,
+            lkg_generation: validated.generation,
+            lkg_crl_number: validated.crl_number,
+            lkg_ca_fingerprint: validated.ca_fingerprint,
+            lkg_bundle_sha256: validated.bundle_sha256,
+            last_applied_at: parse_datetime(validated.this_update),
             status: "applied"
           }
 
@@ -55,11 +71,13 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
             state_dir: state_dir,
             base_dir: base_dir,
             agent_id: agent_id,
+            connection_mod: conn_mod,
             status: "initializing"
           }
       end
 
-    {:ok, state}
+    timer = schedule_periodic_sync()
+    {:ok, %{state | sync_timer: timer}}
   end
 
   @doc """
@@ -74,6 +92,14 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
   end
 
   @doc """
+  Triggers an immediate synchronization of the trust bundle from Core.
+  """
+  @spec sync_bundle(pid() | module(), keyword()) :: :ok
+  def sync_bundle(server \\ __MODULE__, opts \\ []) do
+    GenServer.cast(server, {:sync_bundle, opts})
+  end
+
+  @doc """
   Returns the current status of the TrustBundleManager.
   """
   @spec status(pid() | module()) :: map()
@@ -83,64 +109,11 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
   @impl true
   def handle_call({:process_bundle, bundle, opts}, _from, state) do
-    now = Keyword.get(opts, :now, DateTime.utc_now() |> DateTime.truncate(:second))
-    force = Keyword.get(opts, :force, false)
+    case apply_bundle(state, bundle, opts) do
+      {:ok, receipt, new_state} ->
+        {:reply, {:ok, receipt}, new_state}
 
-    case BundleValidator.validate(bundle, opts) do
-      {:ok, validated} ->
-        if !force and validated.generation <= state.current_generation and
-             state.status == "applied" do
-          # Already at or ahead of this generation
-          receipt = build_receipt(state, "applied", now)
-          {:reply, {:ok, receipt}, state}
-        else
-          case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
-            {:ok, _result} ->
-              new_state = %{
-                state
-                | current_generation: validated.generation,
-                  current_crl_number: validated.crl_number,
-                  bundle_sha256: validated.bundle_sha256,
-                  last_applied_at: now,
-                  last_error_code: nil,
-                  last_error_detail: nil,
-                  status: "applied"
-              }
-
-              receipt = build_receipt(new_state, "applied", now)
-
-              Logger.info(
-                "Client Auth trust bundle updated to generation #{validated.generation}"
-              )
-
-              {:reply, {:ok, receipt}, new_state}
-
-            {:error, reason} ->
-              error_code = :atomic_write_failed
-              error_detail = inspect(reason)
-
-              new_state = %{
-                state
-                | last_error_code: to_string(error_code),
-                  last_error_detail: error_detail,
-                  status: "failed"
-              }
-
-              receipt = build_error_receipt(new_state, bundle, error_code, error_detail, now)
-              {:reply, {:error, error_code, receipt}, new_state}
-          end
-        end
-
-      {:error, error_code, detail} ->
-        new_state = %{
-          state
-          | last_error_code: to_string(error_code),
-            last_error_detail: detail,
-            status: "failed"
-        }
-
-        receipt = build_error_receipt(new_state, bundle, error_code, detail, now)
-        Logger.error("Client Auth trust bundle validation failed: #{error_code} - #{detail}")
+      {:error, error_code, receipt, new_state} ->
         {:reply, {:error, error_code, receipt}, new_state}
     end
   end
@@ -148,9 +121,9 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
   @impl true
   def handle_call(:get_status, _from, state) do
     info = %{
-      current_generation: state.current_generation,
-      current_crl_number: state.current_crl_number,
-      bundle_sha256: state.bundle_sha256,
+      current_generation: state.lkg_generation,
+      current_crl_number: state.lkg_crl_number,
+      bundle_sha256: state.lkg_bundle_sha256,
       last_applied_at: state.last_applied_at,
       status: state.status,
       last_error_code: state.last_error_code,
@@ -161,14 +134,202 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     {:reply, info, state}
   end
 
+  @impl true
+  def handle_cast({:sync_bundle, opts}, state) do
+    new_state = do_sync(state, opts)
+    {:noreply, new_state}
+  end
+
+  @impl true
+  def handle_info(:periodic_sync, state) do
+    new_state = do_sync(state, [])
+    timer = schedule_periodic_sync()
+    {:noreply, %{new_state | sync_timer: timer}}
+  end
+
+  @impl true
+  def handle_info(:retry_sync, state) do
+    new_state = do_sync(state, [])
+    {:noreply, %{new_state | retry_timer: nil}}
+  end
+
+  def handle_info(_msg, state), do: {:noreply, state}
+
+  # Core Bundle Application & Verification
+
+  defp apply_bundle(state, bundle, opts) do
+    now = Keyword.get(opts, :now, DateTime.utc_now() |> DateTime.truncate(:second))
+    force = Keyword.get(opts, :force, false)
+    val_opts = Keyword.put_new(opts, :pinned_ca_fingerprint, state.lkg_ca_fingerprint)
+
+    with {:ok, validated} <- BundleValidator.validate(bundle, val_opts),
+         :ok <- check_monotonicity_and_invariants(state, validated, force) do
+      if !force and validated.generation == state.lkg_generation and
+           validated.bundle_sha256 == state.lkg_bundle_sha256 and state.status == "applied" do
+        receipt = build_receipt(state, "applied", now)
+        {:ok, receipt, state}
+      else
+        case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
+          {:ok, _result} ->
+            new_state = %{
+              state
+              | lkg_generation: validated.generation,
+                lkg_crl_number: validated.crl_number,
+                lkg_ca_fingerprint: validated.ca_fingerprint,
+                lkg_bundle_sha256: validated.bundle_sha256,
+                last_applied_at: now,
+                last_error_code: nil,
+                last_error_detail: nil,
+                status: "applied",
+                retry_attempt: 0
+            }
+
+            receipt = build_receipt(new_state, "applied", now)
+            submit_receipt_async(new_state, receipt)
+
+            Logger.info("Client Auth trust bundle updated to generation #{validated.generation}")
+
+            {:ok, receipt, new_state}
+
+          {:error, reason} ->
+            error_code = :atomic_write_failed
+            error_detail = inspect(reason)
+
+            new_state = %{
+              state
+              | last_error_code: to_string(error_code),
+                last_error_detail: error_detail,
+                status: "failed"
+            }
+
+            receipt = build_error_receipt(new_state, bundle, error_code, error_detail, now)
+            submit_receipt_async(new_state, receipt)
+            {:error, error_code, receipt, new_state}
+        end
+      end
+    else
+      {:error, error_code, detail} ->
+        new_state = %{
+          state
+          | last_error_code: to_string(error_code),
+            last_error_detail: detail,
+            status: "failed"
+        }
+
+        receipt = build_error_receipt(new_state, bundle, error_code, detail, now)
+        submit_receipt_async(new_state, receipt)
+        Logger.error("Client Auth trust bundle rejected: #{error_code} - #{detail}")
+        {:error, error_code, receipt, new_state}
+    end
+  end
+
+  defp check_monotonicity_and_invariants(state, validated, _force) do
+    if state.lkg_generation > 0 do
+      cond do
+        validated.generation < state.lkg_generation ->
+          {:error, :generation_downgrade_rejected,
+           "Received generation #{validated.generation} < last-known-good generation #{state.lkg_generation}"}
+
+        validated.generation == state.lkg_generation and
+            validated.bundle_sha256 != state.lkg_bundle_sha256 ->
+          {:error, :equivocation_detected,
+           "Equivocation detected: received differing bundle hash for generation #{validated.generation}"}
+
+        validated.generation > state.lkg_generation and
+          state.lkg_ca_fingerprint != nil and
+            validated.ca_fingerprint != state.lkg_ca_fingerprint ->
+          {:error, :ca_fingerprint_mismatch,
+           "Received CA fingerprint #{validated.ca_fingerprint} differs from established CA #{state.lkg_ca_fingerprint}"}
+
+        validated.generation >= state.lkg_generation and
+            validated.crl_number < state.lkg_crl_number ->
+          {:error, :crl_number_downgrade,
+           "Received CRL number #{validated.crl_number} < last-known-good CRL number #{state.lkg_crl_number}"}
+
+        true ->
+          :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  # Pull from Core and Apply
+
+  defp do_sync(state, opts) do
+    case pull_bundle_from_core(state) do
+      {:ok, bundle} ->
+        case apply_bundle(state, bundle, opts) do
+          {:ok, _receipt, new_state} ->
+            new_state
+
+          {:error, _code, _receipt, new_state} ->
+            schedule_retry(new_state)
+        end
+
+      {:error, reason} ->
+        Logger.debug("TrustBundleManager pull skipped or failed: #{inspect(reason)}")
+        schedule_retry(state)
+    end
+  end
+
+  defp pull_bundle_from_core(state) do
+    conn_mod = state.connection_mod || SecretHub.Agent.Connection
+
+    if Process.whereis(conn_mod) do
+      case conn_mod.pull_trust_bundle() do
+        {:ok, %{"bundle" => bundle}} when is_map(bundle) -> {:ok, bundle}
+        {:ok, bundle} when is_map(bundle) -> {:ok, bundle}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      {:error, :connection_not_running}
+    end
+  catch
+    _, reason -> {:error, reason}
+  end
+
+  defp submit_receipt_async(state, receipt) do
+    conn_mod = state.connection_mod || SecretHub.Agent.Connection
+
+    if Process.whereis(conn_mod) do
+      Task.start(fn ->
+        try do
+          conn_mod.submit_bundle_receipt(receipt)
+        catch
+          _, _ -> :ok
+        end
+      end)
+    end
+  end
+
   # Helpers
+
+  defp schedule_periodic_sync do
+    # 15 minutes +/- 60s jitter
+    jitter = :rand.uniform(120_000) - 60_000
+    interval = max(60_000, @periodic_sync_interval_ms + jitter)
+    Process.send_after(self(), :periodic_sync, interval)
+  end
+
+  defp schedule_retry(state) do
+    attempt = state.retry_attempt + 1
+    # Exponential backoff: 5s, 10s, 20s, 40s, ..., up to max 300s
+    raw_interval = 5_000 * trunc(:math.pow(2, min(attempt, 6)))
+    interval = min(@max_retry_interval_ms, raw_interval)
+
+    if state.retry_timer, do: Process.cancel_timer(state.retry_timer)
+    timer = Process.send_after(self(), :retry_sync, interval)
+
+    %{state | retry_timer: timer, retry_attempt: attempt}
+  end
 
   defp build_receipt(state, status, now) do
     %{
       "agent_id" => state.agent_id,
-      "generation" => state.current_generation,
-      "crl_number" => state.current_crl_number,
-      "bundle_sha256" => state.bundle_sha256,
+      "generation" => state.lkg_generation,
+      "crl_number" => state.lkg_crl_number,
+      "bundle_sha256" => state.lkg_bundle_sha256,
       "status" => status,
       "applied_at" => DateTime.to_iso8601(now)
     }
@@ -177,9 +338,9 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
   defp build_error_receipt(state, bundle, error_code, error_detail, now) do
     %{
       "agent_id" => state.agent_id,
-      "generation" => bundle["generation"] || state.current_generation,
-      "crl_number" => bundle["crl_number"] || state.current_crl_number,
-      "bundle_sha256" => bundle["bundle_sha256"] || state.bundle_sha256 || "",
+      "generation" => bundle["generation"] || state.lkg_generation,
+      "crl_number" => bundle["crl_number"] || state.lkg_crl_number,
+      "bundle_sha256" => bundle["bundle_sha256"] || state.lkg_bundle_sha256 || "",
       "status" => "failed",
       "last_error_code" => to_string(error_code),
       "last_error_detail" => error_detail,

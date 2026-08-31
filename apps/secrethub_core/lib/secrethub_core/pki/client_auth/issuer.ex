@@ -26,6 +26,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
   alias X509.Certificate.Validity
 
   @clock_skew_seconds 300
+  @default_client_ttl_seconds 2_592_000
   @min_ttl_seconds 60
   @max_rsa_modulus_bits 8192
   @supported_ec_curves [
@@ -74,15 +75,30 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     now = Keyword.get(opts, :now, DateTime.utc_now() |> DateTime.truncate(:second))
     requested_ttl = Keyword.get(opts, :ttl_seconds)
     csr_sha256 = :crypto.hash(:sha256, csr_pem)
+    actor = Keyword.get(opts, :actor, %{})
 
     Repo.transaction(fn ->
+      authority = lock_authority()
+
       # 1. Check idempotency table
       case Repo.get_by(ClientAuthIssuanceRequest, request_id: request_id) do
         %ClientAuthIssuanceRequest{} = existing ->
-          handle_replay(existing, identity_id, csr_sha256, requested_ttl)
+          default_ttl =
+            (authority && authority.default_ttl_seconds) || @default_client_ttl_seconds
+
+          handle_replay(existing, identity_id, csr_sha256, requested_ttl, default_ttl)
 
         nil ->
-          do_issue_new(identity_id, csr_pem, csr_sha256, request_id, requested_ttl, now)
+          do_issue_new(
+            identity_id,
+            csr_pem,
+            csr_sha256,
+            request_id,
+            requested_ttl,
+            now,
+            authority,
+            actor
+          )
       end
     end)
     |> case do
@@ -92,9 +108,9 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     end
   end
 
-  defp handle_replay(existing, identity_id, csr_sha256, requested_ttl) do
-    ttl_match =
-      is_nil(requested_ttl) or existing.requested_ttl_seconds == requested_ttl
+  defp handle_replay(existing, identity_id, csr_sha256, requested_ttl, default_ttl) do
+    effective_requested_ttl = requested_ttl || default_ttl
+    ttl_match = existing.requested_ttl_seconds == effective_requested_ttl
 
     if existing.identity_id == identity_id and
          :crypto.hash_equals(existing.csr_sha256, csr_sha256) and
@@ -119,9 +135,18 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     end
   end
 
-  defp do_issue_new(identity_id, csr_pem, csr_sha256, request_id, requested_ttl, now) do
+  defp do_issue_new(
+         identity_id,
+         csr_pem,
+         csr_sha256,
+         request_id,
+         requested_ttl,
+         now,
+         authority,
+         actor
+       ) do
     with %ClientAuthIdentity{status: "active"} = identity <- lock_identity(identity_id),
-         %ClientAuthAuthority{status: "active"} = authority <- lock_authority(),
+         %ClientAuthAuthority{status: "active"} <- authority || lock_authority(),
          {:ok, ca_key} <- decrypt_ca_key(authority.ca_certificate),
          {:ok, csr} <- parse_csr(csr_pem),
          {:ok, public_key} <- validate_csr_public_key(csr),
@@ -210,19 +235,21 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
         |> Repo.insert()
 
       # Record idempotency request
+      stored_requested_ttl = requested_ttl || authority.default_ttl_seconds
+
       {:ok, _request_record} =
         %ClientAuthIssuanceRequest{}
         |> ClientAuthIssuanceRequest.changeset(%{
           request_id: request_id,
           identity_id: identity.id,
           csr_sha256: csr_sha256,
-          requested_ttl_seconds: ttl_seconds,
+          requested_ttl_seconds: stored_requested_ttl,
           certificate_id: cert_record.id
         })
         |> Repo.insert()
 
       # Record audit
-      :ok = record_issuance_audit(identity, cert_record, request_id)
+      :ok = record_issuance_audit(identity, cert_record, request_id, actor)
 
       %{
         certificate: cert_pem,
@@ -329,15 +356,14 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
   defp validate_csr_input(pem) when is_binary(pem) and byte_size(pem) > 0, do: :ok
   defp validate_csr_input(_), do: {:error, :invalid_csr}
 
-  defp cast_uuid(nil, _err), do: {:ok, Ecto.UUID.generate()}
-  defp cast_uuid("", _err), do: {:ok, Ecto.UUID.generate()}
-
-  defp cast_uuid(val, err) do
+  defp cast_uuid(val, err) when is_binary(val) and val != "" do
     case Ecto.UUID.cast(val) do
       {:ok, uuid} -> {:ok, uuid}
       _ -> {:error, err}
     end
   end
+
+  defp cast_uuid(_, err), do: {:error, err}
 
   defp decrypt_ca_key(%Certificate{private_key_encrypted: encrypted_key})
        when is_binary(encrypted_key) do
@@ -391,11 +417,16 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
   end
 
-  defp record_issuance_audit(identity, cert, request_id) do
+  defp record_issuance_audit(identity, cert, request_id, actor) do
+    actor_type = Map.get(actor, :actor_type) || Map.get(actor, "actor_type") || "admin"
+    actor_id = Map.get(actor, :actor_id) || Map.get(actor, "actor_id") || "admin"
+    ip_address = Map.get(actor, :client_ip) || Map.get(actor, "client_ip")
+
     attrs = %{
       event_type: "pki.client_auth.certificate_issued",
-      actor_type: "admin",
-      actor_id: "admin",
+      actor_type: actor_type,
+      actor_id: actor_id,
+      ip_address: ip_address,
       access_granted: true,
       correlation_id: request_id,
       event_data: %{

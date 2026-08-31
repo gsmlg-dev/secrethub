@@ -71,7 +71,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
         entries,
         parsed_ca,
         ca_key,
-        hash: ca_signature_hash(ca_cert),
+        hash: ca_signature_hash(authority, ca_cert),
         this_update: this_update,
         next_update: next_update,
         extensions: crl_extensions
@@ -240,10 +240,15 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
             })
             |> Repo.update()
 
-          {:ok, new_crl, updated_authority} =
-            generate_crl_locked(authority, ca_key, authority.ca_certificate, now: now)
+          actor = Keyword.get(opts, :actor, %{})
 
-          :ok = record_revocation_audit(revoked_cert, reason)
+          {:ok, new_crl, updated_authority} =
+            generate_crl_locked(authority, ca_key, authority.ca_certificate,
+              now: now,
+              actor: actor
+            )
+
+          :ok = record_revocation_audit(revoked_cert, reason, actor)
 
           %{
             certificate: revoked_cert,
@@ -429,14 +434,25 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
     end
   end
 
-  defp ca_signature_hash(%Certificate{certificate_pem: pem}) do
-    # ECDSA P-384 uses sha384, RSA uses sha256 or sha384
-    if String.contains?(pem, "EC PRIVATE KEY") or String.contains?(pem, "ECDSA") do
-      :sha384
-    else
-      :sha256
+  defp ca_signature_hash(%ClientAuthAuthority{key_algorithm: "ecdsa_p384"}, _), do: :sha384
+  defp ca_signature_hash(%ClientAuthAuthority{key_algorithm: "rsa_4096"}, _), do: :sha384
+  defp ca_signature_hash(%ClientAuthAuthority{key_algorithm: "ecdsa_p256"}, _), do: :sha256
+  defp ca_signature_hash(%ClientAuthAuthority{key_algorithm: "rsa_2048"}, _), do: :sha256
+
+  defp ca_signature_hash(_, %Certificate{certificate_pem: pem}) do
+    case X509.Certificate.from_pem(pem) do
+      {:ok, cert} ->
+        case X509.Certificate.public_key(cert) do
+          {:ECPoint, _} -> :sha384
+          _ -> :sha256
+        end
+
+      _ ->
+        :sha256
     end
   end
+
+  defp ca_signature_hash(_, _), do: :sha256
 
   defp record_crl_audit(authority, crl) do
     attrs = %{
@@ -461,11 +477,16 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
     end
   end
 
-  defp record_revocation_audit(cert, reason) do
+  defp record_revocation_audit(cert, reason, actor) do
+    actor_type = Map.get(actor, :actor_type) || Map.get(actor, "actor_type") || "admin"
+    actor_id = Map.get(actor, :actor_id) || Map.get(actor, "actor_id") || "admin"
+    ip_address = Map.get(actor, :client_ip) || Map.get(actor, "client_ip")
+
     attrs = %{
       event_type: "pki.client_auth.certificate_revoked",
-      actor_type: "admin",
-      actor_id: "admin",
+      actor_type: actor_type,
+      actor_id: actor_id,
+      ip_address: ip_address,
       access_granted: true,
       correlation_id: cert.id,
       event_data: %{

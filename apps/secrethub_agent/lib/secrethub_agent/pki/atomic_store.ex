@@ -37,7 +37,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
          :ok <- write_file(Path.join(gen_dir, "crl.pem"), bundle["crl_pem"] || bundle[:crl_pem]),
          {:ok, manifest} <- write_manifest(gen_dir, bundle, now),
          :ok <- switch_symlink(base_dir, generation),
-         :ok <- prune_old_generations(generations_dir) do
+         :ok <- prune_old_generations(base_dir, generations_dir) do
       {:ok,
        %{
          current_path: Path.join(base_dir, "current"),
@@ -123,7 +123,15 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
-  defp prune_old_generations(generations_dir) do
+  defp prune_old_generations(base_dir, generations_dir) do
+    current_symlink = Path.join(base_dir, "current")
+
+    current_target_entry =
+      case File.read_link(current_symlink) do
+        {:ok, target} -> Path.basename(target)
+        _ -> nil
+      end
+
     case File.ls(generations_dir) do
       {:ok, entries} ->
         sorted_generations =
@@ -136,8 +144,11 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
           end)
           |> Enum.sort_by(fn {gen, _} -> gen end, :desc)
 
-        # Keep top @generations_to_keep
-        to_prune = Enum.drop(sorted_generations, @generations_to_keep)
+        # Keep top @generations_to_keep AND ensure current_target_entry is never pruned
+        to_prune =
+          sorted_generations
+          |> Enum.drop(@generations_to_keep)
+          |> Enum.reject(fn {_gen, entry} -> entry == current_target_entry end)
 
         for {_gen, entry} <- to_prune do
           path = Path.join(generations_dir, entry)

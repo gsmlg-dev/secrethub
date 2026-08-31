@@ -138,7 +138,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
           )
         )
 
-      if existing && existing.status == "active" do
+      if existing do
         Repo.rollback(:authority_already_initialized)
       end
 
@@ -178,30 +178,30 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
       serial_int = X509.Certificate.serial(ca_cert_struct)
       serial_hex = format_serial_hex(serial_int)
 
-      # Insert CA Certificate record
       ca_cert_attrs = %{
         serial_number: serial_hex,
-        fingerprint: legacy_fingerprint,
-        canonical_fingerprint: canonical_fingerprint,
-        certificate_pem: ca_cert_pem,
-        private_key_encrypted: encrypted_key,
-        subject: "O=#{@default_ca_org}, CN=#{name}",
-        issuer: "O=#{@default_ca_org}, CN=#{name}",
         common_name: name,
         organization: @default_ca_org,
+        subject: subject_str,
+        issuer: subject_str,
+        cert_type: :client_auth_ca,
+        certificate_pem: ca_cert_pem,
+        private_key_encrypted: encrypted_key,
+        fingerprint: legacy_fingerprint,
+        canonical_fingerprint: canonical_fingerprint,
         valid_from: not_before,
         valid_until: not_after,
-        cert_type: :client_auth_ca,
+        status: "active",
         key_usage: ["keyCertSign", "cRLSign"],
-        entity_type: "client_auth_ca"
+        extended_key_usage: []
       }
 
-      {:ok, ca_cert_record} =
+      ca_cert_record =
         %Certificate{}
         |> Certificate.changeset(ca_cert_attrs)
-        |> Repo.insert()
+        |> Repo.insert!()
 
-      # Create Authority record with generation 0 initially
+      # Create or activate Authority record
       authority_attrs = %{
         slug: "client-auth",
         name: name,
@@ -215,17 +215,9 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
       }
 
       authority_record =
-        case existing do
-          nil ->
-            %ClientAuthAuthority{}
-            |> ClientAuthAuthority.changeset(authority_attrs)
-            |> Repo.insert!()
-
-          existing_auth ->
-            existing_auth
-            |> ClientAuthAuthority.changeset(authority_attrs)
-            |> Repo.update!()
-        end
+        %ClientAuthAuthority{}
+        |> ClientAuthAuthority.changeset(authority_attrs)
+        |> Repo.insert!()
 
       # Update CA cert with client_auth_authority_id
       ca_cert_record =
@@ -239,7 +231,8 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
           authority_record,
           private_key,
           ca_cert_record,
-          now: now
+          now: now,
+          actor: opts[:actor]
         )
 
       # Activate authority
@@ -249,7 +242,10 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
         |> Repo.update()
 
       # Record audit
-      :ok = record_authority_initialized_audit(active_authority, ca_cert_record, initial_crl)
+      actor = Keyword.get(opts, :actor, %{})
+
+      :ok =
+        record_authority_initialized_audit(active_authority, ca_cert_record, initial_crl, actor)
 
       %{
         authority: active_authority,
@@ -403,11 +399,16 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
     :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
   end
 
-  defp record_authority_initialized_audit(authority, ca_cert, crl) do
+  defp record_authority_initialized_audit(authority, ca_cert, crl, actor) do
+    actor_type = Map.get(actor, :actor_type) || Map.get(actor, "actor_type") || "admin"
+    actor_id = Map.get(actor, :actor_id) || Map.get(actor, "actor_id") || "admin"
+    ip_address = Map.get(actor, :client_ip) || Map.get(actor, "client_ip")
+
     attrs = %{
       event_type: "pki.client_auth.authority_initialized",
-      actor_type: "admin",
-      actor_id: "admin",
+      actor_type: actor_type,
+      actor_id: actor_id,
+      ip_address: ip_address,
       access_granted: true,
       correlation_id: authority.id,
       event_data: %{

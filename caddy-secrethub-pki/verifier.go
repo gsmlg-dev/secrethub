@@ -14,17 +14,24 @@ import (
 )
 
 var (
-	ErrNoClientCert         = errors.New("no client certificate provided in TLS handshake")
-	ErrCADerivationFailed   = errors.New("failed to load root CA certificate")
-	ErrCRLParseFailed       = errors.New("failed to parse certificate revocation list")
-	ErrCRLSignatureInvalid  = errors.New("CRL signature does not match CA")
-	ErrCRLExpired           = errors.New("CRL nextUpdate has expired")
-	ErrCertRevoked          = errors.New("client certificate has been revoked")
-	ErrCertInvalidChain     = errors.New("client certificate chain is invalid")
-	ErrMissingSAN           = errors.New("client certificate missing valid SecretHub URI SAN")
-	ErrCNMismatch           = errors.New("client certificate CN does not match URI SAN identity")
-	ErrNoClientAuthEKU      = errors.New("client certificate does not permit clientAuth key usage")
-	ErrBundleNotLoaded      = errors.New("trust bundle is not loaded")
+	ErrNoClientCert          = errors.New("no client certificate provided in TLS handshake")
+	ErrCADerivationFailed    = errors.New("failed to load root CA certificate")
+	ErrCRLParseFailed        = errors.New("failed to parse certificate revocation list")
+	ErrCRLSignatureInvalid   = errors.New("CRL signature does not match CA")
+	ErrCRLNotYetValid        = errors.New("CRL thisUpdate is in the future")
+	ErrCRLExpired            = errors.New("CRL nextUpdate has expired")
+	ErrCertRevoked           = errors.New("client certificate has been revoked")
+	ErrCertInvalidChain      = errors.New("client certificate chain is invalid")
+	ErrMissingSAN            = errors.New("client certificate must contain exactly one SecretHub URI SAN")
+	ErrCNMismatch            = errors.New("client certificate CN does not match URI SAN identity")
+	ErrNoClientAuthEKU       = errors.New("client certificate does not permit clientAuth key usage")
+	ErrInvalidExtKeyUsage    = errors.New("client certificate contains unauthorized extended key usages")
+	ErrInvalidKeyUsage       = errors.New("client certificate key usage must be digitalSignature only")
+	ErrInvalidOrganization   = errors.New("client certificate organization must be 'SecretHub Client Authentication'")
+	ErrInvalidCommonName     = errors.New("client certificate CN must be a valid canonical UUID")
+	ErrExtraSANsDisallowed   = errors.New("client certificate contains unauthorized SANs (DNS, IP, or Email)")
+	ErrIsCACertificate       = errors.New("client certificate cannot have IsCA=true")
+	ErrBundleNotLoaded       = errors.New("trust bundle is not loaded")
 )
 
 // ValidatedIdentity contains authenticated client identity info.
@@ -163,12 +170,60 @@ func (v *Verifier) VerifyCertificate(cert *x509.Certificate, now time.Time) (*Va
 		return nil, ErrBundleNotLoaded
 	}
 
-	// 1. Check CRL expiration (fail-closed if CRL is expired past clock skew)
+	// 1. Check CRL temporal window (fail-closed if outside validity + clock skew)
+	if now.Before(snapshot.CRL.ThisUpdate.Add(-v.clockSkew)) {
+		return nil, ErrCRLNotYetValid
+	}
 	if now.After(snapshot.CRL.NextUpdate.Add(v.clockSkew)) {
 		return nil, ErrCRLExpired
 	}
 
-	// 2. Verify certificate chain against CA pool
+	// 2. Enforce Canonical Profile Constraints
+	if cert.IsCA {
+		return nil, ErrIsCACertificate
+	}
+
+	// Must have Organization = ["SecretHub Client Authentication"]
+	if len(cert.Subject.Organization) != 1 || cert.Subject.Organization[0] != "SecretHub Client Authentication" {
+		return nil, ErrInvalidOrganization
+	}
+
+	// Common Name must be a canonical UUID
+	cn := cert.Subject.CommonName
+	if !isCanonicalUUID(cn) {
+		return nil, ErrInvalidCommonName
+	}
+
+	// Exactly one SAN URI: urn:secrethub:client:<UUID>
+	if len(cert.URIs) != 1 {
+		return nil, ErrMissingSAN
+	}
+	expectedURI := "urn:secrethub:client:" + cn
+	if cert.URIs[0].String() != expectedURI {
+		return nil, ErrCNMismatch
+	}
+
+	// No extra SANs allowed (no DNS names, IP addresses, email addresses)
+	if len(cert.DNSNames) > 0 || len(cert.IPAddresses) > 0 || len(cert.EmailAddresses) > 0 {
+		return nil, ErrExtraSANsDisallowed
+	}
+
+	// Key Usage must be digitalSignature only (if specified)
+	if cert.KeyUsage != 0 && cert.KeyUsage != x509.KeyUsageDigitalSignature {
+		return nil, ErrInvalidKeyUsage
+	}
+
+	// Extended Key Usage must be clientAuth only
+	if len(cert.ExtKeyUsage) == 0 {
+		return nil, ErrNoClientAuthEKU
+	}
+	for _, eku := range cert.ExtKeyUsage {
+		if eku != x509.ExtKeyUsageClientAuth {
+			return nil, ErrInvalidExtKeyUsage
+		}
+	}
+
+	// 3. Verify certificate chain against CA pool
 	verifyOpts := x509.VerifyOptions{
 		Roots:       snapshot.CAPool,
 		CurrentTime: now,
@@ -179,7 +234,7 @@ func (v *Verifier) VerifyCertificate(cert *x509.Certificate, now time.Time) (*Va
 		return nil, fmt.Errorf("%w: %v", ErrCertInvalidChain, err)
 	}
 
-	// 3. Check revocation status in CRL
+	// 4. Check revocation status in CRL
 	if cert.SerialNumber != nil {
 		serialHex := cert.SerialNumber.Text(16)
 		if _, revoked := snapshot.RevokedMap[serialHex]; revoked {
@@ -187,19 +242,9 @@ func (v *Verifier) VerifyCertificate(cert *x509.Certificate, now time.Time) (*Va
 		}
 	}
 
-	// 4. Verify URI SAN (urn:secrethub:client:<UUID>) and CN matching
-	identityID, err := extractClientIdentity(cert)
-	if err != nil {
-		return nil, err
-	}
-
-	if cert.Subject.CommonName != identityID {
-		return nil, ErrCNMismatch
-	}
-
 	return &ValidatedIdentity{
-		IdentityID:    identityID,
-		CommonName:    cert.Subject.CommonName,
+		IdentityID:    cn,
+		CommonName:    cn,
 		SerialNumber:  formatSerial(cert.SerialNumber),
 		Issuer:        cert.Issuer.String(),
 		NotBefore:     cert.NotBefore,
@@ -208,30 +253,22 @@ func (v *Verifier) VerifyCertificate(cert *x509.Certificate, now time.Time) (*Va
 	}, nil
 }
 
-func extractClientIdentity(cert *x509.Certificate) (string, error) {
-	for _, uri := range cert.URIs {
-		if uri != nil && uri.Scheme == "urn" {
-			// urn:secrethub:client:<UUID>
-			parts := strings.Split(uri.Opaque, ":")
-			if len(parts) == 3 && parts[0] == "secrethub" && parts[1] == "client" {
-				return parts[2], nil
+func isCanonicalUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if r != '-' {
+				return false
 			}
-			// Alternate format if parsed as URI string
-			str := uri.String()
-			if strings.HasPrefix(str, "urn:secrethub:client:") {
-				return strings.TrimPrefix(str, "urn:secrethub:client:"), nil
+		} else {
+			if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+				return false
 			}
 		}
 	}
-
-	// Fallback to checking raw SAN extensions if standard parser parsed differently
-	for _, uriStr := range cert.DNSNames {
-		if strings.HasPrefix(uriStr, "urn:secrethub:client:") {
-			return strings.TrimPrefix(uriStr, "urn:secrethub:client:"), nil
-		}
-	}
-
-	return "", ErrMissingSAN
+	return true
 }
 
 func formatSerial(s *big.Int) string {
