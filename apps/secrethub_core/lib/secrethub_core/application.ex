@@ -30,7 +30,8 @@ defmodule SecretHub.Core.Application do
       seal_state_children() ++
       cluster_state_children() ++
       lease_manager_children() ++
-      agent_connection_children()
+      agent_connection_children() ++
+      client_auth_children()
   end
 
   @impl true
@@ -91,6 +92,14 @@ defmodule SecretHub.Core.Application do
   defp agent_connection_children do
     if runtime_environment?() do
       [SecretHub.Core.Agents.ConnectionManager]
+    else
+      []
+    end
+  end
+
+  defp client_auth_children do
+    if runtime_environment?() do
+      [SecretHub.Core.Workers.ClientAuthCRLRefresher]
     else
       []
     end

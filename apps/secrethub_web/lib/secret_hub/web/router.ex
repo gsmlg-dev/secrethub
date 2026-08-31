@@ -179,6 +179,7 @@ defmodule SecretHub.Web.Router do
       live "/pki/csr/upload", PKIManagementLive, :upload_csr
       live "/pki/search", PKIManagementLive, :search
       live "/pki/analytics", PKIManagementLive, :analytics
+      live "/pki/client-auth", ClientAuthLive, :index
       live "/certificates", AdminCertificateLive, :index
       live "/approles", AppRoleManagementLive, :index
       live "/dynamic/postgresql", DynamicPostgreSQLConfigLive, :index
@@ -356,6 +357,32 @@ defmodule SecretHub.Web.Router do
     get "/certificates", PKIController, :list_certificates
     get "/certificates/:id", PKIController, :get_certificate
     post "/certificates/:id/revoke", PKIController, :revoke_certificate
+  end
+
+  # Client Auth PKI public bundle and status endpoints
+  scope "/v1/pki/client-auth", SecretHub.Web do
+    pipe_through :api
+
+    get "/bundle", ClientAuthPKIController, :get_bundle
+    get "/authority/status", ClientAuthPKIController, :authority_status
+  end
+
+  # Client Auth PKI authenticated management and issuance
+  scope "/v1/pki/client-auth", SecretHub.Web do
+    pipe_through :vault_token
+
+    post "/authority/init", ClientAuthPKIController, :init_authority
+    post "/identities", ClientAuthPKIController, :create_identity
+    get "/identities", ClientAuthPKIController, :list_identities
+    get "/identities/:id", ClientAuthPKIController, :get_identity
+    post "/identities/:id/disable", ClientAuthPKIController, :disable_identity
+    post "/issue", ClientAuthPKIController, :issue_certificate
+    get "/certificates", ClientAuthPKIController, :list_certificates
+    get "/certificates/:id", ClientAuthPKIController, :get_certificate
+    post "/certificates/:id/revoke", ClientAuthPKIController, :revoke_certificate
+    post "/crl/refresh", ClientAuthPKIController, :refresh_crl
+    post "/bundle/receipt", ClientAuthPKIController, :record_receipt
+    get "/bundle/receipts", ClientAuthPKIController, :list_receipts
   end
 
   # Application lifecycle mutations (operator/admin only)

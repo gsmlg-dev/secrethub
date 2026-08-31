@@ -260,6 +260,13 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "system.upgrade_stale_node_acknowledged",
       # Rate limiting events
       "rate_limit.exceeded",
+      # Client Auth PKI events
+      "pki.client_auth.authority_initialized",
+      "pki.client_auth.identity_created",
+      "pki.client_auth.identity_disabled",
+      "pki.client_auth.certificate_issued",
+      "pki.client_auth.certificate_revoked",
+      "pki.client_auth.crl_published",
       # Vault lifecycle events
       "vault_started",
       "vault_initialized",

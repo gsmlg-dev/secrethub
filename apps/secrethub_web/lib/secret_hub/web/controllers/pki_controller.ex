@@ -69,14 +69,14 @@ defmodule SecretHub.Web.PKIController do
         opts = build_ca_opts(params)
 
         case CA.generate_root_ca(common_name, organization, opts) do
-          {:ok, %{certificate: cert_pem, private_key: key_pem, cert_record: cert_record}} ->
+          {:ok, %{certificate: cert_pem, cert_record: cert_record} = res} ->
             Logger.info("Root CA generated: #{common_name}")
 
             conn
             |> put_status(:created)
             |> json(%{
               certificate: cert_pem,
-              private_key: key_pem,
+              private_key: Map.get(res, :private_key),
               serial_number: cert_record.serial_number,
               fingerprint: cert_record.fingerprint,
               cert_id: cert_record.id,
@@ -111,7 +111,16 @@ defmodule SecretHub.Web.PKIController do
   }
   ```
 
-  Response: Same as generate_root_ca
+  Response:
+  ```json
+  {
+    "certificate": "-----BEGIN CERTIFICATE-----...",
+    "private_key": "-----BEGIN RSA PRIVATE KEY-----...",
+    "serial_number": "4D5E6F...",
+    "fingerprint": "sha256:12:34:56...",
+    "cert_id": "uuid"
+  }
+  ```
   """
   def generate_intermediate_ca(conn, params) do
     with {:ok, common_name} <- validate_required_param(params, "common_name"),
@@ -138,14 +147,14 @@ defmodule SecretHub.Web.PKIController do
     opts = build_ca_opts(params)
 
     case CA.generate_intermediate_ca(common_name, organization, root_ca_id, opts) do
-      {:ok, %{certificate: cert_pem, private_key: key_pem, cert_record: cert_record}} ->
+      {:ok, %{certificate: cert_pem, cert_record: cert_record} = res} ->
         Logger.info("Intermediate CA generated: #{common_name}")
 
         conn
         |> put_status(:created)
         |> json(%{
           certificate: cert_pem,
-          private_key: key_pem,
+          private_key: Map.get(res, :private_key),
           serial_number: cert_record.serial_number,
           fingerprint: cert_record.fingerprint,
           cert_id: cert_record.id,

@@ -1,0 +1,63 @@
+package secrethubpki
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+)
+
+func init() {
+	httpcaddyfile.RegisterHandlerDirective("secrethub_client_auth", parseCaddyfile)
+}
+
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	m := new(SecretHubClientAuth)
+	err := m.UnmarshalCaddyfile(h.Dispenser)
+	return m, err
+}
+
+// UnmarshalCaddyfile sets up the module from Caddyfile tokens.
+func (m *SecretHubClientAuth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "bundle_dir":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				m.BundleDir = d.Val()
+
+			case "poll_interval":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				dur, err := time.ParseDuration(d.Val())
+				if err != nil {
+					return d.Errf("invalid poll_interval: %v", err)
+				}
+				m.PollInterval = caddy.Duration(dur)
+
+			case "set_headers":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				val, err := strconv.ParseBool(d.Val())
+				if err != nil {
+					return d.Errf("invalid set_headers boolean: %v", err)
+				}
+				m.SetHeaders = &val
+
+			default:
+				return d.Errf("unrecognized subdirective: %s", d.Val())
+			}
+		}
+	}
+	return nil
+}
+
+// Interface guard
+var _ caddyfile.Unmarshaler = (*SecretHubClientAuth)(nil)

@@ -1,0 +1,270 @@
+defmodule SecretHub.Core.PKI.ClientAuth do
+  @moduledoc """
+  Public context for SecretHub Client Authentication PKI.
+
+  Coordinates authority management, identity lifecycle, canonical certificate issuance,
+  revocation, full CRL management, and public trust bundle distribution.
+  """
+
+  alias SecretHub.Core.PKI.ClientAuth.{Authority, CRLManager, Identity, Issuer, TrustBundle}
+  alias SecretHub.Core.Repo
+  alias SecretHub.Shared.Schemas.{Certificate, ClientAuthAuthority, ClientAuthBundleReceipt}
+  import Ecto.Query
+
+  @default_authority_slug "client-auth"
+
+  # Authority Operations
+
+  @doc """
+  Initializes the client auth root CA and first CRL for the given authority.
+  """
+  def init_authority(attrs \\ %{}, opts \\ []) do
+    Authority.initialize(attrs, opts)
+  end
+
+  def initialize_authority(attrs \\ %{}, opts \\ []) do
+    Authority.initialize(attrs, opts)
+  end
+
+  @doc """
+  Inspects authority operational status.
+  """
+  def authority_status(_slug \\ @default_authority_slug) do
+    Authority.status()
+  end
+
+  def status do
+    Authority.status()
+  end
+
+  @doc """
+  Returns the active authority, CA certificate, and decrypted CA private key.
+  """
+  def get_active_ca_and_key do
+    Authority.get_active_ca_and_key()
+  end
+
+  # Identity Operations
+
+  @doc """
+  Creates a new client identity.
+  """
+  def create_identity(attrs) do
+    Identity.create_identity(attrs)
+  end
+
+  @doc """
+  Lists client identities with optional filtering and pagination.
+  """
+  def list_identities(opts \\ []) do
+    opts = if is_map(opts), do: Map.to_list(opts), else: opts
+    Identity.list_identities(opts)
+  end
+
+  @doc """
+  Fetches a single client identity by ID.
+  """
+  def get_identity(id) do
+    Identity.get_identity(id)
+  end
+
+  @doc """
+  Disables a client identity and revokes all of its active certificates.
+  """
+  def disable_identity(id, reason_or_params \\ "operator_disabled", opts \\ [])
+
+  def disable_identity(id, params, opts) when is_map(params) do
+    reason = Map.get(params, "reason") || Map.get(params, :reason) || "operator_disabled"
+    Identity.disable_identity(id, reason, opts)
+  end
+
+  def disable_identity(id, reason, opts) when is_binary(reason) do
+    Identity.disable_identity(id, reason, opts)
+  end
+
+  # Certificate Issuance & Inspection
+
+  @doc """
+  Issues a canonical client certificate for an identity from a CSR.
+  """
+  def issue_certificate(attrs) when is_map(attrs) do
+    identity_id = Map.get(attrs, "identity_id") || Map.get(attrs, :identity_id)
+    csr_pem = Map.get(attrs, "csr_pem") || Map.get(attrs, :csr_pem)
+    request_id = Map.get(attrs, "request_id") || Map.get(attrs, :request_id)
+    ttl_seconds = Map.get(attrs, "ttl_seconds") || Map.get(attrs, :ttl_seconds)
+
+    opts = if ttl_seconds, do: [ttl_seconds: ttl_seconds], else: []
+    Issuer.issue_certificate(identity_id, csr_pem, request_id, opts)
+  end
+
+  def issue_certificate(identity_id, csr_pem, request_id \\ nil, opts \\ []) do
+    Issuer.issue_certificate(identity_id, csr_pem, request_id, opts)
+  end
+
+  @doc """
+  Fetches a single certificate by ID.
+  """
+  def get_certificate(certificate_id) do
+    case Ecto.UUID.cast(certificate_id) do
+      {:ok, uuid} ->
+        case Repo.get(Certificate, uuid) do
+          nil -> {:error, :certificate_not_found}
+          cert -> {:ok, cert}
+        end
+
+      :error ->
+        {:error, :certificate_not_found}
+    end
+  end
+
+  @doc """
+  Lists certificates with optional filters.
+  """
+  def list_certificates(opts \\ []) do
+    opts = if is_map(opts), do: Map.to_list(opts), else: opts
+    identity_id = Keyword.get(opts, :identity_id)
+    revoked = Keyword.get(opts, :revoked)
+    limit = Keyword.get(opts, :limit, 100)
+    offset = Keyword.get(opts, :offset, 0)
+
+    query =
+      from(c in Certificate,
+        where: c.cert_type in [:client_auth_client, :client_auth_ca],
+        order_by: [desc: c.inserted_at],
+        limit: ^limit,
+        offset: ^offset
+      )
+
+    query =
+      if identity_id do
+        where(query, [c], c.client_auth_identity_id == ^identity_id)
+      else
+        query
+      end
+
+    query =
+      case revoked do
+        true -> where(query, [c], c.revoked == true)
+        false -> where(query, [c], c.revoked == false and c.valid_until > ^DateTime.utc_now())
+        _ -> query
+      end
+
+    Repo.all(query)
+  end
+
+  # Revocation & CRL Operations
+
+  @doc """
+  Revokes a client certificate and publishes a new signed CRL in a single transaction.
+  """
+  def revoke_certificate(certificate_id, reason_or_params, opts \\ [])
+
+  def revoke_certificate(certificate_id, params, opts) when is_map(params) do
+    reason = Map.get(params, "reason") || Map.get(params, :reason) || "keyCompromise"
+    CRLManager.revoke_certificate(certificate_id, reason, opts)
+  end
+
+  def revoke_certificate(certificate_id, reason, opts) do
+    CRLManager.revoke_certificate(certificate_id, reason, opts)
+  end
+
+  @doc """
+  Refreshes the CRL if nearing expiry or if forced.
+  """
+  def refresh_crl(opts \\ []) do
+    CRLManager.refresh_crl(opts)
+  end
+
+  @doc """
+  Forces an immediate CRL refresh and generation bump.
+  """
+  def force_refresh_crl(slug \\ @default_authority_slug) do
+    CRLManager.refresh_crl(authority_slug: slug, force: true)
+  end
+
+  @doc """
+  Refreshes the CRL only if within the refresh-ahead window.
+  """
+  def refresh_if_needed(opts \\ []) do
+    CRLManager.refresh_if_needed(opts)
+  end
+
+  # Trust Bundle Operations
+
+  @doc """
+  Returns the current deterministic public trust bundle.
+  """
+  def current_bundle(slug \\ @default_authority_slug) do
+    TrustBundle.current_bundle(slug)
+  end
+
+  # Bundle Receipts (Agent Convergence Tracking)
+
+  @doc """
+  Records or updates an Agent's trust bundle receipt.
+  """
+  def record_bundle_receipt(attrs) when is_map(attrs) do
+    agent_id = Map.get(attrs, "agent_id") || Map.get(attrs, :agent_id)
+
+    with {:ok, %ClientAuthAuthority{} = authority} <- get_active_authority() do
+      receipt_attrs = %{
+        agent_id: to_string(agent_id),
+        client_auth_authority_id: authority.id,
+        generation: Map.get(attrs, "generation") || Map.get(attrs, :generation) || 0,
+        crl_number: Map.get(attrs, "crl_number") || Map.get(attrs, :crl_number) || 0,
+        bundle_sha256: Map.get(attrs, "bundle_sha256") || Map.get(attrs, :bundle_sha256) || "",
+        status: to_string(Map.get(attrs, "status") || Map.get(attrs, :status) || "applied"),
+        last_error_code: Map.get(attrs, "last_error_code") || Map.get(attrs, :last_error_code),
+        last_error_detail:
+          Map.get(attrs, "last_error_detail") || Map.get(attrs, :last_error_detail),
+        applied_at: Map.get(attrs, "applied_at") || Map.get(attrs, :applied_at)
+      }
+
+      existing =
+        Repo.get_by(ClientAuthBundleReceipt,
+          agent_id: receipt_attrs.agent_id,
+          client_auth_authority_id: authority.id
+        )
+
+      changeset =
+        case existing do
+          nil -> %ClientAuthBundleReceipt{} |> ClientAuthBundleReceipt.changeset(receipt_attrs)
+          rec -> rec |> ClientAuthBundleReceipt.changeset(receipt_attrs)
+        end
+
+      Repo.insert_or_update(changeset)
+    end
+  end
+
+  @doc """
+  Lists bundle receipts for all agents.
+  """
+  def list_bundle_receipts(slug_or_opts \\ [])
+
+  def list_bundle_receipts(slug) when is_binary(slug) do
+    list_bundle_receipts(authority_slug: slug)
+  end
+
+  def list_bundle_receipts(opts) when is_list(opts) do
+    limit = Keyword.get(opts, :limit, 100)
+    offset = Keyword.get(opts, :offset, 0)
+
+    query =
+      from(r in ClientAuthBundleReceipt,
+        order_by: [desc: r.updated_at],
+        limit: ^limit,
+        offset: ^offset
+      )
+
+    Repo.all(query)
+  end
+
+  defp get_active_authority do
+    case Repo.one(
+           from(a in ClientAuthAuthority, where: a.slug == "client-auth" and a.status == "active")
+         ) do
+      nil -> {:error, :authority_not_initialized}
+      authority -> {:ok, authority}
+    end
+  end
+end

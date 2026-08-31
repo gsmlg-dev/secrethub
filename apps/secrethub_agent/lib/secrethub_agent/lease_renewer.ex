@@ -281,7 +281,7 @@ defmodule SecretHub.Agent.LeaseRenewer do
             invoke_callback(state.callbacks, :on_expired, lease)
             Map.delete(acc, lease_id)
 
-          # Lease is expiring soon (< 5 min) - trigger warning callback
+          # Lease is expiring soon (< 5 min) - trigger warning callback and renew if needed
           DateTime.diff(lease.expires_at, now) < 300 and lease.status != :renewing ->
             Logger.warning("Lease expiring soon",
               lease_id: lease_id,
@@ -289,7 +289,14 @@ defmodule SecretHub.Agent.LeaseRenewer do
             )
 
             invoke_callback(state.callbacks, :on_expiring_soon, lease)
-            acc
+
+            if should_renew?(lease, now) do
+              Logger.info("Initiating lease renewal", lease_id: lease_id)
+              send(self(), {:renew_lease, lease_id})
+              Map.put(acc, lease_id, %{lease | status: :renewing})
+            else
+              acc
+            end
 
           # Lease needs renewal (< 33% TTL remaining)
           should_renew?(lease, now) ->

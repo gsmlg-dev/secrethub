@@ -42,7 +42,15 @@ defmodule SecretHub.Shared.Schemas.Certificate do
 
     # Certificate type and usage
     field(:cert_type, Ecto.Enum,
-      values: [:root_ca, :intermediate_ca, :agent_client, :app_client, :admin_client]
+      values: [
+        :root_ca,
+        :intermediate_ca,
+        :agent_client,
+        :app_client,
+        :admin_client,
+        :client_auth_ca,
+        :client_auth_client
+      ]
     )
 
     field(:key_usage, {:array, :string}, default: [])
@@ -56,6 +64,20 @@ defmodule SecretHub.Shared.Schemas.Certificate do
     field(:issuer_id, :binary_id)
     field(:enrollment_id, :binary_id)
     field(:ssh_host_key_fingerprint, :string)
+
+    # Client Auth PKI relationships
+    field(:client_auth_authority_id, :binary_id)
+    field(:client_auth_identity_id, :binary_id)
+
+    belongs_to(:client_auth_authority, SecretHub.Shared.Schemas.ClientAuthAuthority,
+      foreign_key: :client_auth_authority_id,
+      define_field: false
+    )
+
+    belongs_to(:client_auth_identity, SecretHub.Shared.Schemas.ClientAuthIdentity,
+      foreign_key: :client_auth_identity_id,
+      define_field: false
+    )
 
     # Entity binding (who owns this certificate)
     field(:entity_id, :string)
@@ -107,6 +129,8 @@ defmodule SecretHub.Shared.Schemas.Certificate do
       :issuer_id,
       :enrollment_id,
       :ssh_host_key_fingerprint,
+      :client_auth_authority_id,
+      :client_auth_identity_id,
       :entity_id,
       :entity_type,
       :metadata

@@ -5,6 +5,7 @@ config :secrethub_core, env: :test
 
 # Disable SealState in test mode (it tries to write to DB during init, before Sandbox is set up)
 config :secrethub_core, start_seal_state: false
+config :secrethub_core, dev_pki_unsealed_fallback: true
 
 # Configure the database
 # Supports both Unix socket (devenv) and TCP (CI) connections
