@@ -499,7 +499,7 @@ CA 文件缺失或 malformed 时，Caddy 配置加载必须失败。
 
 Companion module 必须：
 
-- 注册 `tls.client_auth.verifier.secrethub_crl`；
+- 注册 `tls.client_auth.verifier.secrethub_client_auth`；
 - 只读本地 CA/CRL；
 - 使用前验证 CRL；
 - 自动发现并原子加载较新 CRL；

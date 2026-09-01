@@ -245,18 +245,20 @@ Core 或网络短暂故障时，只要 Agent 保存的 last-known-good CRL 仍�
 │  ├── 原子写入 generation                                              │
 │  └── 向 Core ACK                                                      │
 │                                                                      │
-│  /var/lib/secrethub/pki/client-auth/current/                         │
-│  ├── ca-bundle.pem                                                   │
-│  ├── client.crl.pem                                                  │
-│  └── manifest.json                                                   │
+│  /var/lib/secrethub/pki/client-auth/                                 │
+│  ├── watermark.json                                                  │
+│  └── current/                                                        │
+│      ├── ca.crt                                                      │
+│      ├── crl.pem                                                     │
+│      └── manifest.json                                               │
 └────────────────────────────────┬─────────────────────────────────────┘
                                  │ 本地只读文件
                                  ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │                              Caddy                                   │
 │                                                                      │
-│  trust_pool file: ca-bundle.pem                                      │
-│  verifier: tls.client_auth.verifier.secrethub_crl                    │
+│  trust_pool file: ca.crt                                             │
+│  verifier: tls.client_auth.verifier.secrethub_client_auth            │
 │  CRL: 文件变化后验证并原子替换内存状态                               │
 └────────────────────────────────┬─────────────────────────────────────┘
                                  │ 已认证 HTTP 请求
@@ -859,14 +861,15 @@ Agent 在以下时机请求 current bundle：
 
 ```text
 /var/lib/secrethub/pki/client-auth/
+├── watermark.json
 ├── generations/
 │   ├── 00000000000000000041/
-│   │   ├── ca-bundle.pem
-│   │   ├── client.crl.pem
+│   │   ├── ca.crt
+│   │   ├── crl.pem
 │   │   └── manifest.json
 │   └── 00000000000000000042/
-│       ├── ca-bundle.pem
-│       ├── client.crl.pem
+│       ├── ca.crt
+│       ├── crl.pem
 │       └── manifest.json
 └── current -> generations/00000000000000000042
 ```
@@ -874,14 +877,16 @@ Agent 在以下时机请求 current bundle：
 安装顺序：
 
 ```text
-创建 generation temp directory
-使用 O_EXCL 写入每个文件
-fsync 文件
-fsync directory
-rename temp directory 为 final generation
-原子替换 current symlink
-fsync parent directory
-向 Core ACK
+1. 校验 directory 与 symlink 安全性（拒绝 symlink traversal）
+2. 创建 generation temp directory (mode 0750)
+3. 使用 O_EXCL (exclusive write) 写入每个文件 (mode 0640)
+4. fsync 文件
+5. fsync temp directory
+6. rename temp directory 为 final generation directory
+7. 原子更新 watermark.json (tmp + rename + fsync)
+8. 原子替换 current symlink
+9. fsync base directory
+10. 向 Core 提交 applied receipt ACK
 ```
 
 建议权限：
@@ -937,7 +942,7 @@ caddy-secrethub-pki
 Caddy module ID：
 
 ```text
-tls.client_auth.verifier.secrethub_crl
+tls.client_auth.verifier.secrethub_client_auth
 ```
 
 实现 Caddy `ClientCertificateVerifier`：
@@ -957,18 +962,17 @@ service.example.net {
             mode require_and_verify
 
             trust_pool file \
-                /var/lib/secrethub/pki/client-auth/current/ca-bundle.pem
+                /var/lib/secrethub/pki/client-auth/current/ca.crt
 
-            verifier secrethub_crl {
-                ca_file \
-                    /var/lib/secrethub/pki/client-auth/current/ca-bundle.pem
-
-                crl_file \
-                    /var/lib/secrethub/pki/client-auth/current/client.crl.pem
-
+            verifier secrethub_client_auth {
+                bundle_dir /var/lib/secrethub/pki/client-auth/current
+                ca_file /var/lib/secrethub/pki/client-auth/current/ca.crt
+                crl_file /var/lib/secrethub/pki/client-auth/current/crl.pem
+                manifest_file /var/lib/secrethub/pki/client-auth/current/manifest.json
+                watermark_file /var/lib/secrethub/pki/client-auth/watermark.json
+                expected_ca_fingerprint "8792bc0fa20e137b26ac4467d91c67926b86edee0352534a5b71f6fd8aa724b5"
                 reload_interval 5s
                 clock_skew 5m
-                fail_closed
             }
         }
     }

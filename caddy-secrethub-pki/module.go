@@ -24,6 +24,12 @@ type TLSVerifier struct {
 	// BundleDir is the path to the directory containing trust bundles (e.g. /var/lib/secrethub/pki/client-auth)
 	BundleDir string `json:"bundle_dir,omitempty"`
 
+	// WatermarkFile is an optional path to an independent monotonic watermark state file
+	WatermarkFile string `json:"watermark_file,omitempty"`
+
+	// ExpectedCAFingerprint optionally pins the expected CA certificate DER SHA-256 fingerprint
+	ExpectedCAFingerprint string `json:"expected_ca_fingerprint,omitempty"`
+
 	// PollInterval is how often to check for updated trust bundle files on disk (default 5s)
 	PollInterval caddy.Duration `json:"poll_interval,omitempty"`
 
@@ -56,6 +62,13 @@ func (tv *TLSVerifier) Provision(ctx caddy.Context) error {
 	}
 
 	tv.verifier = NewVerifier(tv.BundleDir)
+	if tv.WatermarkFile != "" {
+		tv.verifier.SetWatermarkFile(tv.WatermarkFile)
+	}
+	if tv.ExpectedCAFingerprint != "" {
+		tv.verifier.SetExpectedCAFingerprint(tv.ExpectedCAFingerprint)
+	}
+
 	if _, err := tv.verifier.LoadFromDisk(); err != nil {
 		return fmt.Errorf("failed to load initial trust bundle from %s: %w", tv.BundleDir, err)
 	}
@@ -96,6 +109,12 @@ type SecretHubClientAuth struct {
 	// BundleDir is the path to the directory containing trust bundles (e.g. /var/lib/secrethub/pki/client-auth)
 	BundleDir string `json:"bundle_dir,omitempty"`
 
+	// WatermarkFile is an optional path to an independent monotonic watermark state file
+	WatermarkFile string `json:"watermark_file,omitempty"`
+
+	// ExpectedCAFingerprint optionally pins the expected CA certificate DER SHA-256 fingerprint
+	ExpectedCAFingerprint string `json:"expected_ca_fingerprint,omitempty"`
+
 	// PollInterval is how often to check for updated trust bundle files on disk (default 5s)
 	PollInterval caddy.Duration `json:"poll_interval,omitempty"`
 
@@ -131,6 +150,13 @@ func (m *SecretHubClientAuth) Provision(ctx caddy.Context) error {
 	}
 
 	m.verifier = NewVerifier(m.BundleDir)
+	if m.WatermarkFile != "" {
+		m.verifier.SetWatermarkFile(m.WatermarkFile)
+	}
+	if m.ExpectedCAFingerprint != "" {
+		m.verifier.SetExpectedCAFingerprint(m.ExpectedCAFingerprint)
+	}
+
 	if _, err := m.verifier.LoadFromDisk(); err != nil {
 		return fmt.Errorf("failed to load initial trust bundle from %s: %w", m.BundleDir, err)
 	}

@@ -276,19 +276,37 @@ func TestVerifierExpiredCRL(t *testing.T) {
 	h := newTestHarness(t)
 	defer os.RemoveAll(h.tmpDir)
 
-	// NextUpdate expired 1 hour ago
-	h.writeBundle(t, 1, 1, nil, time.Now().Add(-1*time.Hour))
+	// Start with a valid Gen 1 bundle
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
 	v := NewVerifier(h.tmpDir)
-	if _, err := v.LoadFromDisk(); err != nil {
-		t.Fatalf("failed to load bundle: %v", err)
+	snap1, err := v.LoadFromDisk()
+	if err != nil {
+		t.Fatalf("failed to load initial valid bundle: %v", err)
+	}
+	if snap1.Generation != 1 {
+		t.Fatalf("expected gen 1, got %d", snap1.Generation)
 	}
 
-	cert, _ := h.issueClientCert(t, "f47ac10b-58cc-4372-a567-0e02b2c3d479", 3003)
+	// Now publish Gen 2 with an expired CRL (next_update in the past)
+	h.writeBundle(t, 2, 2, nil, time.Now().Add(-1*time.Hour))
 
-	_, err := v.VerifyCertificate(cert, time.Now())
-	if err != ErrCRLExpired {
-		t.Fatalf("expected ErrCRLExpired, got: %v", err)
+	// LoadFromDisk must reject the candidate bundle with ErrCRLExpired
+	_, err = v.LoadFromDisk()
+	if err == nil {
+		t.Fatalf("expected LoadFromDisk to fail on expired candidate CRL, got nil")
+	}
+
+	// Ensure the in-memory active snapshot is preserved at Gen 1 (not discarded)
+	currentSnap := v.snapshot.Load()
+	if currentSnap == nil || currentSnap.Generation != 1 {
+		t.Fatalf("expected active snapshot to remain Gen 1, got %v", currentSnap)
+	}
+
+	// Verify a valid client cert still succeeds against preserved Gen 1 snapshot
+	cert, _ := h.issueClientCert(t, "f47ac10b-58cc-4372-a567-0e02b2c3d479", 3003)
+	if _, err := v.VerifyCertificate(cert, time.Now()); err != nil {
+		t.Fatalf("expected certificate verification to succeed with preserved snapshot, got: %v", err)
 	}
 }
 
@@ -448,6 +466,43 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 	isCACert, _ := x509.ParseCertificate(der)
 	if _, err := v.VerifyCertificate(isCACert, time.Now()); err == nil {
 		t.Errorf("expected error for IsCA=true certificate, got nil")
+	}
+
+	// 5. Missing Basic Constraints extension entirely
+	missingBCTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(5005),
+		Subject:      pkix.Name{Organization: []string{"SecretHub Client Authentication"}, CommonName: validID},
+		URIs:         []*url.URL{uri},
+		NotBefore:    time.Now().Add(-5 * time.Minute),
+		NotAfter:     time.Now().Add(30 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		ExtraExtensions: []pkix.Extension{
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 15}, Critical: true, Value: []byte{0x03, 0x02, 0x07, 0x80}},
+		},
+	}
+	der, _ = x509.CreateCertificate(rand.Reader, missingBCTemplate, h.caCert, &clientKey.PublicKey, h.caKey)
+	missingBCCert, _ := x509.ParseCertificate(der)
+	if _, err := v.VerifyCertificate(missingBCCert, time.Now()); err != ErrMissingBasicConstraints {
+		t.Errorf("expected ErrMissingBasicConstraints, got: %v", err)
+	}
+}
+
+func TestVerifierCorruptWatermarkFailClosed(t *testing.T) {
+	h := newTestHarness(t)
+	defer os.RemoveAll(h.tmpDir)
+
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+
+	// Corrupt watermark file with invalid JSON
+	watermarkPath := filepath.Join(h.tmpDir, "watermark.json")
+	if err := os.WriteFile(watermarkPath, []byte("NOT_VALID_JSON{{{"), 0644); err != nil {
+		t.Fatalf("failed to write corrupt watermark: %v", err)
+	}
+
+	v := NewVerifier(h.tmpDir)
+	if _, err := v.LoadFromDisk(); err == nil {
+		t.Fatalf("expected LoadFromDisk to fail closed on corrupt watermark.json, got nil")
 	}
 }
 

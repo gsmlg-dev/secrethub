@@ -10,7 +10,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
   import Ecto.Query
 
   alias SecretHub.Core.{Audit, Repo}
-  alias SecretHub.Core.PKI.ClientAuth.Notifier
+  alias SecretHub.Core.PKI.ClientAuth.{CAValidator, Notifier}
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.{Certificate, ClientAuthAuthority, ClientAuthCrl}
@@ -40,77 +40,87 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
       Keyword.get(opts, :this_update, DateTime.add(now, -@clock_skew_seconds, :second))
 
     next_update =
-      Keyword.get(opts, :next_update, DateTime.add(now, @crl_validity_hours * 3600, :second))
+      Keyword.get(
+        opts,
+        :next_update,
+        DateTime.add(now, @crl_validity_hours * 3600, :second)
+      )
 
-    # Query all active revoked certificates for this authority that have not yet naturally expired
-    revoked_certs =
-      Repo.all(
-        from(c in Certificate,
-          where: c.client_auth_authority_id == ^authority.id,
-          where: c.cert_type == :client_auth_client,
-          where: c.revoked == true,
-          where: c.valid_until > ^now,
-          order_by: [asc: c.revoked_at, asc: c.id]
+    with :ok <- validate_ca(authority, ca_cert, ca_key, now),
+         {:ok, parsed_ca} <- X509.Certificate.from_pem(ca_cert.certificate_pem) do
+      # Query all active revoked certificates for this authority that have not yet naturally expired
+      revoked_certs =
+        Repo.all(
+          from(c in Certificate,
+            where: c.client_auth_authority_id == ^authority.id,
+            where: c.cert_type == :client_auth_client,
+            where: c.revoked == true,
+            where: c.valid_until > ^now,
+            order_by: [asc: c.revoked_at, asc: c.id]
+          )
         )
-      )
 
-    new_crl_number = authority.current_crl_number + 1
-    new_generation = authority.current_generation + 1
+      new_crl_number = authority.current_crl_number + 1
+      new_generation = authority.current_generation + 1
 
-    entries = Enum.map(revoked_certs, &build_crl_entry(&1, now))
+      entries = Enum.map(revoked_certs, &build_crl_entry(&1, now))
 
-    # Parse CA cert for X509 signing
-    {:ok, parsed_ca} = X509.Certificate.from_pem(ca_cert.certificate_pem)
+      crl_extensions = [
+        crl_number: CRLExtension.crl_number(new_crl_number)
+      ]
 
-    crl_extensions = [
-      crl_number: CRLExtension.crl_number(new_crl_number)
-    ]
+      crl =
+        X509.CRL.new(
+          entries,
+          parsed_ca,
+          ca_key,
+          hash: ca_signature_hash(authority, ca_cert),
+          this_update: this_update,
+          next_update: next_update,
+          extensions: crl_extensions
+        )
 
-    crl =
-      X509.CRL.new(
-        entries,
-        parsed_ca,
-        ca_key,
-        hash: ca_signature_hash(authority, ca_cert),
-        this_update: this_update,
-        next_update: next_update,
-        extensions: crl_extensions
-      )
+      # Validate CRL signature and issuer against CA
+      if !X509.CRL.valid?(crl, parsed_ca) do
+        {:error, :crl_generation_failed}
+      else
+        crl_der = X509.CRL.to_der(crl)
+        crl_pem = X509.CRL.to_pem(crl)
+        crl_der_sha256 = :crypto.hash(:sha256, crl_der) |> Base.encode16(case: :lower)
 
-    # Validate CRL signature and issuer against CA
-    if !X509.CRL.valid?(crl, parsed_ca) do
-      {:error, :crl_generation_failed}
-    else
-      crl_der = X509.CRL.to_der(crl)
-      crl_pem = X509.CRL.to_pem(crl)
-      crl_der_sha256 = :crypto.hash(:sha256, crl_der) |> Base.encode16(case: :lower)
+        crl_attrs = %{
+          authority_id: authority.id,
+          issuer_certificate_id: ca_cert.id,
+          crl_number: new_crl_number,
+          generation: new_generation,
+          crl_pem: crl_pem,
+          crl_der_sha256: crl_der_sha256,
+          this_update: this_update,
+          next_update: next_update,
+          revoked_count: length(revoked_certs)
+        }
 
-      crl_attrs = %{
-        authority_id: authority.id,
-        issuer_certificate_id: ca_cert.id,
-        crl_number: new_crl_number,
-        generation: new_generation,
-        crl_pem: crl_pem,
-        crl_der_sha256: crl_der_sha256,
-        this_update: this_update,
-        next_update: next_update,
-        revoked_count: length(revoked_certs)
-      }
+        with {:ok, crl_record} <-
+               %ClientAuthCrl{}
+               |> ClientAuthCrl.changeset(crl_attrs)
+               |> Repo.insert(),
+             {:ok, updated_authority} <-
+               authority
+               |> ClientAuthAuthority.changeset(%{
+                 current_crl_id: crl_record.id,
+                 current_crl_number: new_crl_number,
+                 current_generation: new_generation
+               })
+               |> Repo.update(),
+             :ok <- record_crl_audit(updated_authority, crl_record) do
+          {:ok, crl_record, updated_authority}
+        else
+          {:error, {:audit_failed, reason}} ->
+            Repo.rollback({:audit_failed, reason})
 
-      with {:ok, crl_record} <-
-             %ClientAuthCrl{}
-             |> ClientAuthCrl.changeset(crl_attrs)
-             |> Repo.insert(),
-           {:ok, updated_authority} <-
-             authority
-             |> ClientAuthAuthority.changeset(%{
-               current_crl_id: crl_record.id,
-               current_crl_number: new_crl_number,
-               current_generation: new_generation
-             })
-             |> Repo.update(),
-           :ok <- record_crl_audit(updated_authority, crl_record) do
-        {:ok, crl_record, updated_authority}
+          {:error, reason} ->
+            {:error, reason}
+        end
       end
     end
   rescue
@@ -161,16 +171,19 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
       Repo.transaction(fn ->
         case lock_authority() do
           nil ->
-            {:error, :authority_not_initialized}
+            Repo.rollback(:authority_not_initialized)
 
           %ClientAuthAuthority{current_crl: nil} ->
-            {:error, :authority_unavailable}
+            Repo.rollback(:authority_unavailable)
 
           %ClientAuthAuthority{current_crl: %ClientAuthCrl{} = current_crl} = authority ->
             hours_until_expiry = DateTime.diff(current_crl.next_update, now, :second) / 3600.0
 
             if force or hours_until_expiry <= @crl_refresh_ahead_hours do
-              do_refresh_crl_locked(authority, now)
+              case do_refresh_crl_locked(authority, now) do
+                {:ok, res} -> res
+                {:error, reason} -> Repo.rollback(reason)
+              end
             else
               :not_modified
             end
@@ -180,17 +193,14 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
         {:ok, :not_modified} ->
           {:ok, :not_modified}
 
-        {:ok, {:ok, result}} ->
+        {:ok, result} ->
           Notifier.notify_bundle_updated(
             result.generation,
             result.crl_number,
-            "crl_scheduled_refresh"
+            "crl_refreshed"
           )
 
           {:ok, result}
-
-        {:ok, {:error, reason}} ->
-          {:error, reason}
 
         {:error, reason} ->
           {:error, reason}
@@ -426,6 +436,16 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
 
   defp validate_reason(reason) when reason in @valid_reasons, do: :ok
   defp validate_reason(_), do: {:error, :invalid_reason}
+
+  defp validate_ca(authority, ca_cert, ca_key, now) do
+    case CAValidator.validate(authority, ca_cert, ca_key,
+           now: now,
+           requested_ttl: @crl_validity_hours * 3600
+         ) do
+      :ok -> :ok
+      {:error, code, _detail} -> {:error, code}
+    end
+  end
 
   defp cast_uuid(val, err) do
     case Ecto.UUID.cast(val) do

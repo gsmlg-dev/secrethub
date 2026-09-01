@@ -99,9 +99,11 @@ type BundleSnapshot struct {
 
 // Verifier handles offline validation of client certificates against local trust bundles.
 type Verifier struct {
-	bundleDir string
-	snapshot  atomic.Pointer[BundleSnapshot]
-	clockSkew time.Duration
+	bundleDir             string
+	watermarkFile         string
+	expectedCAFingerprint string
+	snapshot              atomic.Pointer[BundleSnapshot]
+	clockSkew             time.Duration
 }
 
 // NewVerifier creates a new Verifier configured to read from bundleDir.
@@ -112,6 +114,23 @@ func NewVerifier(bundleDir string) *Verifier {
 	}
 }
 
+// SetWatermarkFile overrides the default watermark file location.
+func (v *Verifier) SetWatermarkFile(path string) {
+	v.watermarkFile = path
+}
+
+// SetExpectedCAFingerprint pins an expected CA certificate DER SHA-256 fingerprint.
+func (v *Verifier) SetExpectedCAFingerprint(fp string) {
+	v.expectedCAFingerprint = strings.ToLower(fp)
+}
+
+func (v *Verifier) getWatermarkPath() string {
+	if v.watermarkFile != "" {
+		return v.watermarkFile
+	}
+	return filepath.Join(v.bundleDir, "watermark.json")
+}
+
 // PersistentWatermark tracks high-water mark state across process restarts.
 type PersistentWatermark struct {
 	HighestSeenGeneration int64  `json:"highest_seen_generation"`
@@ -120,8 +139,8 @@ type PersistentWatermark struct {
 	LastBundleSHA256      string `json:"last_bundle_sha256"`
 }
 
-// LoadFromDisk reads the trust bundle from disk, enforces full validation & monotonicity,
-// persists the watermark, and atomically updates the snapshot.
+// LoadFromDisk reads the trust bundle from disk, enforces full validation, temporal validity,
+// monotonicity, persists the watermark fail-closed, and atomically updates the snapshot.
 func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 	bundlePath, err := v.resolveBundlePath()
 	if err != nil {
@@ -152,32 +171,41 @@ func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 		return nil, fmt.Errorf("%w: %v", ErrManifestInvalid, err)
 	}
 
-	snapshot, err := ParseAndValidateBundle(&manifest, caPEM, crlPEM)
+	snapshot, err := ParseAndValidateBundle(&manifest, caPEM, crlPEM, time.Now(), v.clockSkew)
 	if err != nil {
 		return nil, err
 	}
 
-	// 1. Persistent watermark check across restarts
-	watermarkPath := filepath.Join(v.bundleDir, "watermark.json")
-	if wmBytes, err := os.ReadFile(watermarkPath); err == nil {
-		var wm PersistentWatermark
-		if err := json.Unmarshal(wmBytes, &wm); err == nil {
-			if snapshot.Generation < wm.HighestSeenGeneration {
-				return nil, fmt.Errorf("%w: new gen %d < persistent watermark gen %d", ErrGenerationDowngrade, snapshot.Generation, wm.HighestSeenGeneration)
-			}
-			if snapshot.Generation == wm.HighestSeenGeneration && wm.LastBundleSHA256 != "" && !strings.EqualFold(snapshot.BundleSHA256, wm.LastBundleSHA256) {
-				return nil, fmt.Errorf("%w: gen %d hash mismatch with persistent watermark (%s != %s)", ErrEquivocation, snapshot.Generation, snapshot.BundleSHA256, wm.LastBundleSHA256)
-			}
-			if snapshot.Generation >= wm.HighestSeenGeneration && snapshot.CRLNumber < wm.HighestSeenCRLNumber {
-				return nil, fmt.Errorf("%w: new crl_number %d < persistent watermark crl_number %d", ErrCRLNumberDowngrade, snapshot.CRLNumber, wm.HighestSeenCRLNumber)
-			}
-			if wm.PinnedCAFingerprint != "" && !strings.EqualFold(snapshot.CAFingerprint, wm.PinnedCAFingerprint) {
-				return nil, fmt.Errorf("%w: established CA %s replaced with %s", ErrCAFingerprintMismatch, wm.PinnedCAFingerprint, snapshot.CAFingerprint)
-			}
-		}
+	// 1. Operator-configured CA fingerprint check
+	if v.expectedCAFingerprint != "" && !strings.EqualFold(snapshot.CAFingerprint, v.expectedCAFingerprint) {
+		return nil, fmt.Errorf("%w: candidate CA %s != expected configured CA %s", ErrCAFingerprintMismatch, snapshot.CAFingerprint, v.expectedCAFingerprint)
 	}
 
-	// 2. Monotonicity checks against existing in-memory active snapshot
+	// 2. Persistent watermark check across restarts (FAIL CLOSED on corrupt watermark)
+	watermarkPath := v.getWatermarkPath()
+	if wmBytes, err := os.ReadFile(watermarkPath); err == nil {
+		var wm PersistentWatermark
+		if err := json.Unmarshal(wmBytes, &wm); err != nil {
+			return nil, fmt.Errorf("failed to parse watermark.json (fail closed): %w", err)
+		}
+
+		if snapshot.Generation < wm.HighestSeenGeneration {
+			return nil, fmt.Errorf("%w: new gen %d < persistent watermark gen %d", ErrGenerationDowngrade, snapshot.Generation, wm.HighestSeenGeneration)
+		}
+		if snapshot.Generation == wm.HighestSeenGeneration && wm.LastBundleSHA256 != "" && !strings.EqualFold(snapshot.BundleSHA256, wm.LastBundleSHA256) {
+			return nil, fmt.Errorf("%w: gen %d hash mismatch with persistent watermark (%s != %s)", ErrEquivocation, snapshot.Generation, snapshot.BundleSHA256, wm.LastBundleSHA256)
+		}
+		if snapshot.Generation >= wm.HighestSeenGeneration && snapshot.CRLNumber < wm.HighestSeenCRLNumber {
+			return nil, fmt.Errorf("%w: new crl_number %d < persistent watermark crl_number %d", ErrCRLNumberDowngrade, snapshot.CRLNumber, wm.HighestSeenCRLNumber)
+		}
+		if wm.PinnedCAFingerprint != "" && !strings.EqualFold(snapshot.CAFingerprint, wm.PinnedCAFingerprint) {
+			return nil, fmt.Errorf("%w: established CA %s replaced with %s", ErrCAFingerprintMismatch, wm.PinnedCAFingerprint, snapshot.CAFingerprint)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("failed to read watermark file (fail closed): %w", err)
+	}
+
+	// 3. Monotonicity checks against existing in-memory active snapshot
 	current := v.snapshot.Load()
 	if current != nil {
 		if snapshot.Generation < current.Generation {
@@ -194,18 +222,31 @@ func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 		}
 	}
 
-	// 3. Atomically persist updated watermark
+	// 4. Atomically persist updated watermark (FAIL CLOSED on write/rename failure)
 	wm := PersistentWatermark{
 		HighestSeenGeneration: snapshot.Generation,
 		HighestSeenCRLNumber:  snapshot.CRLNumber,
 		PinnedCAFingerprint:   snapshot.CAFingerprint,
 		LastBundleSHA256:      snapshot.BundleSHA256,
 	}
-	if wmBytes, err := json.MarshalIndent(wm, "", "  "); err == nil {
-		tmpWMPath := filepath.Join(v.bundleDir, fmt.Sprintf(".watermark.tmp-%d", time.Now().UnixNano()))
-		if err := os.WriteFile(tmpWMPath, wmBytes, 0644); err == nil {
-			_ = os.Rename(tmpWMPath, watermarkPath)
-		}
+	wmBytes, err := json.MarshalIndent(wm, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode watermark: %w", err)
+	}
+
+	wmDir := filepath.Dir(watermarkPath)
+	if err := os.MkdirAll(wmDir, 0750); err != nil {
+		return nil, fmt.Errorf("failed to create watermark directory: %w", err)
+	}
+
+	tmpWMPath := filepath.Join(wmDir, fmt.Sprintf(".watermark.tmp-%d", time.Now().UnixNano()))
+	if err := os.WriteFile(tmpWMPath, wmBytes, 0640); err != nil {
+		return nil, fmt.Errorf("failed to write watermark temp file: %w", err)
+	}
+
+	if err := os.Rename(tmpWMPath, watermarkPath); err != nil {
+		_ = os.Remove(tmpWMPath)
+		return nil, fmt.Errorf("failed to commit watermark: %w", err)
 	}
 
 	v.snapshot.Store(snapshot)
@@ -243,8 +284,9 @@ func (v *Verifier) resolveBundlePath() (string, error) {
 	return highestPath, nil
 }
 
-// ParseAndValidateBundle parses CA, CRL and validates against the manifest metadata and transcript hash.
-func ParseAndValidateBundle(manifest *BundleManifest, caPEM, crlPEM []byte) (*BundleSnapshot, error) {
+// ParseAndValidateBundle parses CA, CRL and validates against the manifest metadata,
+// transcript hash, and temporal validity window.
+func ParseAndValidateBundle(manifest *BundleManifest, caPEM, crlPEM []byte, now time.Time, clockSkew time.Duration) (*BundleSnapshot, error) {
 	if manifest.SchemaVersion != 1 {
 		return nil, fmt.Errorf("%w: unsupported schema_version %d", ErrManifestInvalid, manifest.SchemaVersion)
 	}
@@ -312,6 +354,31 @@ func ParseAndValidateBundle(manifest *BundleManifest, caPEM, crlPEM []byte) (*Bu
 	}
 	if crlNum != manifest.CRLNumber {
 		return nil, fmt.Errorf("%w: signed CRL number %d != manifest %d", ErrCRLMetadataMismatch, crlNum, manifest.CRLNumber)
+	}
+
+	// Check CRL Timestamps match manifest
+	manifestThisUpdate, err := time.Parse(time.RFC3339, manifest.ThisUpdate)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid manifest this_update: %v", ErrManifestInvalid, err)
+	}
+	manifestNextUpdate, err := time.Parse(time.RFC3339, manifest.NextUpdate)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid manifest next_update: %v", ErrManifestInvalid, err)
+	}
+
+	if !crl.ThisUpdate.UTC().Equal(manifestThisUpdate.UTC()) {
+		return nil, fmt.Errorf("%w: signed CRL thisUpdate %v != manifest %v", ErrCRLMetadataMismatch, crl.ThisUpdate, manifestThisUpdate)
+	}
+	if !crl.NextUpdate.UTC().Equal(manifestNextUpdate.UTC()) {
+		return nil, fmt.Errorf("%w: signed CRL nextUpdate %v != manifest %v", ErrCRLMetadataMismatch, crl.NextUpdate, manifestNextUpdate)
+	}
+
+	// 4. Validate temporal validity window of CRL
+	if now.Add(clockSkew).Before(crl.ThisUpdate) {
+		return nil, fmt.Errorf("%w: CRL thisUpdate %v is in the future relative to %v", ErrCRLNotYetValid, crl.ThisUpdate, now)
+	}
+	if now.After(crl.NextUpdate.Add(clockSkew)) {
+		return nil, fmt.Errorf("%w: CRL nextUpdate %v is in the past relative to %v", ErrCRLExpired, crl.NextUpdate, now)
 	}
 
 	caPool := x509.NewCertPool()
@@ -460,6 +527,16 @@ func validateSubjectRDN(subject pkix.Name) error {
 }
 
 func validateBasicConstraintsExtension(cert *x509.Certificate) error {
+	found := false
+	for _, ext := range cert.Extensions {
+		if ext.Id.Equal(oidBasicConstraints) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return ErrMissingBasicConstraints
+	}
 	if cert.IsCA {
 		return errors.New("client certificate must not be a CA (CA:FALSE required)")
 	}

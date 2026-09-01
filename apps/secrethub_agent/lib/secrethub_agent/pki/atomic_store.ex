@@ -39,16 +39,17 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     tmp_id = ".tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
     tmp_dir = Path.join(generations_dir, tmp_id)
 
-    with :ok <- File.mkdir_p(generations_dir),
-         :ok <- File.mkdir_p(tmp_dir),
+    with :ok <- ensure_secure_directory(base_dir),
+         :ok <- ensure_secure_directory(generations_dir),
+         :ok <- ensure_secure_directory(tmp_dir),
          :ok <- write_and_fsync_file(Path.join(tmp_dir, "ca.crt"), ca_pem),
          :ok <- write_and_fsync_file(Path.join(tmp_dir, "crl.pem"), crl_pem),
          {:ok, manifest} <- write_and_fsync_manifest(tmp_dir, bundle, now),
          :ok <- fsync_dir(tmp_dir),
          :ok <- publish_generation_dir(tmp_dir, gen_dir, manifest),
          :ok <- fsync_dir(generations_dir),
-         :ok <- switch_symlink(base_dir, generation),
          :ok <- write_and_fsync_watermark(base_dir, manifest),
+         :ok <- switch_symlink(base_dir, generation),
          :ok <- fsync_dir(base_dir) do
       # Best effort pruning: log warning on error but do not fail published bundle
       _ = prune_old_generations(base_dir, generations_dir)
@@ -66,6 +67,27 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
+  defp ensure_secure_directory(dir_path) do
+    case File.lstat(dir_path) do
+      {:ok, %File.Stat{type: :symlink}} ->
+        {:error, {:symlink_directory_disallowed, dir_path}}
+
+      {:ok, %File.Stat{type: :directory}} ->
+        File.chmod(dir_path, 0o750)
+
+      {:ok, %File.Stat{type: _}} ->
+        {:error, {:not_a_directory, dir_path}}
+
+      {:error, :enoent} ->
+        with :ok <- File.mkdir_p(dir_path) do
+          File.chmod(dir_path, 0o750)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   @doc """
   Reads the persistent watermark from `<base_dir>/watermark.json`.
   """
@@ -76,8 +98,14 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     case File.read(wm_path) do
       {:ok, content} ->
         case Jason.decode(content) do
-          {:ok, wm} -> {:ok, wm}
-          {:error, reason} -> {:error, {:invalid_watermark_json, reason}}
+          {:ok, %{"highest_seen_generation" => _} = wm} ->
+            {:ok, wm}
+
+          {:ok, _} ->
+            {:error, :invalid_watermark_schema}
+
+          {:error, reason} ->
+            {:error, {:invalid_watermark_json, reason}}
         end
 
       {:error, :enoent} ->
@@ -141,15 +169,26 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
-  defp write_and_fsync_file(path, content) when is_binary(content) do
-    with :ok <- File.write(path, content),
-         :ok <- File.chmod(path, 0o644),
-         {:ok, read_content} when read_content == content <- File.read(path),
-         :ok <- fsync_file(path) do
-      :ok
-    else
-      {:ok, _mismatch} -> {:error, {:file_content_mismatch, path}}
-      {:error, reason} -> {:error, reason}
+  defp write_and_fsync_file(path, content, mode \\ 0o640) when is_binary(content) do
+    File.rm(path)
+    char_path = to_charlist(path)
+
+    case :file.open(char_path, [:write, :exclusive, :binary, :raw]) do
+      {:ok, fd} ->
+        with :ok <- :file.write(fd, content),
+             :ok <- :file.sync(fd),
+             :ok <- :file.close(fd),
+             :ok <- File.chmod(path, mode) do
+          :ok
+        else
+          {:error, reason} ->
+            :file.close(fd)
+            File.rm(path)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -225,28 +264,23 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
-  defp fsync_file(path) do
-    case :file.open(to_charlist(path), [:read, :write, :raw]) do
-      {:ok, fd} ->
-        res = :file.sync(fd)
-        :file.close(fd)
-        res
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
   defp fsync_dir(dir_path) do
     case :file.open(to_charlist(dir_path), [:read, :raw]) do
       {:ok, fd} ->
         res = :file.sync(fd)
         :file.close(fd)
-        res
 
-      {:error, _} ->
-        # Directory fsync may be unsupported on some OS/filesystems, safe fallback
+        case res do
+          :ok -> :ok
+          {:error, reason} when reason in [:einval, :enotsup, :eisdir, :ebadf] -> :ok
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:error, reason} when reason in [:einval, :enotsup, :eisdir, :ebadf, :eacces] ->
         :ok
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

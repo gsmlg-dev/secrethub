@@ -56,7 +56,7 @@ defmodule SecretHub.Core.Repo.Migrations.CreateClientAuthPki do
     create table(:client_auth_crls, primary_key: false) do
       add(:id, :binary_id, primary_key: true)
       add(:authority_id, references(:client_auth_authorities, type: :binary_id, on_delete: :delete_all), null: false)
-      add(:issuer_certificate_id, references(:certificates, type: :binary_id, on_delete: :restrict), null: false)
+      add(:issuer_certificate_id, references(:certificates, type: :binary_id, on_delete: :delete_all), null: false)
       add(:crl_number, :bigint, null: false)
       add(:generation, :bigint, null: false)
       add(:crl_pem, :text, null: false)
@@ -89,7 +89,7 @@ defmodule SecretHub.Core.Repo.Migrations.CreateClientAuthPki do
       add(:identity_id, references(:client_auth_identities, type: :binary_id, on_delete: :restrict), null: false)
       add(:csr_sha256, :binary, null: false)
       add(:requested_ttl_seconds, :integer, null: false)
-      add(:certificate_id, references(:certificates, type: :binary_id, on_delete: :restrict), null: false)
+      add(:certificate_id, references(:certificates, type: :binary_id, on_delete: :delete_all), null: false)
 
       timestamps(type: :utc_datetime)
     end
@@ -129,32 +129,33 @@ defmodule SecretHub.Core.Repo.Migrations.CreateClientAuthPki do
   end
 
   def down do
-    # 1. Drop tables that reference other tables first
-    drop(table(:client_auth_bundle_receipts))
-    drop(table(:client_auth_issuance_requests))
+    # 1. Drop leaf child tables
+    drop_if_exists(table(:client_auth_bundle_receipts))
+    drop_if_exists(table(:client_auth_issuance_requests))
 
     # 2. Remove cyclic FK from client_auth_authorities to client_auth_crls
     alter table(:client_auth_authorities) do
-      remove(:current_crl_id)
+      remove_if_exists(:current_crl_id, :binary_id)
     end
 
-    # 3. Drop CRLs, identities, and authorities
-    drop(table(:client_auth_crls))
-    drop(table(:client_auth_identities))
-    drop(table(:client_auth_authorities))
+    # 3. Drop CRLs table
+    drop_if_exists(table(:client_auth_crls))
 
-    # 4. Remove columns and indexes on certificates table
-    drop(index(:certificates, [:client_auth_identity_id, :revoked]))
-    drop(index(:certificates, [:client_auth_identity_id]))
-    drop(index(:certificates, [:client_auth_authority_id]))
+    # 4. Cleanly remove Client Auth certificates from certificates table
+    execute("DELETE FROM certificates WHERE cert_type IN ('client_auth_client', 'client_auth_ca')")
+
+    # 5. Remove indexes and foreign key columns on certificates table
+    drop_if_exists(index(:certificates, [:client_auth_identity_id, :revoked]))
+    drop_if_exists(index(:certificates, [:client_auth_identity_id]))
+    drop_if_exists(index(:certificates, [:client_auth_authority_id]))
 
     alter table(:certificates) do
-      remove(:client_auth_identity_id)
-      remove(:client_auth_authority_id)
+      remove_if_exists(:client_auth_identity_id, :binary_id)
+      remove_if_exists(:client_auth_authority_id, :binary_id)
     end
 
-    # 5. Cleanly remove Client Auth certificates from certificates table
-    execute("DELETE FROM certificates WHERE cert_type = 'client_auth_client'")
-    execute("DELETE FROM certificates WHERE cert_type = 'client_auth_ca'")
+    # 6. Safe to drop identities and authorities tables
+    drop_if_exists(table(:client_auth_identities))
+    drop_if_exists(table(:client_auth_authorities))
   end
 end

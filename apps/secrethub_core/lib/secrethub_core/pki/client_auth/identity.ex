@@ -35,10 +35,21 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
         metadata: metadata
       })
 
-    with {:ok, identity} <- Repo.insert(changeset),
-         :ok <- record_identity_created_audit(identity, actor) do
-      {:ok, identity}
-    end
+    Repo.transaction(fn ->
+      with {:ok, identity} <- Repo.insert(changeset),
+           :ok <- record_identity_created_audit(identity, actor) do
+        identity
+      else
+        {:error, {:audit_failed, reason}} ->
+          Repo.rollback({:audit_failed, reason})
+
+        {:error, %Ecto.Changeset{} = cs} ->
+          Repo.rollback(cs)
+
+        {:error, reason} ->
+          Repo.rollback(reason)
+      end
+    end)
   end
 
   @doc """

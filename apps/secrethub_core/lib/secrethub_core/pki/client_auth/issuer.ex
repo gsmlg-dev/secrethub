@@ -12,6 +12,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
 
   alias SecretHub.Core.{Audit, Repo}
   alias SecretHub.Core.PKI.{CertificateIdentity, CSR}
+  alias SecretHub.Core.PKI.ClientAuth.CAValidator
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
 
@@ -26,7 +27,6 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
   alias X509.Certificate.Validity
 
   @clock_skew_seconds 300
-  @default_client_ttl_seconds 2_592_000
   @min_ttl_seconds 60
   @max_rsa_modulus_bits 8192
   @supported_ec_curves [
@@ -37,96 +37,82 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
   ]
 
   @doc """
-  Issues a client certificate for a given identity from a CSR.
-  Includes full idempotency protection via request_id.
+  Issues a canonical client certificate for an identity from a CSR.
+  Guarantees idempotency via request_id UUID.
   """
-  @spec issue_certificate(term(), binary(), term(), keyword()) ::
+  @spec issue_certificate(term(), binary(), binary(), keyword()) ::
           {:ok,
            %{
-             certificate: binary(),
              cert_record: Certificate.t(),
+             certificate: binary(),
              ca_bundle_pem: binary(),
              replayed: boolean()
            }}
           | {:error,
-             :invalid_request_id
-             | :identity_not_found
+             :identity_not_found
              | :identity_disabled
              | :invalid_csr
-             | :unsupported_key
              | :invalid_ttl
              | :idempotency_conflict
              | :vault_sealed
              | :vault_unavailable
-             | :authority_not_initialized
              | term()}
   def issue_certificate(identity_id, csr_pem, request_id, opts \\ []) do
-    with {:ok, normalized_request_id} <- cast_uuid(request_id, :invalid_request_id),
-         {:ok, normalized_identity_id} <- cast_uuid(identity_id, :identity_not_found),
-         :ok <- validate_csr_input(csr_pem),
+    with {:ok, normalized_id} <- cast_uuid(identity_id, :identity_not_found),
+         {:ok, normalized_req_id} <- cast_uuid(request_id, :invalid_request_id),
          :ok <- check_unsealed() do
-      transact_issuance(normalized_identity_id, csr_pem, normalized_request_id, opts)
+      now = Keyword.get(opts, :now, DateTime.utc_now() |> DateTime.truncate(:second))
+      requested_ttl = Keyword.get(opts, :ttl_seconds)
+      actor = Keyword.get(opts, :actor, %{})
+
+      transact_issuance(normalized_id, csr_pem, normalized_req_id, requested_ttl, now, actor)
     end
   end
 
-  # Helpers
+  # Helper functions
 
-  defp transact_issuance(identity_id, csr_pem, request_id, opts) do
-    now = Keyword.get(opts, :now, DateTime.utc_now() |> DateTime.truncate(:second))
-    requested_ttl = Keyword.get(opts, :ttl_seconds)
+  defp transact_issuance(identity_id, csr_pem, request_id, requested_ttl, now, actor) do
     csr_sha256 = :crypto.hash(:sha256, csr_pem)
-    actor = Keyword.get(opts, :actor, %{})
 
     Repo.transaction(fn ->
-      authority = lock_authority()
-
-      # 1. Check idempotency table
-      case Repo.get_by(ClientAuthIssuanceRequest, request_id: request_id) do
-        %ClientAuthIssuanceRequest{} = existing ->
-          default_ttl =
-            (authority && authority.default_ttl_seconds) || @default_client_ttl_seconds
-
-          handle_replay(existing, identity_id, csr_sha256, requested_ttl, default_ttl)
-
-        nil ->
-          do_issue_new(
-            identity_id,
-            csr_pem,
-            csr_sha256,
-            request_id,
-            requested_ttl,
-            now,
-            authority,
-            actor
+      existing_request =
+        Repo.one(
+          from(r in ClientAuthIssuanceRequest,
+            where: r.request_id == ^request_id,
+            preload: [:certificate, :identity]
           )
+        )
+
+      if existing_request do
+        handle_replayed_request(existing_request, identity_id, csr_sha256, requested_ttl)
+      else
+        do_issue_new(
+          identity_id,
+          csr_pem,
+          csr_sha256,
+          request_id,
+          requested_ttl,
+          now,
+          nil,
+          actor
+        )
       end
     end)
-    |> case do
-      {:ok, {:ok, result}} -> {:ok, result}
-      {:ok, result} -> {:ok, result}
-      {:error, reason} -> {:error, reason}
-    end
   end
 
-  defp handle_replay(existing, identity_id, csr_sha256, requested_ttl, default_ttl) do
-    effective_requested_ttl = requested_ttl || default_ttl
-    ttl_match = existing.requested_ttl_seconds == effective_requested_ttl
+  defp handle_replayed_request(request, identity_id, csr_sha256, requested_ttl) do
+    ttl_match =
+      is_nil(requested_ttl) or request.requested_ttl_seconds == requested_ttl
 
-    if existing.identity_id == identity_id and
-         :crypto.hash_equals(existing.csr_sha256, csr_sha256) and
+    if request.identity_id == identity_id and
+         :crypto.hash_equals(request.csr_sha256, csr_sha256) and
          ttl_match do
-      cert =
-        Repo.get!(Certificate, existing.certificate_id) |> Repo.preload(:client_auth_authority)
-
-      ca_id =
-        (cert.client_auth_authority && cert.client_auth_authority.ca_certificate_id) ||
-          cert.issuer_id
-
-      ca_cert = Repo.get!(Certificate, ca_id)
+      cert = request.certificate
+      ca_cert = Repo.get!(Certificate, cert.issuer_id)
 
       %{
-        certificate: cert.certificate_pem,
         cert_record: cert,
+        certificate: cert.certificate_pem,
         ca_bundle_pem: ca_cert.certificate_pem,
         replayed: true
       }
@@ -146,21 +132,13 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
          actor
        ) do
     with %ClientAuthIdentity{status: "active"} = identity <- lock_identity(identity_id),
-         %ClientAuthAuthority{status: "active"} <- authority || lock_authority(),
+         %ClientAuthAuthority{status: "active"} = authority <- authority || lock_authority(),
+         {:ok, ttl_seconds} <- compute_ttl(requested_ttl, authority),
          {:ok, ca_key} <- decrypt_ca_key(authority.ca_certificate),
+         :ok <- validate_ca(authority, authority.ca_certificate, ca_key, now, ttl_seconds),
          {:ok, parsed_ca} <- X509.Certificate.from_pem(authority.ca_certificate.certificate_pem),
-         :ok <-
-           validate_active_ca(
-             authority,
-             authority.ca_certificate,
-             parsed_ca,
-             ca_key,
-             now,
-             requested_ttl
-           ),
          {:ok, csr} <- parse_csr(csr_pem),
-         {:ok, public_key} <- validate_csr_public_key(csr),
-         {:ok, ttl_seconds} <- compute_ttl(requested_ttl, authority) do
+         {:ok, public_key} <- validate_csr_public_key(csr) do
       # Build certificate validity
       not_before = DateTime.add(now, -@clock_skew_seconds, :second)
       desired_not_after = DateTime.add(now, ttl_seconds, :second)
@@ -361,9 +339,6 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     |> Enum.join(":")
   end
 
-  defp validate_csr_input(pem) when is_binary(pem) and byte_size(pem) > 0, do: :ok
-  defp validate_csr_input(_), do: {:error, :invalid_csr}
-
   defp cast_uuid(val, err) when is_binary(val) and val != "" do
     case Ecto.UUID.cast(val) do
       {:ok, uuid} -> {:ok, uuid}
@@ -371,10 +346,12 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     end
   end
 
-  defp cast_uuid(_, err), do: {:error, err}
-
-  defp decrypt_ca_key(%Certificate{private_key_encrypted: encrypted_key})
-       when is_binary(encrypted_key) do
+  @doc """
+  Decrypts the CA private key from storage using the master key.
+  """
+  @spec decrypt_ca_key(Certificate.t()) :: {:ok, term()} | {:error, term()}
+  def decrypt_ca_key(%Certificate{private_key_encrypted: encrypted_key})
+      when is_binary(encrypted_key) do
     with {:ok, master_key} <- get_pki_master_key() do
       case Encryption.decrypt_from_blob(encrypted_key, master_key) do
         {:ok, key_pem} -> {:ok, X509.PrivateKey.from_pem!(key_pem)}
@@ -421,70 +398,18 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     Application.get_env(:secrethub_core, :dev_pki_unsealed_fallback, false)
   end
 
+  defp validate_ca(authority, ca_cert, ca_key, now, ttl_seconds) do
+    case CAValidator.validate(authority, ca_cert, ca_key,
+           now: now,
+           requested_ttl: ttl_seconds
+         ) do
+      :ok -> :ok
+      {:error, code, _detail} -> {:error, code}
+    end
+  end
+
   defp dev_fallback_key do
     :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
-  end
-
-  defp validate_active_ca(_authority, ca_record, parsed_ca, ca_key, now, _requested_ttl) do
-    ca_not_before = ca_record.valid_from
-    ca_not_after = ca_record.valid_until
-    ca_der = X509.Certificate.to_der(parsed_ca)
-    ca_pub = X509.Certificate.public_key(parsed_ca)
-
-    cond do
-      DateTime.compare(ca_not_before, now) == :gt ->
-        {:error, :ca_not_yet_valid}
-
-      DateTime.compare(ca_not_after, now) != :gt ->
-        {:error, :ca_expired}
-
-      DateTime.diff(ca_not_after, now) < 60 ->
-        {:error, :ca_insufficient_lifetime}
-
-      not :public_key.pkix_verify(ca_der, ca_pub) ->
-        {:error, :ca_signature_invalid}
-
-      not ca_has_valid_basic_constraints?(parsed_ca) ->
-        {:error, :ca_basic_constraints_invalid}
-
-      not ca_has_valid_key_usage?(parsed_ca) ->
-        {:error, :ca_key_usage_invalid}
-
-      not ca_key_matches_cert_public_key?(ca_key, parsed_ca) ->
-        {:error, :ca_key_mismatch}
-
-      true ->
-        :ok
-    end
-  end
-
-  defp ca_has_valid_basic_constraints?(parsed_ca) do
-    case X509.Certificate.extension(parsed_ca, :basic_constraints) do
-      {:Extension, _, _, {:BasicConstraints, true, _}} -> true
-      _ -> false
-    end
-  rescue
-    _ -> false
-  end
-
-  defp ca_has_valid_key_usage?(parsed_ca) do
-    case X509.Certificate.extension(parsed_ca, :key_usage) do
-      {:Extension, _, _, usages} when is_list(usages) ->
-        :keyCertSign in usages and :cRLSign in usages
-
-      _ ->
-        false
-    end
-  rescue
-    _ -> false
-  end
-
-  defp ca_key_matches_cert_public_key?(ca_key, parsed_ca) do
-    ca_pub = X509.Certificate.public_key(parsed_ca)
-    derived_pub = X509.PublicKey.derive(ca_key)
-    derived_pub == ca_pub
-  rescue
-    _ -> false
   end
 
   defp record_issuance_audit(identity, cert, request_id, actor) do

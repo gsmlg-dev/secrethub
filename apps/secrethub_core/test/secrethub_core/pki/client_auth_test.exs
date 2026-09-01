@@ -400,8 +400,55 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert receipt.agent_id == "agent-amsterdam-1"
       assert receipt.status == "applied"
 
+      # Monotonic guard: older receipt for same agent does not overwrite generation 1
+      assert {:ok, receipt2} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-amsterdam-1",
+                 "generation" => 0,
+                 "crl_number" => 0,
+                 "bundle_sha256" => "old-sha",
+                 "status" => "error",
+                 "last_error_code" => "stale_update"
+               })
+
+      assert receipt2.generation == 1
+      assert receipt2.status == "applied"
+
       receipts = ClientAuth.list_bundle_receipts()
       assert length(receipts) == 1
+      assert hd(receipts).generation == 1
+    end
+  end
+
+  describe "CAValidator" do
+    alias SecretHub.Core.PKI.ClientAuth.CAValidator
+
+    setup do
+      {:ok, initialized} = ClientAuth.initialize_authority()
+      %{authority: initialized.authority, ca: initialized.ca_certificate}
+    end
+
+    test "validates active authority and CA key successfully", %{authority: authority, ca: ca} do
+      {:ok, key} = SecretHub.Core.PKI.ClientAuth.Issuer.decrypt_ca_key(ca)
+      assert :ok = CAValidator.validate(authority, ca, key, requested_ttl: 86_400)
+    end
+
+    test "rejects expired CA", %{authority: authority, ca: ca} do
+      {:ok, key} = SecretHub.Core.PKI.ClientAuth.Issuer.decrypt_ca_key(ca)
+      future_now = DateTime.add(DateTime.utc_now(), 3650 * 86_400, :second)
+      assert {:error, :ca_expired, _} = CAValidator.validate(authority, ca, key, now: future_now)
+    end
+
+    test "rejects CA with insufficient remaining lifetime", %{authority: authority, ca: ca} do
+      {:ok, key} = SecretHub.Core.PKI.ClientAuth.Issuer.decrypt_ca_key(ca)
+      # Ask for TTL longer than CA validity
+      assert {:error, :ca_insufficient_lifetime, _} =
+               CAValidator.validate(authority, ca, key, requested_ttl: 3650 * 86_400)
+    end
+
+    test "rejects mismatched private key", %{authority: authority, ca: ca} do
+      wrong_key = X509.PrivateKey.new_ec(:secp384r1)
+      assert {:error, :ca_key_mismatch, _} = CAValidator.validate(authority, ca, wrong_key)
     end
   end
 

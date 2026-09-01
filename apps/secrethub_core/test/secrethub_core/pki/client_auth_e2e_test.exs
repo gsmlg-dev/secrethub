@@ -8,6 +8,20 @@ defmodule SecretHub.Core.PKI.ClientAuthE2ETest do
   setup do
     :ok = Ecto.Adapters.SQL.Sandbox.checkout(Repo)
 
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthBundleReceipt)
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthIssuanceRequest)
+    _ = Repo.query("UPDATE client_auth_authorities SET current_crl_id = NULL", [])
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthCrl)
+
+    _ =
+      Repo.query(
+        "DELETE FROM certificates WHERE cert_type IN ('client_auth_client', 'client_auth_ca')",
+        []
+      )
+
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthIdentity)
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthAuthority)
+
     tmp_dir = Path.join(System.tmp_dir!(), "secrethub_e2e_#{System.unique_integer([:positive])}")
     File.mkdir_p!(tmp_dir)
 

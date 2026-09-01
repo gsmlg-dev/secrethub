@@ -19,11 +19,17 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     :base_dir,
     :agent_id,
     :connection_mod,
-    # Last-Known-Good state
+    # High-water mark state (from persistent watermark)
     lkg_generation: 0,
     lkg_crl_number: 0,
     lkg_ca_fingerprint: nil,
     lkg_bundle_sha256: nil,
+    # Installed disk state (from current symlink)
+    installed_generation: 0,
+    installed_crl_number: 0,
+    installed_ca_fingerprint: nil,
+    installed_bundle_sha256: nil,
+    needs_repair: false,
     last_applied_at: nil,
     # Synchronization status
     status: "initializing",
@@ -55,68 +61,139 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     agent_id = Keyword.get(opts, :agent_id)
     conn_mod = Keyword.get(opts, :connection_mod, SecretHub.Agent.Connection)
 
-    # Initialize persistent watermark from disk if present
-    persistent_wm =
-      case AtomicStore.read_persistent_watermark(base_dir) do
-        {:ok, wm} -> wm
+    # 1. Read persistent watermark
+    persistent_wm_res = AtomicStore.read_persistent_watermark(base_dir)
+
+    # 2. Validate disk bundle with pinned CA fingerprint if known from watermark
+    pinned_ca_fp =
+      case persistent_wm_res do
+        {:ok, wm} -> wm["pinned_ca_fingerprint"]
         _ -> nil
       end
 
-    # Initialize from current manifest and files on disk if they exist and are valid
-    disk_validation = BundleValidator.validate_disk_bundle(Path.join(base_dir, "current"))
+    disk_opts = if pinned_ca_fp, do: [pinned_ca_fingerprint: pinned_ca_fp], else: []
+
+    disk_validation =
+      BundleValidator.validate_disk_bundle(Path.join(base_dir, "current"), disk_opts)
 
     state =
-      case {persistent_wm, disk_validation} do
-        {nil, {:ok, validated}} ->
-          %__MODULE__{
-            state_dir: state_dir,
-            base_dir: base_dir,
-            agent_id: agent_id,
-            connection_mod: conn_mod,
-            lkg_generation: validated.generation,
-            lkg_crl_number: validated.crl_number,
-            lkg_ca_fingerprint: validated.ca_fingerprint,
-            lkg_bundle_sha256: validated.bundle_sha256,
-            last_applied_at: parse_datetime(validated.this_update),
-            status: "applied"
-          }
-
-        {%{} = wm, {:ok, validated}} ->
+      case {persistent_wm_res, disk_validation} do
+        {{:ok, wm}, {:ok, validated}} ->
           wm_gen = wm["highest_seen_generation"] || 0
           wm_crl = wm["highest_seen_crl_number"] || 0
+          wm_fp = wm["pinned_ca_fingerprint"]
+          wm_hash = wm["last_bundle_sha256"]
 
-          if validated.generation < wm_gen do
-            # Rollback detected: current points to an older generation than persistent watermark
-            %__MODULE__{
-              state_dir: state_dir,
-              base_dir: base_dir,
-              agent_id: agent_id,
-              connection_mod: conn_mod,
-              lkg_generation: wm_gen,
-              lkg_crl_number: wm_crl,
-              lkg_ca_fingerprint: wm["pinned_ca_fingerprint"],
-              lkg_bundle_sha256: wm["last_bundle_sha256"],
-              status: "error",
-              last_error_code: :generation_rollback,
-              last_error_detail:
-                "disk generation #{validated.generation} is lower than persistent watermark #{wm_gen}"
-            }
-          else
-            %__MODULE__{
-              state_dir: state_dir,
-              base_dir: base_dir,
-              agent_id: agent_id,
-              connection_mod: conn_mod,
-              lkg_generation: max(validated.generation, wm_gen),
-              lkg_crl_number: max(validated.crl_number, wm_crl),
-              lkg_ca_fingerprint: validated.ca_fingerprint || wm["pinned_ca_fingerprint"],
-              lkg_bundle_sha256: validated.bundle_sha256 || wm["last_bundle_sha256"],
-              last_applied_at: parse_datetime(validated.this_update),
-              status: "applied"
-            }
+          cond do
+            validated.generation < wm_gen ->
+              # Rollback detected: current is older than persistent watermark
+              %__MODULE__{
+                state_dir: state_dir,
+                base_dir: base_dir,
+                agent_id: agent_id,
+                connection_mod: conn_mod,
+                lkg_generation: wm_gen,
+                lkg_crl_number: wm_crl,
+                lkg_ca_fingerprint: wm_fp,
+                lkg_bundle_sha256: wm_hash,
+                installed_generation: validated.generation,
+                installed_crl_number: validated.crl_number,
+                installed_ca_fingerprint: validated.ca_fingerprint,
+                installed_bundle_sha256: validated.bundle_sha256,
+                needs_repair: true,
+                status: "error",
+                last_error_code: :generation_rollback,
+                last_error_detail:
+                  "disk generation #{validated.generation} is lower than persistent watermark #{wm_gen}"
+              }
+
+            validated.generation == wm_gen and wm_hash != nil and
+                validated.bundle_sha256 != wm_hash ->
+              # Equivocation detected on disk!
+              %__MODULE__{
+                state_dir: state_dir,
+                base_dir: base_dir,
+                agent_id: agent_id,
+                connection_mod: conn_mod,
+                lkg_generation: wm_gen,
+                lkg_crl_number: wm_crl,
+                lkg_ca_fingerprint: wm_fp,
+                lkg_bundle_sha256: wm_hash,
+                installed_generation: validated.generation,
+                installed_crl_number: validated.crl_number,
+                installed_ca_fingerprint: validated.ca_fingerprint,
+                installed_bundle_sha256: validated.bundle_sha256,
+                needs_repair: true,
+                status: "error",
+                last_error_code: :equivocation_detected,
+                last_error_detail: "disk bundle hash does not match persistent watermark"
+              }
+
+            validated.generation >= wm_gen and validated.crl_number < wm_crl ->
+              # CRL downgrade on disk!
+              %__MODULE__{
+                state_dir: state_dir,
+                base_dir: base_dir,
+                agent_id: agent_id,
+                connection_mod: conn_mod,
+                lkg_generation: wm_gen,
+                lkg_crl_number: wm_crl,
+                lkg_ca_fingerprint: wm_fp,
+                lkg_bundle_sha256: wm_hash,
+                installed_generation: validated.generation,
+                installed_crl_number: validated.crl_number,
+                installed_ca_fingerprint: validated.ca_fingerprint,
+                installed_bundle_sha256: validated.bundle_sha256,
+                needs_repair: true,
+                status: "error",
+                last_error_code: :crl_number_downgrade,
+                last_error_detail: "disk CRL number is lower than persistent watermark"
+              }
+
+            wm_fp != nil and validated.ca_fingerprint != wm_fp ->
+              # CA fingerprint mismatch!
+              %__MODULE__{
+                state_dir: state_dir,
+                base_dir: base_dir,
+                agent_id: agent_id,
+                connection_mod: conn_mod,
+                lkg_generation: wm_gen,
+                lkg_crl_number: wm_crl,
+                lkg_ca_fingerprint: wm_fp,
+                lkg_bundle_sha256: wm_hash,
+                installed_generation: validated.generation,
+                installed_crl_number: validated.crl_number,
+                installed_ca_fingerprint: validated.ca_fingerprint,
+                installed_bundle_sha256: validated.bundle_sha256,
+                needs_repair: true,
+                status: "error",
+                last_error_code: :ca_fingerprint_mismatch,
+                last_error_detail: "disk CA fingerprint differs from persistent watermark"
+              }
+
+            true ->
+              # Both watermark and disk match cleanly
+              %__MODULE__{
+                state_dir: state_dir,
+                base_dir: base_dir,
+                agent_id: agent_id,
+                connection_mod: conn_mod,
+                lkg_generation: max(validated.generation, wm_gen),
+                lkg_crl_number: max(validated.crl_number, wm_crl),
+                lkg_ca_fingerprint: validated.ca_fingerprint || wm_fp,
+                lkg_bundle_sha256: validated.bundle_sha256 || wm_hash,
+                installed_generation: validated.generation,
+                installed_crl_number: validated.crl_number,
+                installed_ca_fingerprint: validated.ca_fingerprint,
+                installed_bundle_sha256: validated.bundle_sha256,
+                last_applied_at: parse_datetime(validated.this_update),
+                needs_repair: false,
+                status: "applied"
+              }
           end
 
-        {%{} = wm, _} ->
+        {{:ok, wm}, _disk_err} ->
+          # Watermark exists but disk is missing or corrupted -> needs repair!
           %__MODULE__{
             state_dir: state_dir,
             base_dir: base_dir,
@@ -126,16 +203,55 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
             lkg_crl_number: wm["highest_seen_crl_number"] || 0,
             lkg_ca_fingerprint: wm["pinned_ca_fingerprint"],
             lkg_bundle_sha256: wm["last_bundle_sha256"],
+            installed_generation: 0,
+            installed_crl_number: 0,
+            installed_ca_fingerprint: nil,
+            installed_bundle_sha256: nil,
+            needs_repair: true,
             status: "initializing"
           }
 
-        _ ->
+        {{:error, :not_found}, {:ok, validated}} ->
+          # No watermark yet, but valid disk exists
           %__MODULE__{
             state_dir: state_dir,
             base_dir: base_dir,
             agent_id: agent_id,
             connection_mod: conn_mod,
+            lkg_generation: validated.generation,
+            lkg_crl_number: validated.crl_number,
+            lkg_ca_fingerprint: validated.ca_fingerprint,
+            lkg_bundle_sha256: validated.bundle_sha256,
+            installed_generation: validated.generation,
+            installed_crl_number: validated.crl_number,
+            installed_ca_fingerprint: validated.ca_fingerprint,
+            installed_bundle_sha256: validated.bundle_sha256,
+            last_applied_at: parse_datetime(validated.this_update),
+            needs_repair: false,
+            status: "applied"
+          }
+
+        {{:error, :not_found}, _} ->
+          %__MODULE__{
+            state_dir: state_dir,
+            base_dir: base_dir,
+            agent_id: agent_id,
+            connection_mod: conn_mod,
+            needs_repair: true,
             status: "initializing"
+          }
+
+        {{:error, wm_err}, _} ->
+          # Watermark is invalid JSON or unreadable -> fail closed / mark error
+          %__MODULE__{
+            state_dir: state_dir,
+            base_dir: base_dir,
+            agent_id: agent_id,
+            connection_mod: conn_mod,
+            needs_repair: true,
+            status: "error",
+            last_error_code: :corrupted_watermark,
+            last_error_detail: inspect(wm_err)
           }
       end
 
@@ -184,11 +300,14 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
   @impl true
   def handle_call(:get_status, _from, state) do
     info = %{
-      current_generation: state.lkg_generation,
-      current_crl_number: state.lkg_crl_number,
-      bundle_sha256: state.lkg_bundle_sha256,
+      current_generation: state.installed_generation,
+      lkg_generation: state.lkg_generation,
+      current_crl_number: state.installed_crl_number,
+      lkg_crl_number: state.lkg_crl_number,
+      bundle_sha256: state.installed_bundle_sha256 || state.lkg_bundle_sha256,
       last_applied_at: state.last_applied_at,
       status: state.status,
+      needs_repair: state.needs_repair,
       last_error_code: state.last_error_code,
       last_error_detail: state.last_error_detail,
       base_dir: state.base_dir
@@ -228,10 +347,38 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
     with {:ok, validated} <- BundleValidator.validate(bundle, val_opts),
          :ok <- check_monotonicity_and_invariants(state, validated, force) do
-      if !force and validated.generation == state.lkg_generation and
-           validated.bundle_sha256 == state.lkg_bundle_sha256 do
-        new_state = %{state | status: "applied", last_error_code: nil, last_error_detail: nil}
+      # Determine if disk already has this exact bundle installed and verified
+      is_disk_already_matching =
+        !state.needs_repair and
+          state.installed_generation == validated.generation and
+          state.installed_bundle_sha256 == validated.bundle_sha256 and
+          match?(
+            {:ok, _},
+            BundleValidator.validate_disk_bundle(Path.join(state.base_dir, "current"), val_opts)
+          )
+
+      if !force and is_disk_already_matching do
+        # Validated no-op branch: disk already has the exact bundle.
+        # Still submit applied receipt to ensure Core convergence!
+        new_state = %{
+          state
+          | lkg_generation: validated.generation,
+            lkg_crl_number: validated.crl_number,
+            lkg_ca_fingerprint: validated.ca_fingerprint,
+            lkg_bundle_sha256: validated.bundle_sha256,
+            installed_generation: validated.generation,
+            installed_crl_number: validated.crl_number,
+            installed_ca_fingerprint: validated.ca_fingerprint,
+            installed_bundle_sha256: validated.bundle_sha256,
+            needs_repair: false,
+            status: "applied",
+            last_error_code: nil,
+            last_error_detail: nil,
+            retry_attempt: 0
+        }
+
         receipt = build_receipt(new_state, "applied", now)
+        submit_receipt_async(new_state, receipt)
         {:ok, receipt, new_state}
       else
         case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
@@ -242,7 +389,12 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                 lkg_crl_number: validated.crl_number,
                 lkg_ca_fingerprint: validated.ca_fingerprint,
                 lkg_bundle_sha256: validated.bundle_sha256,
+                installed_generation: validated.generation,
+                installed_crl_number: validated.crl_number,
+                installed_ca_fingerprint: validated.ca_fingerprint,
+                installed_bundle_sha256: validated.bundle_sha256,
                 last_applied_at: now,
+                needs_repair: false,
                 last_error_code: nil,
                 last_error_detail: nil,
                 status: "applied",

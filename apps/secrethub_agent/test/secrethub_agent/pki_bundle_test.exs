@@ -353,5 +353,109 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert status.status == "failed"
       assert status.last_error_code == "invalid_schema_version"
     end
+
+    test "persistent watermark restart rollback recovery repairs disk bundle and sends ACK", %{
+      tmp_dir: tmp_dir,
+      bundle: gen1_bundle,
+      ca_cert: ca_cert,
+      ca_key: ca_key,
+      now: now
+    } do
+      bundle_dir = Path.join(tmp_dir, "pki/client-auth")
+
+      # 1. Install generation 1
+      {:ok, manager1} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-repair-test",
+          name: :test_repair_manager_1
+        )
+
+      assert {:ok, _} = TrustBundleManager.process_bundle(manager1, gen1_bundle, now: now)
+
+      # 2. Issue generation 2
+      this_update = DateTime.add(now, -100, :second)
+      next_update = DateTime.add(now, 48 * 3600, :second)
+
+      crl2 =
+        X509.CRL.new(
+          [],
+          ca_cert,
+          ca_key,
+          this_update: this_update,
+          next_update: next_update,
+          extensions: [crl_number: X509.CRL.Extension.crl_number(2)]
+        )
+
+      crl2_pem = X509.CRL.to_pem(crl2)
+      crl2_der = X509.CRL.to_der(crl2)
+      crl2_hash = :crypto.hash(:sha256, crl2_der) |> Base.encode16(case: :lower)
+
+      gen2_bundle =
+        gen1_bundle
+        |> Map.put("generation", 2)
+        |> Map.put("crl_number", 2)
+        |> Map.put("this_update", DateTime.to_iso8601(this_update))
+        |> Map.put("next_update", DateTime.to_iso8601(next_update))
+        |> Map.put("crl_pem", crl2_pem)
+        |> Map.put("crl_der_sha256", crl2_hash)
+
+      transcript2 =
+        [
+          gen2_bundle["schema_version"],
+          gen2_bundle["authority"],
+          gen2_bundle["generation"],
+          gen2_bundle["ca_fingerprint"],
+          gen2_bundle["crl_number"],
+          gen2_bundle["crl_der_sha256"],
+          gen2_bundle["this_update"],
+          gen2_bundle["next_update"],
+          gen2_bundle["ca_bundle_pem"],
+          gen2_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      bundle2_hash = :crypto.hash(:sha256, transcript2) |> Base.encode16(case: :lower)
+      gen2_bundle = Map.put(gen2_bundle, "bundle_sha256", bundle2_hash)
+
+      assert {:ok, _} = TrustBundleManager.process_bundle(manager1, gen2_bundle, now: now)
+      GenServer.stop(manager1)
+
+      # 3. Simulate rollback of disk current symlink back to generation 1
+      current_symlink = Path.join(bundle_dir, "current")
+      File.rm(current_symlink)
+      File.ln_s("generations/1", current_symlink)
+
+      # 4. Restart TrustBundleManager
+      {:ok, manager2} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-repair-test",
+          name: :test_repair_manager_2
+        )
+
+      status_after_restart = TrustBundleManager.status(manager2)
+      assert status_after_restart.needs_repair == true
+      assert status_after_restart.status == "error"
+      assert status_after_restart.lkg_generation == 2
+      assert status_after_restart.current_generation == 1
+
+      # 5. Core sends generation 2 bundle again
+      assert {:ok, receipt} = TrustBundleManager.process_bundle(manager2, gen2_bundle, now: now)
+      assert receipt["status"] == "applied"
+      assert receipt["generation"] == 2
+
+      # 6. Verify disk current symlink has been repaired and points to generation 2
+      assert {:ok, target} = File.read_link(current_symlink)
+      assert String.ends_with?(target, "2")
+
+      status_repaired = TrustBundleManager.status(manager2)
+      assert status_repaired.needs_repair == false
+      assert status_repaired.status == "applied"
+      assert status_repaired.current_generation == 2
+    end
   end
 end

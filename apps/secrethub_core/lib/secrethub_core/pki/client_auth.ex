@@ -238,44 +238,83 @@ defmodule SecretHub.Core.PKI.ClientAuth do
         applied_at: Map.get(attrs, "applied_at") || Map.get(attrs, :applied_at)
       }
 
-      existing =
-        Repo.get_by(ClientAuthBundleReceipt,
-          agent_id: receipt_attrs.agent_id,
-          client_auth_authority_id: authority.id
-        )
+      Repo.transaction(fn ->
+        existing =
+          Repo.one(
+            from(r in ClientAuthBundleReceipt,
+              where:
+                r.agent_id == ^receipt_attrs.agent_id and
+                  r.client_auth_authority_id == ^authority.id,
+              lock: "FOR UPDATE"
+            )
+          )
 
-      changeset =
-        case existing do
-          nil -> %ClientAuthBundleReceipt{} |> ClientAuthBundleReceipt.changeset(receipt_attrs)
-          rec -> rec |> ClientAuthBundleReceipt.changeset(receipt_attrs)
+        # Monotonic receipt guard: prevent stale/delayed older receipts from regressing state
+        should_update =
+          case existing do
+            nil ->
+              true
+
+            rec ->
+              cond do
+                receipt_attrs.generation > rec.generation ->
+                  true
+
+                receipt_attrs.generation == rec.generation and
+                    receipt_attrs.bundle_sha256 == rec.bundle_sha256 ->
+                  rec.status != "applied" or receipt_attrs.status == "applied"
+
+                true ->
+                  false
+              end
+          end
+
+        if should_update do
+          changeset =
+            case existing do
+              nil ->
+                %ClientAuthBundleReceipt{} |> ClientAuthBundleReceipt.changeset(receipt_attrs)
+
+              rec ->
+                rec |> ClientAuthBundleReceipt.changeset(receipt_attrs)
+            end
+
+          case Repo.insert_or_update(changeset) do
+            {:ok, receipt} ->
+              actor_id = receipt.agent_id
+
+              attrs = %{
+                event_type: "pki.client_auth.agent_receipt_recorded",
+                actor_type: "agent",
+                actor_id: actor_id,
+                source_ip: "127.0.0.1",
+                access_granted: receipt.status == "applied",
+                correlation_id: receipt.id,
+                event_data: %{
+                  "agent_id" => receipt.agent_id,
+                  "authority_id" => authority.id,
+                  "generation" => receipt.generation,
+                  "crl_number" => receipt.crl_number,
+                  "bundle_sha256" => receipt.bundle_sha256,
+                  "status" => receipt.status,
+                  "last_error_code" => receipt.last_error_code,
+                  "last_error_detail" => receipt.last_error_detail,
+                  "applied_at" => receipt.applied_at && DateTime.to_iso8601(receipt.applied_at)
+                }
+              }
+
+              case Audit.log_event(attrs) do
+                {:ok, _} -> receipt
+                {:error, reason} -> Repo.rollback({:audit_failed, reason})
+              end
+
+            {:error, reason} ->
+              Repo.rollback(reason)
+          end
+        else
+          existing
         end
-
-      with {:ok, receipt} <- Repo.insert_or_update(changeset) do
-        actor_id = receipt.agent_id
-
-        attrs = %{
-          event_type: "pki.client_auth.agent_receipt_recorded",
-          actor_type: "agent",
-          actor_id: actor_id,
-          source_ip: "127.0.0.1",
-          access_granted: receipt.status == "applied",
-          correlation_id: receipt.id,
-          event_data: %{
-            "agent_id" => receipt.agent_id,
-            "authority_id" => authority.id,
-            "generation" => receipt.generation,
-            "crl_number" => receipt.crl_number,
-            "bundle_sha256" => receipt.bundle_sha256,
-            "status" => receipt.status,
-            "last_error_code" => receipt.last_error_code,
-            "last_error_detail" => receipt.last_error_detail,
-            "applied_at" => receipt.applied_at && DateTime.to_iso8601(receipt.applied_at)
-          }
-        }
-
-        _ = Audit.log_event(attrs)
-        {:ok, receipt}
-      end
+      end)
     end
   end
 
