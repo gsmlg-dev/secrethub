@@ -148,6 +148,16 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     with %ClientAuthIdentity{status: "active"} = identity <- lock_identity(identity_id),
          %ClientAuthAuthority{status: "active"} <- authority || lock_authority(),
          {:ok, ca_key} <- decrypt_ca_key(authority.ca_certificate),
+         {:ok, parsed_ca} <- X509.Certificate.from_pem(authority.ca_certificate.certificate_pem),
+         :ok <-
+           validate_active_ca(
+             authority,
+             authority.ca_certificate,
+             parsed_ca,
+             ca_key,
+             now,
+             requested_ttl
+           ),
          {:ok, csr} <- parse_csr(csr_pem),
          {:ok, public_key} <- validate_csr_public_key(csr),
          {:ok, ttl_seconds} <- compute_ttl(requested_ttl, authority) do
@@ -177,8 +187,6 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
       ]
 
       hash_algo = if authority.key_algorithm == "ecdsa_p384", do: :sha384, else: :sha256
-
-      {:ok, parsed_ca} = X509.Certificate.from_pem(authority.ca_certificate.certificate_pem)
 
       cert_struct =
         X509.Certificate.new(
@@ -417,6 +425,68 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
   end
 
+  defp validate_active_ca(_authority, ca_record, parsed_ca, ca_key, now, _requested_ttl) do
+    ca_not_before = ca_record.valid_from
+    ca_not_after = ca_record.valid_until
+    ca_der = X509.Certificate.to_der(parsed_ca)
+    ca_pub = X509.Certificate.public_key(parsed_ca)
+
+    cond do
+      DateTime.compare(ca_not_before, now) == :gt ->
+        {:error, :ca_not_yet_valid}
+
+      DateTime.compare(ca_not_after, now) != :gt ->
+        {:error, :ca_expired}
+
+      DateTime.diff(ca_not_after, now) < 60 ->
+        {:error, :ca_insufficient_lifetime}
+
+      not :public_key.pkix_verify(ca_der, ca_pub) ->
+        {:error, :ca_signature_invalid}
+
+      not ca_has_valid_basic_constraints?(parsed_ca) ->
+        {:error, :ca_basic_constraints_invalid}
+
+      not ca_has_valid_key_usage?(parsed_ca) ->
+        {:error, :ca_key_usage_invalid}
+
+      not ca_key_matches_cert_public_key?(ca_key, parsed_ca) ->
+        {:error, :ca_key_mismatch}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp ca_has_valid_basic_constraints?(parsed_ca) do
+    case X509.Certificate.extension(parsed_ca, :basic_constraints) do
+      {:Extension, _, _, {:BasicConstraints, true, _}} -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp ca_has_valid_key_usage?(parsed_ca) do
+    case X509.Certificate.extension(parsed_ca, :key_usage) do
+      {:Extension, _, _, usages} when is_list(usages) ->
+        :keyCertSign in usages and :cRLSign in usages
+
+      _ ->
+        false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp ca_key_matches_cert_public_key?(ca_key, parsed_ca) do
+    ca_pub = X509.Certificate.public_key(parsed_ca)
+    derived_pub = X509.PublicKey.derive(ca_key)
+    derived_pub == ca_pub
+  rescue
+    _ -> false
+  end
+
   defp record_issuance_audit(identity, cert, request_id, actor) do
     actor_type = Map.get(actor, :actor_type) || Map.get(actor, "actor_type") || "admin"
     actor_id = Map.get(actor, :actor_id) || Map.get(actor, "actor_id") || "admin"
@@ -443,7 +513,9 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
       }
     }
 
-    Audit.log_event(attrs)
-    :ok
+    case Audit.log_event(attrs) do
+      {:ok, _} -> :ok
+      {:error, reason} -> Repo.rollback({:audit_failed, reason})
+    end
   end
 end

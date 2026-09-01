@@ -129,10 +129,21 @@ defmodule SecretHub.Core.Repo.Migrations.CreateClientAuthPki do
   end
 
   def down do
-    # Cleanly remove Client Auth certificates in dependency order so older releases can read certificates table
-    execute("DELETE FROM certificates WHERE cert_type = 'client_auth_client'")
-    execute("DELETE FROM certificates WHERE cert_type = 'client_auth_ca'")
+    # 1. Drop tables that reference other tables first
+    drop(table(:client_auth_bundle_receipts))
+    drop(table(:client_auth_issuance_requests))
 
+    # 2. Remove cyclic FK from client_auth_authorities to client_auth_crls
+    alter table(:client_auth_authorities) do
+      remove(:current_crl_id)
+    end
+
+    # 3. Drop CRLs, identities, and authorities
+    drop(table(:client_auth_crls))
+    drop(table(:client_auth_identities))
+    drop(table(:client_auth_authorities))
+
+    # 4. Remove columns and indexes on certificates table
     drop(index(:certificates, [:client_auth_identity_id, :revoked]))
     drop(index(:certificates, [:client_auth_identity_id]))
     drop(index(:certificates, [:client_auth_authority_id]))
@@ -142,15 +153,8 @@ defmodule SecretHub.Core.Repo.Migrations.CreateClientAuthPki do
       remove(:client_auth_authority_id)
     end
 
-    drop(table(:client_auth_bundle_receipts))
-    drop(table(:client_auth_issuance_requests))
-
-    alter table(:client_auth_authorities) do
-      remove(:current_crl_id)
-    end
-
-    drop(table(:client_auth_crls))
-    drop(table(:client_auth_identities))
-    drop(table(:client_auth_authorities))
+    # 5. Cleanly remove Client Auth certificates from certificates table
+    execute("DELETE FROM certificates WHERE cert_type = 'client_auth_client'")
+    execute("DELETE FROM certificates WHERE cert_type = 'client_auth_ca'")
   end
 end

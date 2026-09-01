@@ -6,6 +6,7 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   revocation, full CRL management, and public trust bundle distribution.
   """
 
+  alias SecretHub.Core.Audit
   alias SecretHub.Core.PKI.ClientAuth.{Authority, CRLManager, Identity, Issuer, TrustBundle}
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.{Certificate, ClientAuthAuthority, ClientAuthBundleReceipt}
@@ -249,7 +250,32 @@ defmodule SecretHub.Core.PKI.ClientAuth do
           rec -> rec |> ClientAuthBundleReceipt.changeset(receipt_attrs)
         end
 
-      Repo.insert_or_update(changeset)
+      with {:ok, receipt} <- Repo.insert_or_update(changeset) do
+        actor_id = receipt.agent_id
+
+        attrs = %{
+          event_type: "pki.client_auth.agent_receipt_recorded",
+          actor_type: "agent",
+          actor_id: actor_id,
+          source_ip: "127.0.0.1",
+          access_granted: receipt.status == "applied",
+          correlation_id: receipt.id,
+          event_data: %{
+            "agent_id" => receipt.agent_id,
+            "authority_id" => authority.id,
+            "generation" => receipt.generation,
+            "crl_number" => receipt.crl_number,
+            "bundle_sha256" => receipt.bundle_sha256,
+            "status" => receipt.status,
+            "last_error_code" => receipt.last_error_code,
+            "last_error_detail" => receipt.last_error_detail,
+            "applied_at" => receipt.applied_at && DateTime.to_iso8601(receipt.applied_at)
+          }
+        }
+
+        _ = Audit.log_event(attrs)
+        {:ok, receipt}
+      end
     end
   end
 

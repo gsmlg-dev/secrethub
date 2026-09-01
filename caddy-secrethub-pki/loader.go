@@ -59,6 +59,9 @@ func (a *AutoLoader) Start(ctx context.Context) {
 func (a *AutoLoader) checkAndReload() {
 	currentLink := filepath.Join(a.verifier.bundleDir, "current")
 
+	var candidateTarget string
+	var candidateModTime time.Time
+
 	// Check if symlink target or target directory modification time has changed
 	target, err := os.Readlink(currentLink)
 	if err != nil {
@@ -70,27 +73,32 @@ func (a *AutoLoader) checkAndReload() {
 		if fi.ModTime().Equal(a.lastModTime) {
 			return
 		}
-		a.lastModTime = fi.ModTime()
+		candidateModTime = fi.ModTime()
 	} else {
+		candidateTarget = target
 		if target == a.lastTarget {
 			// Check if crl.pem mod time changed inside the target
 			crlPath := filepath.Join(currentLink, "crl.pem")
 			fi, err := os.Stat(crlPath)
-			if err == nil && fi.ModTime().Equal(a.lastModTime) {
+			if err != nil || fi.ModTime().Equal(a.lastModTime) {
 				return
 			}
-			if err == nil {
-				a.lastModTime = fi.ModTime()
-			}
-		} else {
-			a.lastTarget = target
+			candidateModTime = fi.ModTime()
 		}
 	}
 
 	snapshot, err := a.verifier.LoadFromDisk()
 	if err != nil {
-		a.logger.Error("Failed to reload trust bundle from disk", zap.Error(err))
+		a.logger.Error("Failed to reload trust bundle from disk, will retry on next poll", zap.Error(err))
 		return
+	}
+
+	// Successfully loaded: now commit the updated target and modtime
+	if candidateTarget != "" {
+		a.lastTarget = candidateTarget
+	}
+	if !candidateModTime.IsZero() {
+		a.lastModTime = candidateModTime
 	}
 
 	a.logger.Info("Reloaded trust bundle snapshot",

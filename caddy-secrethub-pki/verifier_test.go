@@ -118,8 +118,8 @@ func (h *testHarness) issueClientCert(t *testing.T, identityID string, serial in
 		ExtraExtensions: []pkix.Extension{
 			{
 				Id:       asn1.ObjectIdentifier{2, 5, 29, 19},
-				Critical: true,
-				Value:    []byte{0x30, 0x00}, // BasicConstraints CA:FALSE
+				Critical: false, // Standard non-critical BasicConstraints CA:FALSE as produced by Elixir Issuer
+				Value:    []byte{0x30, 0x00},
 			},
 			{
 				Id:       asn1.ObjectIdentifier{2, 5, 29, 15},
@@ -354,6 +354,15 @@ func TestVerifierMonotonicityAndRollbackRejection(t *testing.T) {
 	if _, err := v.LoadFromDisk(); err == nil {
 		t.Fatalf("expected error on equivocation, got nil")
 	}
+
+	// 4. Persistence across Verifier restart:
+	// A new Verifier instance starting against h.tmpDir must read watermark.json
+	// and reject an older generation 1 even on first load.
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+	v2 := NewVerifier(h.tmpDir)
+	if _, err := v2.LoadFromDisk(); err == nil {
+		t.Fatalf("expected new Verifier instance to reject rollback to Gen 1 due to persistent watermark, got nil")
+	}
 }
 
 func TestVerifierCanonicalProfileNegative(t *testing.T) {
@@ -387,7 +396,7 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 		ExtraExtensions: []pkix.Extension{
-			{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: true, Value: []byte{0x30, 0x00}},
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: false, Value: []byte{0x30, 0x00}},
 			{Id: asn1.ObjectIdentifier{2, 5, 29, 15}, Critical: true, Value: []byte{0x03, 0x02, 0x07, 0x80}},
 		},
 	}
@@ -409,7 +418,7 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 		ExtraExtensions: []pkix.Extension{
-			{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: true, Value: []byte{0x30, 0x00}},
+			{Id: asn1.ObjectIdentifier{2, 5, 29, 19}, Critical: false, Value: []byte{0x30, 0x00}},
 			{Id: asn1.ObjectIdentifier{2, 5, 29, 15}, Critical: true, Value: []byte{0x03, 0x02, 0x07, 0x80}},
 		},
 	}
@@ -437,8 +446,8 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 	}
 	der, _ = x509.CreateCertificate(rand.Reader, isCATemplate, h.caCert, &clientKey.PublicKey, h.caKey)
 	isCACert, _ := x509.ParseCertificate(der)
-	if _, err := v.VerifyCertificate(isCACert, time.Now()); err != ErrIsCACertificate {
-		t.Errorf("expected ErrIsCACertificate, got: %v", err)
+	if _, err := v.VerifyCertificate(isCACert, time.Now()); err == nil {
+		t.Errorf("expected error for IsCA=true certificate, got nil")
 	}
 }
 

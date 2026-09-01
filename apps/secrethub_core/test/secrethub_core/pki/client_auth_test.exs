@@ -441,6 +441,14 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
   end
 
   describe "Authority Initialization Validation" do
+    test "validates key_algorithm parameter" do
+      assert {:error, {:invalid_key_algorithm, _}} =
+               ClientAuth.initialize_authority(%{"key_algorithm" => "rsa_2048"})
+
+      assert {:error, {:invalid_key_algorithm, _}} =
+               ClientAuth.initialize_authority(%{"key_algorithm" => "unsupported"})
+    end
+
     test "validates ca_validity_days parameter" do
       # Reject < 30 days
       assert {:error, {:invalid_ca_validity_days, _}} =

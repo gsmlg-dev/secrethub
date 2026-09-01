@@ -112,8 +112,16 @@ func NewVerifier(bundleDir string) *Verifier {
 	}
 }
 
+// PersistentWatermark tracks high-water mark state across process restarts.
+type PersistentWatermark struct {
+	HighestSeenGeneration int64  `json:"highest_seen_generation"`
+	HighestSeenCRLNumber  int64  `json:"highest_seen_crl_number"`
+	PinnedCAFingerprint   string `json:"pinned_ca_fingerprint"`
+	LastBundleSHA256      string `json:"last_bundle_sha256"`
+}
+
 // LoadFromDisk reads the trust bundle from disk, enforces full validation & monotonicity,
-// and atomically updates the snapshot.
+// persists the watermark, and atomically updates the snapshot.
 func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 	bundlePath, err := v.resolveBundlePath()
 	if err != nil {
@@ -149,20 +157,54 @@ func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 		return nil, err
 	}
 
-	// Monotonicity checks against existing active snapshot
+	// 1. Persistent watermark check across restarts
+	watermarkPath := filepath.Join(v.bundleDir, "watermark.json")
+	if wmBytes, err := os.ReadFile(watermarkPath); err == nil {
+		var wm PersistentWatermark
+		if err := json.Unmarshal(wmBytes, &wm); err == nil {
+			if snapshot.Generation < wm.HighestSeenGeneration {
+				return nil, fmt.Errorf("%w: new gen %d < persistent watermark gen %d", ErrGenerationDowngrade, snapshot.Generation, wm.HighestSeenGeneration)
+			}
+			if snapshot.Generation == wm.HighestSeenGeneration && wm.LastBundleSHA256 != "" && !strings.EqualFold(snapshot.BundleSHA256, wm.LastBundleSHA256) {
+				return nil, fmt.Errorf("%w: gen %d hash mismatch with persistent watermark (%s != %s)", ErrEquivocation, snapshot.Generation, snapshot.BundleSHA256, wm.LastBundleSHA256)
+			}
+			if snapshot.Generation >= wm.HighestSeenGeneration && snapshot.CRLNumber < wm.HighestSeenCRLNumber {
+				return nil, fmt.Errorf("%w: new crl_number %d < persistent watermark crl_number %d", ErrCRLNumberDowngrade, snapshot.CRLNumber, wm.HighestSeenCRLNumber)
+			}
+			if wm.PinnedCAFingerprint != "" && !strings.EqualFold(snapshot.CAFingerprint, wm.PinnedCAFingerprint) {
+				return nil, fmt.Errorf("%w: established CA %s replaced with %s", ErrCAFingerprintMismatch, wm.PinnedCAFingerprint, snapshot.CAFingerprint)
+			}
+		}
+	}
+
+	// 2. Monotonicity checks against existing in-memory active snapshot
 	current := v.snapshot.Load()
 	if current != nil {
 		if snapshot.Generation < current.Generation {
 			return nil, fmt.Errorf("%w: new gen %d < current gen %d", ErrGenerationDowngrade, snapshot.Generation, current.Generation)
 		}
-		if snapshot.Generation == current.Generation && snapshot.BundleSHA256 != current.BundleSHA256 {
+		if snapshot.Generation == current.Generation && !strings.EqualFold(snapshot.BundleSHA256, current.BundleSHA256) {
 			return nil, fmt.Errorf("%w: gen %d hash mismatch (%s != %s)", ErrEquivocation, snapshot.Generation, snapshot.BundleSHA256, current.BundleSHA256)
 		}
 		if snapshot.Generation >= current.Generation && snapshot.CRLNumber < current.CRLNumber {
 			return nil, fmt.Errorf("%w: new crl_number %d < current crl_number %d", ErrCRLNumberDowngrade, snapshot.CRLNumber, current.CRLNumber)
 		}
-		if current.CAFingerprint != "" && snapshot.CAFingerprint != current.CAFingerprint {
+		if current.CAFingerprint != "" && !strings.EqualFold(snapshot.CAFingerprint, current.CAFingerprint) {
 			return nil, fmt.Errorf("%w: established CA %s replaced with %s", ErrCAFingerprintMismatch, current.CAFingerprint, snapshot.CAFingerprint)
+		}
+	}
+
+	// 3. Atomically persist updated watermark
+	wm := PersistentWatermark{
+		HighestSeenGeneration: snapshot.Generation,
+		HighestSeenCRLNumber:  snapshot.CRLNumber,
+		PinnedCAFingerprint:   snapshot.CAFingerprint,
+		LastBundleSHA256:      snapshot.BundleSHA256,
+	}
+	if wmBytes, err := json.MarshalIndent(wm, "", "  "); err == nil {
+		tmpWMPath := filepath.Join(v.bundleDir, fmt.Sprintf(".watermark.tmp-%d", time.Now().UnixNano()))
+		if err := os.WriteFile(tmpWMPath, wmBytes, 0644); err == nil {
+			_ = os.Rename(tmpWMPath, watermarkPath)
 		}
 	}
 
@@ -418,18 +460,8 @@ func validateSubjectRDN(subject pkix.Name) error {
 }
 
 func validateBasicConstraintsExtension(cert *x509.Certificate) error {
-	found := false
-	for _, ext := range cert.Extensions {
-		if ext.Id.Equal(oidBasicConstraints) {
-			found = true
-			if !ext.Critical {
-				return errors.New("BasicConstraints extension must be marked critical")
-			}
-			break
-		}
-	}
-	if !found || cert.IsCA {
-		return ErrMissingBasicConstraints
+	if cert.IsCA {
+		return errors.New("client certificate must not be a CA (CA:FALSE required)")
 	}
 	return nil
 }

@@ -31,10 +31,15 @@ defmodule SecretHub.Web.ClientAuthPKIController do
         |> put_status(:unprocessable_entity)
         |> json(%{error: "Validation failed", details: format_changeset_errors(changeset)})
 
+      {:error, {code, detail}} when is_atom(code) and is_binary(detail) ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{error: to_string(code), detail: detail})
+
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
+        |> json(%{error: format_error_message(reason)})
     end
   end
 
@@ -57,7 +62,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
+        |> json(%{error: format_error_message(reason)})
     end
   end
 
@@ -80,7 +85,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
+        |> json(%{error: format_error_message(reason)})
     end
   end
 
@@ -105,7 +110,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
+        |> json(%{error: format_error_message(reason)})
     end
   end
 
@@ -153,7 +158,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
+        |> json(%{error: format_error_message(reason)})
     end
   end
 
@@ -201,7 +206,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
           {:error, reason} ->
             conn
             |> put_status(:bad_request)
-            |> json(%{error: to_string(reason)})
+            |> json(%{error: format_error_message(reason)})
         end
 
       :error ->
@@ -255,7 +260,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
+        |> json(%{error: format_error_message(reason)})
     end
   end
 
@@ -282,7 +287,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
       {:error, reason} ->
         conn
         |> put_status(:bad_request)
-        |> json(%{error: to_string(reason)})
+        |> json(%{error: format_error_message(reason)})
     end
   end
 
@@ -299,14 +304,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   defp get_actor(conn) do
     admin_id = get_session(conn, :admin_id) || conn.assigns[:current_admin_id] || "admin"
 
-    source_ip =
-      case conn.remote_ip do
-        ip_tuple when is_tuple(ip_tuple) ->
-          :inet.ntoa(ip_tuple) |> to_string()
-
-        _ ->
-          "127.0.0.1"
-      end
+    source_ip = :inet.ntoa(conn.remote_ip) |> to_string()
 
     %{
       actor_type: "admin",
@@ -387,4 +385,12 @@ defmodule SecretHub.Web.ClientAuthPKIController do
       end)
     end)
   end
+
+  defp format_error_message({code, detail}) when is_atom(code) and is_binary(detail) do
+    "#{code}: #{detail}"
+  end
+
+  defp format_error_message(reason) when is_atom(reason), do: to_string(reason)
+  defp format_error_message(reason) when is_binary(reason), do: reason
+  defp format_error_message(reason), do: inspect(reason)
 end

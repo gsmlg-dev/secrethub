@@ -55,10 +55,19 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     agent_id = Keyword.get(opts, :agent_id)
     conn_mod = Keyword.get(opts, :connection_mod, SecretHub.Agent.Connection)
 
+    # Initialize persistent watermark from disk if present
+    persistent_wm =
+      case AtomicStore.read_persistent_watermark(base_dir) do
+        {:ok, wm} -> wm
+        _ -> nil
+      end
+
     # Initialize from current manifest and files on disk if they exist and are valid
+    disk_validation = BundleValidator.validate_disk_bundle(Path.join(base_dir, "current"))
+
     state =
-      case BundleValidator.validate_disk_bundle(Path.join(base_dir, "current")) do
-        {:ok, validated} ->
+      case {persistent_wm, disk_validation} do
+        {nil, {:ok, validated}} ->
           %__MODULE__{
             state_dir: state_dir,
             base_dir: base_dir,
@@ -70,6 +79,54 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
             lkg_bundle_sha256: validated.bundle_sha256,
             last_applied_at: parse_datetime(validated.this_update),
             status: "applied"
+          }
+
+        {%{} = wm, {:ok, validated}} ->
+          wm_gen = wm["highest_seen_generation"] || 0
+          wm_crl = wm["highest_seen_crl_number"] || 0
+
+          if validated.generation < wm_gen do
+            # Rollback detected: current points to an older generation than persistent watermark
+            %__MODULE__{
+              state_dir: state_dir,
+              base_dir: base_dir,
+              agent_id: agent_id,
+              connection_mod: conn_mod,
+              lkg_generation: wm_gen,
+              lkg_crl_number: wm_crl,
+              lkg_ca_fingerprint: wm["pinned_ca_fingerprint"],
+              lkg_bundle_sha256: wm["last_bundle_sha256"],
+              status: "error",
+              last_error_code: :generation_rollback,
+              last_error_detail:
+                "disk generation #{validated.generation} is lower than persistent watermark #{wm_gen}"
+            }
+          else
+            %__MODULE__{
+              state_dir: state_dir,
+              base_dir: base_dir,
+              agent_id: agent_id,
+              connection_mod: conn_mod,
+              lkg_generation: max(validated.generation, wm_gen),
+              lkg_crl_number: max(validated.crl_number, wm_crl),
+              lkg_ca_fingerprint: validated.ca_fingerprint || wm["pinned_ca_fingerprint"],
+              lkg_bundle_sha256: validated.bundle_sha256 || wm["last_bundle_sha256"],
+              last_applied_at: parse_datetime(validated.this_update),
+              status: "applied"
+            }
+          end
+
+        {%{} = wm, _} ->
+          %__MODULE__{
+            state_dir: state_dir,
+            base_dir: base_dir,
+            agent_id: agent_id,
+            connection_mod: conn_mod,
+            lkg_generation: wm["highest_seen_generation"] || 0,
+            lkg_crl_number: wm["highest_seen_crl_number"] || 0,
+            lkg_ca_fingerprint: wm["pinned_ca_fingerprint"],
+            lkg_bundle_sha256: wm["last_bundle_sha256"],
+            status: "initializing"
           }
 
         _ ->

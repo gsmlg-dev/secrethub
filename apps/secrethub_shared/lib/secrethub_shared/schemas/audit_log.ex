@@ -267,6 +267,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "pki.client_auth.certificate_issued",
       "pki.client_auth.certificate_revoked",
       "pki.client_auth.crl_published",
+      "pki.client_auth.agent_receipt_recorded",
       # Vault lifecycle events
       "vault_started",
       "vault_initialized",

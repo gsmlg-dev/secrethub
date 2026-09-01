@@ -297,8 +297,10 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
       }
     }
 
-    Audit.log_event(attrs)
-    :ok
+    case Audit.log_event(attrs) do
+      {:ok, _} -> :ok
+      {:error, reason} -> Repo.rollback({:audit_failed, reason})
+    end
   end
 
   defp record_identity_disabled_audit(identity, revoked_count, reason, actor) do
@@ -323,7 +325,9 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
       }
     }
 
-    Audit.log_event(attrs)
-    :ok
+    case Audit.log_event(attrs) do
+      {:ok, _} -> :ok
+      {:error, reason} -> Repo.rollback({:audit_failed, reason})
+    end
   end
 end

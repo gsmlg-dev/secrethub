@@ -48,6 +48,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
          :ok <- publish_generation_dir(tmp_dir, gen_dir, manifest),
          :ok <- fsync_dir(generations_dir),
          :ok <- switch_symlink(base_dir, generation),
+         :ok <- write_and_fsync_watermark(base_dir, manifest),
          :ok <- fsync_dir(base_dir) do
       # Best effort pruning: log warning on error but do not fail published bundle
       _ = prune_old_generations(base_dir, generations_dir)
@@ -61,6 +62,28 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     else
       {:error, reason} ->
         File.rm_rf(tmp_dir)
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Reads the persistent watermark from `<base_dir>/watermark.json`.
+  """
+  @spec read_persistent_watermark(Path.t()) :: {:ok, map()} | {:error, :not_found | term()}
+  def read_persistent_watermark(base_dir) do
+    wm_path = Path.join(base_dir, "watermark.json")
+
+    case File.read(wm_path) do
+      {:ok, content} ->
+        case Jason.decode(content) do
+          {:ok, wm} -> {:ok, wm}
+          {:error, reason} -> {:error, {:invalid_watermark_json, reason}}
+        end
+
+      {:error, :enoent} ->
+        {:error, :not_found}
+
+      {:error, reason} ->
         {:error, reason}
     end
   end
@@ -88,6 +111,35 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   end
 
   # Helpers
+
+  defp write_and_fsync_watermark(base_dir, manifest) do
+    watermark = %{
+      "highest_seen_generation" => manifest["generation"],
+      "highest_seen_crl_number" => manifest["crl_number"],
+      "pinned_ca_fingerprint" => manifest["ca_fingerprint"],
+      "last_bundle_sha256" => manifest["bundle_sha256"],
+      "updated_at" => manifest["applied_at"]
+    }
+
+    tmp_id = ".watermark.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+    tmp_path = Path.join(base_dir, tmp_id)
+    target_path = Path.join(base_dir, "watermark.json")
+
+    case Jason.encode(watermark, pretty: true) do
+      {:ok, json} ->
+        with :ok <- write_and_fsync_file(tmp_path, json),
+             :ok <- File.rename(tmp_path, target_path) do
+          :ok
+        else
+          {:error, reason} ->
+            File.rm(tmp_path)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
 
   defp write_and_fsync_file(path, content) when is_binary(content) do
     with :ok <- File.write(path, content),
@@ -130,25 +182,17 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
   defp publish_generation_dir(tmp_dir, gen_dir, manifest) do
     if File.exists?(gen_dir) do
-      # If gen_dir already exists, check if it's identical (immutable)
-      case File.read(Path.join(gen_dir, "manifest.json")) do
-        {:ok, content} ->
-          case Jason.decode(content) do
-            {:ok, existing_manifest} ->
-              if existing_manifest["bundle_sha256"] == manifest["bundle_sha256"] do
-                File.rm_rf(tmp_dir)
-                :ok
-              else
-                File.rm_rf(tmp_dir)
-                {:error, :generation_conflict}
-              end
+      # If gen_dir already exists, thoroughly verify stored ca.crt, crl.pem and manifest
+      mf_path = Path.join(gen_dir, "manifest.json")
 
-            _ ->
-              File.rm_rf(tmp_dir)
-              {:error, :corrupted_existing_generation}
-          end
-
-        {:error, _} ->
+      with {:ok, mf_json} <- File.read(mf_path),
+           {:ok, existing_manifest} <- Jason.decode(mf_json),
+           true <- existing_manifest["bundle_sha256"] == manifest["bundle_sha256"],
+           {:ok, _validated} <- SecretHub.Agent.PKI.BundleValidator.validate_disk_bundle(gen_dir) do
+        File.rm_rf(tmp_dir)
+        :ok
+      else
+        _ ->
           File.rm_rf(tmp_dir)
           {:error, :corrupted_existing_generation}
       end

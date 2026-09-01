@@ -473,7 +473,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
 
     case Audit.log_event(attrs) do
       {:ok, _} -> :ok
-      {:error, _} -> :ok
+      {:error, reason} -> {:error, {:audit_failed, reason}}
     end
   end
 
@@ -501,7 +501,9 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
       }
     }
 
-    Audit.log_event(attrs)
-    :ok
+    case Audit.log_event(attrs) do
+      {:ok, _} -> :ok
+      {:error, reason} -> Repo.rollback({:audit_failed, reason})
+    end
   end
 end

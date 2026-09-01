@@ -128,7 +128,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
       Map.get(attrs, "max_ttl_seconds") || Map.get(attrs, :max_ttl_seconds) ||
         @default_max_ttl_seconds
 
-    with :ok <- validate_ca_validity_params(ca_validity_days, default_ttl, max_ttl) do
+    with :ok <- validate_ca_validity_params(key_algo, ca_validity_days, default_ttl, max_ttl) do
       Repo.transaction(fn ->
         # Check if authority already exists
         existing =
@@ -401,8 +401,14 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
     :crypto.hash(:sha256, "test-encryption-key-for-pki-testing")
   end
 
-  defp validate_ca_validity_params(ca_validity_days, default_ttl, max_ttl) do
+  @allowed_key_algorithms ["ecdsa_p384", "rsa_4096"]
+
+  defp validate_ca_validity_params(key_algo, ca_validity_days, default_ttl, max_ttl) do
     cond do
+      key_algo not in @allowed_key_algorithms ->
+        {:error,
+         {:invalid_key_algorithm, "key_algorithm must be either 'ecdsa_p384' or 'rsa_4096'"}}
+
       not is_integer(ca_validity_days) or ca_validity_days < 30 or ca_validity_days > 3650 ->
         {:error,
          {:invalid_ca_validity_days,
@@ -447,7 +453,9 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
       }
     }
 
-    Audit.log_event(attrs)
-    :ok
+    case Audit.log_event(attrs) do
+      {:ok, _} -> :ok
+      {:error, reason} -> Repo.rollback({:audit_failed, reason})
+    end
   end
 end
