@@ -203,6 +203,29 @@ defmodule SecretHub.Agent.PKIBundleTest do
       refute File.exists?(Path.join(generations_dir, "1"))
       refute File.exists?(Path.join(generations_dir, "2"))
     end
+
+    test "rejects symlinked base_dir", %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      real_dir = Path.join(tmp_dir, "real_pki")
+      File.mkdir_p!(real_dir)
+      symlink_base = Path.join(tmp_dir, "symlink_pki")
+      File.ln_s(real_dir, symlink_base)
+
+      assert {:error, {:symlink_directory_disallowed, ^symlink_base}} =
+               AtomicStore.write_bundle(symlink_base, bundle, now: now)
+    end
+
+    test "rejects symlinked generation directory", %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      base_dir = Path.join(tmp_dir, "pki_sym_gen")
+      gen_dir = Path.join([base_dir, "generations", "1"])
+      File.mkdir_p!(Path.join(base_dir, "generations"))
+
+      fake_target = Path.join(tmp_dir, "fake_target")
+      File.mkdir_p!(fake_target)
+      File.ln_s(fake_target, gen_dir)
+
+      assert {:error, {:symlink_directory_disallowed, ^gen_dir}} =
+               AtomicStore.write_bundle(base_dir, bundle, now: now)
+    end
   end
 
   describe "TrustBundleManager GenServer & Monotonicity" do
@@ -456,6 +479,123 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert status_repaired.needs_repair == false
       assert status_repaired.status == "applied"
       assert status_repaired.current_generation == 2
+    end
+
+    test "live disk rollback while manager is running detects mismatch and re-applies", %{
+      tmp_dir: tmp_dir,
+      bundle: gen1_bundle,
+      ca_cert: ca_cert,
+      ca_key: ca_key,
+      now: now
+    } do
+      bundle_dir = Path.join(tmp_dir, "pki/client-auth-live")
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-live-repair-test",
+          name: :test_live_repair_manager
+        )
+
+      # 1. Install generation 1
+      assert {:ok, _} = TrustBundleManager.process_bundle(manager, gen1_bundle, now: now)
+
+      # 2. Install generation 2
+      this_update = DateTime.add(now, -100, :second)
+      next_update = DateTime.add(now, 48 * 3600, :second)
+
+      crl2 =
+        X509.CRL.new(
+          [],
+          ca_cert,
+          ca_key,
+          this_update: this_update,
+          next_update: next_update,
+          extensions: [crl_number: X509.CRL.Extension.crl_number(2)]
+        )
+
+      crl2_pem = X509.CRL.to_pem(crl2)
+      crl2_der = X509.CRL.to_der(crl2)
+      crl2_hash = :crypto.hash(:sha256, crl2_der) |> Base.encode16(case: :lower)
+
+      gen2_bundle =
+        gen1_bundle
+        |> Map.put("generation", 2)
+        |> Map.put("crl_number", 2)
+        |> Map.put("this_update", DateTime.to_iso8601(this_update))
+        |> Map.put("next_update", DateTime.to_iso8601(next_update))
+        |> Map.put("crl_pem", crl2_pem)
+        |> Map.put("crl_der_sha256", crl2_hash)
+
+      transcript2 =
+        [
+          gen2_bundle["schema_version"],
+          gen2_bundle["authority"],
+          gen2_bundle["generation"],
+          gen2_bundle["ca_fingerprint"],
+          gen2_bundle["crl_number"],
+          gen2_bundle["crl_der_sha256"],
+          gen2_bundle["this_update"],
+          gen2_bundle["next_update"],
+          gen2_bundle["ca_bundle_pem"],
+          gen2_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      bundle2_hash = :crypto.hash(:sha256, transcript2) |> Base.encode16(case: :lower)
+      gen2_bundle = Map.put(gen2_bundle, "bundle_sha256", bundle2_hash)
+
+      assert {:ok, _} = TrustBundleManager.process_bundle(manager, gen2_bundle, now: now)
+
+      # 3. While manager is still running, manually tamper/rollback current symlink to generation 1
+      current_symlink = Path.join(bundle_dir, "current")
+      File.rm(current_symlink)
+      File.ln_s("generations/1", current_symlink)
+
+      # 4. Push generation 2 bundle again. Manager must detect that disk has gen 1, NOT take the no-op path, and re-apply gen 2!
+      assert {:ok, receipt} = TrustBundleManager.process_bundle(manager, gen2_bundle, now: now)
+      assert receipt["status"] == "applied"
+      assert receipt["generation"] == 2
+
+      # 5. Verify current symlink has been fixed to generation 2
+      assert {:ok, target} = File.read_link(current_symlink)
+      assert String.ends_with?(target, "2")
+    end
+
+    test "watermark is persisted when valid disk bundle exists but watermark is absent on init",
+         %{
+           tmp_dir: tmp_dir,
+           bundle: bundle,
+           now: now
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki/client-auth-no-wm")
+      # Write disk bundle directly with AtomicStore
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, bundle, now: now)
+
+      # Delete the watermark to simulate missing watermark
+      wm_path = Path.join(bundle_dir, "watermark.json")
+      File.rm(wm_path)
+      refute File.exists?(wm_path)
+
+      # Start TrustBundleManager
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-no-wm-test",
+          name: :test_no_wm_manager
+        )
+
+      # Watermark must now exist
+      assert File.exists?(wm_path)
+      assert {:ok, wm} = AtomicStore.read_persistent_watermark(bundle_dir)
+      assert wm["highest_seen_generation"] == 1
+
+      status = TrustBundleManager.status(manager)
+      assert status.status == "applied"
+      assert status.current_generation == 1
     end
   end
 end

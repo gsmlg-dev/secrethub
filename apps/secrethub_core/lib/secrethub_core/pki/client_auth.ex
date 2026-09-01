@@ -103,7 +103,7 @@ defmodule SecretHub.Core.PKI.ClientAuth do
     Issuer.issue_certificate(identity_id, csr_pem, request_id, opts)
   end
 
-  def issue_certificate(identity_id, csr_pem, request_id) when is_binary(csr_pem) do
+  def issue_certificate(identity_id, csr_pem, request_id) do
     Issuer.issue_certificate(identity_id, csr_pem, request_id, [])
   end
 

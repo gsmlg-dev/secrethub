@@ -212,7 +212,9 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           }
 
         {{:error, :not_found}, {:ok, validated}} ->
-          # No watermark yet, but valid disk exists
+          # No watermark yet, but valid disk exists — persist watermark
+          _ = AtomicStore.write_watermark(base_dir, validated)
+
           %__MODULE__{
             state_dir: state_dir,
             base_dir: base_dir,
@@ -352,12 +354,24 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
         !state.needs_repair and
           state.installed_generation == validated.generation and
           state.installed_bundle_sha256 == validated.bundle_sha256 and
-          match?(
-            {:ok, _},
-            BundleValidator.validate_disk_bundle(Path.join(state.base_dir, "current"), val_opts)
-          )
+          case BundleValidator.validate_disk_bundle(
+                 Path.join(state.base_dir, "current"),
+                 val_opts
+               ) do
+            {:ok, disk_val} ->
+              disk_val.generation == validated.generation and
+                disk_val.bundle_sha256 == validated.bundle_sha256 and
+                disk_val.crl_number == validated.crl_number and
+                disk_val.ca_fingerprint == validated.ca_fingerprint
+
+            _ ->
+              false
+          end
 
       if !force and is_disk_already_matching do
+        # Repair watermark if absent or behind the current validated state
+        _ = maybe_repair_watermark(state.base_dir, validated)
+
         # Validated no-op branch: disk already has the exact bundle.
         # Still submit applied receipt to ensure Core convergence!
         new_state = %{
@@ -571,6 +585,25 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     case DateTime.from_iso8601(iso_str) do
       {:ok, dt, _} -> dt
       _ -> nil
+    end
+  end
+
+  defp maybe_repair_watermark(base_dir, validated) do
+    case AtomicStore.read_persistent_watermark(base_dir) do
+      {:ok, wm} ->
+        wm_gen = wm["highest_seen_generation"] || 0
+
+        if wm_gen < validated.generation do
+          AtomicStore.write_watermark(base_dir, validated)
+        else
+          :ok
+        end
+
+      {:error, :not_found} ->
+        AtomicStore.write_watermark(base_dir, validated)
+
+      _ ->
+        :ok
     end
   end
 end

@@ -240,13 +240,29 @@ func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 	}
 
 	tmpWMPath := filepath.Join(wmDir, fmt.Sprintf(".watermark.tmp-%d", time.Now().UnixNano()))
-	if err := os.WriteFile(tmpWMPath, wmBytes, 0640); err != nil {
+	tmpFile, err := os.OpenFile(tmpWMPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0640)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create watermark temp file: %w", err)
+	}
+	if _, err := tmpFile.Write(wmBytes); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpWMPath)
 		return nil, fmt.Errorf("failed to write watermark temp file: %w", err)
 	}
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpWMPath)
+		return nil, fmt.Errorf("failed to sync watermark temp file: %w", err)
+	}
+	tmpFile.Close()
 
 	if err := os.Rename(tmpWMPath, watermarkPath); err != nil {
 		_ = os.Remove(tmpWMPath)
 		return nil, fmt.Errorf("failed to commit watermark: %w", err)
+	}
+
+	if err := syncDir(wmDir); err != nil {
+		return nil, fmt.Errorf("failed to sync watermark directory: %w", err)
 	}
 
 	v.snapshot.Store(snapshot)
@@ -601,4 +617,13 @@ func formatSerial(s *big.Int) string {
 		formatted = append(formatted, hex[i:i+2])
 	}
 	return strings.Join(formatted, ":")
+}
+
+func syncDir(path string) error {
+	d, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }

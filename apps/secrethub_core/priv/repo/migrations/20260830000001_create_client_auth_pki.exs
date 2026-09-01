@@ -88,7 +88,7 @@ defmodule SecretHub.Core.Repo.Migrations.CreateClientAuthPki do
       add(:request_id, :uuid, null: false)
       add(:identity_id, references(:client_auth_identities, type: :binary_id, on_delete: :restrict), null: false)
       add(:csr_sha256, :binary, null: false)
-      add(:requested_ttl_seconds, :integer, null: false)
+      add(:requested_ttl_seconds, :integer)
       add(:certificate_id, references(:certificates, type: :binary_id, on_delete: :delete_all), null: false)
 
       timestamps(type: :utc_datetime)

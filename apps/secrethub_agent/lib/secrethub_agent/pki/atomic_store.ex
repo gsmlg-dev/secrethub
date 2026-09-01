@@ -73,18 +73,38 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         {:error, {:symlink_directory_disallowed, dir_path}}
 
       {:ok, %File.Stat{type: :directory}} ->
-        File.chmod(dir_path, 0o750)
+        set_directory_permissions(dir_path)
 
       {:ok, %File.Stat{type: _}} ->
         {:error, {:not_a_directory, dir_path}}
 
       {:error, :enoent} ->
-        with :ok <- File.mkdir_p(dir_path) do
-          File.chmod(dir_path, 0o750)
+        parent = Path.dirname(dir_path)
+
+        with :ok <-
+               (if parent != dir_path and not File.dir?(parent) do
+                  ensure_secure_directory(parent)
+                else
+                  :ok
+                end),
+             :ok <- File.mkdir(dir_path) do
+          set_directory_permissions(dir_path)
         end
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp set_directory_permissions(dir_path) do
+    case File.lstat(dir_path) do
+      {:ok, %File.Stat{mode: current_mode}} ->
+        # Preserve setgid bit (0o2000) if already set
+        setgid_bit = Bitwise.band(current_mode, 0o2000)
+        File.chmod(dir_path, Bitwise.bor(0o750, setgid_bit))
+
+      _ ->
+        File.chmod(dir_path, 0o750)
     end
   end
 
@@ -136,6 +156,24 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @doc """
+  Writes or repairs the persistent watermark from validated bundle metadata.
+  """
+  @spec write_watermark(Path.t(), map()) :: :ok | {:error, term()}
+  def write_watermark(base_dir, validated) when is_map(validated) do
+    manifest = %{
+      "generation" => Map.get(validated, :generation) || Map.get(validated, "generation"),
+      "crl_number" => Map.get(validated, :crl_number) || Map.get(validated, "crl_number"),
+      "ca_fingerprint" =>
+        Map.get(validated, :ca_fingerprint) || Map.get(validated, "ca_fingerprint"),
+      "bundle_sha256" =>
+        Map.get(validated, :bundle_sha256) || Map.get(validated, "bundle_sha256"),
+      "applied_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+    }
+
+    write_and_fsync_watermark(base_dir, manifest)
   end
 
   # Helpers
@@ -220,30 +258,45 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   end
 
   defp publish_generation_dir(tmp_dir, gen_dir, manifest) do
-    if File.exists?(gen_dir) do
-      # If gen_dir already exists, thoroughly verify stored ca.crt, crl.pem and manifest
-      mf_path = Path.join(gen_dir, "manifest.json")
-
-      with {:ok, mf_json} <- File.read(mf_path),
-           {:ok, existing_manifest} <- Jason.decode(mf_json),
-           true <- existing_manifest["bundle_sha256"] == manifest["bundle_sha256"],
-           {:ok, _validated} <- SecretHub.Agent.PKI.BundleValidator.validate_disk_bundle(gen_dir) do
+    case File.lstat(gen_dir) do
+      {:ok, %File.Stat{type: :symlink}} ->
         File.rm_rf(tmp_dir)
-        :ok
-      else
-        _ ->
-          File.rm_rf(tmp_dir)
-          {:error, :corrupted_existing_generation}
-      end
-    else
-      case File.rename(tmp_dir, gen_dir) do
-        :ok ->
-          :ok
+        {:error, {:symlink_directory_disallowed, gen_dir}}
 
-        {:error, reason} ->
+      {:ok, %File.Stat{type: :directory}} ->
+        # If gen_dir already exists as a real directory, verify stored content
+        mf_path = Path.join(gen_dir, "manifest.json")
+
+        with {:ok, mf_json} <- File.read(mf_path),
+             {:ok, existing_manifest} <- Jason.decode(mf_json),
+             true <- existing_manifest["bundle_sha256"] == manifest["bundle_sha256"],
+             {:ok, _validated} <-
+               SecretHub.Agent.PKI.BundleValidator.validate_disk_bundle(gen_dir) do
           File.rm_rf(tmp_dir)
-          {:error, reason}
-      end
+          :ok
+        else
+          _ ->
+            File.rm_rf(tmp_dir)
+            {:error, :corrupted_existing_generation}
+        end
+
+      {:ok, %File.Stat{type: _other}} ->
+        File.rm_rf(tmp_dir)
+        {:error, {:not_a_directory, gen_dir}}
+
+      {:error, :enoent} ->
+        case File.rename(tmp_dir, gen_dir) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            File.rm_rf(tmp_dir)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        File.rm_rf(tmp_dir)
+        {:error, reason}
     end
   end
 
@@ -276,7 +329,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
           {:error, reason} -> {:error, reason}
         end
 
-      {:error, reason} when reason in [:einval, :enotsup, :eisdir, :ebadf, :eacces] ->
+      {:error, reason} when reason in [:einval, :enotsup, :eisdir, :ebadf] ->
         :ok
 
       {:error, reason} ->

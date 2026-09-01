@@ -965,14 +965,10 @@ service.example.net {
                 /var/lib/secrethub/pki/client-auth/current/ca.crt
 
             verifier secrethub_client_auth {
-                bundle_dir /var/lib/secrethub/pki/client-auth/current
-                ca_file /var/lib/secrethub/pki/client-auth/current/ca.crt
-                crl_file /var/lib/secrethub/pki/client-auth/current/crl.pem
-                manifest_file /var/lib/secrethub/pki/client-auth/current/manifest.json
-                watermark_file /var/lib/secrethub/pki/client-auth/watermark.json
+                bundle_dir /var/lib/secrethub/pki/client-auth
+                watermark_file /var/lib/caddy/secrethub-client-auth/watermark.json
                 expected_ca_fingerprint "8792bc0fa20e137b26ac4467d91c67926b86edee0352534a5b71f6fd8aa724b5"
-                reload_interval 5s
-                clock_skew 5m
+                poll_interval 5s
             }
         }
     }

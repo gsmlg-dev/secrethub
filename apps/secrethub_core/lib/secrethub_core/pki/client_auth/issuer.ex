@@ -71,10 +71,26 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
 
   # Helper functions
 
+  defp transact_issuance(_identity_id, csr_pem, _request_id, _requested_ttl, _now, _actor)
+       when not is_binary(csr_pem) or csr_pem == <<>> do
+    {:error, :invalid_csr}
+  end
+
+  defp transact_issuance(_identity_id, csr_pem, _request_id, _requested_ttl, _now, _actor)
+       when byte_size(csr_pem) > 65_536 do
+    {:error, :invalid_csr}
+  end
+
   defp transact_issuance(identity_id, csr_pem, request_id, requested_ttl, now, actor) do
     csr_sha256 = :crypto.hash(:sha256, csr_pem)
 
     Repo.transaction(fn ->
+      # Serialize concurrent requests with the same request_id
+      Repo.query!(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",
+        ["secrethub:pki:issuance:" <> request_id]
+      )
+
       existing_request =
         Repo.one(
           from(r in ClientAuthIssuanceRequest,
@@ -93,7 +109,6 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
           request_id,
           requested_ttl,
           now,
-          nil,
           actor
         )
       end
@@ -101,8 +116,21 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
   end
 
   defp handle_replayed_request(request, identity_id, csr_sha256, requested_ttl) do
-    ttl_match =
-      is_nil(requested_ttl) or request.requested_ttl_seconds == requested_ttl
+    effective_ttl =
+      if is_nil(requested_ttl) do
+        authority =
+          Repo.one(
+            from(a in ClientAuthAuthority,
+              where: a.slug == "client-auth" and a.status == "active"
+            )
+          )
+
+        if authority, do: authority.default_ttl_seconds, else: nil
+      else
+        requested_ttl
+      end
+
+    ttl_match = not is_nil(effective_ttl) and request.requested_ttl_seconds == effective_ttl
 
     if request.identity_id == identity_id and
          :crypto.hash_equals(request.csr_sha256, csr_sha256) and
@@ -128,11 +156,10 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
          request_id,
          requested_ttl,
          now,
-         authority,
          actor
        ) do
-    with %ClientAuthIdentity{status: "active"} = identity <- lock_identity(identity_id),
-         %ClientAuthAuthority{status: "active"} = authority <- authority || lock_authority(),
+    with {:ok, authority} <- ensure_authority(),
+         %ClientAuthIdentity{status: "active"} = identity <- lock_identity(identity_id),
          {:ok, ttl_seconds} <- compute_ttl(requested_ttl, authority),
          {:ok, ca_key} <- decrypt_ca_key(authority.ca_certificate),
          :ok <- validate_ca(authority, authority.ca_certificate, ca_key, now, ttl_seconds),
@@ -220,7 +247,6 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
         |> Certificate.changeset(cert_attrs)
         |> Repo.insert()
 
-      # Record idempotency request
       stored_requested_ttl = requested_ttl || authority.default_ttl_seconds
 
       {:ok, _request_record} =
@@ -247,6 +273,14 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
       nil -> Repo.rollback(:identity_not_found)
       %ClientAuthIdentity{status: "disabled"} -> Repo.rollback(:identity_disabled)
       {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp ensure_authority do
+    case lock_authority() do
+      nil -> {:error, :authority_not_active}
+      %ClientAuthAuthority{status: "active"} = a -> {:ok, a}
+      _ -> {:error, :authority_not_active}
     end
   end
 

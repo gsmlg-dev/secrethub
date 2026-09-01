@@ -280,6 +280,68 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert {:error, :identity_disabled} =
                ClientAuth.issue_certificate(identity.id, csr_pem, request_id)
     end
+
+    test "rejects non-binary, nil, or empty CSR", %{identity: identity} do
+      request_id = Ecto.UUID.generate()
+      assert {:error, :invalid_csr} = ClientAuth.issue_certificate(identity.id, nil, request_id)
+      assert {:error, :invalid_csr} = ClientAuth.issue_certificate(identity.id, "", request_id)
+      assert {:error, :invalid_csr} = ClientAuth.issue_certificate(identity.id, 12345, request_id)
+      assert {:error, :invalid_csr} = ClientAuth.issue_certificate(identity.id, %{}, request_id)
+    end
+
+    test "rejects oversized CSR (>64KB)", %{identity: identity} do
+      oversized = String.duplicate("A", 65_537)
+      request_id = Ecto.UUID.generate()
+
+      assert {:error, :invalid_csr} =
+               ClientAuth.issue_certificate(identity.id, oversized, request_id)
+    end
+
+    test "strictly compares TTL on replay: omitted vs explicit is a conflict", %{
+      identity: identity
+    } do
+      client_key = X509.PrivateKey.new_ec(:secp256r1)
+      csr_pem = client_key |> X509.CSR.new("/CN=client-ttl-test") |> X509.CSR.to_pem()
+      request_id = Ecto.UUID.generate()
+
+      # First request with explicit TTL 3600
+      assert {:ok, first} =
+               ClientAuth.issue_certificate(identity.id, csr_pem, request_id, ttl_seconds: 3600)
+
+      assert first.replayed == false
+
+      # Replay with omitted TTL -> MUST conflict
+      assert {:error, :idempotency_conflict} =
+               ClientAuth.issue_certificate(identity.id, csr_pem, request_id)
+
+      # Replay with same explicit TTL -> succeeds
+      assert {:ok, replayed} =
+               ClientAuth.issue_certificate(identity.id, csr_pem, request_id, ttl_seconds: 3600)
+
+      assert replayed.replayed == true
+    end
+
+    test "strictly compares TTL on replay: omitted vs omitted succeeds", %{identity: identity} do
+      client_key = X509.PrivateKey.new_ec(:secp256r1)
+      csr_pem = client_key |> X509.CSR.new("/CN=client-ttl-nil") |> X509.CSR.to_pem()
+      request_id = Ecto.UUID.generate()
+
+      # First request with default (omitted) TTL
+      assert {:ok, first} =
+               ClientAuth.issue_certificate(identity.id, csr_pem, request_id)
+
+      assert first.replayed == false
+
+      # Replay with omitted TTL -> succeeds
+      assert {:ok, replayed} =
+               ClientAuth.issue_certificate(identity.id, csr_pem, request_id)
+
+      assert replayed.replayed == true
+
+      # Replay with explicit TTL -> MUST conflict
+      assert {:error, :idempotency_conflict} =
+               ClientAuth.issue_certificate(identity.id, csr_pem, request_id, ttl_seconds: 7200)
+    end
   end
 
   describe "Revocation & CRL Management" do
@@ -484,6 +546,59 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       # Both tasks succeed or return clean business logic results without deadlock
       assert match?({:ok, _}, res1) or match?({:error, :identity_disabled}, res1)
       assert match?({:ok, _}, res2)
+    end
+
+    test "concurrent identical requests with same request_id are serialized and succeed idempotently",
+         %{identity: identity} do
+      key = X509.PrivateKey.new_ec(:secp256r1)
+      csr_pem = key |> X509.CSR.new("/CN=concurrent-same-req") |> X509.CSR.to_pem()
+      request_id = Ecto.UUID.generate()
+
+      # Launch 4 concurrent requests with the exact same request_id and payload
+      tasks =
+        for _ <- 1..4 do
+          Task.async(fn ->
+            ClientAuth.issue_certificate(identity.id, csr_pem, request_id, ttl_seconds: 3600)
+          end)
+        end
+
+      results = Task.await_many(tasks, 5_000)
+
+      # All 4 must succeed
+      for res <- results do
+        assert match?({:ok, _}, res)
+      end
+
+      # Exactly one should have replayed: false, the rest replayed: true
+      non_replayed_count =
+        Enum.count(results, fn {:ok, r} -> r.replayed == false end)
+
+      replayed_count =
+        Enum.count(results, fn {:ok, r} -> r.replayed == true end)
+
+      assert non_replayed_count == 1
+      assert replayed_count == 3
+    end
+
+    test "concurrent conflicting requests with same request_id return idempotency conflict", %{
+      identity: identity
+    } do
+      key1 = X509.PrivateKey.new_ec(:secp256r1)
+      key2 = X509.PrivateKey.new_ec(:secp256r1)
+      csr1 = key1 |> X509.CSR.new("/CN=concurrent-conflict-1") |> X509.CSR.to_pem()
+      csr2 = key2 |> X509.CSR.new("/CN=concurrent-conflict-2") |> X509.CSR.to_pem()
+      request_id = Ecto.UUID.generate()
+
+      task1 = Task.async(fn -> ClientAuth.issue_certificate(identity.id, csr1, request_id) end)
+      task2 = Task.async(fn -> ClientAuth.issue_certificate(identity.id, csr2, request_id) end)
+
+      res1 = Task.await(task1, 5_000)
+      res2 = Task.await(task2, 5_000)
+
+      # One must succeed, and the other must return idempotency_conflict (no crash or unhandled constraint violation)
+      results = [res1, res2]
+      assert Enum.count(results, fn r -> match?({:ok, _}, r) end) == 1
+      assert Enum.count(results, fn r -> match?({:error, :idempotency_conflict}, r) end) == 1
     end
   end
 

@@ -51,6 +51,18 @@ func (m *SecretHubClientAuth) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				m.SetHeaders = &val
 
+			case "watermark_file":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				m.WatermarkFile = d.Val()
+
+			case "expected_ca_fingerprint":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				m.ExpectedCAFingerprint = d.Val()
+
 			default:
 				return d.Errf("unrecognized subdirective: %s", d.Val())
 			}
@@ -79,6 +91,18 @@ func (tv *TLSVerifier) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 					return d.Errf("invalid poll_interval: %v", err)
 				}
 				tv.PollInterval = caddy.Duration(dur)
+
+			case "watermark_file":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				tv.WatermarkFile = d.Val()
+
+			case "expected_ca_fingerprint":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				tv.ExpectedCAFingerprint = d.Val()
 
 			default:
 				return d.Errf("unrecognized subdirective: %s", d.Val())

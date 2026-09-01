@@ -36,7 +36,6 @@ defmodule SecretHub.Shared.Schemas.ClientAuthIssuanceRequest do
       :request_id,
       :identity_id,
       :csr_sha256,
-      :requested_ttl_seconds,
       :certificate_id
     ])
     |> validate_csr_sha256()
