@@ -33,7 +33,7 @@ var (
 	ErrNoClientAuthEKU         = errors.New("client certificate does not permit clientAuth key usage")
 	ErrInvalidExtKeyUsage      = errors.New("client certificate contains unauthorized extended key usages")
 	ErrInvalidKeyUsage         = errors.New("client certificate key usage must be digitalSignature only and marked critical")
-	ErrMissingBasicConstraints = errors.New("client certificate must contain critical BasicConstraints CA=false")
+	ErrMissingBasicConstraints = errors.New("client certificate must contain BasicConstraints CA=false")
 	ErrInvalidOrganization     = errors.New("client certificate organization must be 'SecretHub Client Authentication'")
 	ErrInvalidCommonName       = errors.New("client certificate CN must be a valid canonical UUID")
 	ErrExtraSubjectAttributes  = errors.New("client certificate contains unauthorized subject RDN attributes")
