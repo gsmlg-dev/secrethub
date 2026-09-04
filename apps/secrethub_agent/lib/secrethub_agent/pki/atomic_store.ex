@@ -67,46 +67,104 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
-  defp ensure_secure_directory(dir_path) do
-    case File.lstat(dir_path) do
-      {:ok, %File.Stat{type: :symlink}} ->
-        {:error, {:symlink_directory_disallowed, dir_path}}
+  @doc """
+  Ensures that the directory and all ancestor path components exist,
+  are genuine directories (never symlinks), and have permissions 0o750.
+  """
+  @spec ensure_secure_directory(Path.t()) :: :ok | {:error, term()}
+  def ensure_secure_directory(dir_path) do
+    normalized = normalize_system_path(dir_path)
+    parts = Path.split(normalized)
 
-      {:ok, %File.Stat{type: :directory}} ->
-        set_directory_permissions(dir_path)
+    Enum.reduce_while(parts, {:ok, "/"}, fn
+      "/", {:ok, _acc} ->
+        {:cont, {:ok, "/"}}
 
-      {:ok, %File.Stat{type: _}} ->
-        {:error, {:not_a_directory, dir_path}}
+      part, {:ok, current} ->
+        next_path = Path.join(current, part)
 
-      {:error, :enoent} ->
-        parent = Path.dirname(dir_path)
+        case File.lstat(next_path) do
+          {:ok, %File.Stat{type: :symlink}} ->
+            {:halt, {:error, {:symlink_directory_disallowed, next_path}}}
 
-        with :ok <-
-               (if parent != dir_path and not File.dir?(parent) do
-                  ensure_secure_directory(parent)
-                else
-                  :ok
-                end),
-             :ok <- File.mkdir(dir_path) do
-          set_directory_permissions(dir_path)
+          {:ok, %File.Stat{type: :directory}} ->
+            set_directory_permissions(next_path)
+            {:cont, {:ok, next_path}}
+
+          {:ok, %File.Stat{type: _other}} ->
+            {:halt, {:error, {:not_a_directory, next_path}}}
+
+          {:error, :enoent} ->
+            case File.mkdir(next_path) do
+              :ok ->
+                set_directory_permissions(next_path)
+                {:cont, {:ok, next_path}}
+
+              {:error, reason} ->
+                {:halt, {:error, reason}}
+            end
+
+          {:error, reason} ->
+            {:halt, {:error, reason}}
+        end
+    end)
+    |> case do
+      {:ok, _} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @doc """
+  Normalizes system paths (such as macOS /var and /tmp symlinks to /private).
+  """
+  @spec normalize_system_path(Path.t()) :: Path.t()
+  def normalize_system_path(path) do
+    abs_path = Path.expand(path)
+
+    case :os.type() do
+      {:unix, :darwin} ->
+        cond do
+          String.starts_with?(abs_path, "/var/") ->
+            "/private" <> abs_path
+
+          abs_path == "/var" ->
+            "/private/var"
+
+          String.starts_with?(abs_path, "/tmp/") ->
+            "/private" <> abs_path
+
+          abs_path == "/tmp" ->
+            "/private/tmp"
+
+          String.starts_with?(abs_path, "/etc/") ->
+            "/private" <> abs_path
+
+          abs_path == "/etc" ->
+            "/private/etc"
+
+          true ->
+            abs_path
         end
 
-      {:error, reason} ->
-        {:error, reason}
+      _ ->
+        abs_path
     end
   end
 
   defp set_directory_permissions(dir_path) do
     case File.lstat(dir_path) do
       {:ok, %File.Stat{mode: current_mode}} ->
-        # Preserve setgid bit (0o2000) if already set
         setgid_bit = Bitwise.band(current_mode, 0o2000)
-        File.chmod(dir_path, Bitwise.bor(0o750, setgid_bit))
+        _ = File.chmod(dir_path, Bitwise.bor(0o750, setgid_bit))
+        :ok
 
       _ ->
-        File.chmod(dir_path, 0o750)
+        _ = File.chmod(dir_path, 0o750)
+        :ok
     end
   end
+
+  @sha256_hex ~r/\A[0-9a-f]{64}\z/
 
   @doc """
   Reads the persistent watermark from `<base_dir>/watermark.json`.
@@ -117,15 +175,15 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     case File.read(wm_path) do
       {:ok, content} ->
-        case Jason.decode(content) do
-          {:ok, %{"highest_seen_generation" => _} = wm} ->
-            {:ok, wm}
-
-          {:ok, _} ->
-            {:error, :invalid_watermark_schema}
+        with {:ok, %{} = wm} <- Jason.decode(content),
+             :ok <- validate_watermark_schema(wm) do
+          {:ok, wm}
+        else
+          {:error, %Jason.DecodeError{} = reason} ->
+            {:error, {:invalid_watermark_json, reason}}
 
           {:error, reason} ->
-            {:error, {:invalid_watermark_json, reason}}
+            {:error, reason}
         end
 
       {:error, :enoent} ->
@@ -133,6 +191,34 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp validate_watermark_schema(wm) do
+    gen = wm["highest_seen_generation"]
+    crl_num = wm["highest_seen_crl_number"]
+    fp = wm["pinned_ca_fingerprint"]
+    hash = wm["last_bundle_sha256"]
+    updated_at = wm["updated_at"]
+
+    cond do
+      not is_integer(gen) or gen < 0 ->
+        {:error, :invalid_watermark_schema}
+
+      not is_integer(crl_num) or crl_num < 0 ->
+        {:error, :invalid_watermark_schema}
+
+      not is_binary(fp) or not Regex.match?(@sha256_hex, fp) ->
+        {:error, :invalid_watermark_schema}
+
+      not is_binary(hash) or not Regex.match?(@sha256_hex, hash) ->
+        {:error, :invalid_watermark_schema}
+
+      not is_binary(updated_at) or updated_at == "" ->
+        {:error, :invalid_watermark_schema}
+
+      true ->
+        :ok
     end
   end
 
@@ -193,7 +279,8 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     case Jason.encode(watermark, pretty: true) do
       {:ok, json} ->
-        with :ok <- write_and_fsync_file(tmp_path, json),
+        with :ok <- ensure_secure_directory(base_dir),
+             :ok <- write_and_fsync_file(tmp_path, json),
              :ok <- File.rename(tmp_path, target_path) do
           :ok
         else

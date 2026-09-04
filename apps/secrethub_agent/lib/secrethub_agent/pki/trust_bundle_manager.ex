@@ -213,25 +213,48 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
         {{:error, :not_found}, {:ok, validated}} ->
           # No watermark yet, but valid disk exists — persist watermark
-          _ = AtomicStore.write_watermark(base_dir, validated)
+          case AtomicStore.write_watermark(base_dir, validated) do
+            :ok ->
+              %__MODULE__{
+                state_dir: state_dir,
+                base_dir: base_dir,
+                agent_id: agent_id,
+                connection_mod: conn_mod,
+                lkg_generation: validated.generation,
+                lkg_crl_number: validated.crl_number,
+                lkg_ca_fingerprint: validated.ca_fingerprint,
+                lkg_bundle_sha256: validated.bundle_sha256,
+                installed_generation: validated.generation,
+                installed_crl_number: validated.crl_number,
+                installed_ca_fingerprint: validated.ca_fingerprint,
+                installed_bundle_sha256: validated.bundle_sha256,
+                last_applied_at: parse_datetime(validated.this_update),
+                needs_repair: false,
+                status: "applied"
+              }
 
-          %__MODULE__{
-            state_dir: state_dir,
-            base_dir: base_dir,
-            agent_id: agent_id,
-            connection_mod: conn_mod,
-            lkg_generation: validated.generation,
-            lkg_crl_number: validated.crl_number,
-            lkg_ca_fingerprint: validated.ca_fingerprint,
-            lkg_bundle_sha256: validated.bundle_sha256,
-            installed_generation: validated.generation,
-            installed_crl_number: validated.crl_number,
-            installed_ca_fingerprint: validated.ca_fingerprint,
-            installed_bundle_sha256: validated.bundle_sha256,
-            last_applied_at: parse_datetime(validated.this_update),
-            needs_repair: false,
-            status: "applied"
-          }
+            {:error, reason} ->
+              Logger.error("Failed to write initial watermark: #{inspect(reason)}")
+
+              %__MODULE__{
+                state_dir: state_dir,
+                base_dir: base_dir,
+                agent_id: agent_id,
+                connection_mod: conn_mod,
+                lkg_generation: 0,
+                lkg_crl_number: 0,
+                lkg_ca_fingerprint: nil,
+                lkg_bundle_sha256: nil,
+                installed_generation: 0,
+                installed_crl_number: 0,
+                installed_ca_fingerprint: nil,
+                installed_bundle_sha256: nil,
+                needs_repair: true,
+                status: "error",
+                last_error_code: :watermark_persistence_failed,
+                last_error_detail: inspect(reason)
+              }
+          end
 
         {{:error, :not_found}, _} ->
           %__MODULE__{
@@ -369,31 +392,58 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           end
 
       if !force and is_disk_already_matching do
-        # Repair watermark if absent or behind the current validated state
-        _ = maybe_repair_watermark(state.base_dir, validated)
+        case maybe_repair_watermark(state.base_dir, validated) do
+          :ok ->
+            new_state = %{
+              state
+              | lkg_generation: validated.generation,
+                lkg_crl_number: validated.crl_number,
+                lkg_ca_fingerprint: validated.ca_fingerprint,
+                lkg_bundle_sha256: validated.bundle_sha256,
+                installed_generation: validated.generation,
+                installed_crl_number: validated.crl_number,
+                installed_ca_fingerprint: validated.ca_fingerprint,
+                installed_bundle_sha256: validated.bundle_sha256,
+                needs_repair: false,
+                status: "applied",
+                last_error_code: nil,
+                last_error_detail: nil,
+                retry_attempt: 0
+            }
 
-        # Validated no-op branch: disk already has the exact bundle.
-        # Still submit applied receipt to ensure Core convergence!
-        new_state = %{
-          state
-          | lkg_generation: validated.generation,
-            lkg_crl_number: validated.crl_number,
-            lkg_ca_fingerprint: validated.ca_fingerprint,
-            lkg_bundle_sha256: validated.bundle_sha256,
-            installed_generation: validated.generation,
-            installed_crl_number: validated.crl_number,
-            installed_ca_fingerprint: validated.ca_fingerprint,
-            installed_bundle_sha256: validated.bundle_sha256,
-            needs_repair: false,
-            status: "applied",
-            last_error_code: nil,
-            last_error_detail: nil,
-            retry_attempt: 0
-        }
+            receipt = build_receipt(new_state, "applied", now)
+            submit_receipt_async(new_state, receipt)
+            {:ok, receipt, new_state}
 
-        receipt = build_receipt(new_state, "applied", now)
-        submit_receipt_async(new_state, receipt)
-        {:ok, receipt, new_state}
+          {:error, reason} ->
+            Logger.error(
+              "Failed to repair watermark during bundle validation: #{inspect(reason)}"
+            )
+
+            new_state = %{
+              state
+              | needs_repair: true,
+                status: "error",
+                last_error_code: :watermark_repair_failed,
+                last_error_detail: inspect(reason)
+            }
+
+            receipt =
+              build_error_receipt(
+                new_state,
+                %{
+                  "generation" => validated.generation,
+                  "crl_number" => validated.crl_number,
+                  "bundle_sha256" => validated.bundle_sha256
+                },
+                :watermark_repair_failed,
+                inspect(reason),
+                now
+              )
+
+            submit_receipt_async(new_state, receipt)
+            {:error, :watermark_repair_failed, new_state}
+        end
       else
         case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
           {:ok, _result} ->

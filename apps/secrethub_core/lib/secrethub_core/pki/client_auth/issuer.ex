@@ -460,6 +460,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
       source_ip: source_ip,
       access_granted: true,
       correlation_id: request_id,
+      hash_version: 2,
       event_data: %{
         "identity_id" => identity.id,
         "identity_name" => identity.name,

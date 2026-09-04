@@ -328,6 +328,7 @@ defmodule SecretHub.Web.Router do
     post "/ca/intermediate/generate", PKIController, :generate_intermediate_ca
     post "/sign-request", PKIController, :sign_csr
     post "/app/revoke", PKIController, :revoke_app_certificate
+    post "/certificates/:id/revoke", PKIController, :revoke_certificate
   end
 
   # Dynamic Secrets API routes (token-authenticated)
@@ -349,14 +350,13 @@ defmodule SecretHub.Web.Router do
     get "/stats", DynamicSecretsController, :stats
   end
 
-  # PKI read and non-application revocation routes (token-authenticated)
+  # PKI read routes (token-authenticated)
   scope "/v1/pki", SecretHub.Web do
     pipe_through :vault_token
 
     # Certificate operations
     get "/certificates", PKIController, :list_certificates
     get "/certificates/:id", PKIController, :get_certificate
-    post "/certificates/:id/revoke", PKIController, :revoke_certificate
   end
 
   # Client Auth PKI public bundle and status endpoints

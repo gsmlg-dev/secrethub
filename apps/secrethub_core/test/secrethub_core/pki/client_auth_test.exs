@@ -447,14 +447,16 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert String.starts_with?(bundle["crl_pem"], "-----BEGIN X509 CRL-----")
     end
 
-    test "record_bundle_receipt tracks agent applied status" do
+    test "record_bundle_receipt tracks agent applied status and validates authenticity" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+
+      # 1. Authentic applied receipt succeeds
       assert {:ok, receipt} =
                ClientAuth.record_bundle_receipt(%{
                  "agent_id" => "agent-amsterdam-1",
-                 "generation" => 1,
-                 "crl_number" => 1,
-                 "bundle_sha256" =>
-                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
                  "status" => "applied",
                  "applied_at" => DateTime.utc_now()
                })
@@ -462,23 +464,77 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert receipt.agent_id == "agent-amsterdam-1"
       assert receipt.status == "applied"
 
-      # Monotonic guard: older receipt for same agent does not overwrite generation 1
-      assert {:ok, receipt2} =
+      # 2. Same-generation failure does NOT get suppressed
+      assert {:ok, failed_receipt} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-amsterdam-1",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "failed",
+                 "last_error_code" => "caddy_reload_failed",
+                 "last_error_detail" => "connection refused"
+               })
+
+      assert failed_receipt.status == "failed"
+      assert failed_receipt.last_error_code == "caddy_reload_failed"
+
+      # 3. Agent recovers from failure back to applied without being wedged
+      assert {:ok, recovered_receipt} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-amsterdam-1",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => DateTime.utc_now()
+               })
+
+      assert recovered_receipt.status == "applied"
+      assert recovered_receipt.last_error_code == nil
+
+      # 4. Bogus hash for applied bundle is rejected, marked failed, and logs equivocation
+      bogus_sha = String.duplicate("0", 64)
+
+      assert {:ok, rejected_receipt} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-amsterdam-1",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bogus_sha,
+                 "status" => "applied",
+                 "applied_at" => DateTime.utc_now()
+               })
+
+      assert rejected_receipt.status == "failed"
+      assert rejected_receipt.last_error_code == "bundle_hash_mismatch_equivocation"
+
+      # Verify equivocation audit event was logged
+      audit_query =
+        from(a in SecretHub.Shared.Schemas.AuditLog,
+          where: a.event_type == "pki.client_auth.agent_equivocation_detected",
+          order_by: [desc: a.sequence_number]
+        )
+
+      assert [%{event_type: "pki.client_auth.agent_equivocation_detected"} | _] =
+               SecretHub.Core.Repo.all(audit_query)
+
+      # 5. Monotonic guard: older receipt for same agent does not overwrite newer generation
+      assert {:ok, receipt_older} =
                ClientAuth.record_bundle_receipt(%{
                  "agent_id" => "agent-amsterdam-1",
                  "generation" => 0,
                  "crl_number" => 0,
                  "bundle_sha256" => "old-sha",
-                 "status" => "error",
+                 "status" => "failed",
                  "last_error_code" => "stale_update"
                })
 
-      assert receipt2.generation == 1
-      assert receipt2.status == "applied"
+      assert receipt_older.generation == bundle["generation"]
 
       receipts = ClientAuth.list_bundle_receipts()
       assert length(receipts) == 1
-      assert hd(receipts).generation == 1
+      assert hd(receipts).generation == bundle["generation"]
     end
   end
 
@@ -511,6 +567,36 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
     test "rejects mismatched private key", %{authority: authority, ca: ca} do
       wrong_key = X509.PrivateKey.new_ec(:secp384r1)
       assert {:error, :ca_key_mismatch, _} = CAValidator.validate(authority, ca, wrong_key)
+    end
+
+    test "rejects CA record with wrong cert_type", %{authority: authority, ca: ca} do
+      {:ok, key} = SecretHub.Core.PKI.ClientAuth.Issuer.decrypt_ca_key(ca)
+      bad_ca = %{ca | cert_type: :server_cert}
+      assert {:error, :ca_record_invalid, _} = CAValidator.validate(authority, bad_ca, key)
+    end
+
+    test "rejects revoked CA record", %{authority: authority, ca: ca} do
+      {:ok, key} = SecretHub.Core.PKI.ClientAuth.Issuer.decrypt_ca_key(ca)
+      bad_ca = %{ca | revoked: true}
+      assert {:error, :ca_revoked, _} = CAValidator.validate(authority, bad_ca, key)
+    end
+
+    test "rejects CA record not bound to authority", %{authority: authority, ca: ca} do
+      {:ok, key} = SecretHub.Core.PKI.ClientAuth.Issuer.decrypt_ca_key(ca)
+      bad_ca = %{ca | client_auth_authority_id: Ecto.UUID.generate()}
+      assert {:error, :ca_authority_mismatch, _} = CAValidator.validate(authority, bad_ca, key)
+    end
+
+    test "rejects CA record with null canonical fingerprint", %{authority: authority, ca: ca} do
+      {:ok, key} = SecretHub.Core.PKI.ClientAuth.Issuer.decrypt_ca_key(ca)
+      bad_ca = %{ca | canonical_fingerprint: nil}
+      assert {:error, :ca_fingerprint_mismatch, _} = CAValidator.validate(authority, bad_ca, key)
+    end
+
+    test "rejects CA record with mismatched Subject CN", %{authority: authority, ca: ca} do
+      {:ok, key} = SecretHub.Core.PKI.ClientAuth.Issuer.decrypt_ca_key(ca)
+      mismatched_auth = %{authority | name: "Completely Different CA Name"}
+      assert {:error, :ca_subject_mismatch, _} = CAValidator.validate(mismatched_auth, ca, key)
     end
   end
 

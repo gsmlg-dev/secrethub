@@ -13,14 +13,17 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
 var (
 	ErrNoClientCert            = errors.New("no client certificate provided in TLS handshake")
+	ErrCorruptWatermark        = errors.New("persistent watermark file is corrupt or invalid")
 	ErrCADerivationFailed      = errors.New("failed to load root CA certificate")
 	ErrCRLParseFailed          = errors.New("failed to parse certificate revocation list")
 	ErrCRLSignatureInvalid     = errors.New("CRL signature does not match CA")
@@ -139,6 +142,24 @@ type PersistentWatermark struct {
 	LastBundleSHA256      string `json:"last_bundle_sha256"`
 }
 
+var hex64Regex = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+
+func validateWatermark(wm *PersistentWatermark) error {
+	if wm.HighestSeenGeneration <= 0 {
+		return fmt.Errorf("%w: highest_seen_generation must be positive", ErrCorruptWatermark)
+	}
+	if wm.HighestSeenCRLNumber <= 0 {
+		return fmt.Errorf("%w: highest_seen_crl_number must be positive", ErrCorruptWatermark)
+	}
+	if !hex64Regex.MatchString(wm.PinnedCAFingerprint) {
+		return fmt.Errorf("%w: pinned_ca_fingerprint must be a valid 64-char hex string", ErrCorruptWatermark)
+	}
+	if !hex64Regex.MatchString(wm.LastBundleSHA256) {
+		return fmt.Errorf("%w: last_bundle_sha256 must be a valid 64-char hex string", ErrCorruptWatermark)
+	}
+	return nil
+}
+
 // LoadFromDisk reads the trust bundle from disk, enforces full validation, temporal validity,
 // monotonicity, persists the watermark fail-closed, and atomically updates the snapshot.
 func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
@@ -181,25 +202,47 @@ func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 		return nil, fmt.Errorf("%w: candidate CA %s != expected configured CA %s", ErrCAFingerprintMismatch, snapshot.CAFingerprint, v.expectedCAFingerprint)
 	}
 
-	// 2. Persistent watermark check across restarts (FAIL CLOSED on corrupt watermark)
+	// 2. Persistent watermark check across restarts and concurrent instances under file lock
 	watermarkPath := v.getWatermarkPath()
-	if wmBytes, err := os.ReadFile(watermarkPath); err == nil {
-		var wm PersistentWatermark
-		if err := json.Unmarshal(wmBytes, &wm); err != nil {
-			return nil, fmt.Errorf("failed to parse watermark.json (fail closed): %w", err)
-		}
+	wmDir := filepath.Dir(watermarkPath)
+	if err := os.MkdirAll(wmDir, 0750); err != nil {
+		return nil, fmt.Errorf("failed to create watermark directory: %w", err)
+	}
 
-		if snapshot.Generation < wm.HighestSeenGeneration {
-			return nil, fmt.Errorf("%w: new gen %d < persistent watermark gen %d", ErrGenerationDowngrade, snapshot.Generation, wm.HighestSeenGeneration)
+	lockPath := watermarkPath + ".lock"
+	lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open watermark lock file: %w", err)
+	}
+	defer lockFile.Close()
+
+	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
+		return nil, fmt.Errorf("failed to acquire watermark file lock: %w", err)
+	}
+	defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+
+	var diskWM PersistentWatermark
+	hasDiskWM := false
+	if wmBytes, err := os.ReadFile(watermarkPath); err == nil {
+		if err := json.Unmarshal(wmBytes, &diskWM); err != nil {
+			return nil, fmt.Errorf("%w: failed to parse watermark.json: %v", ErrCorruptWatermark, err)
 		}
-		if snapshot.Generation == wm.HighestSeenGeneration && wm.LastBundleSHA256 != "" && !strings.EqualFold(snapshot.BundleSHA256, wm.LastBundleSHA256) {
-			return nil, fmt.Errorf("%w: gen %d hash mismatch with persistent watermark (%s != %s)", ErrEquivocation, snapshot.Generation, snapshot.BundleSHA256, wm.LastBundleSHA256)
+		if err := validateWatermark(&diskWM); err != nil {
+			return nil, err
 		}
-		if snapshot.Generation >= wm.HighestSeenGeneration && snapshot.CRLNumber < wm.HighestSeenCRLNumber {
-			return nil, fmt.Errorf("%w: new crl_number %d < persistent watermark crl_number %d", ErrCRLNumberDowngrade, snapshot.CRLNumber, wm.HighestSeenCRLNumber)
+		hasDiskWM = true
+
+		if snapshot.Generation < diskWM.HighestSeenGeneration {
+			return nil, fmt.Errorf("%w: new gen %d < persistent watermark gen %d", ErrGenerationDowngrade, snapshot.Generation, diskWM.HighestSeenGeneration)
 		}
-		if wm.PinnedCAFingerprint != "" && !strings.EqualFold(snapshot.CAFingerprint, wm.PinnedCAFingerprint) {
-			return nil, fmt.Errorf("%w: established CA %s replaced with %s", ErrCAFingerprintMismatch, wm.PinnedCAFingerprint, snapshot.CAFingerprint)
+		if snapshot.Generation == diskWM.HighestSeenGeneration && !strings.EqualFold(snapshot.BundleSHA256, diskWM.LastBundleSHA256) {
+			return nil, fmt.Errorf("%w: gen %d hash mismatch with persistent watermark (%s != %s)", ErrEquivocation, snapshot.Generation, snapshot.BundleSHA256, diskWM.LastBundleSHA256)
+		}
+		if snapshot.Generation >= diskWM.HighestSeenGeneration && snapshot.CRLNumber < diskWM.HighestSeenCRLNumber {
+			return nil, fmt.Errorf("%w: new crl_number %d < persistent watermark crl_number %d", ErrCRLNumberDowngrade, snapshot.CRLNumber, diskWM.HighestSeenCRLNumber)
+		}
+		if diskWM.PinnedCAFingerprint != "" && !strings.EqualFold(snapshot.CAFingerprint, diskWM.PinnedCAFingerprint) {
+			return nil, fmt.Errorf("%w: established CA %s replaced with %s", ErrCAFingerprintMismatch, diskWM.PinnedCAFingerprint, snapshot.CAFingerprint)
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("failed to read watermark file (fail closed): %w", err)
@@ -222,21 +265,27 @@ func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 		}
 	}
 
-	// 4. Atomically persist updated watermark (FAIL CLOSED on write/rename failure)
+	// 4. Atomically persist updated watermark with monotonic maximum
+	maxGen := snapshot.Generation
+	maxCRL := snapshot.CRLNumber
+	if hasDiskWM {
+		if diskWM.HighestSeenGeneration > maxGen {
+			maxGen = diskWM.HighestSeenGeneration
+		}
+		if diskWM.HighestSeenCRLNumber > maxCRL {
+			maxCRL = diskWM.HighestSeenCRLNumber
+		}
+	}
+
 	wm := PersistentWatermark{
-		HighestSeenGeneration: snapshot.Generation,
-		HighestSeenCRLNumber:  snapshot.CRLNumber,
+		HighestSeenGeneration: maxGen,
+		HighestSeenCRLNumber:  maxCRL,
 		PinnedCAFingerprint:   snapshot.CAFingerprint,
 		LastBundleSHA256:      snapshot.BundleSHA256,
 	}
 	wmBytes, err := json.MarshalIndent(wm, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode watermark: %w", err)
-	}
-
-	wmDir := filepath.Dir(watermarkPath)
-	if err := os.MkdirAll(wmDir, 0750); err != nil {
-		return nil, fmt.Errorf("failed to create watermark directory: %w", err)
 	}
 
 	tmpWMPath := filepath.Join(wmDir, fmt.Sprintf(".watermark.tmp-%d", time.Now().UnixNano()))

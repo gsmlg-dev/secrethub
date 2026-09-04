@@ -209,8 +209,9 @@ defmodule SecretHub.Agent.PKIBundleTest do
       File.mkdir_p!(real_dir)
       symlink_base = Path.join(tmp_dir, "symlink_pki")
       File.ln_s(real_dir, symlink_base)
+      expected_path = AtomicStore.normalize_system_path(symlink_base)
 
-      assert {:error, {:symlink_directory_disallowed, ^symlink_base}} =
+      assert {:error, {:symlink_directory_disallowed, ^expected_path}} =
                AtomicStore.write_bundle(symlink_base, bundle, now: now)
     end
 
@@ -596,6 +597,73 @@ defmodule SecretHub.Agent.PKIBundleTest do
       status = TrustBundleManager.status(manager)
       assert status.status == "applied"
       assert status.current_generation == 1
+    end
+
+    test "read_persistent_watermark rejects incomplete or invalid watermark schemas", %{
+      tmp_dir: tmp_dir
+    } do
+      bundle_dir = Path.join(tmp_dir, "pki/client-auth-invalid-wm")
+      File.mkdir_p!(bundle_dir)
+      wm_path = Path.join(bundle_dir, "watermark.json")
+
+      # 1. Empty object
+      File.write!(wm_path, "{}")
+
+      assert {:error, :invalid_watermark_schema} =
+               AtomicStore.read_persistent_watermark(bundle_dir)
+
+      # 2. Missing fields
+      File.write!(wm_path, Jason.encode!(%{"highest_seen_generation" => 10}))
+
+      assert {:error, :invalid_watermark_schema} =
+               AtomicStore.read_persistent_watermark(bundle_dir)
+
+      # 3. Invalid hex fingerprint
+      invalid_wm = %{
+        "schema_version" => 1,
+        "highest_seen_generation" => 1,
+        "highest_seen_crl_number" => 1,
+        "pinned_ca_fingerprint" => "not-a-valid-hex",
+        "last_bundle_sha256" =>
+          "8792bc0fa20e137b26ac4467d91c67926b86edee0352534a5b71f6fd8aa724b5",
+        "updated_at" => "2026-09-02T12:00:00Z"
+      }
+
+      File.write!(wm_path, Jason.encode!(invalid_wm))
+
+      assert {:error, :invalid_watermark_schema} =
+               AtomicStore.read_persistent_watermark(bundle_dir)
+
+      # 4. Valid schema succeeds
+      valid_wm = %{
+        invalid_wm
+        | "pinned_ca_fingerprint" =>
+            "8792bc0fa20e137b26ac4467d91c67926b86edee0352534a5b71f6fd8aa724b5"
+      }
+
+      File.write!(wm_path, Jason.encode!(valid_wm))
+
+      assert {:ok, %{"highest_seen_generation" => 1}} =
+               AtomicStore.read_persistent_watermark(bundle_dir)
+    end
+
+    test "ensure_secure_directory rejects ancestor symlinks", %{
+      tmp_dir: tmp_dir,
+      bundle: bundle
+    } do
+      real_dir = Path.join(tmp_dir, "real_ancestor")
+      File.mkdir_p!(real_dir)
+      symlink_ancestor = Path.join(tmp_dir, "symlink_ancestor")
+      File.ln_s!(real_dir, symlink_ancestor)
+      expected_ancestor = AtomicStore.normalize_system_path(symlink_ancestor)
+
+      nested_target = Path.join(symlink_ancestor, "child/bundle")
+
+      assert {:error, {:symlink_directory_disallowed, ^expected_ancestor}} =
+               AtomicStore.ensure_secure_directory(nested_target)
+
+      assert {:error, {:symlink_directory_disallowed, ^expected_ancestor}} =
+               AtomicStore.write_bundle(nested_target, bundle)
     end
   end
 end

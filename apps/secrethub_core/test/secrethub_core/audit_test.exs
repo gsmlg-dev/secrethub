@@ -591,4 +591,80 @@ defmodule SecretHub.Core.AuditTest do
       refute Enum.any?(logs, fn l -> l.id == log.id end)
     end
   end
+
+  describe "Client Auth PKI audit events (hash_version 2)" do
+    test "allows hash_version 2 with complete evidence" do
+      attrs = %{
+        event_type: "pki.client_auth.certificate_issued",
+        actor_type: "admin",
+        actor_id: "admin-1",
+        access_granted: true,
+        correlation_id: Ecto.UUID.generate(),
+        hash_version: 2,
+        event_data: %{
+          "identity_id" => Ecto.UUID.generate(),
+          "certificate_id" => Ecto.UUID.generate(),
+          "serial_number" => "123456789",
+          "canonical_fingerprint" => String.duplicate("a", 64),
+          "request_id" => Ecto.UUID.generate()
+        }
+      }
+
+      assert {:ok, log} = Audit.log_event(attrs)
+      assert log.hash_version == 2
+      assert {:ok, :valid} = Audit.verify_chain()
+    end
+
+    test "rejects Client Auth PKI event with missing required evidence keys" do
+      attrs = %{
+        event_type: "pki.client_auth.certificate_issued",
+        actor_type: "admin",
+        actor_id: "admin-1",
+        access_granted: true,
+        correlation_id: Ecto.UUID.generate(),
+        hash_version: 2,
+        event_data: %{
+          "identity_id" => Ecto.UUID.generate()
+          # missing certificate_id, serial_number, canonical_fingerprint, request_id
+        }
+      }
+
+      assert {:error, changeset} = Audit.log_event(attrs)
+      assert "missing required evidence keys: " <> _ = changeset.errors[:event_data] |> elem(0)
+    end
+
+    test "tampering with event_data in hash_version 2 entry breaks verify_chain" do
+      attrs = %{
+        event_type: "pki.client_auth.certificate_revoked",
+        actor_type: "admin",
+        actor_id: "admin-1",
+        access_granted: true,
+        correlation_id: Ecto.UUID.generate(),
+        hash_version: 2,
+        event_data: %{
+          "certificate_id" => Ecto.UUID.generate(),
+          "serial_number" => "987654321",
+          "canonical_fingerprint" => String.duplicate("b", 64),
+          "reason" => "keyCompromise"
+        }
+      }
+
+      assert {:ok, log} = Audit.log_event(attrs)
+      assert {:ok, :valid} = Audit.verify_chain()
+
+      # Tamper with stored event_data directly in PostgreSQL
+      tampered_event_data = Map.put(log.event_data, "reason", "unspecified")
+
+      Repo.update_all(
+        from(a in AuditLog, where: a.id == ^log.id),
+        set: [event_data: tampered_event_data]
+      )
+
+      # verify_chain must detect the tamper and return error!
+      assert {:error, reason} = Audit.verify_chain()
+
+      assert String.downcase(reason) =~ "hash mismatch" or
+               String.downcase(reason) =~ "invalid signature"
+    end
+  end
 end

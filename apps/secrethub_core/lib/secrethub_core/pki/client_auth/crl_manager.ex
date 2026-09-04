@@ -241,32 +241,32 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
             already_revoked: true
           }
         else
-          {:ok, revoked_cert} =
-            cert
-            |> Certificate.changeset(%{
-              revoked: true,
-              revoked_at: now,
-              revocation_reason: reason
-            })
-            |> Repo.update()
-
           actor = Keyword.get(opts, :actor, %{})
 
-          {:ok, new_crl, updated_authority} =
-            generate_crl_locked(authority, ca_key, authority.ca_certificate,
-              now: now,
-              actor: actor
-            )
-
-          :ok = record_revocation_audit(revoked_cert, reason, actor)
-
-          %{
-            certificate: revoked_cert,
-            crl: new_crl,
-            generation: updated_authority.current_generation,
-            crl_number: updated_authority.current_crl_number,
-            already_revoked: false
-          }
+          with {:ok, revoked_cert} <-
+                 cert
+                 |> Certificate.changeset(%{
+                   revoked: true,
+                   revoked_at: now,
+                   revocation_reason: reason
+                 })
+                 |> Repo.update(),
+               {:ok, new_crl, updated_authority} <-
+                 generate_crl_locked(authority, ca_key, authority.ca_certificate,
+                   now: now,
+                   actor: actor
+                 ),
+               :ok <- record_revocation_audit(revoked_cert, reason, actor) do
+            %{
+              certificate: revoked_cert,
+              crl: new_crl,
+              generation: updated_authority.current_generation,
+              crl_number: updated_authority.current_crl_number,
+              already_revoked: false
+            }
+          else
+            {:error, reason} -> Repo.rollback(reason)
+          end
         end
       else
         nil -> Repo.rollback(:authority_not_initialized)
@@ -481,6 +481,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
       actor_id: "client_auth_crl_manager",
       access_granted: true,
       correlation_id: crl.id,
+      hash_version: 2,
       event_data: %{
         "authority" => authority.slug,
         "generation" => authority.current_generation,
@@ -511,6 +512,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
       source_ip: source_ip,
       access_granted: true,
       correlation_id: cert.id,
+      hash_version: 2,
       event_data: %{
         "certificate_id" => cert.id,
         "serial_number" => cert.serial_number,

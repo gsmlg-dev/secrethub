@@ -24,15 +24,34 @@ defmodule SecretHub.Core.PKI.ClientAuth.CAValidator do
     clock_skew = Keyword.get(opts, :clock_skew, 60)
     min_required_remaining = requested_ttl + clock_skew
 
-    with {:ok, parsed_ca} <- parse_certificate_pem(ca_record.certificate_pem),
+    with :ok <- validate_ca_record_attributes(authority, ca_record),
+         {:ok, parsed_ca} <- parse_certificate_pem(ca_record.certificate_pem),
          :ok <- validate_validity_window(parsed_ca, now, min_required_remaining),
          :ok <- validate_self_signature(parsed_ca),
          :ok <- validate_basic_constraints(parsed_ca),
          :ok <- validate_key_usage(parsed_ca),
+         :ok <- validate_subject_dn(authority, parsed_ca),
          :ok <- validate_key_match(ca_key, parsed_ca),
          :ok <- validate_algorithm_match(authority.key_algorithm, ca_key, parsed_ca),
          :ok <- validate_fingerprint_match(ca_record, parsed_ca) do
       :ok
+    end
+  end
+
+  defp validate_ca_record_attributes(authority, ca_record) do
+    cond do
+      ca_record.cert_type not in [:client_auth_ca, "client_auth_ca"] ->
+        {:error, :ca_record_invalid, "CA certificate record cert_type must be :client_auth_ca"}
+
+      ca_record.revoked == true ->
+        {:error, :ca_revoked, "CA certificate is marked revoked in database"}
+
+      ca_record.client_auth_authority_id != nil and
+          ca_record.client_auth_authority_id != authority.id ->
+        {:error, :ca_authority_mismatch, "CA certificate is not bound to the active authority"}
+
+      true ->
+        :ok
     end
   end
 
@@ -89,15 +108,35 @@ defmodule SecretHub.Core.PKI.ClientAuth.CAValidator do
   defp validate_key_usage(parsed_ca) do
     case X509.Certificate.extension(parsed_ca, @oid_key_usage) do
       {:Extension, @oid_key_usage, true, key_usages} when is_list(key_usages) ->
-        if :keyCertSign in key_usages and :cRLSign in key_usages do
+        sorted = Enum.sort(key_usages)
+
+        if sorted == [:cRLSign, :keyCertSign] do
           :ok
         else
           {:error, :ca_key_usage_invalid,
-           "CA certificate KeyUsage extension must include keyCertSign and cRLSign"}
+           "CA certificate KeyUsage extension must strictly be [:keyCertSign, :cRLSign] without excess usages"}
         end
 
       _ ->
         {:error, :ca_key_usage_invalid, "CA certificate must have a critical KeyUsage extension"}
+    end
+  end
+
+  defp validate_subject_dn(authority, parsed_ca) do
+    subject_rdn = X509.Certificate.subject(parsed_ca)
+    cn = List.first(X509.RDNSequence.get_attr(subject_rdn, "CN"))
+    o = List.first(X509.RDNSequence.get_attr(subject_rdn, "O"))
+
+    cond do
+      cn != authority.name ->
+        {:error, :ca_subject_mismatch,
+         "CA certificate CN '#{cn}' does not match authority name '#{authority.name}'"}
+
+      o != "SecretHub" ->
+        {:error, :ca_subject_mismatch, "CA certificate organization '#{o}' must be 'SecretHub'"}
+
+      true ->
+        :ok
     end
   end
 
@@ -134,11 +173,12 @@ defmodule SecretHub.Core.PKI.ClientAuth.CAValidator do
     ca_der = X509.Certificate.to_der(parsed_ca)
     expected_fp = CertificateIdentity.canonical_fingerprint_from_der(ca_der)
 
-    if ca_record.canonical_fingerprint == nil or ca_record.canonical_fingerprint == expected_fp do
+    if is_binary(ca_record.canonical_fingerprint) and
+         ca_record.canonical_fingerprint == expected_fp do
       :ok
     else
       {:error, :ca_fingerprint_mismatch,
-       "CA record canonical fingerprint does not match calculated certificate fingerprint"}
+       "CA record canonical fingerprint is null or does not match calculated certificate fingerprint"}
     end
   end
 

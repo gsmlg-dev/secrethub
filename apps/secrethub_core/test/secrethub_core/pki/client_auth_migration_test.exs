@@ -47,13 +47,15 @@ defmodule SecretHub.Core.PKI.ClientAuthMigrationTest do
     assert {:ok, _issued} = ClientAuth.issue_certificate(identity.id, csr_pem, request_id)
 
     # 4. Record bundle receipt
+    {:ok, current_bundle} = ClientAuth.current_bundle()
+
     assert {:ok, _receipt} =
              ClientAuth.record_bundle_receipt(%{
                "authority_slug" => "client-auth",
                "agent_id" => "agent-migration-1",
-               "generation" => 1,
-               "crl_number" => 1,
-               "bundle_sha256" => "dummy-sha256",
+               "generation" => current_bundle["generation"],
+               "crl_number" => current_bundle["crl_number"],
+               "bundle_sha256" => current_bundle["bundle_sha256"],
                "status" => "applied",
                "applied_at" => DateTime.utc_now()
              })

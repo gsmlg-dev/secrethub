@@ -28,6 +28,73 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     "gate",
     "report_hash"
   ]
+  @client_auth_pki_event_types [
+    "pki.client_auth.authority_initialized",
+    "pki.client_auth.identity_created",
+    "pki.client_auth.identity_disabled",
+    "pki.client_auth.certificate_issued",
+    "pki.client_auth.certificate_revoked",
+    "pki.client_auth.crl_published",
+    "pki.client_auth.agent_receipt_recorded",
+    "pki.client_auth.agent_equivocation_detected"
+  ]
+  @client_auth_evidence_rules %{
+    "pki.client_auth.authority_initialized" => [
+      "authority_id",
+      "name",
+      "ca_certificate_id",
+      "ca_canonical_fingerprint",
+      "key_algorithm",
+      "initial_crl_id",
+      "initial_crl_number"
+    ],
+    "pki.client_auth.identity_created" => [
+      "identity_id",
+      "name",
+      "status"
+    ],
+    "pki.client_auth.identity_disabled" => [
+      "identity_id",
+      "name",
+      "revoked_certificates_count",
+      "reason"
+    ],
+    "pki.client_auth.certificate_issued" => [
+      "identity_id",
+      "certificate_id",
+      "serial_number",
+      "canonical_fingerprint",
+      "request_id"
+    ],
+    "pki.client_auth.certificate_revoked" => [
+      "certificate_id",
+      "serial_number",
+      "canonical_fingerprint",
+      "reason"
+    ],
+    "pki.client_auth.crl_published" => [
+      "authority",
+      "generation",
+      "crl_number",
+      "crl_der_sha256",
+      "revoked_count"
+    ],
+    "pki.client_auth.agent_receipt_recorded" => [
+      "agent_id",
+      "authority_id",
+      "generation",
+      "crl_number",
+      "bundle_sha256",
+      "status"
+    ],
+    "pki.client_auth.agent_equivocation_detected" => [
+      "agent_id",
+      "authority_id",
+      "generation",
+      "reported_bundle_sha256",
+      "reported_status"
+    ]
+  }
   @app_certificate_issuance_rules %{
     "auth.app_certificate_issuance_allowed" => %{
       evidence_keys: ["agent_id", "app_id", "certificate_id", "request_id", "result_code"],
@@ -202,6 +269,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     |> validate_inclusion(:hash_version, @hash_versions)
     |> validate_hash_version_event_type()
     |> validate_upgrade_gate_evidence()
+    |> validate_client_auth_pki_evidence()
     |> validate_app_certificate_issuance_evidence()
     |> validate_app_certificate_lifecycle_evidence()
     |> unique_constraint(:event_id, name: :unique_event_id_timestamp)
@@ -268,6 +336,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "pki.client_auth.certificate_revoked",
       "pki.client_auth.crl_published",
       "pki.client_auth.agent_receipt_recorded",
+      "pki.client_auth.agent_equivocation_detected",
       # Vault lifecycle events
       "vault_started",
       "vault_initialized",
@@ -281,15 +350,49 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     event_type = get_field(changeset, :event_type)
     hash_version = get_field(changeset, :hash_version)
 
+    v2_supported_event_types = @upgrade_event_types ++ @client_auth_pki_event_types
+
     cond do
       event_type in @upgrade_event_types and hash_version != 2 ->
         add_error(changeset, :hash_version, "must use hash version 2")
 
-      hash_version == 2 and event_type not in @upgrade_event_types ->
+      hash_version == 2 and event_type not in v2_supported_event_types ->
         add_error(changeset, :hash_version, "is only supported for upgrade gate events")
 
       true ->
         changeset
+    end
+  end
+
+  defp validate_client_auth_pki_evidence(changeset) do
+    event_type = get_field(changeset, :event_type)
+
+    case Map.get(@client_auth_evidence_rules, event_type) do
+      nil ->
+        changeset
+
+      required_keys ->
+        event_data = get_field(changeset, :event_data)
+
+        if is_map(event_data) do
+          missing =
+            Enum.filter(required_keys, fn key ->
+              not Map.has_key?(event_data, key) and
+                not Map.has_key?(event_data, String.to_atom(key))
+            end)
+
+          if missing == [] do
+            changeset
+          else
+            add_error(
+              changeset,
+              :event_data,
+              "missing required evidence keys: #{Enum.join(missing, ", ")}"
+            )
+          end
+        else
+          add_error(changeset, :event_data, "must be a map for #{event_type}")
+        end
     end
   end
 

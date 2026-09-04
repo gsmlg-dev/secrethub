@@ -304,6 +304,7 @@ defmodule SecretHub.Core.Vault.SealState do
 
         Logger.info("Vault unsealed successfully")
         audit_event("vault_unsealed", :unsealed)
+        :telemetry.execute([:secrethub, :vault, :unsealed], %{}, %{})
 
         {:reply,
          {:ok,

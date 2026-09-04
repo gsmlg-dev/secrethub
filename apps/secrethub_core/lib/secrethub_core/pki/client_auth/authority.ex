@@ -153,7 +153,8 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
         not_after = DateTime.add(now, ca_validity_days * 86_400, :second)
 
         # Build self-signed CA certificate
-        subject_str = "/O=#{@default_ca_org}/CN=#{name}"
+        subject_rdn = X509.RDNSequence.new([{"O", @default_ca_org}, {"CN", name}])
+        subject_str = X509.RDNSequence.to_string(subject_rdn)
 
         ca_extensions = [
           basic_constraints: CertExtension.basic_constraints(true),
@@ -165,7 +166,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
         ca_cert_struct =
           X509.Certificate.self_signed(
             private_key,
-            subject_str,
+            subject_rdn,
             template: :root_ca,
             extensions: ca_extensions,
             hash: hash_algo,
@@ -442,6 +443,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
       source_ip: source_ip,
       access_granted: true,
       correlation_id: authority.id,
+      hash_version: 2,
       event_data: %{
         "authority_id" => authority.id,
         "name" => authority.name,

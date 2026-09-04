@@ -9,7 +9,14 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   alias SecretHub.Core.Audit
   alias SecretHub.Core.PKI.ClientAuth.{Authority, CRLManager, Identity, Issuer, TrustBundle}
   alias SecretHub.Core.Repo
-  alias SecretHub.Shared.Schemas.{Certificate, ClientAuthAuthority, ClientAuthBundleReceipt}
+
+  alias SecretHub.Shared.Schemas.{
+    Certificate,
+    ClientAuthAuthority,
+    ClientAuthBundleReceipt,
+    ClientAuthCrl
+  }
+
   import Ecto.Query
 
   @default_authority_slug "client-auth"
@@ -225,18 +232,23 @@ defmodule SecretHub.Core.PKI.ClientAuth do
     agent_id = Map.get(attrs, "agent_id") || Map.get(attrs, :agent_id)
 
     with {:ok, %ClientAuthAuthority{} = authority} <- get_active_authority() do
+      raw_status = to_string(Map.get(attrs, "status") || Map.get(attrs, :status) || "applied")
+      normalized_status = if raw_status in ["failed", "error"], do: "failed", else: "applied"
+
       receipt_attrs = %{
         agent_id: to_string(agent_id),
         client_auth_authority_id: authority.id,
         generation: Map.get(attrs, "generation") || Map.get(attrs, :generation) || 0,
         crl_number: Map.get(attrs, "crl_number") || Map.get(attrs, :crl_number) || 0,
         bundle_sha256: Map.get(attrs, "bundle_sha256") || Map.get(attrs, :bundle_sha256) || "",
-        status: to_string(Map.get(attrs, "status") || Map.get(attrs, :status) || "applied"),
+        status: normalized_status,
         last_error_code: Map.get(attrs, "last_error_code") || Map.get(attrs, :last_error_code),
         last_error_detail:
           Map.get(attrs, "last_error_detail") || Map.get(attrs, :last_error_detail),
         applied_at: Map.get(attrs, "applied_at") || Map.get(attrs, :applied_at)
       }
+
+      receipt_attrs = verify_applied_bundle_authenticity(authority, receipt_attrs)
 
       Repo.transaction(fn ->
         existing =
@@ -249,24 +261,15 @@ defmodule SecretHub.Core.PKI.ClientAuth do
             )
           )
 
-        # Monotonic receipt guard: prevent stale/delayed older receipts from regressing state
+        maybe_record_equivocation_audit(authority, receipt_attrs, existing)
+
         should_update =
           case existing do
             nil ->
               true
 
             rec ->
-              cond do
-                receipt_attrs.generation > rec.generation ->
-                  true
-
-                receipt_attrs.generation == rec.generation and
-                    receipt_attrs.bundle_sha256 == rec.bundle_sha256 ->
-                  rec.status != "applied" or receipt_attrs.status == "applied"
-
-                true ->
-                  false
-              end
+              receipt_attrs.generation >= rec.generation
           end
 
         if should_update do
@@ -290,6 +293,7 @@ defmodule SecretHub.Core.PKI.ClientAuth do
                 source_ip: "127.0.0.1",
                 access_granted: receipt.status == "applied",
                 correlation_id: receipt.id,
+                hash_version: 2,
                 event_data: %{
                   "agent_id" => receipt.agent_id,
                   "authority_id" => authority.id,
@@ -341,9 +345,110 @@ defmodule SecretHub.Core.PKI.ClientAuth do
     Repo.all(query)
   end
 
+  defp verify_applied_bundle_authenticity(authority, receipt_attrs) do
+    if receipt_attrs.status == "applied" do
+      crl =
+        Repo.one(
+          from(c in ClientAuthCrl,
+            where: c.authority_id == ^authority.id and c.generation == ^receipt_attrs.generation
+          )
+        )
+
+      ca = authority.ca_certificate
+
+      cond do
+        is_nil(crl) or is_nil(ca) ->
+          record_unknown_bundle_audit(authority, receipt_attrs, "unknown_generation")
+
+          %{
+            receipt_attrs
+            | status: "failed",
+              last_error_code: "unknown_generation_bundle",
+              last_error_detail:
+                "Generation #{receipt_attrs.generation} is not an authentic Core bundle"
+          }
+
+        true ->
+          expected_bundle = TrustBundle.build(authority, ca, crl)
+
+          if expected_bundle["bundle_sha256"] != receipt_attrs.bundle_sha256 do
+            record_unknown_bundle_audit(authority, receipt_attrs, "hash_mismatch")
+
+            %{
+              receipt_attrs
+              | status: "failed",
+                last_error_code: "bundle_hash_mismatch_equivocation",
+                last_error_detail:
+                  "Reported hash #{receipt_attrs.bundle_sha256} does not match expected #{expected_bundle["bundle_sha256"]}"
+            }
+          else
+            receipt_attrs
+          end
+      end
+    else
+      receipt_attrs
+    end
+  end
+
+  defp maybe_record_equivocation_audit(authority, receipt_attrs, existing) do
+    has_conflict =
+      existing != nil and
+        existing.generation == receipt_attrs.generation and
+        existing.bundle_sha256 != "" and
+        receipt_attrs.bundle_sha256 != "" and
+        existing.bundle_sha256 != receipt_attrs.bundle_sha256
+
+    if has_conflict do
+      attrs = %{
+        event_type: "pki.client_auth.agent_equivocation_detected",
+        actor_type: "agent",
+        actor_id: receipt_attrs.agent_id,
+        source_ip: "127.0.0.1",
+        access_granted: false,
+        correlation_id: authority.id,
+        hash_version: 2,
+        event_data: %{
+          "agent_id" => receipt_attrs.agent_id,
+          "authority_id" => authority.id,
+          "generation" => receipt_attrs.generation,
+          "reported_bundle_sha256" => receipt_attrs.bundle_sha256,
+          "reported_status" => receipt_attrs.status
+        }
+      }
+
+      Audit.log_event(attrs)
+    else
+      :ok
+    end
+  end
+
+  defp record_unknown_bundle_audit(authority, receipt_attrs, _reason) do
+    attrs = %{
+      event_type: "pki.client_auth.agent_equivocation_detected",
+      actor_type: "agent",
+      actor_id: receipt_attrs.agent_id,
+      source_ip: "127.0.0.1",
+      access_granted: false,
+      correlation_id: authority.id,
+      hash_version: 2,
+      event_data: %{
+        "agent_id" => receipt_attrs.agent_id,
+        "authority_id" => authority.id,
+        "generation" => receipt_attrs.generation,
+        "reported_bundle_sha256" => receipt_attrs.bundle_sha256,
+        "reported_status" => receipt_attrs.status
+      }
+    }
+
+    Audit.log_event(attrs)
+  end
+
   defp get_active_authority do
     case Repo.one(
-           from(a in ClientAuthAuthority, where: a.slug == "client-auth" and a.status == "active")
+           from(a in ClientAuthAuthority,
+             where: a.slug == "client-auth" and a.status == "active",
+             preload: [:ca_certificate, :current_crl]
+           )
          ) do
       nil -> {:error, :authority_not_initialized}
       authority -> {:ok, authority}

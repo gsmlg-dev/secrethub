@@ -155,40 +155,30 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
             :ok = record_identity_disabled_audit(disabled_identity, 0, reason, actor)
             %{identity: disabled_identity, crl_updated: false}
           else
-            {:ok, ca_key} = decrypt_ca_key(authority.ca_certificate)
-
-            # Mark all active certs revoked
-            for cert <- active_certs do
-              cert
-              |> Certificate.changeset(%{
-                revoked: true,
-                revoked_at: now,
-                revocation_reason: reason
-              })
-              |> Repo.update!()
+            with {:ok, ca_key} <- decrypt_ca_key(authority.ca_certificate),
+                 :ok <- revoke_active_certs(active_certs, now, reason),
+                 {:ok, _new_crl, updated_authority} <-
+                   CRLManager.generate_crl_locked(authority, ca_key, authority.ca_certificate,
+                     now: now,
+                     actor: actor
+                   ),
+                 :ok <-
+                   record_identity_disabled_audit(
+                     disabled_identity,
+                     length(active_certs),
+                     reason,
+                     actor
+                   ) do
+              %{
+                identity: disabled_identity,
+                crl_updated: true,
+                generation: updated_authority.current_generation,
+                crl_number: updated_authority.current_crl_number
+              }
+            else
+              {:error, rollback_reason} ->
+                Repo.rollback(rollback_reason)
             end
-
-            # Generate single CRL with all newly revoked certs
-            {:ok, _new_crl, updated_authority} =
-              CRLManager.generate_crl_locked(authority, ca_key, authority.ca_certificate,
-                now: now,
-                actor: actor
-              )
-
-            :ok =
-              record_identity_disabled_audit(
-                disabled_identity,
-                length(active_certs),
-                reason,
-                actor
-              )
-
-            %{
-              identity: disabled_identity,
-              crl_updated: true,
-              generation: updated_authority.current_generation,
-              crl_number: updated_authority.current_crl_number
-            }
           end
       end
     end)
@@ -301,6 +291,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
       source_ip: source_ip,
       access_granted: true,
       correlation_id: identity.id,
+      hash_version: 2,
       event_data: %{
         "identity_id" => identity.id,
         "name" => identity.name,
@@ -328,6 +319,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
       source_ip: source_ip,
       access_granted: true,
       correlation_id: identity.id,
+      hash_version: 2,
       event_data: %{
         "identity_id" => identity.id,
         "name" => identity.name,
@@ -340,5 +332,21 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
       {:ok, _} -> :ok
       {:error, reason} -> Repo.rollback({:audit_failed, reason})
     end
+  end
+
+  defp revoke_active_certs(certs, now, reason) do
+    Enum.reduce_while(certs, :ok, fn cert, :ok ->
+      changeset =
+        Certificate.changeset(cert, %{
+          revoked: true,
+          revoked_at: now,
+          revocation_reason: reason
+        })
+
+      case Repo.update(changeset) do
+        {:ok, _} -> {:cont, :ok}
+        {:error, changeset_err} -> {:halt, {:error, changeset_err}}
+      end
+    end)
   end
 end

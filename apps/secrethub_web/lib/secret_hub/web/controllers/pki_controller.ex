@@ -413,6 +413,15 @@ defmodule SecretHub.Web.PKIController do
         |> put_status(:bad_request)
         |> json(%{error: "Certificate is already revoked"})
 
+      {:error, :client_auth_forbidden} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{
+          error: "FORBIDDEN",
+          message:
+            "Client Auth certificates must be revoked through /v1/pki/client-auth/certificates/:id/revoke"
+        })
+
       {:error, :forbidden} ->
         conn
         |> put_status(:forbidden)
@@ -451,6 +460,10 @@ defmodule SecretHub.Web.PKIController do
 
   defp check_not_revoked(%{revoked: true}), do: {:error, :already_revoked}
   defp check_not_revoked(_cert), do: :ok
+
+  defp allow_generic_certificate_revocation(%Certificate{cert_type: cert_type})
+       when cert_type in [:client_auth_client, :client_auth_ca],
+       do: {:error, :client_auth_forbidden}
 
   defp allow_generic_certificate_revocation(%Certificate{cert_type: :app_client}),
     do: {:error, :forbidden}

@@ -383,6 +383,59 @@ func TestVerifierMonotonicityAndRollbackRejection(t *testing.T) {
 	}
 }
 
+func TestVerifierDynamicRevocationReloadAndRejection(t *testing.T) {
+	h := newTestHarness(t)
+	defer os.RemoveAll(h.tmpDir)
+
+	serialA := big.NewInt(5001)
+	certA, _ := h.issueClientCert(t, "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d", 5001)
+
+	// Step 1: Initial Gen 1 bundle where certA is valid
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+
+	v := NewVerifier(h.tmpDir)
+	snap1, err := v.LoadFromDisk()
+	if err != nil {
+		t.Fatalf("failed to load gen 1: %v", err)
+	}
+	if snap1.Generation != 1 {
+		t.Fatalf("expected gen 1, got %d", snap1.Generation)
+	}
+
+	// certA must be verified successfully
+	if _, err := v.VerifyCertificate(certA, time.Now()); err != nil {
+		t.Fatalf("expected certA to be valid under Gen 1, got: %v", err)
+	}
+
+	// Step 2: Publish Gen 2 bundle where certA is revoked
+	h.writeBundle(t, 2, 2, []*big.Int{serialA}, time.Now().Add(48*time.Hour))
+
+	// Reload from disk
+	snap2, err := v.LoadFromDisk()
+	if err != nil {
+		t.Fatalf("failed to reload gen 2: %v", err)
+	}
+	if snap2.Generation != 2 {
+		t.Fatalf("expected gen 2, got %d", snap2.Generation)
+	}
+
+	// certA must now be rejected as revoked
+	if _, err := v.VerifyCertificate(certA, time.Now()); err != ErrCertRevoked {
+		t.Fatalf("expected certA to be rejected with ErrCertRevoked under Gen 2, got: %v", err)
+	}
+
+	// Step 3: Rollback attempt to Gen 1 must fail and leave Gen 2 active
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+	if _, err := v.LoadFromDisk(); err == nil {
+		t.Fatalf("expected rollback to Gen 1 to fail, got nil")
+	}
+
+	// certA must still be rejected by the active snapshot
+	if _, err := v.VerifyCertificate(certA, time.Now()); err != ErrCertRevoked {
+		t.Fatalf("expected certA to remain rejected after failed rollback, got: %v", err)
+	}
+}
+
 func TestVerifierCanonicalProfileNegative(t *testing.T) {
 	h := newTestHarness(t)
 	defer os.RemoveAll(h.tmpDir)
@@ -503,6 +556,83 @@ func TestVerifierCorruptWatermarkFailClosed(t *testing.T) {
 	v := NewVerifier(h.tmpDir)
 	if _, err := v.LoadFromDisk(); err == nil {
 		t.Fatalf("expected LoadFromDisk to fail closed on corrupt watermark.json, got nil")
+	}
+}
+
+func TestVerifierIncompleteWatermarkFailClosed(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+	}{
+		{"empty_json", "{}"},
+		{"missing_fields", `{"highest_seen_generation": 10}`},
+		{"zero_generation", `{"highest_seen_generation": 0, "highest_seen_crl_number": 1, "pinned_ca_fingerprint": "8792bc0fa20e137b26ac4467d91c67926b86edee0352534a5b71f6fd8aa724b5", "last_bundle_sha256": "8792bc0fa20e137b26ac4467d91c67926b86edee0352534a5b71f6fd8aa724b5"}`},
+		{"invalid_fingerprint_hex", `{"highest_seen_generation": 1, "highest_seen_crl_number": 1, "pinned_ca_fingerprint": "not-a-valid-hex", "last_bundle_sha256": "8792bc0fa20e137b26ac4467d91c67926b86edee0352534a5b71f6fd8aa724b5"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newTestHarness(t)
+			defer os.RemoveAll(h.tmpDir)
+
+			h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+			watermarkPath := filepath.Join(h.tmpDir, "watermark.json")
+			if err := os.WriteFile(watermarkPath, []byte(tc.json), 0644); err != nil {
+				t.Fatalf("failed to write watermark: %v", err)
+			}
+
+			v := NewVerifier(h.tmpDir)
+			if _, err := v.LoadFromDisk(); err == nil {
+				t.Errorf("expected LoadFromDisk to fail closed on %s, got nil error", tc.name)
+			}
+		})
+	}
+}
+
+func TestConcurrentWatermarkWriters(t *testing.T) {
+	h := newTestHarness(t)
+	defer os.RemoveAll(h.tmpDir)
+
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+
+	sharedWatermark := filepath.Join(h.tmpDir, "shared-watermark.json")
+
+	// Launch 10 concurrent verifier instances attempting to load and update the same watermark
+	const workers = 10
+	errCh := make(chan error, workers)
+
+	for i := 0; i < workers; i++ {
+		go func() {
+			v := NewVerifier(h.tmpDir)
+			v.SetWatermarkFile(sharedWatermark)
+			_, err := v.LoadFromDisk()
+			errCh <- err
+		}()
+	}
+
+	for i := 0; i < workers; i++ {
+		if err := <-errCh; err != nil {
+			t.Errorf("worker %d failed during concurrent watermark write: %v", i, err)
+		}
+	}
+
+	// Verify final persisted watermark is valid and intact
+	wmBytes, err := os.ReadFile(sharedWatermark)
+	if err != nil {
+		t.Fatalf("failed to read shared watermark: %v", err)
+	}
+
+	var wm PersistentWatermark
+	if err := json.Unmarshal(wmBytes, &wm); err != nil {
+		t.Fatalf("failed to unmarshal shared watermark: %v", err)
+	}
+
+	if err := validateWatermark(&wm); err != nil {
+		t.Fatalf("shared watermark failed validation: %v", err)
+	}
+
+	if wm.HighestSeenGeneration != 1 {
+		t.Errorf("expected generation 1, got %d", wm.HighestSeenGeneration)
 	}
 }
 
