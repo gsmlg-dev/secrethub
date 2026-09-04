@@ -292,6 +292,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     revoke_response =
       token
       |> authed_conn()
+      |> init_test_session(%{admin_id: "test-admin"})
       |> post("/v1/pki/certificates/#{signed_response["cert_id"]}/revoke", %{
         "reason" => "keyCompromise"
       })
@@ -653,13 +654,126 @@ defmodule SecretHub.Web.PKIControllerTest do
         "reason" => "keyCompromise"
       })
 
-    assert json_response(response, 403) == %{"error" => "FORBIDDEN"}
+    assert_admin_unauthorized(response)
 
     assert %Certificate{revoked: false, revoked_at: nil, revocation_reason: nil} =
              Repo.get!(Certificate, fixture.current.cert_record.id)
 
     assert %AppCertificate{revoked_at: nil, revocation_reason: nil} =
              Repo.get!(AppCertificate, fixture.current.app_certificate.id)
+  end
+
+  test "an admin cannot revoke an app certificate through generic PKI" do
+    fixture = renewal_fixture!()
+
+    response =
+      vault_token!()
+      |> authed_conn()
+      |> init_test_session(%{admin_id: "test-admin"})
+      |> post("/v1/pki/certificates/#{fixture.current.cert_record.id}/revoke", %{
+        "reason" => "keyCompromise"
+      })
+
+    assert json_response(response, 403) == %{"error" => "FORBIDDEN"}
+
+    assert %Certificate{revoked: false, revoked_at: nil, revocation_reason: nil} =
+             Repo.get!(Certificate, fixture.current.cert_record.id)
+  end
+
+  test "neither Agent nor AppRole token can revoke Client Auth certificates through generic PKI" do
+    {:ok, %{authority: authority}} =
+      SecretHub.Core.PKI.ClientAuth.init_authority(%{
+        "name" => "Generic Route CA Protection Test",
+        "ca_validity_days" => 365
+      })
+
+    {:ok, identity} =
+      SecretHub.Core.PKI.ClientAuth.create_identity(%{
+        "name" => "generic-test-client"
+      })
+
+    client_key = X509.PrivateKey.new_ec(:secp256r1)
+    csr_pem = client_key |> X509.CSR.new("/CN=generic-test-client") |> X509.CSR.to_pem()
+    request_id = Ecto.UUID.generate()
+
+    {:ok, %{cert_record: client_cert}} =
+      SecretHub.Core.PKI.ClientAuth.issue_certificate(identity.id, csr_pem, request_id)
+
+    ca_cert = Repo.get!(Certificate, authority.ca_certificate_id)
+
+    # 1. Agent Vault token is unauthorized
+    agent_token = vault_token!()
+
+    resp1 =
+      agent_token
+      |> authed_conn()
+      |> post("/v1/pki/certificates/#{client_cert.id}/revoke", %{"reason" => "key_compromise"})
+
+    assert_admin_unauthorized(resp1)
+
+    resp2 =
+      agent_token
+      |> authed_conn()
+      |> post("/v1/pki/certificates/#{ca_cert.id}/revoke", %{"reason" => "key_compromise"})
+
+    assert_admin_unauthorized(resp2)
+
+    # 2. AppRole token is unauthorized
+    {:ok, role} =
+      SecretHub.Core.Auth.AppRole.create_role(
+        "pki-approle-test-#{System.unique_integer([:positive])}",
+        policies: ["default"],
+        secret_id_num_uses: 0
+      )
+
+    login_conn =
+      build_conn()
+      |> post("/v1/auth/approle/login", %{
+        "role_id" => role.role_id,
+        "secret_id" => role.secret_id
+      })
+
+    approle_token = json_response(login_conn, 200)["token"]
+
+    resp3 =
+      approle_token
+      |> authed_conn()
+      |> post("/v1/pki/certificates/#{client_cert.id}/revoke", %{"reason" => "key_compromise"})
+
+    assert_admin_unauthorized(resp3)
+
+    resp4 =
+      approle_token
+      |> authed_conn()
+      |> post("/v1/pki/certificates/#{ca_cert.id}/revoke", %{"reason" => "key_compromise"})
+
+    assert_admin_unauthorized(resp4)
+
+    # 3. Authenticated admin is forbidden from revoking Client Auth certs via generic endpoint
+    admin_conn =
+      build_conn()
+      |> put_req_header("x-vault-token", agent_token)
+      |> init_test_session(%{admin_id: "test-admin"})
+
+    admin_client_resp =
+      post(admin_conn, "/v1/pki/certificates/#{client_cert.id}/revoke", %{
+        "reason" => "key_compromise"
+      })
+
+    assert json_response(admin_client_resp, 403)["error"] == "FORBIDDEN"
+    assert json_response(admin_client_resp, 403)["message"] =~ "Client Auth"
+
+    admin_ca_resp =
+      post(admin_conn, "/v1/pki/certificates/#{ca_cert.id}/revoke", %{
+        "reason" => "key_compromise"
+      })
+
+    assert json_response(admin_ca_resp, 403)["error"] == "FORBIDDEN"
+    assert json_response(admin_ca_resp, 403)["message"] =~ "Client Auth"
+
+    # Verify both certs remain unrevoked in PostgreSQL
+    assert Repo.get!(Certificate, client_cert.id).revoked == false
+    assert Repo.get!(Certificate, ca_cert.id).revoked == false
   end
 
   test "an authenticated admin can revoke application certificates" do

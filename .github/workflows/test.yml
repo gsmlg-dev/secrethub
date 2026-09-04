@@ -80,6 +80,15 @@ jobs:
           REDIS_URL: redis://localhost:6379
         run: mix test
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run Go tests
+        working-directory: caddy-secrethub-pki
+        run: go test -v -race ./...
+
       - name: Generate coverage report
         if: success()
         continue-on-error: true

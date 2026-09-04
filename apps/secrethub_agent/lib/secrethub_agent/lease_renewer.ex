@@ -281,22 +281,6 @@ defmodule SecretHub.Agent.LeaseRenewer do
             invoke_callback(state.callbacks, :on_expired, lease)
             Map.delete(acc, lease_id)
 
-          # Lease is expiring soon (< 5 min) - trigger warning callback
-          DateTime.diff(lease.expires_at, now) < 300 and lease.status != :renewing ->
-            Logger.warning("Lease expiring soon",
-              lease_id: lease_id,
-              remaining: DateTime.diff(lease.expires_at, now)
-            )
-
-            invoke_callback(state.callbacks, :on_expiring_soon, lease)
-            acc
-
-          # Lease needs renewal (< 33% TTL remaining)
-          should_renew?(lease, now) ->
-            Logger.info("Initiating lease renewal", lease_id: lease_id)
-            send(self(), {:renew_lease, lease_id})
-            Map.put(acc, lease_id, %{lease | status: :renewing})
-
           # Lease failed previously, check if it's time to retry
           lease.status == :failed and should_retry?(lease, now) ->
             Logger.info("Retrying lease renewal",
@@ -304,6 +288,33 @@ defmodule SecretHub.Agent.LeaseRenewer do
               retry: lease.retry_count + 1
             )
 
+            send(self(), {:renew_lease, lease_id})
+            Map.put(acc, lease_id, %{lease | status: :renewing})
+
+          # Lease is failed and waiting for retry or exhausted
+          lease.status == :failed ->
+            acc
+
+          # Lease is expiring soon (< 5 min) - trigger warning callback and renew if needed
+          DateTime.diff(lease.expires_at, now) < 300 and lease.status != :renewing ->
+            Logger.warning("Lease expiring soon",
+              lease_id: lease_id,
+              remaining: DateTime.diff(lease.expires_at, now)
+            )
+
+            invoke_callback(state.callbacks, :on_expiring_soon, lease)
+
+            if should_renew?(lease, now) do
+              Logger.info("Initiating lease renewal", lease_id: lease_id)
+              send(self(), {:renew_lease, lease_id})
+              Map.put(acc, lease_id, %{lease | status: :renewing})
+            else
+              acc
+            end
+
+          # Lease needs renewal (< 33% TTL remaining)
+          should_renew?(lease, now) ->
+            Logger.info("Initiating lease renewal", lease_id: lease_id)
             send(self(), {:renew_lease, lease_id})
             Map.put(acc, lease_id, %{lease | status: :renewing})
 

@@ -19,48 +19,89 @@ defmodule SecretHub.Agent.Application do
     core_url = configured_value(:core_url, "SECRET_HUB_AGENT_CORE_URL")
     core_endpoints = [core_url]
 
-    children = [
-      # Cache for secrets
-      SecretHub.Agent.Cache,
+    client_auth_pki_enabled =
+      case System.get_env("SECRET_HUB_CLIENT_AUTH_PKI_ENABLED") do
+        val when val in ["true", "1", "yes"] -> true
+        val when val in ["false", "0", "no"] -> false
+        _ -> Application.get_env(:secrethub_agent, :client_auth_pki_enabled, false)
+      end
 
-      # Endpoint manager for multi-endpoint failover
-      {SecretHub.Agent.EndpointManager,
-       [
-         core_endpoints: core_endpoints,
-         health_check_interval:
-           Application.get_env(:secrethub_agent, :endpoint_health_check_interval, 30_000),
-         failover_threshold:
-           Application.get_env(:secrethub_agent, :endpoint_failover_threshold, 3)
-       ]},
+    bundle_dir =
+      System.get_env("SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR") ||
+        Application.get_env(
+          :secrethub_agent,
+          :client_auth_bundle_dir,
+          "/var/lib/secrethub/pki/client-auth"
+        )
 
-      # Bootstrap trusted runtime connection from local identity or enrollment
-      {SecretHub.Agent.RuntimeBootstrapper,
-       [
-         core_url: core_url,
-         core_endpoints: core_endpoints,
-         enrollment_opts: Application.get_env(:secrethub_agent, :enrollment_opts, [])
-       ]},
+    pki_children =
+      if client_auth_pki_enabled do
+        [
+          {SecretHub.Agent.PKI.TrustBundleManager,
+           [
+             bundle_dir: bundle_dir,
+             state_dir:
+               System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
+                 Application.get_env(
+                   :secrethub_agent,
+                   :state_dir,
+                   Path.expand("~/.local/state/secrethub/agent")
+                 )
+           ]}
+        ]
+      else
+        []
+      end
 
-      # Lease renewer for dynamic secrets
-      {SecretHub.Agent.LeaseRenewer,
-       [
-         core_url: core_url,
-         callbacks: %{
-           on_renewed: &handle_renewed/1,
-           on_failed: &handle_failed/1,
-           on_expiring_soon: &handle_expiring_soon/1,
-           on_expired: &handle_expired/1
-         }
-       ]},
+    children =
+      [
+        # Cache for secrets
+        SecretHub.Agent.Cache,
 
-      # Unix Domain Socket server for application connections
-      {SecretHub.Agent.UDSServer,
-       [
-         socket_path:
-           Application.get_env(:secrethub_agent, :socket_path, "/var/run/secrethub/agent.sock"),
-         max_connections: Application.get_env(:secrethub_agent, :max_connections, 100)
-       ]}
-    ]
+        # Endpoint manager for multi-endpoint failover
+        {SecretHub.Agent.EndpointManager,
+         [
+           core_endpoints: core_endpoints,
+           health_check_interval:
+             Application.get_env(:secrethub_agent, :endpoint_health_check_interval, 30_000),
+           failover_threshold:
+             Application.get_env(:secrethub_agent, :endpoint_failover_threshold, 3)
+         ]},
+
+        # Bootstrap trusted runtime connection from local identity or enrollment
+        {SecretHub.Agent.RuntimeBootstrapper,
+         [
+           core_url: core_url,
+           core_endpoints: core_endpoints,
+           enrollment_opts: Application.get_env(:secrethub_agent, :enrollment_opts, [])
+         ]}
+      ] ++
+        pki_children ++
+        [
+          # Lease renewer for dynamic secrets
+          {SecretHub.Agent.LeaseRenewer,
+           [
+             core_url: core_url,
+             callbacks: %{
+               on_renewed: &handle_renewed/1,
+               on_failed: &handle_failed/1,
+               on_expiring_soon: &handle_expiring_soon/1,
+               on_expired: &handle_expired/1
+             }
+           ]},
+
+          # Unix Domain Socket server for application connections
+          {SecretHub.Agent.UDSServer,
+           [
+             socket_path:
+               Application.get_env(
+                 :secrethub_agent,
+                 :socket_path,
+                 "/var/run/secrethub/agent.sock"
+               ),
+             max_connections: Application.get_env(:secrethub_agent, :max_connections, 100)
+           ]}
+        ]
 
     # :rest_for_one ensures downstream children restart when an upstream
     # dependency crashes (e.g., if RuntimeBootstrapper dies, LeaseRenewer

@@ -8,10 +8,18 @@ defmodule SecretHub.Core.ApplicationTest do
     ClusterState,
     LeaseManager,
     Repo,
-    Vault.SealState
+    Vault.SealState,
+    Workers.ClientAuthCRLRefresher
   }
 
-  @runtime_children [Repo, SealState, ClusterState, LeaseManager, ConnectionManager]
+  @runtime_children [
+    Repo,
+    SealState,
+    ClusterState,
+    LeaseManager,
+    ConnectionManager,
+    ClientAuthCRLRefresher
+  ]
 
   setup do
     original_env = Elixir.Application.get_env(:secrethub_core, :env)

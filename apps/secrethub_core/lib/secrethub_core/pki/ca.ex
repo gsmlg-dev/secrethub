@@ -1075,12 +1075,12 @@ defmodule SecretHub.Core.PKI.CA do
   defp pki_master_key do
     case Process.whereis(SealState) do
       nil ->
-        dev_fallback_key()
+        if(dev_pki_unsealed_fallback?(), do: dev_fallback_key())
 
       _pid ->
         case SealState.get_master_key() do
           {:ok, key} -> key
-          {:error, _reason} -> if(dev_pki_unsealed_fallback?(), do: dev_fallback_key())
+          {:error, _reason} -> nil
         end
     end
   end

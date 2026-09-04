@@ -66,6 +66,14 @@ else
     echo ""
 fi
 
+# 6. Go Caddy PKI checks
+if command -v go >/dev/null 2>&1 && [ -d "caddy-secrethub-pki" ]; then
+    run_check "Go Vet (caddy-secrethub-pki)" bash -c "cd caddy-secrethub-pki && go vet ./..."
+    if [ "$SKIP_TESTS" != "1" ]; then
+        run_check "Go Tests (caddy-secrethub-pki)" bash -c "cd caddy-secrethub-pki && go test -race ./..."
+    fi
+fi
+
 # Summary
 echo "════════════════════════════════════════════════════════════════"
 echo "  Summary"

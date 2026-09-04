@@ -179,6 +179,7 @@ defmodule SecretHub.Web.Router do
       live "/pki/csr/upload", PKIManagementLive, :upload_csr
       live "/pki/search", PKIManagementLive, :search
       live "/pki/analytics", PKIManagementLive, :analytics
+      live "/pki/client-auth", ClientAuthLive, :index
       live "/certificates", AdminCertificateLive, :index
       live "/approles", AppRoleManagementLive, :index
       live "/dynamic/postgresql", DynamicPostgreSQLConfigLive, :index
@@ -327,6 +328,7 @@ defmodule SecretHub.Web.Router do
     post "/ca/intermediate/generate", PKIController, :generate_intermediate_ca
     post "/sign-request", PKIController, :sign_csr
     post "/app/revoke", PKIController, :revoke_app_certificate
+    post "/certificates/:id/revoke", PKIController, :revoke_certificate
   end
 
   # Dynamic Secrets API routes (token-authenticated)
@@ -348,14 +350,38 @@ defmodule SecretHub.Web.Router do
     get "/stats", DynamicSecretsController, :stats
   end
 
-  # PKI read and non-application revocation routes (token-authenticated)
+  # PKI read routes (token-authenticated)
   scope "/v1/pki", SecretHub.Web do
     pipe_through :vault_token
 
     # Certificate operations
     get "/certificates", PKIController, :list_certificates
     get "/certificates/:id", PKIController, :get_certificate
-    post "/certificates/:id/revoke", PKIController, :revoke_certificate
+  end
+
+  # Client Auth PKI public bundle and status endpoints
+  scope "/v1/pki/client-auth", SecretHub.Web do
+    pipe_through :api
+
+    get "/bundle", ClientAuthPKIController, :get_bundle
+    get "/authority/status", ClientAuthPKIController, :authority_status
+  end
+
+  # Client Auth PKI authenticated management and issuance (operator/admin only)
+  scope "/v1/pki/client-auth", SecretHub.Web do
+    pipe_through :admin_api
+
+    post "/authority/init", ClientAuthPKIController, :init_authority
+    post "/identities", ClientAuthPKIController, :create_identity
+    get "/identities", ClientAuthPKIController, :list_identities
+    get "/identities/:id", ClientAuthPKIController, :get_identity
+    post "/identities/:id/disable", ClientAuthPKIController, :disable_identity
+    post "/issue", ClientAuthPKIController, :issue_certificate
+    get "/certificates", ClientAuthPKIController, :list_certificates
+    get "/certificates/:id", ClientAuthPKIController, :get_certificate
+    post "/certificates/:id/revoke", ClientAuthPKIController, :revoke_certificate
+    post "/crl/refresh", ClientAuthPKIController, :refresh_crl
+    get "/bundle/receipts", ClientAuthPKIController, :list_receipts
   end
 
   # Application lifecycle mutations (operator/admin only)
