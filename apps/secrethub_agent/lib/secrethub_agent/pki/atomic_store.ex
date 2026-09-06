@@ -82,26 +82,31 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
       part, {:ok, current} ->
         next_path = Path.join(current, part)
+        is_target? = next_path == normalized
 
         case File.lstat(next_path) do
           {:ok, %File.Stat{type: :symlink}} ->
             {:halt, {:error, {:symlink_directory_disallowed, next_path}}}
 
           {:ok, %File.Stat{type: :directory}} ->
-            set_directory_permissions(next_path)
-            {:cont, {:ok, next_path}}
+            if is_target? do
+              case set_directory_permissions(next_path) do
+                :ok -> {:cont, {:ok, next_path}}
+                {:error, reason} -> {:halt, {:error, reason}}
+              end
+            else
+              {:cont, {:ok, next_path}}
+            end
 
           {:ok, %File.Stat{type: _other}} ->
             {:halt, {:error, {:not_a_directory, next_path}}}
 
           {:error, :enoent} ->
-            case File.mkdir(next_path) do
-              :ok ->
-                set_directory_permissions(next_path)
-                {:cont, {:ok, next_path}}
-
-              {:error, reason} ->
-                {:halt, {:error, reason}}
+            with :ok <- File.mkdir(next_path),
+                 :ok <- set_directory_permissions(next_path) do
+              {:cont, {:ok, next_path}}
+            else
+              {:error, reason} -> {:halt, {:error, reason}}
             end
 
           {:error, reason} ->
@@ -155,12 +160,11 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     case File.lstat(dir_path) do
       {:ok, %File.Stat{mode: current_mode}} ->
         setgid_bit = Bitwise.band(current_mode, 0o2000)
-        _ = File.chmod(dir_path, Bitwise.bor(0o750, setgid_bit))
-        :ok
+        target_mode = Bitwise.bor(0o750, setgid_bit)
+        File.chmod(dir_path, target_mode)
 
-      _ ->
-        _ = File.chmod(dir_path, 0o750)
-        :ok
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -281,7 +285,8 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
       {:ok, json} ->
         with :ok <- ensure_secure_directory(base_dir),
              :ok <- write_and_fsync_file(tmp_path, json),
-             :ok <- File.rename(tmp_path, target_path) do
+             :ok <- File.rename(tmp_path, target_path),
+             :ok <- fsync_dir(base_dir) do
           :ok
         else
           {:error, reason} ->

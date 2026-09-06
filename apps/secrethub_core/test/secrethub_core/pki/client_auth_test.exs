@@ -536,6 +536,64 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert length(receipts) == 1
       assert hd(receipts).generation == bundle["generation"]
     end
+
+    test "delayed authentic historical receipt is accepted after authority generation advances" do
+      {:ok, gen1_bundle} = ClientAuth.current_bundle()
+      assert gen1_bundle["generation"] == 1
+
+      # Force a CRL refresh / advance authority generation
+      {:ok, gen2_crl} = ClientAuth.refresh_crl()
+      assert gen2_crl.crl_number == 2
+
+      # Now verify agent submitting authentic gen 1 bundle receipt is accepted as applied
+      assert {:ok, receipt} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-delayed-historical",
+                 "generation" => gen1_bundle["generation"],
+                 "crl_number" => gen1_bundle["crl_number"],
+                 "bundle_sha256" => gen1_bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => DateTime.utc_now()
+               })
+
+      assert receipt.status == "applied"
+      assert receipt.generation == 1
+      assert receipt.crl_number == 1
+    end
+
+    test "stale failure receipt with older timestamp cannot overwrite applied status for the same generation" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+      t_applied = DateTime.utc_now()
+      t_stale_failure = DateTime.add(t_applied, -60, :second)
+
+      # 1. Agent successfully applies bundle
+      assert {:ok, receipt1} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-out-of-order",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => t_applied
+               })
+
+      assert receipt1.status == "applied"
+
+      # 2. Delayed failure receipt arriving later with older timestamp
+      assert {:ok, receipt2} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-out-of-order",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "failed",
+                 "applied_at" => t_stale_failure,
+                 "last_error_code" => "transient_stale_error"
+               })
+
+      # Must remain applied because failure occurred before the applied timestamp
+      assert receipt2.status == "applied"
+    end
   end
 
   describe "CAValidator" do

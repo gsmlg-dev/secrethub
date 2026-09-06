@@ -269,7 +269,20 @@ defmodule SecretHub.Core.PKI.ClientAuth do
               true
 
             rec ->
-              receipt_attrs.generation >= rec.generation
+              cond do
+                receipt_attrs.generation > rec.generation ->
+                  true
+
+                receipt_attrs.generation < rec.generation ->
+                  false
+
+                true ->
+                  if receipt_attrs.status == "failed" and rec.status == "applied" do
+                    is_newer_failure?(receipt_attrs, rec)
+                  else
+                    true
+                  end
+              end
           end
 
         if should_update do
@@ -308,12 +321,15 @@ defmodule SecretHub.Core.PKI.ClientAuth do
               }
 
               case Audit.log_event(attrs) do
-                {:ok, _} -> receipt
-                {:error, reason} -> Repo.rollback({:audit_failed, reason})
+                {:ok, _} ->
+                  receipt
+
+                {:error, audit_err} ->
+                  Repo.rollback({:audit_failed, audit_err})
               end
 
-            {:error, reason} ->
-              Repo.rollback(reason)
+            {:error, changeset} ->
+              Repo.rollback(changeset)
           end
         else
           existing
@@ -322,21 +338,55 @@ defmodule SecretHub.Core.PKI.ClientAuth do
     end
   end
 
-  @doc """
-  Lists bundle receipts for all agents.
-  """
-  def list_bundle_receipts(slug_or_opts \\ [])
+  defp is_newer_failure?(receipt_attrs, existing) do
+    case {receipt_attrs[:applied_at], existing.applied_at || existing.updated_at} do
+      {nil, _} ->
+        true
 
-  def list_bundle_receipts(slug) when is_binary(slug) do
-    list_bundle_receipts(authority_slug: slug)
+      {_, nil} ->
+        true
+
+      {%DateTime{} = new_dt, %DateTime{} = old_dt} ->
+        DateTime.compare(new_dt, old_dt) in [:gt, :eq]
+
+      _ ->
+        true
+    end
   end
 
+  @doc """
+  Lists bundle receipts with pagination.
+  """
+  @spec list_bundle_receipts(keyword()) :: [ClientAuthBundleReceipt.t()]
+  @spec list_bundle_receipts(ClientAuthAuthority.t() | binary(), keyword()) ::
+          [ClientAuthBundleReceipt.t()]
+  def list_bundle_receipts(authority_or_opts \\ [])
+
   def list_bundle_receipts(opts) when is_list(opts) do
-    limit = Keyword.get(opts, :limit, 100)
+    limit = Keyword.get(opts, :limit, 50)
     offset = Keyword.get(opts, :offset, 0)
 
     query =
       from(r in ClientAuthBundleReceipt,
+        order_by: [desc: r.updated_at],
+        limit: ^limit,
+        offset: ^offset
+      )
+
+    Repo.all(query)
+  end
+
+  def list_bundle_receipts(%ClientAuthAuthority{id: authority_id}, opts) do
+    list_bundle_receipts(authority_id, opts)
+  end
+
+  def list_bundle_receipts(authority_id, opts) when is_binary(authority_id) and is_list(opts) do
+    limit = Keyword.get(opts, :limit, 50)
+    offset = Keyword.get(opts, :offset, 0)
+
+    query =
+      from(r in ClientAuthBundleReceipt,
+        where: r.client_auth_authority_id == ^authority_id,
         order_by: [desc: r.updated_at],
         limit: ^limit,
         offset: ^offset
@@ -368,8 +418,19 @@ defmodule SecretHub.Core.PKI.ClientAuth do
                 "Generation #{receipt_attrs.generation} is not an authentic Core bundle"
           }
 
+        receipt_attrs.crl_number != nil and receipt_attrs.crl_number != crl.crl_number ->
+          record_unknown_bundle_audit(authority, receipt_attrs, "crl_number_mismatch")
+
+          %{
+            receipt_attrs
+            | status: "failed",
+              last_error_code: "crl_number_mismatch",
+              last_error_detail:
+                "Reported crl_number #{receipt_attrs.crl_number} does not match historical #{crl.crl_number}"
+          }
+
         true ->
-          expected_bundle = TrustBundle.build(authority, ca, crl)
+          expected_bundle = TrustBundle.build(authority, ca, crl, generation: crl.generation)
 
           if expected_bundle["bundle_sha256"] != receipt_attrs.bundle_sha256 do
             record_unknown_bundle_audit(authority, receipt_attrs, "hash_mismatch")

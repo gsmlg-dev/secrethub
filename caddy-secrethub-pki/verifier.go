@@ -127,11 +127,26 @@ func (v *Verifier) SetExpectedCAFingerprint(fp string) {
 	v.expectedCAFingerprint = strings.ToLower(fp)
 }
 
+const DefaultCaddyWatermarkFile = "/var/lib/caddy/secrethub-client-auth/watermark.json"
+
+func isPathInside(target, parent string) bool {
+	cleanTarget := filepath.Clean(target)
+	cleanParent := filepath.Clean(parent)
+	if cleanTarget == cleanParent {
+		return true
+	}
+	rel, err := filepath.Rel(cleanParent, cleanTarget)
+	if err != nil {
+		return false
+	}
+	return !strings.HasPrefix(rel, "..") && rel != "."
+}
+
 func (v *Verifier) getWatermarkPath() string {
 	if v.watermarkFile != "" {
 		return v.watermarkFile
 	}
-	return filepath.Join(v.bundleDir, "watermark.json")
+	return DefaultCaddyWatermarkFile
 }
 
 // PersistentWatermark tracks high-water mark state across process restarts.
@@ -204,6 +219,10 @@ func (v *Verifier) LoadFromDisk() (*BundleSnapshot, error) {
 
 	// 2. Persistent watermark check across restarts and concurrent instances under file lock
 	watermarkPath := v.getWatermarkPath()
+	if isPathInside(watermarkPath, v.bundleDir) {
+		return nil, fmt.Errorf("caddy watermark file (%s) must not be located inside bundle_dir (%s); Caddy watermark must be separated from Agent bundle directory", watermarkPath, v.bundleDir)
+	}
+
 	wmDir := filepath.Dir(watermarkPath)
 	if err := os.MkdirAll(wmDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create watermark directory: %w", err)

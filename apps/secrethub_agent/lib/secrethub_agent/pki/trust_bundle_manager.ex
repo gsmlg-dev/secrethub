@@ -280,6 +280,7 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           }
       end
 
+    send(self(), :initial_reconcile)
     timer = schedule_periodic_sync()
     {:ok, %{state | sync_timer: timer}}
   end
@@ -344,6 +345,12 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
   @impl true
   def handle_cast({:sync_bundle, opts}, state) do
     new_state = do_sync(state, opts)
+    {:noreply, new_state}
+  end
+
+  @impl true
+  def handle_info(:initial_reconcile, state) do
+    new_state = do_sync(state, [])
     {:noreply, new_state}
   end
 
@@ -442,7 +449,7 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
               )
 
             submit_receipt_async(new_state, receipt)
-            {:error, :watermark_repair_failed, new_state}
+            {:error, :watermark_repair_failed, receipt, new_state}
         end
       else
         case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
@@ -642,18 +649,39 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     case AtomicStore.read_persistent_watermark(base_dir) do
       {:ok, wm} ->
         wm_gen = wm["highest_seen_generation"] || 0
+        wm_crl = wm["highest_seen_crl_number"] || 0
+        wm_fp = wm["pinned_ca_fingerprint"]
+        wm_hash = wm["last_bundle_sha256"]
 
-        if wm_gen < validated.generation do
-          AtomicStore.write_watermark(base_dir, validated)
-        else
-          :ok
+        is_matching =
+          wm_gen == validated.generation and
+            wm_crl == validated.crl_number and
+            String.downcase(to_string(wm_fp)) ==
+              String.downcase(to_string(validated.ca_fingerprint)) and
+            String.downcase(to_string(wm_hash)) ==
+              String.downcase(to_string(validated.bundle_sha256))
+
+        cond do
+          is_matching ->
+            :ok
+
+          wm_gen > validated.generation ->
+            {:error, :watermark_generation_downgrade}
+
+          wm_gen == validated.generation and wm_hash != nil and
+              String.downcase(to_string(wm_hash)) !=
+                String.downcase(to_string(validated.bundle_sha256)) ->
+            {:error, :watermark_equivocation}
+
+          true ->
+            AtomicStore.write_watermark(base_dir, validated)
         end
 
       {:error, :not_found} ->
         AtomicStore.write_watermark(base_dir, validated)
 
-      _ ->
-        :ok
+      {:error, _reason} ->
+        AtomicStore.write_watermark(base_dir, validated)
     end
   end
 end

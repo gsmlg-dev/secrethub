@@ -39,61 +39,104 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     "pki.client_auth.agent_equivocation_detected"
   ]
   @client_auth_evidence_rules %{
-    "pki.client_auth.authority_initialized" => [
-      "authority_id",
-      "name",
-      "ca_certificate_id",
-      "ca_canonical_fingerprint",
-      "key_algorithm",
-      "initial_crl_id",
-      "initial_crl_number"
-    ],
-    "pki.client_auth.identity_created" => [
-      "identity_id",
-      "name",
-      "status"
-    ],
-    "pki.client_auth.identity_disabled" => [
-      "identity_id",
-      "name",
-      "revoked_certificates_count",
-      "reason"
-    ],
-    "pki.client_auth.certificate_issued" => [
-      "identity_id",
-      "certificate_id",
-      "serial_number",
-      "canonical_fingerprint",
-      "request_id"
-    ],
-    "pki.client_auth.certificate_revoked" => [
-      "certificate_id",
-      "serial_number",
-      "canonical_fingerprint",
-      "reason"
-    ],
-    "pki.client_auth.crl_published" => [
-      "authority",
-      "generation",
-      "crl_number",
-      "crl_der_sha256",
-      "revoked_count"
-    ],
-    "pki.client_auth.agent_receipt_recorded" => [
-      "agent_id",
-      "authority_id",
-      "generation",
-      "crl_number",
-      "bundle_sha256",
-      "status"
-    ],
-    "pki.client_auth.agent_equivocation_detected" => [
-      "agent_id",
-      "authority_id",
-      "generation",
-      "reported_bundle_sha256",
-      "reported_status"
-    ]
+    "pki.client_auth.authority_initialized" => %{
+      evidence_keys: [
+        "authority_id",
+        "name",
+        "ca_certificate_id",
+        "ca_canonical_fingerprint",
+        "key_algorithm",
+        "initial_crl_id",
+        "initial_crl_number"
+      ],
+      uuid_keys: ["authority_id", "ca_certificate_id", "initial_crl_id"],
+      sha256_keys: ["ca_canonical_fingerprint"],
+      integer_keys: ["initial_crl_number"],
+      string_keys: ["name", "key_algorithm"]
+    },
+    "pki.client_auth.identity_created" => %{
+      evidence_keys: ["identity_id", "name", "status"],
+      uuid_keys: ["identity_id"],
+      string_keys: ["name", "status"]
+    },
+    "pki.client_auth.identity_disabled" => %{
+      evidence_keys: ["identity_id", "name", "revoked_certificates_count", "reason"],
+      uuid_keys: ["identity_id"],
+      string_keys: ["name", "reason"],
+      integer_keys: ["revoked_certificates_count"]
+    },
+    "pki.client_auth.certificate_issued" => %{
+      evidence_keys: [
+        "identity_id",
+        "identity_name",
+        "certificate_id",
+        "serial_number",
+        "canonical_fingerprint",
+        "valid_from",
+        "valid_until",
+        "request_id"
+      ],
+      uuid_keys: ["identity_id", "certificate_id", "request_id"],
+      sha256_keys: ["canonical_fingerprint"],
+      string_keys: ["identity_name", "serial_number", "valid_from", "valid_until"]
+    },
+    "pki.client_auth.certificate_revoked" => %{
+      evidence_keys: [
+        "certificate_id",
+        "serial_number",
+        "canonical_fingerprint",
+        "client_auth_identity_id",
+        "reason",
+        "revoked_at"
+      ],
+      uuid_keys: ["certificate_id", "client_auth_identity_id"],
+      sha256_keys: ["canonical_fingerprint"],
+      string_keys: ["serial_number", "reason", "revoked_at"]
+    },
+    "pki.client_auth.crl_published" => %{
+      evidence_keys: [
+        "authority",
+        "generation",
+        "crl_number",
+        "crl_der_sha256",
+        "revoked_count",
+        "next_update"
+      ],
+      sha256_keys: ["crl_der_sha256"],
+      integer_keys: ["generation", "crl_number", "revoked_count"],
+      string_keys: ["authority", "next_update"]
+    },
+    "pki.client_auth.agent_receipt_recorded" => %{
+      evidence_keys: [
+        "agent_id",
+        "authority_id",
+        "generation",
+        "crl_number",
+        "bundle_sha256",
+        "status",
+        "last_error_code",
+        "last_error_detail",
+        "applied_at"
+      ],
+      optional_keys: ["last_error_code", "last_error_detail", "applied_at"],
+      uuid_keys: ["authority_id"],
+      sha256_keys: ["bundle_sha256"],
+      integer_keys: ["generation", "crl_number"],
+      string_keys: ["agent_id", "status", "last_error_code", "last_error_detail", "applied_at"]
+    },
+    "pki.client_auth.agent_equivocation_detected" => %{
+      evidence_keys: [
+        "agent_id",
+        "authority_id",
+        "generation",
+        "reported_bundle_sha256",
+        "reported_status"
+      ],
+      uuid_keys: ["authority_id"],
+      sha256_keys: ["reported_bundle_sha256"],
+      integer_keys: ["generation"],
+      string_keys: ["agent_id", "reported_status"]
+    }
   }
   @app_certificate_issuance_rules %{
     "auth.app_certificate_issuance_allowed" => %{
@@ -346,6 +389,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     ]
   end
 
+  @client_auth_evidence_error "must contain exactly the sanitized client auth PKI evidence"
+
   defp validate_hash_version_event_type(changeset) do
     event_type = get_field(changeset, :event_type)
     hash_version = get_field(changeset, :hash_version)
@@ -354,6 +399,9 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
 
     cond do
       event_type in @upgrade_event_types and hash_version != 2 ->
+        add_error(changeset, :hash_version, "must use hash version 2")
+
+      event_type in @client_auth_pki_event_types and hash_version != 2 ->
         add_error(changeset, :hash_version, "must use hash version 2")
 
       hash_version == 2 and event_type not in v2_supported_event_types ->
@@ -371,30 +419,59 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       nil ->
         changeset
 
-      required_keys ->
-        event_data = get_field(changeset, :event_data)
+      rule ->
+        case normalize_client_auth_pki_evidence(get_field(changeset, :event_data), rule) do
+          {:ok, event_data} ->
+            put_change(changeset, :event_data, event_data)
 
-        if is_map(event_data) do
-          missing =
-            Enum.filter(required_keys, fn key ->
-              not Map.has_key?(event_data, key) and
-                not Map.has_key?(event_data, String.to_atom(key))
-            end)
-
-          if missing == [] do
-            changeset
-          else
-            add_error(
-              changeset,
-              :event_data,
-              "missing required evidence keys: #{Enum.join(missing, ", ")}"
-            )
-          end
-        else
-          add_error(changeset, :event_data, "must be a map for #{event_type}")
+          :error ->
+            add_error(changeset, :event_data, @client_auth_evidence_error)
         end
     end
   end
+
+  defp normalize_client_auth_pki_evidence(event_data, rule) when is_map(event_data) do
+    with {:ok, pairs} <- normalize_pairs(event_data),
+         raw_map = Map.new(pairs),
+         required_keys = rule.evidence_keys -- Map.get(rule, :optional_keys, []),
+         true <- Enum.all?(required_keys, &Map.has_key?(raw_map, &1)),
+         true <- Enum.all?(Map.keys(raw_map), &(&1 in rule.evidence_keys)),
+         {:ok, norm_uuids} <-
+           normalize_uuid_evidence(
+             raw_map,
+             Enum.filter(Map.get(rule, :uuid_keys, []), &Map.has_key?(raw_map, &1))
+           ),
+         true <-
+           Enum.all?(Map.get(rule, :sha256_keys, []), fn k ->
+             case norm_uuids[k] do
+               nil -> k in Map.get(rule, :optional_keys, [])
+               val when is_binary(val) -> Regex.match?(@sha256_hex, val)
+               _ -> false
+             end
+           end),
+         true <-
+           Enum.all?(Map.get(rule, :integer_keys, []), fn k ->
+             case norm_uuids[k] do
+               nil -> k in Map.get(rule, :optional_keys, [])
+               val when is_integer(val) -> val >= 0
+               _ -> false
+             end
+           end),
+         true <-
+           Enum.all?(Map.get(rule, :string_keys, []), fn k ->
+             case norm_uuids[k] do
+               nil -> k in Map.get(rule, :optional_keys, [])
+               val when is_binary(val) -> not Regex.match?(@control_characters, val)
+               _ -> false
+             end
+           end) do
+      {:ok, norm_uuids}
+    else
+      _ -> :error
+    end
+  end
+
+  defp normalize_client_auth_pki_evidence(_event_data, _rule), do: :error
 
   defp validate_upgrade_gate_evidence(changeset) do
     if get_field(changeset, :event_type) in @upgrade_event_types do

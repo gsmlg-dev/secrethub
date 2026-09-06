@@ -18,15 +18,21 @@ defmodule SecretHub.Core.PKI.ClientAuth.TrustBundle do
   @doc """
   Builds a deterministic map for a given authority, CA certificate, and CRL.
   """
-  @spec build(ClientAuthAuthority.t(), Certificate.t(), ClientAuthCrl.t()) :: map()
-  def build(%ClientAuthAuthority{} = authority, %Certificate{} = ca, %ClientAuthCrl{} = crl) do
+  @spec build(ClientAuthAuthority.t(), Certificate.t(), ClientAuthCrl.t(), keyword()) :: map()
+  def build(
+        %ClientAuthAuthority{} = authority,
+        %Certificate{} = ca,
+        %ClientAuthCrl{} = crl,
+        opts \\ []
+      ) do
+    generation = Keyword.get(opts, :generation, crl.generation || authority.current_generation)
     this_update_iso = DateTime.to_iso8601(crl.this_update)
     next_update_iso = DateTime.to_iso8601(crl.next_update)
 
     fields_for_hash = %{
       "schema_version" => @schema_version,
       "authority" => authority.slug,
-      "generation" => authority.current_generation,
+      "generation" => generation,
       "ca_fingerprint" => ca.canonical_fingerprint,
       "crl_number" => crl.crl_number,
       "crl_der_sha256" => crl.crl_der_sha256,

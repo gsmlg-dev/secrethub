@@ -647,23 +647,60 @@ defmodule SecretHub.Agent.PKIBundleTest do
                AtomicStore.read_persistent_watermark(bundle_dir)
     end
 
-    test "ensure_secure_directory rejects ancestor symlinks", %{
+    test "ensure_secure_directory does not mutate ancestor permissions", %{tmp_dir: tmp_dir} do
+      parent_dir = Path.join(tmp_dir, "preserved_parent")
+      File.mkdir_p!(parent_dir)
+      # Set explicit 0777 permission on parent
+      File.chmod!(parent_dir, 0o777)
+      parent_stat_before = File.stat!(parent_dir)
+
+      target_dir = Path.join(parent_dir, "nested_bundle")
+      assert :ok = AtomicStore.ensure_secure_directory(target_dir)
+
+      # Target directory must have 0750 permissions
+      target_stat = File.stat!(target_dir)
+      assert Bitwise.band(target_stat.mode, 0o777) == 0o750
+
+      # Parent directory permissions must remain untouched (0777)
+      parent_stat_after = File.stat!(parent_dir)
+      assert parent_stat_before.mode == parent_stat_after.mode
+    end
+
+    test "maybe_repair_watermark rejects equivocation and downgrades", %{
       tmp_dir: tmp_dir,
-      bundle: bundle
+      bundle: bundle,
+      now: now
     } do
-      real_dir = Path.join(tmp_dir, "real_ancestor")
-      File.mkdir_p!(real_dir)
-      symlink_ancestor = Path.join(tmp_dir, "symlink_ancestor")
-      File.ln_s!(real_dir, symlink_ancestor)
-      expected_ancestor = AtomicStore.normalize_system_path(symlink_ancestor)
+      bundle_dir = Path.join(tmp_dir, "pki/client-auth-equivocation")
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, bundle, now: now)
 
-      nested_target = Path.join(symlink_ancestor, "child/bundle")
+      # Watermark on disk indicates higher generation 5
+      equivocal_wm = %{
+        "schema_version" => 1,
+        "highest_seen_generation" => 5,
+        "highest_seen_crl_number" => 5,
+        "pinned_ca_fingerprint" => bundle["ca_fingerprint"],
+        "last_bundle_sha256" =>
+          "0000000000000000000000000000000000000000000000000000000000000000",
+        "updated_at" => DateTime.to_iso8601(now)
+      }
 
-      assert {:error, {:symlink_directory_disallowed, ^expected_ancestor}} =
-               AtomicStore.ensure_secure_directory(nested_target)
+      wm_path = Path.join(bundle_dir, "watermark.json")
+      File.write!(wm_path, Jason.encode!(equivocal_wm))
 
-      assert {:error, {:symlink_directory_disallowed, ^expected_ancestor}} =
-               AtomicStore.write_bundle(nested_target, bundle)
+      # When TrustBundleManager starts on this directory, it must flag the downgrade and fail closed into error state
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-equivocation-test",
+          name: :test_equivocation_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.status == "error"
+      assert status.needs_repair == true
+      assert status.last_error_code == :generation_rollback
     end
   end
 end

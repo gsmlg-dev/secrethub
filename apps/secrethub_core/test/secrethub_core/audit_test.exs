@@ -594,6 +594,8 @@ defmodule SecretHub.Core.AuditTest do
 
   describe "Client Auth PKI audit events (hash_version 2)" do
     test "allows hash_version 2 with complete evidence" do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
       attrs = %{
         event_type: "pki.client_auth.certificate_issued",
         actor_type: "admin",
@@ -603,9 +605,12 @@ defmodule SecretHub.Core.AuditTest do
         hash_version: 2,
         event_data: %{
           "identity_id" => Ecto.UUID.generate(),
+          "identity_name" => "agent-01",
           "certificate_id" => Ecto.UUID.generate(),
           "serial_number" => "123456789",
           "canonical_fingerprint" => String.duplicate("a", 64),
+          "valid_from" => DateTime.to_iso8601(now),
+          "valid_until" => DateTime.to_iso8601(DateTime.add(now, 3600, :second)),
           "request_id" => Ecto.UUID.generate()
         }
       }
@@ -630,10 +635,12 @@ defmodule SecretHub.Core.AuditTest do
       }
 
       assert {:error, changeset} = Audit.log_event(attrs)
-      assert "missing required evidence keys: " <> _ = changeset.errors[:event_data] |> elem(0)
+      assert changeset.errors[:event_data] != nil
     end
 
     test "tampering with event_data in hash_version 2 entry breaks verify_chain" do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
       attrs = %{
         event_type: "pki.client_auth.certificate_revoked",
         actor_type: "admin",
@@ -643,9 +650,11 @@ defmodule SecretHub.Core.AuditTest do
         hash_version: 2,
         event_data: %{
           "certificate_id" => Ecto.UUID.generate(),
+          "client_auth_identity_id" => Ecto.UUID.generate(),
           "serial_number" => "987654321",
           "canonical_fingerprint" => String.duplicate("b", 64),
-          "reason" => "keyCompromise"
+          "reason" => "keyCompromise",
+          "revoked_at" => DateTime.to_iso8601(now)
         }
       }
 

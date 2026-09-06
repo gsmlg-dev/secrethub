@@ -518,6 +518,97 @@ defmodule SecretHub.Core.PKI.CATest do
     end
   end
 
+  describe "Client Auth isolation in generic CA operations" do
+    test "revoke_certificate/2 rejects client_auth_ca and client_auth_client certificates" do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      ca_cert =
+        Repo.insert!(%Certificate{
+          serial_number: "ca:01",
+          fingerprint: "AA:BB",
+          canonical_fingerprint: String.duplicate("a", 64),
+          certificate_pem: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+          subject: "CN=Client Auth CA",
+          issuer: "CN=Client Auth CA",
+          common_name: "Client Auth CA",
+          organization: "SecretHub",
+          valid_from: now,
+          valid_until: DateTime.add(now, 3600, :second),
+          cert_type: :client_auth_ca
+        })
+
+      client_cert =
+        Repo.insert!(%Certificate{
+          serial_number: "client:01",
+          fingerprint: "CC:DD",
+          canonical_fingerprint: String.duplicate("b", 64),
+          certificate_pem: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+          subject: "CN=Client Auth Client",
+          issuer: "CN=Client Auth CA",
+          common_name: "Client Auth Client",
+          organization: "SecretHub",
+          valid_from: now,
+          valid_until: DateTime.add(now, 3600, :second),
+          cert_type: :client_auth_client
+        })
+
+      assert {:error, :client_auth_revocation_disallowed} =
+               CA.revoke_certificate(ca_cert.id, "key_compromise")
+
+      assert {:error, :client_auth_revocation_disallowed} =
+               CA.revoke_certificate(client_cert.id, "key_compromise")
+    end
+
+    test "delete_certificate/1 rejects client_auth_ca and client_auth_client certificates" do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      ca_cert =
+        Repo.insert!(%Certificate{
+          serial_number: "ca:02",
+          fingerprint: "EE:FF",
+          canonical_fingerprint: String.duplicate("c", 64),
+          certificate_pem: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+          subject: "CN=Client Auth CA 2",
+          issuer: "CN=Client Auth CA 2",
+          common_name: "Client Auth CA 2",
+          organization: "SecretHub",
+          valid_from: now,
+          valid_until: DateTime.add(now, 3600, :second),
+          cert_type: :client_auth_ca
+        })
+
+      assert {:error, :client_auth_deletion_disallowed} = CA.delete_certificate(ca_cert.id)
+    end
+
+    test "list_certificates/0 excludes client_auth_ca and client_auth_client certificates" do
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      _ca_cert =
+        Repo.insert!(%Certificate{
+          serial_number: "ca:03",
+          fingerprint: "11:22",
+          canonical_fingerprint: String.duplicate("d", 64),
+          certificate_pem: "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+          subject: "CN=Client Auth CA 3",
+          issuer: "CN=Client Auth CA 3",
+          common_name: "Client Auth CA 3",
+          organization: "SecretHub",
+          valid_from: now,
+          valid_until: DateTime.add(now, 3600, :second),
+          cert_type: :client_auth_ca
+        })
+
+      {:ok, _root} = CA.generate_root_ca("Generic Root", "Org")
+
+      certs = CA.list_certificates()
+      cert_types = Enum.map(certs, & &1.cert_type)
+
+      assert :root_ca in cert_types
+      refute :client_auth_ca in cert_types
+      refute :client_auth_client in cert_types
+    end
+  end
+
   # Helper functions
 
   defp generate_test_csr(common_name) do

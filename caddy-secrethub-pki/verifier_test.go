@@ -29,11 +29,13 @@ import (
 )
 
 type testHarness struct {
-	caKey      *ecdsa.PrivateKey
-	caCert     *x509.Certificate
-	caPEM      []byte
-	tmpDir     string
-	currentDir string
+	caKey       *ecdsa.PrivateKey
+	caCert      *x509.Certificate
+	caPEM       []byte
+	tmpDir      string
+	caddyWMDir  string
+	caddyWMFile string
+	currentDir  string
 }
 
 func newTestHarness(t *testing.T) *testHarness {
@@ -42,6 +44,17 @@ func newTestHarness(t *testing.T) *testHarness {
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
+
+	caddyWMDir, err := os.MkdirTemp("", "caddy-wm-test-*")
+	if err != nil {
+		t.Fatalf("failed to create caddy wm dir: %v", err)
+	}
+	caddyWMFile := filepath.Join(caddyWMDir, "watermark.json")
+
+	t.Cleanup(func() {
+		os.RemoveAll(tmpDir)
+		os.RemoveAll(caddyWMDir)
+	})
 
 	currentDir := filepath.Join(tmpDir, "current")
 	if err := os.MkdirAll(currentDir, 0755); err != nil {
@@ -82,12 +95,25 @@ func newTestHarness(t *testing.T) *testHarness {
 	}
 
 	return &testHarness{
-		caKey:      caKey,
-		caCert:     caCert,
-		caPEM:      caPEM,
-		tmpDir:     tmpDir,
-		currentDir: currentDir,
+		caKey:       caKey,
+		caCert:      caCert,
+		caPEM:       caPEM,
+		tmpDir:      tmpDir,
+		caddyWMDir:  caddyWMDir,
+		caddyWMFile: caddyWMFile,
+		currentDir:  currentDir,
 	}
+}
+
+func (h *testHarness) newVerifier() *Verifier {
+	v := NewVerifier(h.tmpDir)
+	v.SetWatermarkFile(h.caddyWMFile)
+	return v
+}
+
+func (h *testHarness) caFingerprintHex() string {
+	sum := sha256.Sum256(h.caCert.Raw)
+	return hex.EncodeToString(sum[:])
 }
 
 func (h *testHarness) issueClientCert(t *testing.T, identityID string, serial int64) (*x509.Certificate, *ecdsa.PrivateKey) {
@@ -227,11 +253,10 @@ func (h *testHarness) writeBundle(t *testing.T, generation, crlNumber int64, rev
 
 func TestVerifierValidCertificate(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	if _, err := v.LoadFromDisk(); err != nil {
 		t.Fatalf("failed to load bundle: %v", err)
 	}
@@ -254,12 +279,11 @@ func TestVerifierValidCertificate(t *testing.T) {
 
 func TestVerifierRevokedCertificate(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	revokedSerial := big.NewInt(2002)
 	h.writeBundle(t, 1, 2, []*big.Int{revokedSerial}, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	if _, err := v.LoadFromDisk(); err != nil {
 		t.Fatalf("failed to load bundle: %v", err)
 	}
@@ -274,12 +298,11 @@ func TestVerifierRevokedCertificate(t *testing.T) {
 
 func TestVerifierExpiredCRL(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	// Start with a valid Gen 1 bundle
 	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	snap1, err := v.LoadFromDisk()
 	if err != nil {
 		t.Fatalf("failed to load initial valid bundle: %v", err)
@@ -312,18 +335,16 @@ func TestVerifierExpiredCRL(t *testing.T) {
 
 func TestVerifierForeignCA(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	if _, err := v.LoadFromDisk(); err != nil {
 		t.Fatalf("failed to load bundle: %v", err)
 	}
 
 	// Issue cert with another CA
 	foreignHarness := newTestHarness(t)
-	defer os.RemoveAll(foreignHarness.tmpDir)
 	foreignCert, _ := foreignHarness.issueClientCert(t, "f47ac10b-58cc-4372-a567-0e02b2c3d479", 4004)
 
 	_, err := v.VerifyCertificate(foreignCert, time.Now())
@@ -334,12 +355,11 @@ func TestVerifierForeignCA(t *testing.T) {
 
 func TestVerifierMonotonicityAndRollbackRejection(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	// Start at Generation 2, CRL number 2
 	h.writeBundle(t, 2, 2, nil, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	snap1, err := v.LoadFromDisk()
 	if err != nil {
 		t.Fatalf("failed to load gen 2: %v", err)
@@ -374,10 +394,10 @@ func TestVerifierMonotonicityAndRollbackRejection(t *testing.T) {
 	}
 
 	// 4. Persistence across Verifier restart:
-	// A new Verifier instance starting against h.tmpDir must read watermark.json
+	// A new Verifier instance starting against h.tmpDir and h.caddyWMFile must read watermark
 	// and reject an older generation 1 even on first load.
 	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
-	v2 := NewVerifier(h.tmpDir)
+	v2 := h.newVerifier()
 	if _, err := v2.LoadFromDisk(); err == nil {
 		t.Fatalf("expected new Verifier instance to reject rollback to Gen 1 due to persistent watermark, got nil")
 	}
@@ -385,7 +405,6 @@ func TestVerifierMonotonicityAndRollbackRejection(t *testing.T) {
 
 func TestVerifierDynamicRevocationReloadAndRejection(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	serialA := big.NewInt(5001)
 	certA, _ := h.issueClientCert(t, "a1b2c3d4-e5f6-4a5b-8c9d-0e1f2a3b4c5d", 5001)
@@ -393,7 +412,7 @@ func TestVerifierDynamicRevocationReloadAndRejection(t *testing.T) {
 	// Step 1: Initial Gen 1 bundle where certA is valid
 	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	snap1, err := v.LoadFromDisk()
 	if err != nil {
 		t.Fatalf("failed to load gen 1: %v", err)
@@ -438,11 +457,10 @@ func TestVerifierDynamicRevocationReloadAndRejection(t *testing.T) {
 
 func TestVerifierCanonicalProfileNegative(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	if _, err := v.LoadFromDisk(); err != nil {
 		t.Fatalf("failed to load bundle: %v", err)
 	}
@@ -543,17 +561,16 @@ func TestVerifierCanonicalProfileNegative(t *testing.T) {
 
 func TestVerifierCorruptWatermarkFailClosed(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
 	// Corrupt watermark file with invalid JSON
-	watermarkPath := filepath.Join(h.tmpDir, "watermark.json")
+	watermarkPath := h.caddyWMFile
 	if err := os.WriteFile(watermarkPath, []byte("NOT_VALID_JSON{{{"), 0644); err != nil {
 		t.Fatalf("failed to write corrupt watermark: %v", err)
 	}
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	if _, err := v.LoadFromDisk(); err == nil {
 		t.Fatalf("expected LoadFromDisk to fail closed on corrupt watermark.json, got nil")
 	}
@@ -573,15 +590,14 @@ func TestVerifierIncompleteWatermarkFailClosed(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newTestHarness(t)
-			defer os.RemoveAll(h.tmpDir)
 
 			h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
-			watermarkPath := filepath.Join(h.tmpDir, "watermark.json")
+			watermarkPath := h.caddyWMFile
 			if err := os.WriteFile(watermarkPath, []byte(tc.json), 0644); err != nil {
 				t.Fatalf("failed to write watermark: %v", err)
 			}
 
-			v := NewVerifier(h.tmpDir)
+			v := h.newVerifier()
 			if _, err := v.LoadFromDisk(); err == nil {
 				t.Errorf("expected LoadFromDisk to fail closed on %s, got nil error", tc.name)
 			}
@@ -591,11 +607,10 @@ func TestVerifierIncompleteWatermarkFailClosed(t *testing.T) {
 
 func TestConcurrentWatermarkWriters(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
 
-	sharedWatermark := filepath.Join(h.tmpDir, "shared-watermark.json")
+	sharedWatermark := filepath.Join(h.caddyWMDir, "shared-watermark.json")
 
 	// Launch 10 concurrent verifier instances attempting to load and update the same watermark
 	const workers = 10
@@ -636,6 +651,74 @@ func TestConcurrentWatermarkWriters(t *testing.T) {
 	}
 }
 
+func TestCollocatedWatermarkRejected(t *testing.T) {
+	h := newTestHarness(t)
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+
+	// Point watermark directly inside bundle_dir
+	collocatedWM := filepath.Join(h.tmpDir, "watermark.json")
+	v := NewVerifier(h.tmpDir)
+	v.SetWatermarkFile(collocatedWM)
+
+	if _, err := v.LoadFromDisk(); err == nil {
+		t.Fatalf("expected LoadFromDisk to reject collocated watermark inside bundle_dir, got nil")
+	}
+}
+
+func TestAgentAndCaddyWatermarkCoexistence(t *testing.T) {
+	h := newTestHarness(t)
+	h.writeBundle(t, 1, 1, nil, time.Now().Add(48*time.Hour))
+
+	// Write SecretHub Agent's watermark inside bundle_dir (with its 5-field schema including updated_at)
+	agentWMPath := filepath.Join(h.tmpDir, "watermark.json")
+	agentWMContent := `{
+		"highest_seen_generation": 1,
+		"highest_seen_crl_number": 1,
+		"pinned_ca_fingerprint": "` + h.caFingerprintHex() + `",
+		"last_bundle_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"updated_at": "2026-09-06T15:00:00Z"
+	}`
+	if err := os.WriteFile(agentWMPath, []byte(agentWMContent), 0600); err != nil {
+		t.Fatalf("failed to write agent watermark: %v", err)
+	}
+
+	// Caddy uses its independent watermark path
+	v := h.newVerifier()
+	snap, err := v.LoadFromDisk()
+	if err != nil {
+		t.Fatalf("expected Caddy verifier LoadFromDisk to succeed with separated watermark, got: %v", err)
+	}
+	if snap == nil || snap.Generation != 1 {
+		t.Fatalf("expected snapshot generation 1, got %+v", snap)
+	}
+
+	// Verify Agent's watermark file was untouched
+	agentWMBytes, err := os.ReadFile(agentWMPath)
+	if err != nil {
+		t.Fatalf("failed to read agent watermark: %v", err)
+	}
+	var agentParsed map[string]interface{}
+	if err := json.Unmarshal(agentWMBytes, &agentParsed); err != nil {
+		t.Fatalf("failed to parse agent watermark: %v", err)
+	}
+	if _, ok := agentParsed["updated_at"]; !ok {
+		t.Errorf("agent watermark updated_at was unexpectedly removed: %s", string(agentWMBytes))
+	}
+
+	// Verify Caddy's watermark file exists in caddyWMFile and is valid
+	caddyWMBytes, err := os.ReadFile(h.caddyWMFile)
+	if err != nil {
+		t.Fatalf("failed to read caddy watermark: %v", err)
+	}
+	var caddyWM PersistentWatermark
+	if err := json.Unmarshal(caddyWMBytes, &caddyWM); err != nil {
+		t.Fatalf("failed to parse caddy watermark: %v", err)
+	}
+	if caddyWM.HighestSeenGeneration != 1 {
+		t.Errorf("expected caddy watermark generation 1, got %d", caddyWM.HighestSeenGeneration)
+	}
+}
+
 func TestProvisionFailsOnMissingBundle(t *testing.T) {
 	emptyDir, err := os.MkdirTemp("", "empty-bundle-*")
 	if err != nil {
@@ -657,12 +740,11 @@ func TestProvisionFailsOnMissingBundle(t *testing.T) {
 
 func TestTLSVerifierRealHandshake(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	revokedSerial := big.NewInt(9999)
 	h.writeBundle(t, 1, 1, []*big.Int{revokedSerial}, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	if _, err := v.LoadFromDisk(); err != nil {
 		t.Fatalf("failed to load bundle: %v", err)
 	}
@@ -751,22 +833,22 @@ func mustMarshalECKey(k *ecdsa.PrivateKey) []byte {
 
 func TestCaddyMiddlewareIntegration(t *testing.T) {
 	h := newTestHarness(t)
-	defer os.RemoveAll(h.tmpDir)
 
 	revokedSerial := big.NewInt(9999)
 	h.writeBundle(t, 1, 1, []*big.Int{revokedSerial}, time.Now().Add(48*time.Hour))
 
-	v := NewVerifier(h.tmpDir)
+	v := h.newVerifier()
 	if _, err := v.LoadFromDisk(); err != nil {
 		t.Fatalf("failed to load bundle: %v", err)
 	}
 
 	setHeaders := true
 	mw := &SecretHubClientAuth{
-		BundleDir:  h.tmpDir,
-		SetHeaders: &setHeaders,
-		verifier:   v,
-		logger:     zap.NewNop(),
+		BundleDir:     h.tmpDir,
+		WatermarkFile: h.caddyWMFile,
+		SetHeaders:    &setHeaders,
+		verifier:      v,
+		logger:        zap.NewNop(),
 	}
 
 	nextHandler := caddyhttp.HandlerFunc(func(w http.ResponseWriter, r *http.Request) error {

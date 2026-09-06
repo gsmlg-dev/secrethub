@@ -129,6 +129,30 @@ defmodule SecretHub.Web.PKIAdminLiveTest do
     refute html =~ "inventory-agent"
   end
 
+  test "client auth certificates display link to Client Auth PKI and omit revoke/remove buttons in generic view",
+       %{conn: conn} do
+    ca_cert = insert_certificate!("Client Auth Root", :client_auth_ca, "CAAUTH01")
+
+    client_cert =
+      insert_certificate!(
+        "00000000-0000-0000-0000-000000000001",
+        :client_auth_client,
+        "CLIENTAUTH01"
+      )
+
+    {:ok, view, _html} = live(conn, "/admin/pki/certificates")
+
+    # Trigger view_certificate modal on client_cert
+    view_html = render_click(view, :view_certificate, %{"cert_id" => client_cert.id})
+    assert view_html =~ "Client Auth PKI"
+    assert view_html =~ ~s(href="/admin/pki/client-auth")
+
+    # Trigger view_certificate modal on ca_cert
+    ca_view_html = render_click(view, :view_certificate, %{"cert_id" => ca_cert.id})
+    assert ca_view_html =~ "Client Auth PKI"
+    assert ca_view_html =~ ~s(href="/admin/pki/client-auth")
+  end
+
   defp insert_certificate!(common_name, cert_type, serial_number) do
     %Certificate{}
     |> Certificate.changeset(%{
