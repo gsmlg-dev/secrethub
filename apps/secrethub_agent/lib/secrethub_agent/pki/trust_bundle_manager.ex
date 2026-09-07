@@ -33,6 +33,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     last_applied_at: nil,
     # Synchronization status
     status: "initializing",
+    recovery_mode: :none,
+    observation_sequence: 0,
     last_error_code: nil,
     last_error_detail: nil,
     # Timers
@@ -259,8 +261,56 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
         {{:error, :not_found}, _} ->
           case BundleValidator.find_surviving_disk_bundle(base_dir, disk_opts) do
             {:ok, surviving} ->
-              case AtomicStore.write_watermark(base_dir, surviving) do
-                :ok ->
+              # Historical trust evidence survived on disk. Check active temporal validation of current/
+              case BundleValidator.validate_disk_bundle(Path.join(base_dir, "current"), disk_opts) do
+                {:ok, current_val} when current_val.generation == surviving.generation ->
+                  # current/ is fully active valid and matches surviving generation -> establish watermark & applied
+                  case AtomicStore.write_watermark(base_dir, surviving) do
+                    :ok ->
+                      %__MODULE__{
+                        state_dir: state_dir,
+                        base_dir: base_dir,
+                        agent_id: agent_id,
+                        connection_mod: conn_mod,
+                        lkg_generation: surviving.generation,
+                        lkg_crl_number: surviving.crl_number,
+                        lkg_ca_fingerprint: surviving.ca_fingerprint,
+                        lkg_bundle_sha256: surviving.bundle_sha256,
+                        installed_generation: surviving.generation,
+                        installed_crl_number: surviving.crl_number,
+                        installed_ca_fingerprint: surviving.ca_fingerprint,
+                        installed_bundle_sha256: surviving.bundle_sha256,
+                        last_applied_at: parse_datetime(surviving.this_update),
+                        needs_repair: false,
+                        status: "applied"
+                      }
+
+                    {:error, reason} ->
+                      Logger.error("Failed to write initial watermark: #{inspect(reason)}")
+
+                      %__MODULE__{
+                        state_dir: state_dir,
+                        base_dir: base_dir,
+                        agent_id: agent_id,
+                        connection_mod: conn_mod,
+                        lkg_generation: surviving.generation,
+                        lkg_crl_number: surviving.crl_number,
+                        lkg_ca_fingerprint: surviving.ca_fingerprint,
+                        lkg_bundle_sha256: surviving.bundle_sha256,
+                        installed_generation: 0,
+                        installed_crl_number: 0,
+                        installed_ca_fingerprint: nil,
+                        installed_bundle_sha256: nil,
+                        needs_repair: true,
+                        status: "repair_required",
+                        last_error_code: :watermark_persistence_failed,
+                        last_error_detail: inspect(reason)
+                      }
+                  end
+
+                _ ->
+                  # current/ is missing, pointing to older generation, or CRL expired.
+                  # Establish cryptographic rollback barrier (lkg_*) from surviving, but report repair_required!
                   %__MODULE__{
                     state_dir: state_dir,
                     base_dir: base_dir,
@@ -270,35 +320,15 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                     lkg_crl_number: surviving.crl_number,
                     lkg_ca_fingerprint: surviving.ca_fingerprint,
                     lkg_bundle_sha256: surviving.bundle_sha256,
-                    installed_generation: surviving.generation,
-                    installed_crl_number: surviving.crl_number,
-                    installed_ca_fingerprint: surviving.ca_fingerprint,
-                    installed_bundle_sha256: surviving.bundle_sha256,
-                    last_applied_at: parse_datetime(surviving.this_update),
-                    needs_repair: false,
-                    status: "applied"
-                  }
-
-                {:error, reason} ->
-                  Logger.error("Failed to write initial watermark: #{inspect(reason)}")
-
-                  %__MODULE__{
-                    state_dir: state_dir,
-                    base_dir: base_dir,
-                    agent_id: agent_id,
-                    connection_mod: conn_mod,
-                    lkg_generation: surviving.generation,
-                    lkg_crl_number: surviving.crl_number,
-                    lkg_ca_fingerprint: surviving.ca_fingerprint,
-                    lkg_bundle_sha256: surviving.bundle_sha256,
-                    installed_generation: surviving.generation,
-                    installed_crl_number: surviving.crl_number,
-                    installed_ca_fingerprint: surviving.ca_fingerprint,
-                    installed_bundle_sha256: surviving.bundle_sha256,
+                    installed_generation: 0,
+                    installed_crl_number: 0,
+                    installed_ca_fingerprint: nil,
+                    installed_bundle_sha256: nil,
                     needs_repair: true,
-                    status: "error",
-                    last_error_code: :watermark_persistence_failed,
-                    last_error_detail: inspect(reason)
+                    status: "repair_required",
+                    last_error_code: :historical_baseline_survived,
+                    last_error_detail:
+                      "Surviving generation #{surviving.generation} established cryptographic baseline, active repair required"
                   }
               end
 
@@ -319,24 +349,49 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
             {:ok, surviving} ->
               # Watermark is corrupted, but historical trust evidence survived on disk (even if CRL is expired).
               # Preserve the surviving lower bound from disk to strictly reject downgrades.
-              %__MODULE__{
-                state_dir: state_dir,
-                base_dir: base_dir,
-                agent_id: agent_id,
-                connection_mod: conn_mod,
-                lkg_generation: surviving.generation,
-                lkg_crl_number: surviving.crl_number,
-                lkg_ca_fingerprint: surviving.ca_fingerprint,
-                lkg_bundle_sha256: surviving.bundle_sha256,
-                installed_generation: surviving.generation,
-                installed_crl_number: surviving.crl_number,
-                installed_ca_fingerprint: surviving.ca_fingerprint,
-                installed_bundle_sha256: surviving.bundle_sha256,
-                needs_repair: true,
-                status: "error",
-                last_error_code: :corrupted_watermark,
-                last_error_detail: inspect(wm_err)
-              }
+              # Installed state is declared only if current/ passes full active temporal validation.
+              case BundleValidator.validate_disk_bundle(Path.join(base_dir, "current"), disk_opts) do
+                {:ok, current_val} when current_val.generation == surviving.generation ->
+                  %__MODULE__{
+                    state_dir: state_dir,
+                    base_dir: base_dir,
+                    agent_id: agent_id,
+                    connection_mod: conn_mod,
+                    lkg_generation: surviving.generation,
+                    lkg_crl_number: surviving.crl_number,
+                    lkg_ca_fingerprint: surviving.ca_fingerprint,
+                    lkg_bundle_sha256: surviving.bundle_sha256,
+                    installed_generation: surviving.generation,
+                    installed_crl_number: surviving.crl_number,
+                    installed_ca_fingerprint: surviving.ca_fingerprint,
+                    installed_bundle_sha256: surviving.bundle_sha256,
+                    last_applied_at: parse_datetime(surviving.this_update),
+                    needs_repair: true,
+                    status: "error",
+                    last_error_code: :corrupted_watermark,
+                    last_error_detail: inspect(wm_err)
+                  }
+
+                _ ->
+                  %__MODULE__{
+                    state_dir: state_dir,
+                    base_dir: base_dir,
+                    agent_id: agent_id,
+                    connection_mod: conn_mod,
+                    lkg_generation: surviving.generation,
+                    lkg_crl_number: surviving.crl_number,
+                    lkg_ca_fingerprint: surviving.ca_fingerprint,
+                    lkg_bundle_sha256: surviving.bundle_sha256,
+                    installed_generation: 0,
+                    installed_crl_number: 0,
+                    installed_ca_fingerprint: nil,
+                    installed_bundle_sha256: nil,
+                    needs_repair: true,
+                    status: "repair_required",
+                    last_error_code: :corrupted_watermark,
+                    last_error_detail: inspect(wm_err)
+                  }
+              end
 
             {:error, _} ->
               # Watermark is invalid JSON or unreadable AND no trustworthy disk baseline survives.
@@ -355,6 +410,7 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                 installed_ca_fingerprint: nil,
                 installed_bundle_sha256: nil,
                 needs_repair: true,
+                recovery_mode: :quarantined,
                 status: "recovery_required",
                 last_error_code: :damaged_state_recovery_required,
                 last_error_detail:
@@ -416,6 +472,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
       bundle_sha256: state.installed_bundle_sha256 || state.lkg_bundle_sha256,
       last_applied_at: state.last_applied_at,
       status: state.status,
+      recovery_mode: state.recovery_mode,
+      observation_sequence: state.observation_sequence,
       needs_repair: state.needs_repair,
       last_error_code: state.last_error_code,
       last_error_detail: state.last_error_detail,
@@ -460,155 +518,242 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     force = Keyword.get(opts, :force, false)
     val_opts = Keyword.put_new(opts, :pinned_ca_fingerprint, state.lkg_ca_fingerprint)
 
-    with {:ok, validated} <- BundleValidator.validate(bundle, val_opts),
-         :ok <- check_monotonicity_and_invariants(state, validated, force) do
-      # Determine if disk already has this exact bundle installed and verified
-      is_disk_already_matching =
-        !state.needs_repair and
-          state.installed_generation == validated.generation and
-          state.installed_bundle_sha256 == validated.bundle_sha256 and
-          case BundleValidator.validate_disk_bundle(
-                 Path.join(state.base_dir, "current"),
-                 val_opts
-               ) do
-            {:ok, disk_val} ->
-              disk_val.generation == validated.generation and
-                disk_val.bundle_sha256 == validated.bundle_sha256 and
-                disk_val.crl_number == validated.crl_number and
-                disk_val.ca_fingerprint == validated.ca_fingerprint
+    # Next observation sequence allocated for every receipt
+    seq = (state.observation_sequence || 0) + 1
 
-            _ ->
-              false
-          end
+    cond do
+      state.recovery_mode == :quarantined and not force ->
+        # Durable quarantine prevents non-forced application or sync from mutating state
+        error_code = :damaged_state_recovery_required
 
-      if !force and is_disk_already_matching do
-        case maybe_repair_watermark(state.base_dir, validated) do
-          :ok ->
-            new_state = %{
-              state
-              | lkg_generation: validated.generation,
-                lkg_crl_number: validated.crl_number,
-                lkg_ca_fingerprint: validated.ca_fingerprint,
-                lkg_bundle_sha256: validated.bundle_sha256,
-                installed_generation: validated.generation,
-                installed_crl_number: validated.crl_number,
-                installed_ca_fingerprint: validated.ca_fingerprint,
-                installed_bundle_sha256: validated.bundle_sha256,
-                needs_repair: false,
-                status: "applied",
-                last_error_code: nil,
-                last_error_detail: nil,
-                retry_attempt: 0
-            }
+        error_detail =
+          "Trust bundle state is in durable quarantine. Operator intervention or force recovery required."
 
-            receipt = build_receipt(new_state, "applied", now)
-            submit_receipt_async(new_state, receipt)
-            {:ok, receipt, new_state}
-
-          {:error, reason} ->
-            Logger.error(
-              "Failed to repair watermark during bundle validation: #{inspect(reason)}"
-            )
-
-            new_state = %{
-              state
-              | needs_repair: true,
-                status: "error",
-                last_error_code: :watermark_repair_failed,
-                last_error_detail: inspect(reason)
-            }
-
-            receipt =
-              build_error_receipt(
-                new_state,
-                %{
-                  "generation" => validated.generation,
-                  "crl_number" => validated.crl_number,
-                  "bundle_sha256" => validated.bundle_sha256
-                },
-                :watermark_repair_failed,
-                inspect(reason),
-                now
-              )
-
-            submit_receipt_async(new_state, receipt)
-            {:error, :watermark_repair_failed, receipt, new_state}
-        end
-      else
-        case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
-          {:ok, _result} ->
-            new_state = %{
-              state
-              | lkg_generation: validated.generation,
-                lkg_crl_number: validated.crl_number,
-                lkg_ca_fingerprint: validated.ca_fingerprint,
-                lkg_bundle_sha256: validated.bundle_sha256,
-                installed_generation: validated.generation,
-                installed_crl_number: validated.crl_number,
-                installed_ca_fingerprint: validated.ca_fingerprint,
-                installed_bundle_sha256: validated.bundle_sha256,
-                last_applied_at: now,
-                needs_repair: false,
-                last_error_code: nil,
-                last_error_detail: nil,
-                status: "applied",
-                retry_attempt: 0
-            }
-
-            receipt = build_receipt(new_state, "applied", now)
-            submit_receipt_async(new_state, receipt)
-
-            Logger.info("Client Auth trust bundle updated to generation #{validated.generation}")
-
-            {:ok, receipt, new_state}
-
-          {:error, reason} ->
-            reconciled_state = reconcile_disk_state(state)
-
-            error_code =
-              case reason do
-                {:after_current_switched, _} -> :dir_sync_failed_after_switch
-                {:after_watermark_committed, _} -> :pointer_switch_failed
-                {:watermark_commit_failed, inner} -> inner
-                {:before_watermark, inner} -> inner
-                other when is_atom(other) -> other
-                _ -> :atomic_write_failed
-              end
-
-            error_detail = inspect(reason)
-
-            new_state = %{
-              reconciled_state
-              | last_error_code: to_string(error_code),
-                last_error_detail: error_detail,
-                status: "failed",
-                needs_repair: true
-            }
-
-            receipt = build_error_receipt(new_state, bundle, error_code, error_detail, now)
-            submit_receipt_async(new_state, receipt)
-            {:error, error_code, receipt, new_state}
-        end
-      end
-    else
-      {:error, error_code, detail} ->
         new_state = %{
           state
-          | last_error_code: to_string(error_code),
-            last_error_detail: detail,
-            status: "failed"
+          | observation_sequence: seq,
+            status: "recovery_required",
+            recovery_mode: :quarantined,
+            last_error_code: to_string(error_code),
+            last_error_detail: error_detail
         }
 
-        receipt = build_error_receipt(new_state, bundle, error_code, detail, now)
+        receipt = build_error_receipt(new_state, bundle, error_code, error_detail, now, seq)
         submit_receipt_async(new_state, receipt)
-        Logger.error("Client Auth trust bundle rejected: #{error_code} - #{detail}")
+        Logger.error("Client Auth trust bundle rejected: quarantined state requires force")
         {:error, error_code, receipt, new_state}
+
+      true ->
+        with {:ok, validated} <- BundleValidator.validate(bundle, val_opts),
+             :ok <- check_monotonicity_and_invariants(state, validated, force) do
+          # Determine if disk already has this exact bundle installed and verified
+          is_disk_already_matching =
+            !state.needs_repair and
+              state.installed_generation == validated.generation and
+              state.installed_bundle_sha256 == validated.bundle_sha256 and
+              case BundleValidator.validate_disk_bundle(
+                     Path.join(state.base_dir, "current"),
+                     val_opts
+                   ) do
+                {:ok, disk_val} ->
+                  disk_val.generation == validated.generation and
+                    disk_val.bundle_sha256 == validated.bundle_sha256 and
+                    disk_val.crl_number == validated.crl_number and
+                    disk_val.ca_fingerprint == validated.ca_fingerprint
+
+                _ ->
+                  false
+              end
+
+          if !force and is_disk_already_matching do
+            case maybe_repair_watermark(state.base_dir, validated) do
+              :ok ->
+                new_state = %{
+                  state
+                  | lkg_generation: validated.generation,
+                    lkg_crl_number: validated.crl_number,
+                    lkg_ca_fingerprint: validated.ca_fingerprint,
+                    lkg_bundle_sha256: validated.bundle_sha256,
+                    installed_generation: validated.generation,
+                    installed_crl_number: validated.crl_number,
+                    installed_ca_fingerprint: validated.ca_fingerprint,
+                    installed_bundle_sha256: validated.bundle_sha256,
+                    needs_repair: false,
+                    status: "applied",
+                    recovery_mode: :none,
+                    observation_sequence: seq,
+                    last_error_code: nil,
+                    last_error_detail: nil,
+                    retry_attempt: 0
+                }
+
+                receipt = build_receipt(new_state, "applied", now, seq)
+                submit_receipt_async(new_state, receipt)
+                {:ok, receipt, new_state}
+
+              {:error, reason} ->
+                Logger.error(
+                  "Failed to repair watermark during bundle validation: #{inspect(reason)}"
+                )
+
+                normalized = normalize_publication_error(reason)
+
+                new_state = %{
+                  state
+                  | observation_sequence: seq,
+                    needs_repair: true,
+                    status: "error",
+                    last_error_code: to_string(normalized.code),
+                    last_error_detail: normalized.detail
+                }
+
+                receipt =
+                  build_error_receipt(
+                    new_state,
+                    %{
+                      "generation" => validated.generation,
+                      "crl_number" => validated.crl_number,
+                      "bundle_sha256" => validated.bundle_sha256
+                    },
+                    normalized.code,
+                    normalized.detail,
+                    now,
+                    seq
+                  )
+
+                submit_receipt_async(new_state, receipt)
+                {:error, normalized.code, receipt, new_state}
+            end
+          else
+            case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
+              {:ok, _result} ->
+                new_state = %{
+                  state
+                  | lkg_generation: validated.generation,
+                    lkg_crl_number: validated.crl_number,
+                    lkg_ca_fingerprint: validated.ca_fingerprint,
+                    lkg_bundle_sha256: validated.bundle_sha256,
+                    installed_generation: validated.generation,
+                    installed_crl_number: validated.crl_number,
+                    installed_ca_fingerprint: validated.ca_fingerprint,
+                    installed_bundle_sha256: validated.bundle_sha256,
+                    last_applied_at: now,
+                    needs_repair: false,
+                    last_error_code: nil,
+                    last_error_detail: nil,
+                    status: "applied",
+                    recovery_mode: :none,
+                    observation_sequence: seq,
+                    retry_attempt: 0
+                }
+
+                receipt = build_receipt(new_state, "applied", now, seq)
+                submit_receipt_async(new_state, receipt)
+
+                Logger.info(
+                  "Client Auth trust bundle updated to generation #{validated.generation}"
+                )
+
+                {:ok, receipt, new_state}
+
+              {:error, reason} ->
+                reconciled_state = reconcile_disk_state(state)
+                normalized = normalize_publication_error(reason)
+
+                new_state = %{
+                  reconciled_state
+                  | observation_sequence: seq,
+                    last_error_code: to_string(normalized.code),
+                    last_error_detail: normalized.detail,
+                    status: "failed",
+                    needs_repair: true
+                }
+
+                receipt =
+                  build_error_receipt(
+                    new_state,
+                    bundle,
+                    normalized.code,
+                    normalized.detail,
+                    now,
+                    seq
+                  )
+
+                submit_receipt_async(new_state, receipt)
+                {:error, normalized.code, receipt, new_state}
+            end
+          end
+        else
+          {:error, error_code, detail} ->
+            new_state = %{
+              state
+              | observation_sequence: seq,
+                last_error_code: to_string(error_code),
+                last_error_detail: detail,
+                status: "failed"
+            }
+
+            receipt = build_error_receipt(new_state, bundle, error_code, detail, now, seq)
+            submit_receipt_async(new_state, receipt)
+            Logger.error("Client Auth trust bundle rejected: #{error_code} - #{detail}")
+            {:error, error_code, receipt, new_state}
+        end
+    end
+  end
+
+  defp normalize_publication_error(reason) do
+    case reason do
+      {:after_current_switched, cause} ->
+        %{
+          code: :dir_sync_failed_after_switch,
+          phase: :post_switch_sync,
+          cause: cause,
+          detail: inspect(cause)
+        }
+
+      {:after_watermark_committed, cause} ->
+        %{
+          code: :pointer_switch_failed,
+          phase: :pointer_switch,
+          cause: cause,
+          detail: inspect(cause)
+        }
+
+      {:watermark_commit_failed, cause} ->
+        %{
+          code: :watermark_commit_failed,
+          phase: :watermark_commit,
+          cause: cause,
+          detail: inspect(cause)
+        }
+
+      {:before_watermark, cause} when is_atom(cause) ->
+        %{code: cause, phase: :before_watermark, cause: cause, detail: to_string(cause)}
+
+      {:before_watermark, cause} ->
+        %{
+          code: :atomic_write_failed,
+          phase: :before_watermark,
+          cause: cause,
+          detail: inspect(cause)
+        }
+
+      other when is_atom(other) ->
+        %{code: other, phase: :before_watermark, cause: other, detail: to_string(other)}
+
+      other ->
+        %{
+          code: :atomic_write_failed,
+          phase: :before_watermark,
+          cause: other,
+          detail: inspect(other)
+        }
     end
   end
 
   defp check_monotonicity_and_invariants(state, validated, force) do
     cond do
-      state.status == "recovery_required" and not force ->
+      (state.recovery_mode == :quarantined or state.status == "recovery_required") and not force ->
         {:error, :damaged_state_recovery_required,
          "Trust bundle state is damaged with no surviving baseline. Operator intervention or force recovery required."}
 
@@ -756,18 +901,19 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     %{state | retry_timer: timer, retry_attempt: attempt}
   end
 
-  defp build_receipt(state, status, now) do
+  defp build_receipt(state, status, now, seq) do
     %{
       "agent_id" => state.agent_id,
       "generation" => state.lkg_generation,
       "crl_number" => state.lkg_crl_number,
       "bundle_sha256" => state.lkg_bundle_sha256,
       "status" => status,
-      "applied_at" => DateTime.to_iso8601(now)
+      "applied_at" => DateTime.to_iso8601(now),
+      "observation_sequence" => seq
     }
   end
 
-  defp build_error_receipt(state, bundle, error_code, error_detail, now) do
+  defp build_error_receipt(state, bundle, error_code, error_detail, now, seq) do
     %{
       "agent_id" => state.agent_id,
       "generation" => bundle["generation"] || state.lkg_generation,
@@ -776,7 +922,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
       "status" => "failed",
       "last_error_code" => to_string(error_code),
       "last_error_detail" => error_detail,
-      "applied_at" => DateTime.to_iso8601(now)
+      "applied_at" => DateTime.to_iso8601(now),
+      "observation_sequence" => seq
     }
   end
 

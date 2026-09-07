@@ -237,11 +237,8 @@ defmodule SecretHub.Core.PKI.ClientAuth do
 
       applied_at =
         case Map.get(attrs, "applied_at") || Map.get(attrs, :applied_at) do
-          nil ->
-            DateTime.utc_now() |> DateTime.truncate(:second)
-
-          val ->
-            parse_receipt_datetime(val) || DateTime.utc_now() |> DateTime.truncate(:second)
+          nil -> nil
+          val -> parse_receipt_datetime(val)
         end
 
       receipt_attrs = %{
@@ -254,7 +251,9 @@ defmodule SecretHub.Core.PKI.ClientAuth do
         last_error_code: Map.get(attrs, "last_error_code") || Map.get(attrs, :last_error_code),
         last_error_detail:
           Map.get(attrs, "last_error_detail") || Map.get(attrs, :last_error_detail),
-        applied_at: applied_at
+        applied_at: applied_at,
+        observation_sequence:
+          Map.get(attrs, "observation_sequence") || Map.get(attrs, :observation_sequence)
       }
 
       receipt_attrs = verify_applied_bundle_authenticity(authority, receipt_attrs)
@@ -315,6 +314,17 @@ defmodule SecretHub.Core.PKI.ClientAuth do
                     event_data
                   end
 
+                event_data =
+                  if receipt.observation_sequence != nil do
+                    Map.put(
+                      event_data,
+                      "observation_sequence",
+                      receipt.observation_sequence
+                    )
+                  else
+                    event_data
+                  end
+
                 attrs = %{
                   event_type: "pki.client_auth.agent_receipt_recorded",
                   actor_type: "agent",
@@ -337,6 +347,10 @@ defmodule SecretHub.Core.PKI.ClientAuth do
               {:error, changeset} ->
                 Repo.rollback(changeset)
             end
+
+          {:error, :conflicting_observation_sequence} ->
+            record_equivocation_audit_for_conflict(authority, receipt_attrs, existing)
+            Repo.rollback(:conflicting_observation_sequence)
         end
       end)
     end
@@ -344,16 +358,19 @@ defmodule SecretHub.Core.PKI.ClientAuth do
 
   @doc """
   Pure state transition function for agent trust bundle receipts.
-  Enforces bidirectional timestamp and sequence ordering, ensuring that:
-  1. Older observations never overwrite newer ones in either direction (success -> failure or failure -> success).
-  2. Failed candidate observations never advance or clear the successful installation watermark (`last_applied_*`).
-  3. Successful installations advance `last_applied_*` monotonically.
-  4. Undated incoming observations cannot overwrite dated observations.
+  Enforces sequence-first and bidirectional timestamp ordering:
+  1. Monotonic sender sequence (`observation_sequence`):
+     - `incoming_seq < existing_seq`: stale observation ignored (`{:ignore, existing}`).
+     - `incoming_seq == existing_seq`: identical payload is idempotent replay (`{:ok, existing}`); differing payload is rejected (`{:error, :conflicting_observation_sequence}`).
+     - `incoming_seq > existing_seq`: strictly updates state.
+  2. Fallback to timestamp comparison when sequences are absent.
+  3. Failed candidate observations never advance or clear the successful installation watermark (`last_applied_*`).
+  4. Successful installations advance `last_applied_*` monotonically.
+  5. Missing timestamps are not substituted with arrival time.
   """
   def transition_receipt(nil, attrs) do
     status = attrs[:status] || "applied"
-    applied_at = attrs[:applied_at] || DateTime.utc_now() |> DateTime.truncate(:second)
-    attrs = Map.put(attrs, :applied_at, applied_at)
+    seq = attrs[:observation_sequence] || 1
 
     base_attrs =
       if status == "applied" do
@@ -375,7 +392,7 @@ defmodule SecretHub.Core.PKI.ClientAuth do
     updated =
       attrs
       |> Map.merge(base_attrs)
-      |> Map.put(:observation_sequence, 1)
+      |> Map.put(:observation_sequence, seq)
 
     {:ok, updated}
   end
@@ -385,92 +402,115 @@ defmodule SecretHub.Core.PKI.ClientAuth do
     incoming_gen = attrs[:generation] || 0
     last_applied = existing.last_applied_generation
 
+    incoming_seq = attrs[:observation_sequence]
+    existing_seq = existing.observation_sequence
+
     cond do
-      status == "applied" and last_applied != nil and incoming_gen < last_applied ->
-        {:ignore, existing}
+      is_integer(incoming_seq) ->
+        existing_seq_val = existing_seq || 0
 
-      status == "failed" and last_applied != nil and incoming_gen < last_applied ->
-        {:ignore, existing}
-
-      status == "failed" and last_applied == nil and incoming_gen < existing.generation ->
-        {:ignore, existing}
-
-      true ->
-        incoming_dt = parse_receipt_datetime(attrs[:applied_at])
-        existing_dt = parse_receipt_datetime(existing.applied_at || existing.updated_at)
-
-        incoming_seq = attrs[:observation_sequence]
-        existing_seq = existing.observation_sequence || 0
-
-        order = compare_observation_order(incoming_dt, existing_dt, incoming_seq, existing_seq)
-
-        case order do
-          :older ->
+        cond do
+          incoming_seq < existing_seq_val ->
             {:ignore, existing}
 
-          :same ->
-            {:ignore, existing}
-
-          newer when newer in [:newer, :newer_candidate] ->
-            if newer == :newer_candidate and is_duplicate_observation?(existing, attrs) do
+          incoming_seq == existing_seq_val ->
+            if is_duplicate_observation?(existing, attrs) do
               {:ignore, existing}
             else
-              applied_at = attrs[:applied_at] || DateTime.utc_now() |> DateTime.truncate(:second)
-              attrs = Map.put(attrs, :applied_at, applied_at)
+              {:error, :conflicting_observation_sequence}
+            end
 
-              installation_attrs =
-                if status == "applied" do
-                  if last_applied != nil and incoming_gen < last_applied do
-                    %{
-                      last_applied_generation: existing.last_applied_generation,
-                      last_applied_crl_number: existing.last_applied_crl_number,
-                      last_applied_bundle_sha256: existing.last_applied_bundle_sha256,
-                      last_applied_at: existing.last_applied_at
-                    }
-                  else
-                    %{
-                      last_applied_generation: attrs[:generation],
-                      last_applied_crl_number: attrs[:crl_number],
-                      last_applied_bundle_sha256: attrs[:bundle_sha256],
-                      last_applied_at: applied_at
-                    }
-                  end
+          incoming_seq > existing_seq_val ->
+            apply_receipt_update(existing, attrs, incoming_seq)
+        end
+
+      true ->
+        # Fallback when incoming observation has no sender-assigned sequence
+        cond do
+          status == "applied" and last_applied != nil and incoming_gen < last_applied ->
+            {:ignore, existing}
+
+          status == "failed" and last_applied != nil and incoming_gen < last_applied ->
+            {:ignore, existing}
+
+          status == "failed" and last_applied == nil and incoming_gen < existing.generation ->
+            {:ignore, existing}
+
+          true ->
+            incoming_dt = parse_receipt_datetime(attrs[:applied_at])
+            existing_dt = parse_receipt_datetime(existing.applied_at || existing.updated_at)
+
+            order =
+              compare_observation_order(incoming_dt, existing_dt, incoming_seq, existing_seq)
+
+            case order do
+              :older ->
+                {:ignore, existing}
+
+              :same ->
+                {:ignore, existing}
+
+              newer when newer in [:newer, :newer_candidate] ->
+                if newer == :newer_candidate and is_duplicate_observation?(existing, attrs) do
+                  {:ignore, existing}
                 else
-                  # Failed candidate preserves existing last_applied watermark
-                  %{
-                    last_applied_generation: existing.last_applied_generation,
-                    last_applied_crl_number: existing.last_applied_crl_number,
-                    last_applied_bundle_sha256: existing.last_applied_bundle_sha256,
-                    last_applied_at: existing.last_applied_at
-                  }
+                  next_seq =
+                    if is_integer(incoming_seq) and incoming_seq > (existing_seq || 0) do
+                      incoming_seq
+                    else
+                      (existing_seq || 0) + 1
+                    end
+
+                  apply_receipt_update(existing, attrs, next_seq)
                 end
-
-              next_seq =
-                if is_integer(incoming_seq) and incoming_seq > existing_seq do
-                  incoming_seq
-                else
-                  existing_seq + 1
-                end
-
-              updated =
-                attrs
-                |> Map.merge(installation_attrs)
-                |> Map.put(:observation_sequence, next_seq)
-
-              {:ok, updated}
             end
         end
     end
   end
 
+  defp apply_receipt_update(existing, attrs, next_seq) do
+    status = attrs[:status] || "applied"
+    incoming_gen = attrs[:generation] || 0
+    last_applied = existing.last_applied_generation
+    applied_at = attrs[:applied_at]
+
+    installation_attrs =
+      if status == "applied" do
+        if last_applied != nil and incoming_gen < last_applied do
+          %{
+            last_applied_generation: existing.last_applied_generation,
+            last_applied_crl_number: existing.last_applied_crl_number,
+            last_applied_bundle_sha256: existing.last_applied_bundle_sha256,
+            last_applied_at: existing.last_applied_at
+          }
+        else
+          %{
+            last_applied_generation: attrs[:generation],
+            last_applied_crl_number: attrs[:crl_number],
+            last_applied_bundle_sha256: attrs[:bundle_sha256],
+            last_applied_at: applied_at || existing.last_applied_at
+          }
+        end
+      else
+        # Failed candidate preserves existing last_applied watermark
+        %{
+          last_applied_generation: existing.last_applied_generation,
+          last_applied_crl_number: existing.last_applied_crl_number,
+          last_applied_bundle_sha256: existing.last_applied_bundle_sha256,
+          last_applied_at: existing.last_applied_at
+        }
+      end
+
+    updated =
+      attrs
+      |> Map.merge(installation_attrs)
+      |> Map.put(:observation_sequence, next_seq)
+
+    {:ok, updated}
+  end
+
   defp compare_observation_order(incoming_dt, existing_dt, incoming_seq, existing_seq) do
     cond do
-      incoming_dt == nil and existing_dt != nil ->
-        :older
-
-      incoming_dt != nil and existing_dt == nil ->
-        :newer
-
       incoming_dt != nil and existing_dt != nil ->
         case DateTime.compare(incoming_dt, existing_dt) do
           :lt ->
@@ -490,6 +530,13 @@ defmodule SecretHub.Core.PKI.ClientAuth do
             end
         end
 
+      incoming_dt != nil and existing_dt == nil ->
+        :newer
+
+      incoming_dt == nil and existing_dt != nil ->
+        # Incoming report is undated but arrived live; if sequence was not assigned, treat as candidate update
+        :newer_candidate
+
       true ->
         if is_integer(incoming_seq) and is_integer(existing_seq) and incoming_seq != existing_seq do
           if incoming_seq > existing_seq, do: :newer, else: :older
@@ -507,6 +554,27 @@ defmodule SecretHub.Core.PKI.ClientAuth do
       existing.crl_number == attrs[:crl_number] and
       existing.bundle_sha256 == attrs[:bundle_sha256] and
       existing.last_error_code == attrs[:last_error_code]
+  end
+
+  defp record_equivocation_audit_for_conflict(authority, receipt_attrs, _existing) do
+    attrs = %{
+      event_type: "pki.client_auth.agent_equivocation_detected",
+      actor_type: "agent",
+      actor_id: receipt_attrs.agent_id,
+      source_ip: "127.0.0.1",
+      access_granted: false,
+      correlation_id: authority.id,
+      hash_version: 2,
+      event_data: %{
+        "agent_id" => receipt_attrs.agent_id,
+        "authority_id" => authority.id,
+        "generation" => receipt_attrs.generation,
+        "reported_bundle_sha256" => receipt_attrs.bundle_sha256,
+        "reported_status" => receipt_attrs.status
+      }
+    }
+
+    Audit.log_event(attrs)
   end
 
   defp parse_receipt_datetime(%DateTime{} = dt), do: DateTime.truncate(dt, :second)

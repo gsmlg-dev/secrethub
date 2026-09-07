@@ -753,6 +753,107 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert r2.observation_sequence == r1.observation_sequence
     end
 
+    test "sequence-first ordering applies higher sequence regardless of arrival order or identical timestamp" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+      t_same = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      # Report sequence 100 (applied) and sequence 101 (failed) with identical timestamp
+      # Case A: 101 arrives after 100
+      assert {:ok, r100} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-seq-order-test-a",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => t_same,
+                 "observation_sequence" => 100
+               })
+
+      assert r100.status == "applied"
+      assert r100.observation_sequence == 100
+
+      assert {:ok, r101} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-seq-order-test-a",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "failed",
+                 "last_error_code" => "caddy_reload_failed",
+                 "applied_at" => t_same,
+                 "observation_sequence" => 101
+               })
+
+      # Final status must be failed because sequence 101 > 100
+      assert r101.status == "failed"
+      assert r101.last_error_code == "caddy_reload_failed"
+      assert r101.observation_sequence == 101
+
+      # Case B: 100 arrives after 101 (out of order arrival)
+      assert {:ok, r_init} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-seq-order-test-b",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "failed",
+                 "last_error_code" => "caddy_reload_failed",
+                 "applied_at" => t_same,
+                 "observation_sequence" => 101
+               })
+
+      assert r_init.status == "failed"
+      assert r_init.observation_sequence == 101
+
+      assert {:ok, r_stale} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-seq-order-test-b",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => t_same,
+                 "observation_sequence" => 100
+               })
+
+      # Final status must remain failed because sequence 100 is stale relative to 101
+      assert r_stale.status == "failed"
+      assert r_stale.observation_sequence == 101
+    end
+
+    test "conflicting observation payload with duplicate sequence is rejected and audited" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+      t = DateTime.utc_now()
+
+      assert {:ok, r1} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-conflict-seq-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => t,
+                 "observation_sequence" => 42
+               })
+
+      assert r1.status == "applied"
+      assert r1.observation_sequence == 42
+
+      # Duplicate sequence with conflicting payload (different status / error)
+      assert {:error, :conflicting_observation_sequence} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-conflict-seq-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "failed",
+                 "last_error_code" => "differing_event",
+                 "applied_at" => t,
+                 "observation_sequence" => 42
+               })
+    end
+
     test "authentic applied receipt recovers agent after a failed candidate generation" do
       {:ok, bundle} = ClientAuth.current_bundle()
       candidate_sha = String.duplicate("a", 64)

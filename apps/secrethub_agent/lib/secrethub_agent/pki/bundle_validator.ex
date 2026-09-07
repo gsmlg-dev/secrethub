@@ -120,40 +120,77 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
   end
 
   @doc """
-  Inspects `current` and `generations/` directories to find the highest generation
-  with valid surviving historical trust evidence.
+  Inspects `current` and every retained generation in `generations/` before selecting a baseline.
+  Validates contents rather than directory names, requires CA continuity and absence of equivocation,
+  and selects the coherent bundle tuple of the highest valid generation.
   """
   def find_surviving_disk_bundle(base_dir, opts \\ []) do
     current_dir = Path.join(base_dir, "current")
+    generations_dir = Path.join(base_dir, "generations")
 
-    case validate_disk_historical_evidence(current_dir, opts) do
-      {:ok, validated} ->
-        {:ok, validated}
+    gen_candidates =
+      case File.ls(generations_dir) do
+        {:ok, entries} ->
+          Enum.map(entries, &Path.join(generations_dir, &1))
 
-      _ ->
-        generations_dir = Path.join(base_dir, "generations")
+        _ ->
+          []
+      end
 
-        case File.ls(generations_dir) do
-          {:ok, entries} ->
-            candidates =
-              entries
-              |> Enum.flat_map(fn entry ->
-                case Integer.parse(entry) do
-                  {gen, ""} -> [{gen, Path.join(generations_dir, entry)}]
-                  _ -> []
-                end
+    all_candidate_paths =
+      [current_dir | gen_candidates]
+      |> Enum.filter(&File.dir?/1)
+      |> Enum.uniq_by(fn path ->
+        case File.read_link(path) do
+          {:ok, target} -> Path.expand(target, Path.dirname(path))
+          _ -> path
+        end
+      end)
+
+    valid_bundles =
+      Enum.flat_map(all_candidate_paths, fn path ->
+        case validate_disk_historical_evidence(path, opts) do
+          {:ok, validated} -> [Map.put(validated, :source_path, path)]
+          _ -> []
+        end
+      end)
+
+    cond do
+      valid_bundles == [] ->
+        {:error, :no_surviving_bundle}
+
+      true ->
+        # 1. Check CA continuity: all surviving bundles must share the same CA fingerprint
+        fps =
+          valid_bundles
+          |> Enum.map(& &1.ca_fingerprint)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.uniq()
+
+        cond do
+          length(fps) > 1 ->
+            {:error, {:conflicting_recovery_evidence, :ca_fingerprint_conflict}}
+
+          true ->
+            # 2. Check same-generation hash conflicts (equivocation)
+            by_gen = Enum.group_by(valid_bundles, & &1.generation)
+
+            has_equivocation =
+              Enum.any?(by_gen, fn {_gen, list} ->
+                list |> Enum.map(& &1.bundle_sha256) |> Enum.uniq() |> length() > 1
               end)
-              |> Enum.sort_by(fn {gen, _path} -> gen end, :desc)
 
-            Enum.find_value(candidates, {:error, :no_surviving_bundle}, fn {_gen, path} ->
-              case validate_disk_historical_evidence(path, opts) do
-                {:ok, validated} -> {:ok, validated}
-                _ -> nil
-              end
-            end)
+            if has_equivocation do
+              {:error, {:conflicting_recovery_evidence, :generation_hash_conflict}}
+            else
+              # 3. Select the coherent tuple with highest generation (and highest crl_number)
+              highest =
+                valid_bundles
+                |> Enum.sort_by(fn b -> {b.generation, b.crl_number} end, :desc)
+                |> hd()
 
-          _ ->
-            {:error, :no_surviving_bundle}
+              {:ok, highest}
+            end
         end
     end
   end

@@ -983,11 +983,12 @@ defmodule SecretHub.Agent.PKIBundleTest do
         )
 
       status = TrustBundleManager.status(manager)
-      assert status.status == "error"
+      assert status.status == "repair_required"
       assert status.needs_repair == true
-      # Baseline generation 10 must have survived!
+      # Baseline generation 10 must have survived as rollback barrier!
       assert status.lkg_generation == 10
-      assert status.current_generation == 10
+      # But current expired bundle must not be published as active installed generation!
+      assert status.current_generation == 0
 
       # 4. Attempting to install Gen 9 must be rejected as downgrade (not accepted as fresh enrollment!)
       assert {:error, :generation_downgrade_rejected, receipt} =
@@ -1024,11 +1025,22 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert status.last_error_code == :damaged_state_recovery_required
 
       # Normal process_bundle is rejected because damaged baseline cannot guarantee monotonicity
-      assert {:error, :damaged_state_recovery_required, receipt} =
+      assert {:error, :damaged_state_recovery_required, receipt1} =
                TrustBundleManager.process_bundle(manager, bundle, now: now)
 
-      assert receipt["status"] == "failed"
-      assert receipt["last_error_code"] == "damaged_state_recovery_required"
+      assert receipt1["status"] == "failed"
+      assert receipt1["last_error_code"] == "damaged_state_recovery_required"
+
+      # Finding 1 regression: Subsequent attempt without force MUST remain quarantined (not bypassed)
+      status_mid = TrustBundleManager.status(manager)
+      assert status_mid.status == "recovery_required"
+      assert status_mid.recovery_mode == :quarantined
+
+      assert {:error, :damaged_state_recovery_required, receipt2} =
+               TrustBundleManager.process_bundle(manager, bundle, now: now)
+
+      assert receipt2["status"] == "failed"
+      assert receipt2["last_error_code"] == "damaged_state_recovery_required"
 
       # With force: true, operator/orchestrator authorizes recovery
       assert {:ok, ok_receipt} =
@@ -1038,7 +1050,166 @@ defmodule SecretHub.Agent.PKIBundleTest do
 
       status_after = TrustBundleManager.status(manager)
       assert status_after.status == "applied"
+      assert status_after.recovery_mode == :none
       assert status_after.needs_repair == false
+    end
+
+    test "unified scanner recovers higher generation 10 when current symlink points to generation 9",
+         %{
+           tmp_dir: tmp_dir,
+           bundle: gen1_bundle,
+           ca_key: ca_key,
+           ca_cert: ca_cert,
+           now: now
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki_unified_scanner_recovery")
+      File.mkdir_p!(bundle_dir)
+
+      # Generate signed CRL for gen 9
+      crl_9 =
+        X509.CRL.new([], ca_cert, ca_key,
+          this_update: now,
+          next_update: DateTime.add(now, 3600, :second),
+          extensions: [crl_number: X509.CRL.Extension.crl_number(9)]
+        )
+
+      crl_9_pem = X509.CRL.to_pem(crl_9)
+      crl_9_der = X509.CRL.to_der(crl_9)
+      crl_9_sha256 = :crypto.hash(:sha256, crl_9_der) |> Base.encode16(case: :lower)
+
+      gen9_bundle =
+        gen1_bundle
+        |> Map.put("generation", 9)
+        |> Map.put("crl_number", 9)
+        |> Map.put("this_update", DateTime.to_iso8601(now))
+        |> Map.put("next_update", DateTime.to_iso8601(DateTime.add(now, 3600, :second)))
+        |> Map.put("crl_pem", crl_9_pem)
+        |> Map.put("crl_der_sha256", crl_9_sha256)
+
+      t9 =
+        [
+          gen9_bundle["schema_version"],
+          gen9_bundle["authority"],
+          gen9_bundle["generation"],
+          gen9_bundle["ca_fingerprint"],
+          gen9_bundle["crl_number"],
+          gen9_bundle["crl_der_sha256"],
+          gen9_bundle["this_update"],
+          gen9_bundle["next_update"],
+          gen9_bundle["ca_bundle_pem"],
+          gen9_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      gen9_hash = :crypto.hash(:sha256, t9) |> Base.encode16(case: :lower)
+      gen9_bundle = Map.put(gen9_bundle, "bundle_sha256", gen9_hash)
+
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, gen9_bundle, now: now)
+
+      # Generate signed CRL for gen 10
+      crl_10 =
+        X509.CRL.new([], ca_cert, ca_key,
+          this_update: now,
+          next_update: DateTime.add(now, 3600, :second),
+          extensions: [crl_number: X509.CRL.Extension.crl_number(10)]
+        )
+
+      crl_10_pem = X509.CRL.to_pem(crl_10)
+      crl_10_der = X509.CRL.to_der(crl_10)
+      crl_10_sha256 = :crypto.hash(:sha256, crl_10_der) |> Base.encode16(case: :lower)
+
+      gen10_bundle =
+        gen1_bundle
+        |> Map.put("generation", 10)
+        |> Map.put("crl_number", 10)
+        |> Map.put("this_update", DateTime.to_iso8601(now))
+        |> Map.put("next_update", DateTime.to_iso8601(DateTime.add(now, 3600, :second)))
+        |> Map.put("crl_pem", crl_10_pem)
+        |> Map.put("crl_der_sha256", crl_10_sha256)
+
+      t10 =
+        [
+          gen10_bundle["schema_version"],
+          gen10_bundle["authority"],
+          gen10_bundle["generation"],
+          gen10_bundle["ca_fingerprint"],
+          gen10_bundle["crl_number"],
+          gen10_bundle["crl_der_sha256"],
+          gen10_bundle["this_update"],
+          gen10_bundle["next_update"],
+          gen10_bundle["ca_bundle_pem"],
+          gen10_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      gen10_hash = :crypto.hash(:sha256, t10) |> Base.encode16(case: :lower)
+      gen10_bundle = Map.put(gen10_bundle, "bundle_sha256", gen10_hash)
+
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, gen10_bundle, now: now)
+
+      # Now point current symlink back to generation 9 to simulate interrupted switch or partial crash
+      current_symlink = Path.join(bundle_dir, "current")
+      File.rm(current_symlink)
+      File.ln_s(Path.join("generations", "9"), current_symlink)
+
+      # Corrupt watermark
+      File.write!(Path.join(bundle_dir, "watermark.json"), "{ corrupt }")
+
+      # Unified scanner must find generation 10 across generations/
+      assert {:ok, surviving} = BundleValidator.find_surviving_disk_bundle(bundle_dir)
+      assert surviving.generation == 10
+
+      # Start manager: should select generation 10 as baseline!
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-gen10-recovery-test",
+          name: :test_gen10_recovery_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.lkg_generation == 10
+      # Reject generation 9 as downgrade against baseline 10
+      assert {:error, :generation_downgrade_rejected, _} =
+               TrustBundleManager.process_bundle(manager, gen9_bundle, now: now)
+    end
+
+    test "watermark fsync error injection formats cleanly as watermark_commit_failed without crashing",
+         %{
+           tmp_dir: tmp_dir,
+           bundle: bundle,
+           now: now
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki_watermark_fsync_err")
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-fsync-err-test",
+          name: :test_fsync_err_manager
+        )
+
+      # Inject simulated fsync error on watermark write
+      assert {:error, :watermark_commit_failed, receipt} =
+               TrustBundleManager.process_bundle(
+                 manager,
+                 bundle,
+                 now: now,
+                 inject_watermark_fsync_error: :eio
+               )
+
+      assert receipt["status"] == "failed"
+      assert receipt["last_error_code"] == "watermark_commit_failed"
+      assert is_binary(receipt["last_error_detail"])
+      assert String.contains?(receipt["last_error_detail"], "eio")
+
+      status = TrustBundleManager.status(manager)
+      assert status.status == "failed"
+      assert status.last_error_code == "watermark_commit_failed"
     end
 
     test "total JSON decoding handles non-map shapes across store and validator", %{

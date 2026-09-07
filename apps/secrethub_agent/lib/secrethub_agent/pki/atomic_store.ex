@@ -48,7 +48,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
          :ok <- fsync_dir(tmp_dir),
          :ok <- publish_generation_dir(tmp_dir, gen_dir, manifest),
          :ok <- fsync_dir(generations_dir) do
-      case write_and_fsync_watermark(base_dir, manifest) do
+      case write_and_fsync_watermark(base_dir, manifest, opts) do
         :ok ->
           case switch_symlink(base_dir, generation) do
             :ok ->
@@ -308,7 +308,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
   # Helpers
 
-  defp write_and_fsync_watermark(base_dir, manifest) do
+  defp write_and_fsync_watermark(base_dir, manifest, opts \\ []) do
     # Enforce monotonicity at persistence boundary before replacing watermark
     case read_persistent_watermark(base_dir) do
       {:ok, wm} ->
@@ -338,11 +338,11 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
             {:error, :crl_number_downgrade}
 
           true ->
-            do_write_and_fsync_watermark(base_dir, manifest)
+            do_write_and_fsync_watermark(base_dir, manifest, opts)
         end
 
       {:error, :not_found} ->
-        do_write_and_fsync_watermark(base_dir, manifest)
+        do_write_and_fsync_watermark(base_dir, manifest, opts)
 
       {:error, _corrupted_or_invalid} ->
         # Existing watermark on disk is corrupted; check if disk has surviving valid bundle
@@ -353,16 +353,16 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
             if manifest_gen < surviving.generation do
               {:error, :watermark_generation_downgrade}
             else
-              do_write_and_fsync_watermark(base_dir, manifest)
+              do_write_and_fsync_watermark(base_dir, manifest, opts)
             end
 
           _ ->
-            do_write_and_fsync_watermark(base_dir, manifest)
+            do_write_and_fsync_watermark(base_dir, manifest, opts)
         end
     end
   end
 
-  defp do_write_and_fsync_watermark(base_dir, manifest) do
+  defp do_write_and_fsync_watermark(base_dir, manifest, opts) do
     watermark = %{
       "highest_seen_generation" => manifest["generation"],
       "highest_seen_crl_number" => manifest["crl_number"],
@@ -377,10 +377,16 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     case Jason.encode(watermark, pretty: true) do
       {:ok, json} ->
+        sync_res =
+          case Keyword.get(opts, :inject_watermark_fsync_error) do
+            nil -> fsync_dir(base_dir)
+            injected_err -> {:error, {:dir_sync_failed, injected_err}}
+          end
+
         with :ok <- ensure_secure_directory(base_dir),
              :ok <- write_and_fsync_file(tmp_path, json),
              :ok <- File.rename(tmp_path, target_path),
-             :ok <- fsync_dir(base_dir) do
+             :ok <- sync_res do
           :ok
         else
           {:error, reason} ->
