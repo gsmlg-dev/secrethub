@@ -158,6 +158,21 @@ defmodule SecretHub.Web.ClientAuthPKIControllerTest do
       # 13. Force CRL Refresh
       refresh_resp = post(admin_conn, "/v1/pki/client-auth/crl/refresh", %{})
       assert json_response(refresh_resp, 200)["data"]["generation"] >= 2
+
+      # 14. List Bundle Receipts via REST API
+      {:ok, _receipt} =
+        SecretHub.Core.PKI.ClientAuth.record_bundle_receipt(%{
+          "agent_id" => "agent-controller-test",
+          "generation" => 2,
+          "crl_number" => 2,
+          "bundle_sha256" => json_response(bundle_resp2, 200)["data"]["bundle_sha256"],
+          "status" => "applied"
+        })
+
+      receipts_resp = get(admin_conn, "/v1/pki/client-auth/bundle/receipts?limit=10&offset=0")
+      receipts_data = json_response(receipts_resp, 200)["data"]
+      assert is_list(receipts_data)
+      assert Enum.any?(receipts_data, &(&1["agent_id"] == "agent-controller-test"))
     end
   end
 

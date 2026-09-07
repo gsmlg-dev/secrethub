@@ -410,22 +410,23 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   end
 
   defp fsync_dir(dir_path) do
-    case :file.open(to_charlist(dir_path), [:read, :raw]) do
+    case :file.open(to_charlist(dir_path), [:read, :raw, :directory]) do
       {:ok, fd} ->
-        res = :file.sync(fd)
-        :file.close(fd)
-
-        case res do
-          :ok -> :ok
-          {:error, reason} when reason in [:einval, :enotsup, :eisdir, :ebadf] -> :ok
-          {:error, reason} -> {:error, reason}
+        try do
+          case :file.sync(fd) do
+            :ok -> :ok
+            {:error, reason} when reason in [:einval, :enotsup] -> :ok
+            {:error, reason} -> {:error, {:dir_sync_failed, reason}}
+          end
+        after
+          :file.close(fd)
         end
 
-      {:error, reason} when reason in [:einval, :enotsup, :eisdir, :ebadf] ->
+      {:error, reason} when reason in [:einval, :enotsup] ->
         :ok
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, {:dir_open_failed, reason}}
     end
   end
 

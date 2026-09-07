@@ -235,6 +235,9 @@ defmodule SecretHub.Core.PKI.ClientAuth do
       raw_status = to_string(Map.get(attrs, "status") || Map.get(attrs, :status) || "applied")
       normalized_status = if raw_status in ["failed", "error"], do: "failed", else: "applied"
 
+      applied_at =
+        parse_receipt_datetime(Map.get(attrs, "applied_at") || Map.get(attrs, :applied_at))
+
       receipt_attrs = %{
         agent_id: to_string(agent_id),
         client_auth_authority_id: authority.id,
@@ -245,7 +248,7 @@ defmodule SecretHub.Core.PKI.ClientAuth do
         last_error_code: Map.get(attrs, "last_error_code") || Map.get(attrs, :last_error_code),
         last_error_detail:
           Map.get(attrs, "last_error_detail") || Map.get(attrs, :last_error_detail),
-        applied_at: Map.get(attrs, "applied_at") || Map.get(attrs, :applied_at)
+        applied_at: applied_at
       }
 
       receipt_attrs = verify_applied_bundle_authenticity(authority, receipt_attrs)
@@ -270,6 +273,9 @@ defmodule SecretHub.Core.PKI.ClientAuth do
 
             rec ->
               cond do
+                receipt_attrs.status == "applied" and rec.status == "failed" ->
+                  true
+
                 receipt_attrs.generation > rec.generation ->
                   true
 
@@ -339,30 +345,43 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   end
 
   defp is_newer_failure?(receipt_attrs, existing) do
-    case {receipt_attrs[:applied_at], existing.applied_at || existing.updated_at} do
+    new_dt = parse_receipt_datetime(receipt_attrs[:applied_at])
+    old_dt = parse_receipt_datetime(existing.applied_at || existing.updated_at)
+
+    case {new_dt, old_dt} do
       {nil, _} ->
         true
 
       {_, nil} ->
         true
 
-      {%DateTime{} = new_dt, %DateTime{} = old_dt} ->
-        DateTime.compare(new_dt, old_dt) in [:gt, :eq]
-
-      _ ->
-        true
+      {%DateTime{} = ndt, %DateTime{} = odt} ->
+        DateTime.compare(ndt, odt) in [:gt, :eq]
     end
   end
+
+  defp parse_receipt_datetime(%DateTime{} = dt), do: dt
+
+  defp parse_receipt_datetime(iso_str) when is_binary(iso_str) do
+    case DateTime.from_iso8601(iso_str) do
+      {:ok, dt, _} -> dt
+      _ -> nil
+    end
+  end
+
+  defp parse_receipt_datetime(_), do: nil
 
   @doc """
   Lists bundle receipts with pagination.
   """
-  @spec list_bundle_receipts(keyword()) :: [ClientAuthBundleReceipt.t()]
-  @spec list_bundle_receipts(ClientAuthAuthority.t() | binary(), keyword()) ::
+  @spec list_bundle_receipts(keyword() | binary() | ClientAuthAuthority.t()) ::
+          [ClientAuthBundleReceipt.t()]
+  @spec list_bundle_receipts(ClientAuthAuthority.t() | binary(), keyword() | map()) ::
           [ClientAuthBundleReceipt.t()]
   def list_bundle_receipts(authority_or_opts \\ [])
 
   def list_bundle_receipts(opts) when is_list(opts) do
+    opts = normalize_opts(opts)
     limit = Keyword.get(opts, :limit, 50)
     offset = Keyword.get(opts, :offset, 0)
 
@@ -374,25 +393,52 @@ defmodule SecretHub.Core.PKI.ClientAuth do
       )
 
     Repo.all(query)
+  end
+
+  def list_bundle_receipts(%ClientAuthAuthority{id: authority_id}) do
+    list_bundle_receipts(authority_id, [])
+  end
+
+  def list_bundle_receipts(slug_or_id) when is_binary(slug_or_id) do
+    list_bundle_receipts(slug_or_id, [])
   end
 
   def list_bundle_receipts(%ClientAuthAuthority{id: authority_id}, opts) do
     list_bundle_receipts(authority_id, opts)
   end
 
-  def list_bundle_receipts(authority_id, opts) when is_binary(authority_id) and is_list(opts) do
+  def list_bundle_receipts(slug_or_id, opts) when is_binary(slug_or_id) do
+    opts = normalize_opts(opts)
     limit = Keyword.get(opts, :limit, 50)
     offset = Keyword.get(opts, :offset, 0)
 
-    query =
-      from(r in ClientAuthBundleReceipt,
-        where: r.client_auth_authority_id == ^authority_id,
-        order_by: [desc: r.updated_at],
-        limit: ^limit,
-        offset: ^offset
-      )
+    authority_id =
+      case Ecto.UUID.cast(slug_or_id) do
+        {:ok, uuid} ->
+          uuid
 
-    Repo.all(query)
+        :error ->
+          case Repo.one(
+                 from(a in ClientAuthAuthority, where: a.slug == ^slug_or_id, select: a.id)
+               ) do
+            nil -> nil
+            id -> id
+          end
+      end
+
+    if authority_id do
+      query =
+        from(r in ClientAuthBundleReceipt,
+          where: r.client_auth_authority_id == ^authority_id,
+          order_by: [desc: r.updated_at],
+          limit: ^limit,
+          offset: ^offset
+        )
+
+      Repo.all(query)
+    else
+      []
+    end
   end
 
   defp verify_applied_bundle_authenticity(authority, receipt_attrs) do

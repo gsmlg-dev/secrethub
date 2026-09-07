@@ -702,5 +702,127 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert status.needs_repair == true
       assert status.last_error_code == :generation_rollback
     end
+
+    test "corrupted watermark with valid disk bundle preserves lower bound and rejects downgrades",
+         %{
+           tmp_dir: tmp_dir,
+           bundle: gen1_bundle,
+           ca_cert: ca_cert,
+           ca_key: ca_key,
+           now: now
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki/client-auth-corrupted-wm")
+
+      # 1. Write Gen 10 bundle to disk
+      crl10 =
+        X509.CRL.new(
+          [],
+          ca_cert,
+          ca_key,
+          this_update: DateTime.add(now, -100, :second),
+          next_update: DateTime.add(now, 48 * 3600, :second),
+          extensions: [crl_number: X509.CRL.Extension.crl_number(10)]
+        )
+
+      crl10_pem = X509.CRL.to_pem(crl10)
+      crl10_der = X509.CRL.to_der(crl10)
+      crl10_hash = :crypto.hash(:sha256, crl10_der) |> Base.encode16(case: :lower)
+
+      gen10_bundle =
+        gen1_bundle
+        |> Map.put("generation", 10)
+        |> Map.put("crl_number", 10)
+        |> Map.put("this_update", DateTime.to_iso8601(DateTime.add(now, -100, :second)))
+        |> Map.put("next_update", DateTime.to_iso8601(DateTime.add(now, 48 * 3600, :second)))
+        |> Map.put("crl_pem", crl10_pem)
+        |> Map.put("crl_der_sha256", crl10_hash)
+
+      transcript10 =
+        [
+          gen10_bundle["schema_version"],
+          gen10_bundle["authority"],
+          gen10_bundle["generation"],
+          gen10_bundle["ca_fingerprint"],
+          gen10_bundle["crl_number"],
+          gen10_bundle["crl_der_sha256"],
+          gen10_bundle["this_update"],
+          gen10_bundle["next_update"],
+          gen10_bundle["ca_bundle_pem"],
+          gen10_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      bundle10_hash = :crypto.hash(:sha256, transcript10) |> Base.encode16(case: :lower)
+      gen10_bundle = Map.put(gen10_bundle, "bundle_sha256", bundle10_hash)
+
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, gen10_bundle, now: now)
+
+      # 2. Corrupt watermark.json
+      wm_path = Path.join(bundle_dir, "watermark.json")
+      File.write!(wm_path, "{ corrupted json ! }")
+
+      # 3. Start TrustBundleManager
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-corrupt-wm-test",
+          name: :test_corrupt_wm_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.status == "error"
+      assert status.needs_repair == true
+      assert status.last_error_code == :corrupted_watermark
+      # lkg_generation and current_generation must reflect disk generation 10
+      assert status.lkg_generation == 10
+      assert status.current_generation == 10
+
+      # 4. Incoming candidate Gen 9 must be strictly rejected as generation_downgrade_rejected
+      gen9_bundle = Map.put(gen1_bundle, "generation", 9)
+
+      transcript9 =
+        [
+          gen9_bundle["schema_version"],
+          gen9_bundle["authority"],
+          gen9_bundle["generation"],
+          gen9_bundle["ca_fingerprint"],
+          gen9_bundle["crl_number"],
+          gen9_bundle["crl_der_sha256"],
+          gen9_bundle["this_update"],
+          gen9_bundle["next_update"],
+          gen9_bundle["ca_bundle_pem"],
+          gen9_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      bundle9_hash = :crypto.hash(:sha256, transcript9) |> Base.encode16(case: :lower)
+      gen9_bundle = Map.put(gen9_bundle, "bundle_sha256", bundle9_hash)
+
+      assert {:error, :generation_downgrade_rejected, receipt} =
+               TrustBundleManager.process_bundle(manager, gen9_bundle, now: now)
+
+      assert receipt["status"] == "failed"
+      assert receipt["last_error_code"] == "generation_downgrade_rejected"
+
+      # 5. Core sends authentic Gen 10 bundle -> manager applies it, repairs watermark, clears error
+      assert {:ok, ok_receipt} =
+               TrustBundleManager.process_bundle(manager, gen10_bundle, now: now)
+
+      assert ok_receipt["status"] == "applied"
+      assert ok_receipt["generation"] == 10
+
+      status_after = TrustBundleManager.status(manager)
+      assert status_after.status == "applied"
+      assert status_after.needs_repair == false
+      assert status_after.last_error_code == nil
+      assert status_after.lkg_generation == 10
+
+      # Watermark on disk must now be valid
+      assert {:ok, fixed_wm} = AtomicStore.read_persistent_watermark(bundle_dir)
+      assert fixed_wm["highest_seen_generation"] == 10
+    end
   end
 end

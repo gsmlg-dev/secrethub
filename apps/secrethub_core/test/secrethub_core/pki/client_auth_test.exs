@@ -594,6 +594,98 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       # Must remain applied because failure occurred before the applied timestamp
       assert receipt2.status == "applied"
     end
+
+    test "stale failure receipt with ISO-8601 string timestamp cannot overwrite applied status" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+      t_applied = DateTime.utc_now()
+      t_stale_failure = DateTime.add(t_applied, -60, :second)
+
+      assert {:ok, receipt1} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-iso-string-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => DateTime.to_iso8601(t_applied)
+               })
+
+      assert receipt1.status == "applied"
+
+      # Stale failure with ISO-8601 string timestamp
+      assert {:ok, receipt2} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-iso-string-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "failed",
+                 "applied_at" => DateTime.to_iso8601(t_stale_failure),
+                 "last_error_code" => "stale_error_string"
+               })
+
+      assert receipt2.status == "applied"
+    end
+
+    test "authentic applied receipt recovers agent after a failed candidate generation" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+      candidate_sha = String.duplicate("a", 64)
+
+      # 1. Agent reports candidate failure at generation 1000
+      assert {:ok, failed_receipt} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-failed-candidate",
+                 "generation" => 1000,
+                 "crl_number" => 1000,
+                 "bundle_sha256" => candidate_sha,
+                 "status" => "failed",
+                 "last_error_code" => "download_failed"
+               })
+
+      assert failed_receipt.status == "failed"
+      assert failed_receipt.generation == 1000
+
+      # 2. Agent now applies authentic current bundle (generation 1)
+      assert {:ok, applied_receipt} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-failed-candidate",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => DateTime.utc_now()
+               })
+
+      # Must successfully update to applied status at generation 1
+      assert applied_receipt.status == "applied"
+      assert applied_receipt.generation == bundle["generation"]
+      assert applied_receipt.last_error_code == nil
+    end
+
+    test "list_bundle_receipts supports authority slug and pagination options" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+
+      for i <- 1..5 do
+        {:ok, _} =
+          ClientAuth.record_bundle_receipt(%{
+            "agent_id" => "agent-list-#{i}",
+            "generation" => bundle["generation"],
+            "crl_number" => bundle["crl_number"],
+            "bundle_sha256" => bundle["bundle_sha256"],
+            "status" => "applied"
+          })
+      end
+
+      # List by slug
+      receipts = ClientAuth.list_bundle_receipts("client-auth", limit: 3, offset: 0)
+      assert length(receipts) == 3
+
+      receipts_page2 = ClientAuth.list_bundle_receipts("client-auth", limit: 3, offset: 3)
+      assert length(receipts_page2) == 2
+
+      # Unknown slug returns empty list
+      assert [] == ClientAuth.list_bundle_receipts("unknown-slug")
+    end
   end
 
   describe "CAValidator" do

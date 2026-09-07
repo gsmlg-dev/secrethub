@@ -266,13 +266,43 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
             status: "initializing"
           }
 
-        {{:error, wm_err}, _} ->
-          # Watermark is invalid JSON or unreadable -> fail closed / mark error
+        {{:error, wm_err}, {:ok, validated}} ->
+          # Watermark is invalid JSON or unreadable, but disk contains a valid bundle.
+          # Preserve the surviving lower bound from disk in lkg_* to prevent downgrades.
           %__MODULE__{
             state_dir: state_dir,
             base_dir: base_dir,
             agent_id: agent_id,
             connection_mod: conn_mod,
+            lkg_generation: validated.generation,
+            lkg_crl_number: validated.crl_number,
+            lkg_ca_fingerprint: validated.ca_fingerprint,
+            lkg_bundle_sha256: validated.bundle_sha256,
+            installed_generation: validated.generation,
+            installed_crl_number: validated.crl_number,
+            installed_ca_fingerprint: validated.ca_fingerprint,
+            installed_bundle_sha256: validated.bundle_sha256,
+            needs_repair: true,
+            status: "error",
+            last_error_code: :corrupted_watermark,
+            last_error_detail: inspect(wm_err)
+          }
+
+        {{:error, wm_err}, _disk_err} ->
+          # Watermark is invalid JSON or unreadable and disk has no valid bundle
+          %__MODULE__{
+            state_dir: state_dir,
+            base_dir: base_dir,
+            agent_id: agent_id,
+            connection_mod: conn_mod,
+            lkg_generation: 0,
+            lkg_crl_number: 0,
+            lkg_ca_fingerprint: nil,
+            lkg_bundle_sha256: nil,
+            installed_generation: 0,
+            installed_crl_number: 0,
+            installed_ca_fingerprint: nil,
+            installed_bundle_sha256: nil,
             needs_repair: true,
             status: "error",
             last_error_code: :corrupted_watermark,

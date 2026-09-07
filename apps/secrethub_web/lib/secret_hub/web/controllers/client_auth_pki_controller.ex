@@ -297,7 +297,7 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   """
   def list_receipts(conn, params) do
     slug = Map.get(params, "slug", "client-auth")
-    receipts = ClientAuth.list_bundle_receipts(slug)
+    receipts = ClientAuth.list_bundle_receipts(slug, params)
     json(conn, %{data: Enum.map(receipts, &render_receipt/1)})
   end
 
