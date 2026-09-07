@@ -47,19 +47,41 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
          {:ok, manifest} <- write_and_fsync_manifest(tmp_dir, bundle, now),
          :ok <- fsync_dir(tmp_dir),
          :ok <- publish_generation_dir(tmp_dir, gen_dir, manifest),
-         :ok <- fsync_dir(generations_dir),
-         :ok <- write_and_fsync_watermark(base_dir, manifest),
-         :ok <- switch_symlink(base_dir, generation),
-         :ok <- fsync_dir(base_dir) do
-      # Best effort pruning: log warning on error but do not fail published bundle
-      _ = prune_old_generations(base_dir, generations_dir)
+         :ok <- fsync_dir(generations_dir) do
+      case write_and_fsync_watermark(base_dir, manifest) do
+        :ok ->
+          case switch_symlink(base_dir, generation) do
+            :ok ->
+              sync_res =
+                case Keyword.get(opts, :inject_base_dir_fsync_error) do
+                  nil -> fsync_dir(base_dir)
+                  injected_err -> {:error, injected_err}
+                end
 
-      {:ok,
-       %{
-         current_path: Path.join(base_dir, "current"),
-         generation: generation,
-         manifest: manifest
-       }}
+              case sync_res do
+                :ok ->
+                  # Best effort pruning: log warning on error but do not fail published bundle
+                  _ = prune_old_generations(base_dir, generations_dir)
+
+                  {:ok,
+                   %{
+                     current_path: Path.join(base_dir, "current"),
+                     generation: generation,
+                     manifest: manifest
+                   }}
+
+                {:error, reason} ->
+                  {:error, {:after_current_switched, reason}}
+              end
+
+            {:error, reason} ->
+              {:error, {:after_watermark_committed, reason}}
+          end
+
+        {:error, reason} ->
+          File.rm_rf(tmp_dir)
+          {:error, {:watermark_commit_failed, reason}}
+      end
     else
       {:error, reason} ->
         File.rm_rf(tmp_dir)
@@ -171,6 +193,20 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   @sha256_hex ~r/\A[0-9a-f]{64}\z/
 
   @doc """
+  Decodes JSON string and strictly asserts that the root value is a map/object.
+  Returns `{:ok, map}`, `{:error, :not_a_json_object}`, or `{:error, {:invalid_json, reason}}`.
+  """
+  @spec decode_json_object(binary()) ::
+          {:ok, map()} | {:error, :not_a_json_object | {:invalid_json, term()}}
+  def decode_json_object(content) when is_binary(content) do
+    case Jason.decode(content) do
+      {:ok, %{} = map} -> {:ok, map}
+      {:ok, _other} -> {:error, :not_a_json_object}
+      {:error, reason} -> {:error, {:invalid_json, reason}}
+    end
+  end
+
+  @doc """
   Reads the persistent watermark from `<base_dir>/watermark.json`.
   """
   @spec read_persistent_watermark(Path.t()) :: {:ok, map()} | {:error, :not_found | term()}
@@ -179,11 +215,14 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     case File.read(wm_path) do
       {:ok, content} ->
-        with {:ok, %{} = wm} <- Jason.decode(content),
+        with {:ok, wm} <- decode_json_object(content),
              :ok <- validate_watermark_schema(wm) do
           {:ok, wm}
         else
-          {:error, %Jason.DecodeError{} = reason} ->
+          {:error, :not_a_json_object} ->
+            {:error, :invalid_watermark_schema}
+
+          {:error, {:invalid_json, reason}} ->
             {:error, {:invalid_watermark_json, reason}}
 
           {:error, reason} ->
@@ -235,9 +274,10 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     case File.read(manifest_path) do
       {:ok, content} ->
-        case Jason.decode(content) do
+        case decode_json_object(content) do
           {:ok, manifest} -> {:ok, manifest}
-          {:error, reason} -> {:error, {:invalid_manifest_json, reason}}
+          {:error, :not_a_json_object} -> {:error, :invalid_manifest_format}
+          {:error, {:invalid_json, reason}} -> {:error, {:invalid_manifest_json, reason}}
         end
 
       {:error, :enoent} ->
@@ -269,6 +309,60 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   # Helpers
 
   defp write_and_fsync_watermark(base_dir, manifest) do
+    # Enforce monotonicity at persistence boundary before replacing watermark
+    case read_persistent_watermark(base_dir) do
+      {:ok, wm} ->
+        wm_gen = wm["highest_seen_generation"] || 0
+        wm_crl = wm["highest_seen_crl_number"] || 0
+        wm_fp = wm["pinned_ca_fingerprint"]
+        wm_hash = wm["last_bundle_sha256"]
+
+        manifest_gen = manifest["generation"] || 0
+        manifest_crl = manifest["crl_number"] || 0
+        manifest_fp = manifest["ca_fingerprint"]
+        manifest_hash = manifest["bundle_sha256"]
+
+        cond do
+          manifest_gen < wm_gen ->
+            {:error, :watermark_generation_downgrade}
+
+          manifest_gen == wm_gen and wm_hash != nil and manifest_hash != nil and
+              String.downcase(to_string(manifest_hash)) != String.downcase(to_string(wm_hash)) ->
+            {:error, :watermark_equivocation}
+
+          wm_fp != nil and manifest_fp != nil and
+              String.downcase(to_string(manifest_fp)) != String.downcase(to_string(wm_fp)) ->
+            {:error, :ca_fingerprint_mismatch}
+
+          manifest_gen >= wm_gen and manifest_crl < wm_crl ->
+            {:error, :crl_number_downgrade}
+
+          true ->
+            do_write_and_fsync_watermark(base_dir, manifest)
+        end
+
+      {:error, :not_found} ->
+        do_write_and_fsync_watermark(base_dir, manifest)
+
+      {:error, _corrupted_or_invalid} ->
+        # Existing watermark on disk is corrupted; check if disk has surviving valid bundle
+        case SecretHub.Agent.PKI.BundleValidator.find_surviving_disk_bundle(base_dir) do
+          {:ok, surviving} ->
+            manifest_gen = manifest["generation"] || 0
+
+            if manifest_gen < surviving.generation do
+              {:error, :watermark_generation_downgrade}
+            else
+              do_write_and_fsync_watermark(base_dir, manifest)
+            end
+
+          _ ->
+            do_write_and_fsync_watermark(base_dir, manifest)
+        end
+    end
+  end
+
+  defp do_write_and_fsync_watermark(base_dir, manifest) do
     watermark = %{
       "highest_seen_generation" => manifest["generation"],
       "highest_seen_crl_number" => manifest["crl_number"],

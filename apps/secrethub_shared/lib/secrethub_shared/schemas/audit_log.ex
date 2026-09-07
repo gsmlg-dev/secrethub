@@ -116,12 +116,18 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
         "status",
         "last_error_code",
         "last_error_detail",
-        "applied_at"
+        "applied_at",
+        "last_applied_generation"
       ],
-      optional_keys: ["last_error_code", "last_error_detail", "applied_at"],
+      optional_keys: [
+        "last_error_code",
+        "last_error_detail",
+        "applied_at",
+        "last_applied_generation"
+      ],
       uuid_keys: ["authority_id"],
       sha256_keys: ["bundle_sha256"],
-      integer_keys: ["generation", "crl_number"],
+      integer_keys: ["generation", "crl_number", "last_applied_generation"],
       string_keys: ["agent_id", "status", "last_error_code", "last_error_detail", "applied_at"]
     },
     "pki.client_auth.agent_equivocation_detected" => %{

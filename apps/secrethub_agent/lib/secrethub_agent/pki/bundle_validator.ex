@@ -30,12 +30,13 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
     now = Keyword.get(opts, :now, DateTime.utc_now() |> DateTime.truncate(:second))
     clock_skew = Keyword.get(opts, :clock_skew_seconds, @clock_skew_seconds)
     pinned_ca_fingerprint = Keyword.get(opts, :pinned_ca_fingerprint)
+    allow_expired_crl = Keyword.get(opts, :allow_expired_crl, false)
 
     with :ok <- validate_schema_and_types(bundle),
          :ok <- validate_transcript_hash(bundle),
          {:ok, parsed_ca} <-
            validate_ca_certificate(bundle, now, clock_skew, pinned_ca_fingerprint),
-         {:ok, parsed_crl} <- validate_crl(bundle, parsed_ca, now, clock_skew) do
+         {:ok, parsed_crl} <- validate_crl(bundle, parsed_ca, now, clock_skew, allow_expired_crl) do
       {:ok,
        %{
          schema_version: bundle["schema_version"],
@@ -61,6 +62,18 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
   def validate(_, _), do: {:error, :invalid_payload_format, "Bundle must be a map"}
 
   @doc """
+  Decodes JSON string and strictly asserts that the root value is a map/object.
+  Returns `{:ok, map}`, `{:error, :not_a_json_object}`, or `{:error, {:invalid_json, reason}}`.
+  """
+  def decode_json_object(content) when is_binary(content) do
+    case Jason.decode(content) do
+      {:ok, %{} = map} -> {:ok, map}
+      {:ok, _other} -> {:error, :not_a_json_object}
+      {:error, reason} -> {:error, {:invalid_json, reason}}
+    end
+  end
+
+  @doc """
   Validates trust bundle files directly from disk (<gen_dir>/ca.crt, crl.pem, manifest.json)
   or from base directory containing `current` symlink.
   """
@@ -73,7 +86,7 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
       end
 
     with {:ok, manifest_content} <- File.read(Path.join(dir, "manifest.json")),
-         {:ok, manifest} <- Jason.decode(manifest_content),
+         {:ok, manifest} <- decode_json_object(manifest_content),
          {:ok, ca_pem} <- File.read(Path.join(dir, "ca.crt")),
          {:ok, crl_pem} <- File.read(Path.join(dir, "crl.pem")) do
       bundle =
@@ -83,8 +96,65 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
 
       validate(bundle, opts)
     else
+      {:error, :not_a_json_object} ->
+        {:error, :disk_bundle_invalid, "Manifest is not a JSON object"}
+
       {:error, reason} ->
         {:error, :disk_bundle_invalid, "Failed to read or decode disk bundle: #{inspect(reason)}"}
+    end
+  end
+
+  @doc """
+  Validates a trust bundle purely as historical trust evidence (structure, transcripts, signatures,
+  and continuity), without requiring the CRL to be currently valid temporally.
+  """
+  def validate_historical_evidence(bundle, opts \\ []) do
+    validate(bundle, Keyword.put(opts, :allow_expired_crl, true))
+  end
+
+  @doc """
+  Validates on-disk bundle as historical trust evidence.
+  """
+  def validate_disk_historical_evidence(target_dir, opts \\ []) do
+    validate_disk_bundle(target_dir, Keyword.put(opts, :allow_expired_crl, true))
+  end
+
+  @doc """
+  Inspects `current` and `generations/` directories to find the highest generation
+  with valid surviving historical trust evidence.
+  """
+  def find_surviving_disk_bundle(base_dir, opts \\ []) do
+    current_dir = Path.join(base_dir, "current")
+
+    case validate_disk_historical_evidence(current_dir, opts) do
+      {:ok, validated} ->
+        {:ok, validated}
+
+      _ ->
+        generations_dir = Path.join(base_dir, "generations")
+
+        case File.ls(generations_dir) do
+          {:ok, entries} ->
+            candidates =
+              entries
+              |> Enum.flat_map(fn entry ->
+                case Integer.parse(entry) do
+                  {gen, ""} -> [{gen, Path.join(generations_dir, entry)}]
+                  _ -> []
+                end
+              end)
+              |> Enum.sort_by(fn {gen, _path} -> gen end, :desc)
+
+            Enum.find_value(candidates, {:error, :no_surviving_bundle}, fn {_gen, path} ->
+              case validate_disk_historical_evidence(path, opts) do
+                {:ok, validated} -> {:ok, validated}
+                _ -> nil
+              end
+            end)
+
+          _ ->
+            {:error, :no_surviving_bundle}
+        end
     end
   end
 
@@ -290,7 +360,7 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
     end
   end
 
-  defp validate_crl(bundle, parsed_ca, now, clock_skew) do
+  defp validate_crl(bundle, parsed_ca, now, clock_skew, allow_expired_crl) do
     crl_pem = bundle["crl_pem"]
     expected_crl_hash = bundle["crl_der_sha256"]
 
@@ -298,7 +368,14 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
          :ok <- verify_crl_hash(parsed_crl, expected_crl_hash),
          :ok <- verify_crl_signature(parsed_crl, parsed_ca),
          :ok <- verify_signed_crl_number(parsed_crl, bundle["crl_number"]),
-         :ok <- verify_signed_crl_metadata_and_validity(parsed_crl, bundle, now, clock_skew) do
+         :ok <-
+           verify_signed_crl_metadata_and_validity(
+             parsed_crl,
+             bundle,
+             now,
+             clock_skew,
+             allow_expired_crl
+           ) do
       {:ok, parsed_crl}
     end
   end
@@ -368,7 +445,13 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
     _ -> nil
   end
 
-  defp verify_signed_crl_metadata_and_validity(parsed_crl, bundle, now, clock_skew) do
+  defp verify_signed_crl_metadata_and_validity(
+         parsed_crl,
+         bundle,
+         now,
+         clock_skew,
+         allow_expired_crl
+       ) do
     signed_this_update = X509.CRL.this_update(parsed_crl)
     signed_next_update = X509.CRL.next_update(parsed_crl)
 
@@ -390,7 +473,8 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
           {:error, :crl_not_yet_valid,
            "CRL thisUpdate #{DateTime.to_iso8601(signed_this_update)} is in the future"}
 
-        DateTime.compare(signed_next_update, skew_adjusted_now_earliest) == :lt ->
+        not allow_expired_crl and
+            DateTime.compare(signed_next_update, skew_adjusted_now_earliest) == :lt ->
           {:error, :crl_expired,
            "CRL nextUpdate #{DateTime.to_iso8601(signed_next_update)} has already expired"}
 

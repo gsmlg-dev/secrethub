@@ -19,6 +19,11 @@ defmodule SecretHub.Shared.Schemas.ClientAuthBundleReceipt do
     field(:last_error_code, :string)
     field(:last_error_detail, :string)
     field(:applied_at, :utc_datetime)
+    field(:last_applied_generation, :integer)
+    field(:last_applied_crl_number, :integer)
+    field(:last_applied_bundle_sha256, :string)
+    field(:last_applied_at, :utc_datetime)
+    field(:observation_sequence, :integer, default: 0)
 
     belongs_to(:authority, SecretHub.Shared.Schemas.ClientAuthAuthority,
       foreign_key: :client_auth_authority_id
@@ -40,7 +45,12 @@ defmodule SecretHub.Shared.Schemas.ClientAuthBundleReceipt do
       :status,
       :last_error_code,
       :last_error_detail,
-      :applied_at
+      :applied_at,
+      :last_applied_generation,
+      :last_applied_crl_number,
+      :last_applied_bundle_sha256,
+      :last_applied_at,
+      :observation_sequence
     ])
     |> validate_required([
       :agent_id,

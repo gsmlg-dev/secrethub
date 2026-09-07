@@ -824,5 +824,254 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert {:ok, fixed_wm} = AtomicStore.read_persistent_watermark(bundle_dir)
       assert fixed_wm["highest_seen_generation"] == 10
     end
+
+    test "publication failure after watermark commit reconciles disk state in TrustBundleManager",
+         %{
+           tmp_dir: tmp_dir,
+           bundle: gen1_bundle,
+           ca_key: ca_key,
+           ca_cert: ca_cert,
+           now: now
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki_fsync_fail")
+
+      # 1. Start manager and apply Gen 1
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-fsync-fail-test",
+          name: :test_fsync_fail_manager
+        )
+
+      assert {:ok, _} = TrustBundleManager.process_bundle(manager, gen1_bundle, now: now)
+
+      # 2. Build Gen 2 bundle
+      this_update2 = DateTime.add(now, -60, :second)
+      next_update2 = DateTime.add(now, 48 * 3600, :second)
+
+      crl2 =
+        X509.CRL.new(
+          [],
+          ca_cert,
+          ca_key,
+          this_update: this_update2,
+          next_update: next_update2,
+          extensions: [crl_number: X509.CRL.Extension.crl_number(2)]
+        )
+
+      crl2_pem = X509.CRL.to_pem(crl2)
+      crl2_der = X509.CRL.to_der(crl2)
+      crl2_der_sha256 = :crypto.hash(:sha256, crl2_der) |> Base.encode16(case: :lower)
+
+      gen2_bundle =
+        gen1_bundle
+        |> Map.put("generation", 2)
+        |> Map.put("crl_number", 2)
+        |> Map.put("this_update", DateTime.to_iso8601(this_update2))
+        |> Map.put("next_update", DateTime.to_iso8601(next_update2))
+        |> Map.put("crl_der_sha256", crl2_der_sha256)
+        |> Map.put("crl_pem", crl2_pem)
+
+      transcript2 =
+        [
+          gen2_bundle["schema_version"],
+          gen2_bundle["authority"],
+          gen2_bundle["generation"],
+          gen2_bundle["ca_fingerprint"],
+          gen2_bundle["crl_number"],
+          gen2_bundle["crl_der_sha256"],
+          gen2_bundle["this_update"],
+          gen2_bundle["next_update"],
+          gen2_bundle["ca_bundle_pem"],
+          gen2_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      bundle2_hash = :crypto.hash(:sha256, transcript2) |> Base.encode16(case: :lower)
+      gen2_bundle = Map.put(gen2_bundle, "bundle_sha256", bundle2_hash)
+
+      # 3. Inject base_dir fsync error during Gen 2 write
+      assert {:error, :dir_sync_failed_after_switch, receipt} =
+               TrustBundleManager.process_bundle(manager, gen2_bundle,
+                 now: now,
+                 inject_base_dir_fsync_error: :eio
+               )
+
+      assert receipt["status"] == "failed"
+
+      # 4. In-memory manager state was reconciled from disk!
+      status = TrustBundleManager.status(manager)
+      assert status.lkg_generation == 2
+      assert status.current_generation == 2
+
+      # 5. Stale Gen 1 candidate must be rejected as downgrade against reconciled baseline
+      assert {:error, :generation_downgrade_rejected, _} =
+               TrustBundleManager.process_bundle(manager, gen1_bundle, now: now)
+    end
+
+    test "damaged-state recovery with expired CRL recovers baseline and rejects downgrade", %{
+      tmp_dir: tmp_dir,
+      bundle: gen1_bundle,
+      ca_key: ca_key,
+      ca_cert: ca_cert,
+      now: now
+    } do
+      bundle_dir = Path.join(tmp_dir, "pki_expired_crl_recovery")
+
+      # 1. Create a bundle with CRL that expired in the past
+      past_time = DateTime.add(now, -10000, :second)
+      expired_time = DateTime.add(now, -5000, :second)
+
+      crl_expired =
+        X509.CRL.new(
+          [],
+          ca_cert,
+          ca_key,
+          this_update: past_time,
+          next_update: expired_time,
+          extensions: [crl_number: X509.CRL.Extension.crl_number(10)]
+        )
+
+      crl_expired_pem = X509.CRL.to_pem(crl_expired)
+      crl_expired_der = X509.CRL.to_der(crl_expired)
+      crl_expired_sha256 = :crypto.hash(:sha256, crl_expired_der) |> Base.encode16(case: :lower)
+
+      gen10_bundle =
+        gen1_bundle
+        |> Map.put("generation", 10)
+        |> Map.put("crl_number", 10)
+        |> Map.put("this_update", DateTime.to_iso8601(past_time))
+        |> Map.put("next_update", DateTime.to_iso8601(expired_time))
+        |> Map.put("crl_pem", crl_expired_pem)
+        |> Map.put("crl_der_sha256", crl_expired_sha256)
+
+      transcript10 =
+        [
+          gen10_bundle["schema_version"],
+          gen10_bundle["authority"],
+          gen10_bundle["generation"],
+          gen10_bundle["ca_fingerprint"],
+          gen10_bundle["crl_number"],
+          gen10_bundle["crl_der_sha256"],
+          gen10_bundle["this_update"],
+          gen10_bundle["next_update"],
+          gen10_bundle["ca_bundle_pem"],
+          gen10_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      bundle10_hash = :crypto.hash(:sha256, transcript10) |> Base.encode16(case: :lower)
+      gen10_bundle = Map.put(gen10_bundle, "bundle_sha256", bundle10_hash)
+
+      # Write to disk as of past_time when CRL was still fresh
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, gen10_bundle, now: past_time)
+
+      # 2. Corrupt watermark.json
+      File.write!(Path.join(bundle_dir, "watermark.json"), "{ corrupted watermark json }")
+
+      # 3. Start manager at current time (when CRL is expired)
+      # Manager must recover baseline from disk historical evidence despite expired CRL
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-expired-recovery-test",
+          name: :test_expired_recovery_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.status == "error"
+      assert status.needs_repair == true
+      # Baseline generation 10 must have survived!
+      assert status.lkg_generation == 10
+      assert status.current_generation == 10
+
+      # 4. Attempting to install Gen 9 must be rejected as downgrade (not accepted as fresh enrollment!)
+      assert {:error, :generation_downgrade_rejected, receipt} =
+               TrustBundleManager.process_bundle(manager, gen1_bundle, now: now)
+
+      assert receipt["status"] == "failed"
+      assert receipt["last_error_code"] == "generation_downgrade_rejected"
+    end
+
+    test "damaged state without surviving baseline enters recovery_required and requires force to recover",
+         %{
+           tmp_dir: tmp_dir,
+           bundle: bundle,
+           now: now
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki_damaged_quarantine")
+      File.mkdir_p!(bundle_dir)
+
+      # Corrupt watermark and empty/missing generations
+      File.write!(Path.join(bundle_dir, "watermark.json"), "[]")
+
+      # Start manager: should enter recovery_required
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-quarantine-test",
+          name: :test_quarantine_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.status == "recovery_required"
+      assert status.needs_repair == true
+      assert status.last_error_code == :damaged_state_recovery_required
+
+      # Normal process_bundle is rejected because damaged baseline cannot guarantee monotonicity
+      assert {:error, :damaged_state_recovery_required, receipt} =
+               TrustBundleManager.process_bundle(manager, bundle, now: now)
+
+      assert receipt["status"] == "failed"
+      assert receipt["last_error_code"] == "damaged_state_recovery_required"
+
+      # With force: true, operator/orchestrator authorizes recovery
+      assert {:ok, ok_receipt} =
+               TrustBundleManager.process_bundle(manager, bundle, force: true, now: now)
+
+      assert ok_receipt["status"] == "applied"
+
+      status_after = TrustBundleManager.status(manager)
+      assert status_after.status == "applied"
+      assert status_after.needs_repair == false
+    end
+
+    test "total JSON decoding handles non-map shapes across store and validator", %{
+      tmp_dir: tmp_dir,
+      now: now
+    } do
+      bundle_dir = Path.join(tmp_dir, "pki_total_json_test")
+      File.mkdir_p!(bundle_dir)
+
+      # Test non-map JSON shapes in watermark.json
+      non_maps = ["[]", "null", "12345", "\"a string\"", "true", "{ broken json"]
+
+      for shape <- non_maps do
+        File.write!(Path.join(bundle_dir, "watermark.json"), shape)
+        res = AtomicStore.read_persistent_watermark(bundle_dir)
+        assert match?({:error, _}, res)
+        assert not match?({:ok, _}, res)
+      end
+
+      # Test non-map JSON shapes in manifest.json
+      current_dir = Path.join(bundle_dir, "current")
+      File.mkdir_p!(current_dir)
+
+      for shape <- non_maps do
+        File.write!(Path.join(current_dir, "manifest.json"), shape)
+        res = AtomicStore.read_current_manifest(bundle_dir)
+        assert match?({:error, _}, res)
+        assert not match?({:ok, _}, res)
+
+        # BundleValidator.validate_disk_bundle must handle non-map manifest safely
+        val_res = BundleValidator.validate_disk_bundle(bundle_dir, now: now)
+        assert match?({:error, :disk_bundle_invalid, _}, val_res)
+      end
+    end
   end
 end

@@ -627,6 +627,132 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
       assert receipt2.status == "applied"
     end
 
+    test "delayed success receipt cannot overwrite newer failure observation" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+      t_failure = DateTime.utc_now()
+      t_stale_success = DateTime.add(t_failure, -60, :second)
+
+      # 1. Agent reports failure at t_failure
+      assert {:ok, receipt1} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-delayed-success-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "failed",
+                 "applied_at" => DateTime.to_iso8601(t_failure),
+                 "last_error_code" => "caddy_reload_failed"
+               })
+
+      assert receipt1.status == "failed"
+      assert receipt1.last_error_code == "caddy_reload_failed"
+
+      # 2. Delayed success arrives from earlier t_stale_success
+      assert {:ok, receipt2} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-delayed-success-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => DateTime.to_iso8601(t_stale_success)
+               })
+
+      # Must remain failed because failure is newer
+      assert receipt2.status == "failed"
+      assert receipt2.last_error_code == "caddy_reload_failed"
+    end
+
+    test "candidate failure preserves last_applied watermark and sequence ordering" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+      t1 = DateTime.utc_now()
+      t2 = DateTime.add(t1, 10, :second)
+      t3 = DateTime.add(t1, 20, :second)
+      candidate_sha = String.duplicate("b", 64)
+
+      # 1. Agent successfully applies Generation 1
+      assert {:ok, r1} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-watermark-seq-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => t1
+               })
+
+      assert r1.status == "applied"
+      assert r1.generation == bundle["generation"]
+      assert r1.last_applied_generation == bundle["generation"]
+      assert r1.last_applied_crl_number == bundle["crl_number"]
+      assert r1.last_applied_bundle_sha256 == bundle["bundle_sha256"]
+      assert r1.observation_sequence == 1
+
+      # 2. Agent attempts candidate Generation 42 and fails
+      assert {:ok, r2} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-watermark-seq-test",
+                 "generation" => 42,
+                 "crl_number" => 42,
+                 "bundle_sha256" => candidate_sha,
+                 "status" => "failed",
+                 "last_error_code" => "connection_timeout",
+                 "applied_at" => t2
+               })
+
+      assert r2.status == "failed"
+      assert r2.generation == 42
+      # Watermark is preserved!
+      assert r2.last_applied_generation == bundle["generation"]
+      assert r2.last_applied_crl_number == bundle["crl_number"]
+      assert r2.last_applied_bundle_sha256 == bundle["bundle_sha256"]
+      assert r2.observation_sequence == 2
+
+      # 3. Agent recovers back to authentic Generation 1
+      assert {:ok, r3} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-watermark-seq-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => t3
+               })
+
+      assert r3.status == "applied"
+      assert r3.generation == bundle["generation"]
+      assert r3.last_applied_generation == bundle["generation"]
+      assert r3.observation_sequence == 3
+    end
+
+    test "duplicate receipt at identical timestamp is idempotent and ignored" do
+      {:ok, bundle} = ClientAuth.current_bundle()
+      t = DateTime.utc_now()
+
+      assert {:ok, r1} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-idempotent-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => t
+               })
+
+      assert {:ok, r2} =
+               ClientAuth.record_bundle_receipt(%{
+                 "agent_id" => "agent-idempotent-test",
+                 "generation" => bundle["generation"],
+                 "crl_number" => bundle["crl_number"],
+                 "bundle_sha256" => bundle["bundle_sha256"],
+                 "status" => "applied",
+                 "applied_at" => t
+               })
+
+      assert r2.id == r1.id
+      assert r2.observation_sequence == r1.observation_sequence
+    end
+
     test "authentic applied receipt recovers agent after a failed candidate generation" do
       {:ok, bundle} = ClientAuth.current_bundle()
       candidate_sha = String.duplicate("a", 64)
