@@ -852,6 +852,20 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
                  "applied_at" => t,
                  "observation_sequence" => 42
                })
+
+      # Conflicting sequence rejection audit event must survive transaction and persist in DB
+      events =
+        SecretHub.Core.Audit.search_logs(%{
+          event_type: "pki.client_auth.agent_equivocation_detected"
+        })
+
+      assert Enum.any?(events, fn ev ->
+               ev.actor_id == "agent-conflict-seq-test" and
+                 ev.access_granted == false and
+                 ev.hash_version == 2
+             end)
+
+      assert {:ok, :valid} = SecretHub.Core.Audit.verify_chain()
     end
 
     test "authentic applied receipt recovers agent after a failed candidate generation" do

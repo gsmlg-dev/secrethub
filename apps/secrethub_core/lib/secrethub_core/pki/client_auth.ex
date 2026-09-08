@@ -258,101 +258,118 @@ defmodule SecretHub.Core.PKI.ClientAuth do
 
       receipt_attrs = verify_applied_bundle_authenticity(authority, receipt_attrs)
 
-      Repo.transaction(fn ->
-        existing =
-          Repo.one(
-            from(r in ClientAuthBundleReceipt,
-              where:
-                r.agent_id == ^receipt_attrs.agent_id and
-                  r.client_auth_authority_id == ^authority.id,
-              lock: "FOR UPDATE"
+      res =
+        Repo.transaction(fn ->
+          existing =
+            Repo.one(
+              from(r in ClientAuthBundleReceipt,
+                where:
+                  r.agent_id == ^receipt_attrs.agent_id and
+                    r.client_auth_authority_id == ^authority.id,
+                lock: "FOR UPDATE"
+              )
             )
-          )
 
-        maybe_record_equivocation_audit(authority, receipt_attrs, existing)
+          maybe_record_equivocation_audit(authority, receipt_attrs, existing)
 
-        case transition_receipt(existing, receipt_attrs) do
-          {:ignore, _} ->
-            existing
+          case transition_receipt(existing, receipt_attrs) do
+            {:ignore, _} ->
+              existing
 
-          {:ok, update_attrs} ->
-            changeset =
-              case existing do
-                nil ->
-                  %ClientAuthBundleReceipt{}
-                  |> ClientAuthBundleReceipt.changeset(update_attrs)
+            {:ok, update_attrs} ->
+              changeset =
+                case existing do
+                  nil ->
+                    %ClientAuthBundleReceipt{}
+                    |> ClientAuthBundleReceipt.changeset(update_attrs)
 
-                rec ->
-                  rec
-                  |> ClientAuthBundleReceipt.changeset(update_attrs)
-              end
-
-            case Repo.insert_or_update(changeset) do
-              {:ok, receipt} ->
-                actor_id = receipt.agent_id
-
-                event_data = %{
-                  "agent_id" => receipt.agent_id,
-                  "authority_id" => authority.id,
-                  "generation" => receipt.generation,
-                  "crl_number" => receipt.crl_number,
-                  "bundle_sha256" => receipt.bundle_sha256,
-                  "status" => receipt.status,
-                  "last_error_code" => receipt.last_error_code,
-                  "last_error_detail" => receipt.last_error_detail,
-                  "applied_at" => receipt.applied_at && DateTime.to_iso8601(receipt.applied_at)
-                }
-
-                event_data =
-                  if receipt.last_applied_generation != nil do
-                    Map.put(
-                      event_data,
-                      "last_applied_generation",
-                      receipt.last_applied_generation
-                    )
-                  else
-                    event_data
-                  end
-
-                event_data =
-                  if receipt.observation_sequence != nil do
-                    Map.put(
-                      event_data,
-                      "observation_sequence",
-                      receipt.observation_sequence
-                    )
-                  else
-                    event_data
-                  end
-
-                attrs = %{
-                  event_type: "pki.client_auth.agent_receipt_recorded",
-                  actor_type: "agent",
-                  actor_id: actor_id,
-                  source_ip: "127.0.0.1",
-                  access_granted: receipt.status == "applied",
-                  correlation_id: receipt.id,
-                  hash_version: 2,
-                  event_data: event_data
-                }
-
-                case Audit.log_event(attrs) do
-                  {:ok, _} ->
-                    receipt
-
-                  {:error, audit_err} ->
-                    Repo.rollback({:audit_failed, audit_err})
+                  rec ->
+                    rec
+                    |> ClientAuthBundleReceipt.changeset(update_attrs)
                 end
 
-              {:error, changeset} ->
-                Repo.rollback(changeset)
-            end
+              case Repo.insert_or_update(changeset) do
+                {:ok, receipt} ->
+                  actor_id = receipt.agent_id
 
-          {:error, :conflicting_observation_sequence} ->
-            record_equivocation_audit_for_conflict(authority, receipt_attrs, existing)
-            Repo.rollback(:conflicting_observation_sequence)
-        end
-      end)
+                  event_data = %{
+                    "agent_id" => receipt.agent_id,
+                    "authority_id" => authority.id,
+                    "generation" => receipt.generation,
+                    "crl_number" => receipt.crl_number,
+                    "bundle_sha256" => receipt.bundle_sha256,
+                    "status" => receipt.status,
+                    "last_error_code" => receipt.last_error_code,
+                    "last_error_detail" => receipt.last_error_detail,
+                    "applied_at" => receipt.applied_at && DateTime.to_iso8601(receipt.applied_at)
+                  }
+
+                  event_data =
+                    if receipt.last_applied_generation != nil do
+                      Map.put(
+                        event_data,
+                        "last_applied_generation",
+                        receipt.last_applied_generation
+                      )
+                    else
+                      event_data
+                    end
+
+                  event_data =
+                    if receipt.observation_sequence != nil do
+                      Map.put(
+                        event_data,
+                        "observation_sequence",
+                        receipt.observation_sequence
+                      )
+                    else
+                      event_data
+                    end
+
+                  attrs = %{
+                    event_type: "pki.client_auth.agent_receipt_recorded",
+                    actor_type: "agent",
+                    actor_id: actor_id,
+                    source_ip: "127.0.0.1",
+                    access_granted: receipt.status == "applied",
+                    correlation_id: receipt.id,
+                    hash_version: 2,
+                    event_data: event_data
+                  }
+
+                  case Audit.log_event(attrs) do
+                    {:ok, _} ->
+                      receipt
+
+                    {:error, audit_err} ->
+                      Repo.rollback({:audit_failed, audit_err})
+                  end
+
+                {:error, changeset} ->
+                  Repo.rollback(changeset)
+              end
+
+            {:error, :conflicting_observation_sequence} ->
+              case record_equivocation_audit_for_conflict(authority, receipt_attrs, existing) do
+                {:ok, _} ->
+                  {:conflict, :conflicting_observation_sequence}
+
+                {:error, audit_err} ->
+                  Repo.rollback({:audit_failed, audit_err})
+              end
+          end
+        end)
+
+      case res do
+        {:ok, {:conflict, reason}} ->
+          {:error, reason}
+
+        {:ok, receipt} ->
+          {:ok, receipt}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   end
 

@@ -291,8 +291,8 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   @doc """
   Writes or repairs the persistent watermark from validated bundle metadata.
   """
-  @spec write_watermark(Path.t(), map()) :: :ok | {:error, term()}
-  def write_watermark(base_dir, validated) when is_map(validated) do
+  @spec write_watermark(Path.t(), map(), keyword()) :: :ok | {:error, term()}
+  def write_watermark(base_dir, validated, opts \\ []) when is_map(validated) do
     manifest = %{
       "generation" => Map.get(validated, :generation) || Map.get(validated, "generation"),
       "crl_number" => Map.get(validated, :crl_number) || Map.get(validated, "crl_number"),
@@ -303,12 +303,76 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
       "applied_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
     }
 
-    write_and_fsync_watermark(base_dir, manifest)
+    write_and_fsync_watermark(base_dir, manifest, opts)
+  end
+
+  @doc """
+  Reads the persisted observation sequence for the trust bundle from `<base_dir>/observation_sequence.json`.
+  Returns `{:ok, seq}` (integer >= 0) or `{:ok, 0}` if not found.
+  """
+  @spec read_observation_sequence(Path.t()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def read_observation_sequence(base_dir) do
+    path = Path.join(base_dir, "observation_sequence.json")
+
+    case File.read(path) do
+      {:ok, content} ->
+        case decode_json_object(content) do
+          {:ok, %{"observation_sequence" => seq}} when is_integer(seq) and seq >= 0 ->
+            {:ok, seq}
+
+          {:ok, _} ->
+            {:error, :invalid_observation_sequence_schema}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, :enoent} ->
+        {:ok, 0}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Durably writes the observation sequence to `<base_dir>/observation_sequence.json`
+  using atomic rename and directory fsync.
+  """
+  @spec persist_observation_sequence(Path.t(), non_neg_integer(), keyword()) ::
+          :ok | {:error, term()}
+  def persist_observation_sequence(base_dir, seq, _opts \\ [])
+      when is_integer(seq) and seq >= 0 do
+    data = %{
+      "observation_sequence" => seq,
+      "updated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+    }
+
+    tmp_id = ".sequence.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+    tmp_path = Path.join(base_dir, tmp_id)
+    target_path = Path.join(base_dir, "observation_sequence.json")
+
+    case Jason.encode(data, pretty: true) do
+      {:ok, json} ->
+        with :ok <- ensure_secure_directory(base_dir),
+             :ok <- write_and_fsync_file(tmp_path, json),
+             :ok <- File.rename(tmp_path, target_path),
+             :ok <- fsync_dir(base_dir) do
+          :ok
+        else
+          {:error, reason} ->
+            _ = File.rm(tmp_path)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   # Helpers
 
-  defp write_and_fsync_watermark(base_dir, manifest, opts \\ []) do
+  defp write_and_fsync_watermark(base_dir, manifest, opts) do
     # Enforce monotonicity at persistence boundary before replacing watermark
     case read_persistent_watermark(base_dir) do
       {:ok, wm} ->
@@ -377,25 +441,26 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     case Jason.encode(watermark, pretty: true) do
       {:ok, json} ->
-        sync_res =
-          case Keyword.get(opts, :inject_watermark_fsync_error) do
-            nil -> fsync_dir(base_dir)
-            injected_err -> {:error, {:dir_sync_failed, injected_err}}
-          end
-
         with :ok <- ensure_secure_directory(base_dir),
              :ok <- write_and_fsync_file(tmp_path, json),
              :ok <- File.rename(tmp_path, target_path),
-             :ok <- sync_res do
+             :ok <- sync_watermark_dir(base_dir, opts) do
           :ok
         else
           {:error, reason} ->
-            File.rm(tmp_path)
+            _ = File.rm(tmp_path)
             {:error, reason}
         end
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp sync_watermark_dir(base_dir, opts) do
+    case Keyword.get(opts, :inject_watermark_fsync_error) do
+      nil -> fsync_dir(base_dir)
+      injected_err -> {:error, {:dir_sync_failed, injected_err}}
     end
   end
 

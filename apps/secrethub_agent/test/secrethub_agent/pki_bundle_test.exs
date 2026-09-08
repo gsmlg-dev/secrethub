@@ -1244,5 +1244,226 @@ defmodule SecretHub.Agent.PKIBundleTest do
         assert match?({:error, :disk_bundle_invalid, _}, val_res)
       end
     end
+
+    test "watermark directory fsync executes strictly after rename", %{
+      tmp_dir: tmp_dir
+    } do
+      bundle_dir = Path.join(tmp_dir, "pki_wm_fsync_order_test")
+      File.mkdir_p!(bundle_dir)
+
+      dummy_val = %{
+        generation: 1,
+        crl_number: 1,
+        ca_fingerprint: String.duplicate("a", 64),
+        bundle_sha256: String.duplicate("b", 64)
+      }
+
+      wm_path = Path.join(bundle_dir, "watermark.json")
+      refute File.exists?(wm_path)
+
+      # Inject directory sync error
+      assert {:error, {:dir_sync_failed, :eio}} =
+               AtomicStore.write_watermark(bundle_dir, dummy_val,
+                 inject_watermark_fsync_error: :eio
+               )
+
+      # Crucial: watermark.json MUST already exist on disk because rename preceded directory sync!
+      assert File.exists?(wm_path)
+    end
+
+    test "unified recovery handles missing watermark with older current and newer retained generation",
+         %{
+           tmp_dir: tmp_dir,
+           now: now,
+           ca_key: ca_key,
+           ca_cert: ca_cert,
+           bundle: bundle
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki_missing_wm_older_current_test")
+      File.mkdir_p!(bundle_dir)
+
+      # 1. Publish Gen 9
+      crl_9 =
+        X509.CRL.new([], ca_cert, ca_key,
+          this_update: now,
+          next_update: DateTime.add(now, 3600, :second),
+          extensions: [crl_number: X509.CRL.Extension.crl_number(9)]
+        )
+
+      crl_9_pem = X509.CRL.to_pem(crl_9)
+      crl_9_der = X509.CRL.to_der(crl_9)
+      crl_9_sha256 = :crypto.hash(:sha256, crl_9_der) |> Base.encode16(case: :lower)
+
+      gen9_bundle =
+        bundle
+        |> Map.put("generation", 9)
+        |> Map.put("crl_number", 9)
+        |> Map.put("this_update", DateTime.to_iso8601(now))
+        |> Map.put("next_update", DateTime.to_iso8601(DateTime.add(now, 3600, :second)))
+        |> Map.put("crl_pem", crl_9_pem)
+        |> Map.put("crl_der_sha256", crl_9_sha256)
+
+      t9 =
+        [
+          gen9_bundle["schema_version"],
+          gen9_bundle["authority"],
+          gen9_bundle["generation"],
+          gen9_bundle["ca_fingerprint"],
+          gen9_bundle["crl_number"],
+          gen9_bundle["crl_der_sha256"],
+          gen9_bundle["this_update"],
+          gen9_bundle["next_update"],
+          gen9_bundle["ca_bundle_pem"],
+          gen9_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      gen9_hash = :crypto.hash(:sha256, t9) |> Base.encode16(case: :lower)
+      gen9_bundle = Map.put(gen9_bundle, "bundle_sha256", gen9_hash)
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, gen9_bundle, now: now)
+
+      # 2. Publish Gen 10
+      crl_10 =
+        X509.CRL.new([], ca_cert, ca_key,
+          this_update: now,
+          next_update: DateTime.add(now, 3600, :second),
+          extensions: [crl_number: X509.CRL.Extension.crl_number(10)]
+        )
+
+      crl_10_pem = X509.CRL.to_pem(crl_10)
+      crl_10_der = X509.CRL.to_der(crl_10)
+      crl_10_sha256 = :crypto.hash(:sha256, crl_10_der) |> Base.encode16(case: :lower)
+
+      gen10_bundle =
+        bundle
+        |> Map.put("generation", 10)
+        |> Map.put("crl_number", 10)
+        |> Map.put("this_update", DateTime.to_iso8601(now))
+        |> Map.put("next_update", DateTime.to_iso8601(DateTime.add(now, 3600, :second)))
+        |> Map.put("crl_pem", crl_10_pem)
+        |> Map.put("crl_der_sha256", crl_10_sha256)
+
+      t10 =
+        [
+          gen10_bundle["schema_version"],
+          gen10_bundle["authority"],
+          gen10_bundle["generation"],
+          gen10_bundle["ca_fingerprint"],
+          gen10_bundle["crl_number"],
+          gen10_bundle["crl_der_sha256"],
+          gen10_bundle["this_update"],
+          gen10_bundle["next_update"],
+          gen10_bundle["ca_bundle_pem"],
+          gen10_bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      gen10_hash = :crypto.hash(:sha256, t10) |> Base.encode16(case: :lower)
+      gen10_bundle = Map.put(gen10_bundle, "bundle_sha256", gen10_hash)
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, gen10_bundle, now: now)
+
+      # Point current symlink back to generation 9
+      current_symlink = Path.join(bundle_dir, "current")
+      File.rm(current_symlink)
+      File.ln_s(Path.join("generations", "9"), current_symlink)
+
+      # Delete watermark.json to simulate missing watermark
+      File.rm(Path.join(bundle_dir, "watermark.json"))
+
+      # Unified scanner must find generation 10 across generations/
+      assert {:ok, surviving} = BundleValidator.find_surviving_disk_bundle(bundle_dir)
+      assert surviving.generation == 10
+
+      # Start manager: must establish generation 10 baseline, NOT generation 9
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-missing-wm-gen10-test",
+          name: :test_missing_wm_gen10_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.lkg_generation == 10
+      assert status.needs_repair == true
+    end
+
+    test "unified recovery quarantines damaged or conflicting retained evidence when watermark is missing",
+         %{
+           tmp_dir: tmp_dir
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki_missing_wm_damaged_evidence_test")
+      File.mkdir_p!(bundle_dir)
+
+      # Create generation 1 directory with corrupted manifest.json
+      gen1_dir = Path.join([bundle_dir, "generations", "1"])
+      File.mkdir_p!(gen1_dir)
+      File.write!(Path.join(gen1_dir, "manifest.json"), "{ truncated json")
+
+      # Missing watermark + damaged candidate on disk -> BundleValidator returns corrupted candidate
+      assert {:error, {:corrupted_candidate, _, _}} =
+               BundleValidator.find_surviving_disk_bundle(bundle_dir)
+
+      # Manager must enter quarantine rather than treating as clean initial enrollment!
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-missing-wm-corrupt-candidate-test",
+          name: :test_missing_wm_corrupt_candidate_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.status == "recovery_required"
+      assert status.recovery_mode == :quarantined
+    end
+
+    test "observation sequence is durably persisted and incremented across restarts",
+         %{
+           tmp_dir: tmp_dir,
+           now: now,
+           bundle: bundle
+         } do
+      bundle_dir = Path.join(tmp_dir, "pki_durable_sequence_test")
+      File.mkdir_p!(bundle_dir)
+
+      {:ok, manager1} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-seq-test",
+          name: :test_seq_manager_1
+        )
+
+      assert {:ok, receipt1} = TrustBundleManager.process_bundle(manager1, bundle, now: now)
+      assert receipt1["observation_sequence"] == 1
+
+      # Assert observation_sequence.json on disk
+      seq_file = Path.join(bundle_dir, "observation_sequence.json")
+      assert File.exists?(seq_file)
+      assert {:ok, 1} = AtomicStore.read_observation_sequence(bundle_dir)
+
+      # Stop manager 1
+      GenServer.stop(manager1)
+
+      # Start new manager instance pointing to the same bundle directory
+      {:ok, manager2} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-seq-test",
+          name: :test_seq_manager_2
+        )
+
+      status = TrustBundleManager.status(manager2)
+      assert status.observation_sequence == 1
+
+      # Next bundle operation advances sequence to 2
+      assert {:ok, receipt2} = TrustBundleManager.process_bundle(manager2, bundle, now: now)
+      assert receipt2["observation_sequence"] == 2
+      assert {:ok, 2} = AtomicStore.read_observation_sequence(bundle_dir)
+    end
   end
 end

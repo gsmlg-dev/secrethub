@@ -213,99 +213,79 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
             status: "initializing"
           }
 
-        {{:error, :not_found}, {:ok, validated}} ->
-          # No watermark yet, but valid disk exists — persist watermark
-          case AtomicStore.write_watermark(base_dir, validated) do
-            :ok ->
-              %__MODULE__{
-                state_dir: state_dir,
-                base_dir: base_dir,
-                agent_id: agent_id,
-                connection_mod: conn_mod,
-                lkg_generation: validated.generation,
-                lkg_crl_number: validated.crl_number,
-                lkg_ca_fingerprint: validated.ca_fingerprint,
-                lkg_bundle_sha256: validated.bundle_sha256,
-                installed_generation: validated.generation,
-                installed_crl_number: validated.crl_number,
-                installed_ca_fingerprint: validated.ca_fingerprint,
-                installed_bundle_sha256: validated.bundle_sha256,
-                last_applied_at: parse_datetime(validated.this_update),
-                needs_repair: false,
-                status: "applied"
-              }
-
-            {:error, reason} ->
-              Logger.error("Failed to write initial watermark: #{inspect(reason)}")
-
-              %__MODULE__{
-                state_dir: state_dir,
-                base_dir: base_dir,
-                agent_id: agent_id,
-                connection_mod: conn_mod,
-                lkg_generation: 0,
-                lkg_crl_number: 0,
-                lkg_ca_fingerprint: nil,
-                lkg_bundle_sha256: nil,
-                installed_generation: 0,
-                installed_crl_number: 0,
-                installed_ca_fingerprint: nil,
-                installed_bundle_sha256: nil,
-                needs_repair: true,
-                status: "error",
-                last_error_code: :watermark_persistence_failed,
-                last_error_detail: inspect(reason)
-              }
-          end
-
-        {{:error, :not_found}, _} ->
+        {{:error, wm_err}, _} ->
           case BundleValidator.find_surviving_disk_bundle(base_dir, disk_opts) do
             {:ok, surviving} ->
-              # Historical trust evidence survived on disk. Check active temporal validation of current/
+              # Surviving valid bundle exists on disk. Check active temporal validation of current/
               case BundleValidator.validate_disk_bundle(Path.join(base_dir, "current"), disk_opts) do
                 {:ok, current_val} when current_val.generation == surviving.generation ->
-                  # current/ is fully active valid and matches surviving generation -> establish watermark & applied
-                  case AtomicStore.write_watermark(base_dir, surviving) do
-                    :ok ->
-                      %__MODULE__{
-                        state_dir: state_dir,
-                        base_dir: base_dir,
-                        agent_id: agent_id,
-                        connection_mod: conn_mod,
-                        lkg_generation: surviving.generation,
-                        lkg_crl_number: surviving.crl_number,
-                        lkg_ca_fingerprint: surviving.ca_fingerprint,
-                        lkg_bundle_sha256: surviving.bundle_sha256,
-                        installed_generation: surviving.generation,
-                        installed_crl_number: surviving.crl_number,
-                        installed_ca_fingerprint: surviving.ca_fingerprint,
-                        installed_bundle_sha256: surviving.bundle_sha256,
-                        last_applied_at: parse_datetime(surviving.this_update),
-                        needs_repair: false,
-                        status: "applied"
-                      }
+                  if wm_err == :not_found do
+                    # No watermark file existed -> write replacement watermark & mark applied
+                    case AtomicStore.write_watermark(base_dir, surviving) do
+                      :ok ->
+                        %__MODULE__{
+                          state_dir: state_dir,
+                          base_dir: base_dir,
+                          agent_id: agent_id,
+                          connection_mod: conn_mod,
+                          lkg_generation: surviving.generation,
+                          lkg_crl_number: surviving.crl_number,
+                          lkg_ca_fingerprint: surviving.ca_fingerprint,
+                          lkg_bundle_sha256: surviving.bundle_sha256,
+                          installed_generation: surviving.generation,
+                          installed_crl_number: surviving.crl_number,
+                          installed_ca_fingerprint: surviving.ca_fingerprint,
+                          installed_bundle_sha256: surviving.bundle_sha256,
+                          last_applied_at: parse_datetime(surviving.this_update),
+                          needs_repair: false,
+                          status: "applied"
+                        }
 
-                    {:error, reason} ->
-                      Logger.error("Failed to write initial watermark: #{inspect(reason)}")
+                      {:error, reason} ->
+                        Logger.error("Failed to write initial watermark: #{inspect(reason)}")
 
-                      %__MODULE__{
-                        state_dir: state_dir,
-                        base_dir: base_dir,
-                        agent_id: agent_id,
-                        connection_mod: conn_mod,
-                        lkg_generation: surviving.generation,
-                        lkg_crl_number: surviving.crl_number,
-                        lkg_ca_fingerprint: surviving.ca_fingerprint,
-                        lkg_bundle_sha256: surviving.bundle_sha256,
-                        installed_generation: 0,
-                        installed_crl_number: 0,
-                        installed_ca_fingerprint: nil,
-                        installed_bundle_sha256: nil,
-                        needs_repair: true,
-                        status: "repair_required",
-                        last_error_code: :watermark_persistence_failed,
-                        last_error_detail: inspect(reason)
-                      }
+                        # Preserve surviving lower bound in memory rather than resetting to 0
+                        %__MODULE__{
+                          state_dir: state_dir,
+                          base_dir: base_dir,
+                          agent_id: agent_id,
+                          connection_mod: conn_mod,
+                          lkg_generation: surviving.generation,
+                          lkg_crl_number: surviving.crl_number,
+                          lkg_ca_fingerprint: surviving.ca_fingerprint,
+                          lkg_bundle_sha256: surviving.bundle_sha256,
+                          installed_generation: surviving.generation,
+                          installed_crl_number: surviving.crl_number,
+                          installed_ca_fingerprint: surviving.ca_fingerprint,
+                          installed_bundle_sha256: surviving.bundle_sha256,
+                          last_applied_at: parse_datetime(surviving.this_update),
+                          needs_repair: true,
+                          status: "repair_required",
+                          last_error_code: :watermark_persistence_failed,
+                          last_error_detail: inspect(reason)
+                        }
+                    end
+                  else
+                    # Watermark on disk was present but corrupted. Preserve disk baseline to reject downgrades.
+                    %__MODULE__{
+                      state_dir: state_dir,
+                      base_dir: base_dir,
+                      agent_id: agent_id,
+                      connection_mod: conn_mod,
+                      lkg_generation: surviving.generation,
+                      lkg_crl_number: surviving.crl_number,
+                      lkg_ca_fingerprint: surviving.ca_fingerprint,
+                      lkg_bundle_sha256: surviving.bundle_sha256,
+                      installed_generation: surviving.generation,
+                      installed_crl_number: surviving.crl_number,
+                      installed_ca_fingerprint: surviving.ca_fingerprint,
+                      installed_bundle_sha256: surviving.bundle_sha256,
+                      last_applied_at: parse_datetime(surviving.this_update),
+                      needs_repair: true,
+                      status: "error",
+                      last_error_code: :corrupted_watermark,
+                      last_error_detail: inspect(wm_err)
+                    }
                   end
 
                 _ ->
@@ -326,76 +306,53 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                     installed_bundle_sha256: nil,
                     needs_repair: true,
                     status: "repair_required",
-                    last_error_code: :historical_baseline_survived,
+                    last_error_code:
+                      if(wm_err == :not_found,
+                        do: :historical_baseline_survived,
+                        else: :corrupted_watermark
+                      ),
                     last_error_detail:
                       "Surviving generation #{surviving.generation} established cryptographic baseline, active repair required"
                   }
               end
 
-            {:error, _} ->
-              # Clean first-time enrollment
-              %__MODULE__{
-                state_dir: state_dir,
-                base_dir: base_dir,
-                agent_id: agent_id,
-                connection_mod: conn_mod,
-                needs_repair: true,
-                status: "initializing"
-              }
-          end
-
-        {{:error, wm_err}, _} ->
-          case BundleValidator.find_surviving_disk_bundle(base_dir, disk_opts) do
-            {:ok, surviving} ->
-              # Watermark is corrupted, but historical trust evidence survived on disk (even if CRL is expired).
-              # Preserve the surviving lower bound from disk to strictly reject downgrades.
-              # Installed state is declared only if current/ passes full active temporal validation.
-              case BundleValidator.validate_disk_bundle(Path.join(base_dir, "current"), disk_opts) do
-                {:ok, current_val} when current_val.generation == surviving.generation ->
-                  %__MODULE__{
-                    state_dir: state_dir,
-                    base_dir: base_dir,
-                    agent_id: agent_id,
-                    connection_mod: conn_mod,
-                    lkg_generation: surviving.generation,
-                    lkg_crl_number: surviving.crl_number,
-                    lkg_ca_fingerprint: surviving.ca_fingerprint,
-                    lkg_bundle_sha256: surviving.bundle_sha256,
-                    installed_generation: surviving.generation,
-                    installed_crl_number: surviving.crl_number,
-                    installed_ca_fingerprint: surviving.ca_fingerprint,
-                    installed_bundle_sha256: surviving.bundle_sha256,
-                    last_applied_at: parse_datetime(surviving.this_update),
-                    needs_repair: true,
-                    status: "error",
-                    last_error_code: :corrupted_watermark,
-                    last_error_detail: inspect(wm_err)
-                  }
-
-                _ ->
-                  %__MODULE__{
-                    state_dir: state_dir,
-                    base_dir: base_dir,
-                    agent_id: agent_id,
-                    connection_mod: conn_mod,
-                    lkg_generation: surviving.generation,
-                    lkg_crl_number: surviving.crl_number,
-                    lkg_ca_fingerprint: surviving.ca_fingerprint,
-                    lkg_bundle_sha256: surviving.bundle_sha256,
-                    installed_generation: 0,
-                    installed_crl_number: 0,
-                    installed_ca_fingerprint: nil,
-                    installed_bundle_sha256: nil,
-                    needs_repair: true,
-                    status: "repair_required",
-                    last_error_code: :corrupted_watermark,
-                    last_error_detail: inspect(wm_err)
-                  }
+            {:error, :empty_installation} ->
+              if wm_err == :not_found do
+                # Clean first-time enrollment
+                %__MODULE__{
+                  state_dir: state_dir,
+                  base_dir: base_dir,
+                  agent_id: agent_id,
+                  connection_mod: conn_mod,
+                  needs_repair: true,
+                  status: "initializing"
+                }
+              else
+                # Watermark corrupted on disk with no surviving disk bundles -> quarantine
+                %__MODULE__{
+                  state_dir: state_dir,
+                  base_dir: base_dir,
+                  agent_id: agent_id,
+                  connection_mod: conn_mod,
+                  lkg_generation: 0,
+                  lkg_crl_number: 0,
+                  lkg_ca_fingerprint: nil,
+                  lkg_bundle_sha256: nil,
+                  installed_generation: 0,
+                  installed_crl_number: 0,
+                  installed_ca_fingerprint: nil,
+                  installed_bundle_sha256: nil,
+                  needs_repair: true,
+                  recovery_mode: :quarantined,
+                  status: "recovery_required",
+                  last_error_code: :damaged_state_recovery_required,
+                  last_error_detail:
+                    "Corrupt watermark with no surviving disk bundle baseline. Operator intervention required."
+                }
               end
 
-            {:error, _} ->
-              # Watermark is invalid JSON or unreadable AND no trustworthy disk baseline survives.
-              # Explicitly quarantine this damaged state: ordinary reconciliation must not replace its baseline.
+            {:error, error_reason} ->
+              # Conflicting, damaged, or corrupted candidate evidence -> quarantine
               %__MODULE__{
                 state_dir: state_dir,
                 base_dir: base_dir,
@@ -414,10 +371,18 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                 status: "recovery_required",
                 last_error_code: :damaged_state_recovery_required,
                 last_error_detail:
-                  "Corrupt watermark with no surviving disk bundle baseline. Operator intervention required."
+                  "Conflicting or damaged disk evidence detected during recovery: #{inspect(error_reason)}. Operator intervention required."
               }
           end
       end
+
+    initial_seq =
+      case AtomicStore.read_observation_sequence(base_dir) do
+        {:ok, seq} -> seq
+        _ -> 0
+      end
+
+    state = %{state | observation_sequence: initial_seq}
 
     send(self(), :initial_reconcile)
     timer = schedule_periodic_sync()
@@ -520,6 +485,14 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
     # Next observation sequence allocated for every receipt
     seq = (state.observation_sequence || 0) + 1
+
+    case AtomicStore.persist_observation_sequence(state.base_dir, seq) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Failed to persist observation sequence #{seq}: #{inspect(reason)}")
+    end
 
     cond do
       state.recovery_mode == :quarantined and not force ->
