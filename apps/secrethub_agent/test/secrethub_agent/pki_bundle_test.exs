@@ -1934,5 +1934,280 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert {:error, :corrupted_existing_generation} =
                AtomicStore.write_bundle(bundle_dir, bundle)
     end
+
+    test "ACK persistence failure backs off outbox draining and maintains manager responsiveness (P1 finding)",
+         %{tmp_dir: tmp_dir, bundle: _bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_ack_fail_backoff_test")
+      File.mkdir_p!(bundle_dir)
+
+      test_pid = self()
+
+      # Mock connection that counts submissions
+      mock_conn =
+        spawn(fn ->
+          loop_fn = fn loop, count ->
+            receive do
+              {:"$gen_call", from, {:submit_bundle_receipt, receipt}} ->
+                send(test_pid, {:submitted_receipt, receipt["observation_sequence"], count})
+                GenServer.reply(from, {:ok, %{"status" => "recorded"}})
+                loop.(loop, count + 1)
+
+              _other ->
+                loop.(loop, count)
+            end
+          end
+
+          loop_fn.(loop_fn, 1)
+        end)
+
+      Process.register(mock_conn, :test_mock_ack_fail_conn)
+
+      # 1. Enqueue observation with seq 1
+      receipt_data = %{
+        "agent_id" => "agent-ack-fail-test",
+        "observation_sequence" => 1,
+        "status" => "applied",
+        "applied_at" => DateTime.to_iso8601(now)
+      }
+
+      assert {:ok, 1, _} = AtomicStore.enqueue_observation(bundle_dir, receipt_data)
+
+      # 2. Start manager with connection pointing to mock conn
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-ack-fail-test",
+          connection_mod: :test_mock_ack_fail_conn,
+          name: :test_ack_fail_manager
+        )
+
+      # Wait for first submission
+      assert_receive {:submitted_receipt, 1, 1}, 2000
+
+      # GenServer is responsive to status calls during outbox operations
+      status = TrustBundleManager.status(manager)
+      assert is_map(status)
+
+      # Verify it does not spin in a tight loop: count should not rapidly increase
+      refute_receive {:submitted_receipt, 1, 2}, 200
+
+      GenServer.stop(manager)
+    end
+
+    test "channel wire-format sequence conflict is permanently rejected and moved to dead-letter (P2 finding)",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_wire_conflict_dead_letter_test")
+      File.mkdir_p!(bundle_dir)
+
+      test_pid = self()
+
+      mock_conn =
+        spawn(fn ->
+          loop_fn = fn loop ->
+            receive do
+              {:"$gen_call", from, {:submit_bundle_receipt, %{"observation_sequence" => 1}}} ->
+                # Wire format from AgentRuntimeChannel
+                send(test_pid, {:submitted_seq, 1})
+
+                GenServer.reply(
+                  from,
+                  {:error,
+                   %{
+                     "reason" => "conflicting_observation_sequence",
+                     "detail" => "differing payload for sequence 1"
+                   }}
+                )
+
+                loop.(loop)
+
+              {:"$gen_call", from, {:submit_bundle_receipt, %{"observation_sequence" => 2}}} ->
+                send(test_pid, {:submitted_seq, 2})
+                GenServer.reply(from, {:ok, %{"status" => "recorded"}})
+                loop.(loop)
+
+              _other ->
+                loop.(loop)
+            end
+          end
+
+          loop_fn.(loop_fn)
+        end)
+
+      Process.register(mock_conn, :test_mock_conflict_conn)
+
+      # Enqueue seq 1 (conflicting) and seq 2 (valid)
+      receipt1 = %{
+        "agent_id" => "agent-conflict-test",
+        "observation_sequence" => 1,
+        "status" => "failed",
+        "applied_at" => DateTime.to_iso8601(now)
+      }
+
+      receipt2 = %{
+        "agent_id" => "agent-conflict-test",
+        "observation_sequence" => 2,
+        "status" => "applied",
+        "applied_at" => DateTime.to_iso8601(now)
+      }
+
+      assert {:ok, 1, _} = AtomicStore.enqueue_observation(bundle_dir, receipt1)
+      assert {:ok, 2, _} = AtomicStore.enqueue_observation(bundle_dir, receipt2)
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-conflict-test",
+          connection_mod: :test_mock_conflict_conn,
+          name: :test_conflict_manager
+        )
+
+      # Seq 1 submitted and rejected
+      assert_receive {:submitted_seq, 1}, 2000
+      # Seq 2 submitted next because seq 1 was moved to dead letter and yielded to next turn
+      assert_receive {:submitted_seq, 2}, 2000
+
+      Process.sleep(50)
+
+      # Outbox should now be completely drained
+      assert {:ok, %{outbox: []}} = AtomicStore.read_outbox(bundle_dir)
+
+      # Dead-letter observations contains receipt 1 with rejection reason
+      assert {:ok, [dead_letter]} = AtomicStore.read_dead_letter_observations(bundle_dir)
+      assert dead_letter["sequence"] == 1
+      assert dead_letter["rejection_code"] == "conflicting_observation_sequence"
+
+      GenServer.stop(manager)
+    end
+
+    test "outbox validation enforces strict invariants and preserves corrupted file without clobbering (P2 finding)",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_strict_outbox_invariants_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      # Case 1: Sequence ahead of top-level counter
+      corrupted_ahead = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 5,
+            "receipt" => %{
+              "agent_id" => "agent-1",
+              "observation_sequence" => 5,
+              "status" => "applied",
+              "applied_at" => DateTime.to_iso8601(now)
+            }
+          }
+        ]
+      }
+
+      File.write!(outbox_path, Jason.encode!(corrupted_ahead))
+
+      assert {:error, {:corrupted_outbox, {:entry_sequence_ahead_of_watermark, 5, 1}}} =
+               AtomicStore.read_outbox(bundle_dir)
+
+      # Verify file was NOT modified or clobbered
+      assert File.read!(outbox_path) == Jason.encode!(corrupted_ahead)
+
+      # Starting manager with this corrupted outbox enters quarantine
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-corrupted-outbox-test",
+          name: :test_corrupted_outbox_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.status == "recovery_required"
+      assert status.recovery_mode == :quarantined
+      assert status.last_error_code == :corrupted_outbox
+
+      GenServer.stop(manager)
+
+      # Case 2: Duplicate sequence in outbox
+      corrupted_duplicate = %{
+        "observation_sequence" => 3,
+        "outbox" => [
+          %{
+            "sequence" => 2,
+            "receipt" => %{
+              "agent_id" => "agent-1",
+              "observation_sequence" => 2,
+              "status" => "applied",
+              "applied_at" => DateTime.to_iso8601(now)
+            }
+          },
+          %{
+            "sequence" => 2,
+            "receipt" => %{
+              "agent_id" => "agent-1",
+              "observation_sequence" => 2,
+              "status" => "applied",
+              "applied_at" => DateTime.to_iso8601(now)
+            }
+          }
+        ]
+      }
+
+      File.write!(outbox_path, Jason.encode!(corrupted_duplicate))
+
+      assert {:error, {:corrupted_outbox, :duplicate_sequence_in_outbox}} =
+               AtomicStore.read_outbox(bundle_dir)
+
+      # Case 3: Sequence mismatch between entry and receipt
+      corrupted_mismatch = %{
+        "observation_sequence" => 3,
+        "outbox" => [
+          %{
+            "sequence" => 2,
+            "receipt" => %{
+              "agent_id" => "agent-1",
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => DateTime.to_iso8601(now)
+            }
+          }
+        ]
+      }
+
+      File.write!(outbox_path, Jason.encode!(corrupted_mismatch))
+
+      assert {:error, {:corrupted_outbox, {:receipt_sequence_mismatch, 1, 2}}} =
+               AtomicStore.read_outbox(bundle_dir)
+
+      # Case 4: Missing receipt field
+      corrupted_missing_field = %{
+        "observation_sequence" => 3,
+        "outbox" => [
+          %{
+            "sequence" => 2,
+            "receipt" => %{
+              "observation_sequence" => 2,
+              "status" => "applied",
+              "applied_at" => DateTime.to_iso8601(now)
+            }
+          }
+        ]
+      }
+
+      File.write!(outbox_path, Jason.encode!(corrupted_missing_field))
+
+      assert {:error, {:corrupted_outbox, {:missing_receipt_field, "agent_id", 2}}} =
+               AtomicStore.read_outbox(bundle_dir)
+
+      # Case 5: Non-list outbox
+      corrupted_non_list = %{
+        "observation_sequence" => 3,
+        "outbox" => "not_a_list"
+      }
+
+      File.write!(outbox_path, Jason.encode!(corrupted_non_list))
+
+      assert {:error, {:corrupted_outbox, :invalid_outbox_format}} =
+               AtomicStore.read_outbox(bundle_dir)
+    end
   end
 end

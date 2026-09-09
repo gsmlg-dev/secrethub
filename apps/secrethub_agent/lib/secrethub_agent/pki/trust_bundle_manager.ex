@@ -383,20 +383,32 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           end
       end
 
-    {initial_seq, has_pending?} =
+    state =
       case AtomicStore.read_outbox(base_dir) do
         {:ok, %{highest_sequence: seq, outbox: ob}} ->
-          {seq, ob != []}
+          if ob != [] do
+            send(self(), :drain_outbox)
+          end
 
-        _ ->
-          {0, false}
+          %{state | observation_sequence: seq}
+
+        {:error, {:corrupted_outbox, reason}} ->
+          Logger.error("Durable outbox corrupted: #{inspect(reason)}; entering quarantine")
+
+          %{
+            state
+            | needs_repair: true,
+              recovery_mode: :quarantined,
+              status: "recovery_required",
+              last_error_code: :corrupted_outbox,
+              last_error_detail: inspect(reason),
+              observation_sequence: 0
+          }
+
+        {:error, reason} ->
+          Logger.error("Failed to read outbox during init: #{inspect(reason)}")
+          %{state | observation_sequence: 0}
       end
-
-    state = %{state | observation_sequence: initial_seq}
-
-    if has_pending? do
-      send(self(), :drain_outbox)
-    end
 
     send(self(), :initial_reconcile)
     timer = schedule_periodic_sync()
@@ -925,7 +937,6 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
               true
 
             is_atom(conn) and Code.ensure_loaded?(conn) ->
-              # If it's a module, check if the default server name or module itself is registered
               Process.whereis(conn) != nil
 
             true ->
@@ -937,22 +948,53 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           seq = entry["sequence"]
           receipt = entry["receipt"]
 
-          case safe_submit_receipt(conn, receipt) do
-            {:ok, _} ->
-              _ = AtomicStore.acknowledge_observation(state.base_dir, seq)
-              # Continue draining remaining items
-              drain_outbox_loop(state)
+          raw_response = safe_submit_receipt(conn, receipt)
 
-            {:error, :conflicting_observation_sequence} ->
-              # Core already processed an equal or higher sequence with different state; acknowledge to unblock
+          case normalize_submit_response(raw_response) do
+            :ok ->
+              case AtomicStore.acknowledge_observation(state.base_dir, seq) do
+                :ok ->
+                  if length(sorted_outbox) > 1 do
+                    send(self(), :drain_outbox)
+                  end
+
+                  state
+
+                {:error, reason} ->
+                  Logger.error(
+                    "Failed to persist ACK for observation sequence #{seq}: #{inspect(reason)}; scheduling backoff"
+                  )
+
+                  schedule_outbox_drain(state, 5_000)
+              end
+
+            {:rejected, error_code, error_reason} ->
               Logger.warning(
-                "Observation sequence #{seq} conflicted at Core; dropping from outbox"
+                "Observation sequence #{seq} permanently rejected by Core (#{error_code}: #{error_reason}); moving to dead-letter"
               )
 
-              _ = AtomicStore.acknowledge_observation(state.base_dir, seq)
-              drain_outbox_loop(state)
+              case AtomicStore.record_rejected_observation(
+                     state.base_dir,
+                     entry,
+                     error_code,
+                     error_reason
+                   ) do
+                :ok ->
+                  if length(sorted_outbox) > 1 do
+                    send(self(), :drain_outbox)
+                  end
 
-            {:error, reason} ->
+                  state
+
+                {:error, reason} ->
+                  Logger.error(
+                    "Failed to persist dead-letter observation for sequence #{seq}: #{inspect(reason)}; scheduling backoff"
+                  )
+
+                  schedule_outbox_drain(state, 5_000)
+              end
+
+            {:transient_error, reason} ->
               Logger.debug("Outbox drain submission failed: #{inspect(reason)}; will retry")
               schedule_outbox_drain(state, 5_000)
           end
@@ -961,9 +1003,51 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           schedule_outbox_drain(state, 2_000)
         end
 
+      {:error, {:corrupted_outbox, reason}} ->
+        Logger.error("Durable outbox corrupted during draining: #{inspect(reason)}; quarantining")
+
+        %{
+          state
+          | needs_repair: true,
+            recovery_mode: :quarantined,
+            status: "recovery_required",
+            last_error_code: :corrupted_outbox,
+            last_error_detail: inspect(reason)
+        }
+
       {:error, reason} ->
         Logger.error("Failed to read outbox for draining: #{inspect(reason)}")
         schedule_outbox_drain(state, 5_000)
+    end
+  end
+
+  defp normalize_submit_response(raw_response) do
+    case raw_response do
+      {:ok, _} ->
+        :ok
+
+      :ok ->
+        :ok
+
+      {:error, %{"reason" => "conflicting_observation_sequence"} = detail} ->
+        {:rejected, :conflicting_observation_sequence,
+         detail["detail"] || "conflicting observation sequence"}
+
+      {:error, %{reason: "conflicting_observation_sequence"} = detail} ->
+        {:rejected, :conflicting_observation_sequence,
+         detail[:detail] || detail["detail"] || "conflicting observation sequence"}
+
+      {:error, :conflicting_observation_sequence} ->
+        {:rejected, :conflicting_observation_sequence, "conflicting observation sequence"}
+
+      {:conflict, reason} ->
+        {:rejected, :conflicting_observation_sequence, to_string(reason)}
+
+      {:error, other} ->
+        {:transient_error, other}
+
+      other ->
+        {:transient_error, other}
     end
   end
 

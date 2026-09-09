@@ -328,39 +328,18 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         case decode_json_object(content) do
           {:ok, %{"observation_sequence" => seq} = data}
           when is_integer(seq) and seq >= 0 ->
-            outbox =
-              case data["outbox"] do
-                list when is_list(list) ->
-                  Enum.filter(list, fn
-                    %{"sequence" => s, "receipt" => %{}} when is_integer(s) -> true
-                    _ -> false
-                  end)
-
-                _ ->
-                  case data["pending_receipt"] do
-                    %{} = pending ->
-                      p_seq = pending["observation_sequence"] || seq
-
-                      [
-                        %{
-                          "sequence" => p_seq,
-                          "receipt" => pending,
-                          "enqueued_at" => data["updated_at"]
-                        }
-                      ]
-
-                    _ ->
-                      []
-                  end
-              end
-
-            {:ok, %{highest_sequence: seq, outbox: outbox}}
+            with {:ok, outbox} <- validate_and_extract_outbox(data, seq) do
+              {:ok, %{highest_sequence: seq, outbox: outbox}}
+            else
+              {:error, reason} ->
+                {:error, {:corrupted_outbox, reason}}
+            end
 
           {:ok, _} ->
-            {:error, :invalid_observation_sequence_schema}
+            {:error, {:corrupted_outbox, :invalid_observation_sequence_schema}}
 
           {:error, reason} ->
-            {:error, reason}
+            {:error, {:corrupted_outbox, reason}}
         end
 
       {:error, :enoent} ->
@@ -368,6 +347,95 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp validate_and_extract_outbox(data, highest_seq) do
+    cond do
+      is_list(data["outbox"]) ->
+        validate_outbox_entries(data["outbox"], highest_seq)
+
+      is_map(data["pending_receipt"]) ->
+        # Legacy pending_receipt compatibility
+        pending = data["pending_receipt"]
+        p_seq = pending["observation_sequence"] || highest_seq
+
+        pending =
+          if Map.has_key?(pending, "applied_at") do
+            pending
+          else
+            Map.put(pending, "applied_at", data["updated_at"] || "")
+          end
+
+        entry = %{
+          "sequence" => p_seq,
+          "receipt" => pending,
+          "enqueued_at" => data["updated_at"] || ""
+        }
+
+        validate_outbox_entries([entry], highest_seq)
+
+      data["outbox"] == nil and data["pending_receipt"] == nil ->
+        {:ok, []}
+
+      true ->
+        {:error, :invalid_outbox_format}
+    end
+  end
+
+  defp validate_outbox_entries(entries, highest_seq) do
+    Enum.reduce_while(entries, {:ok, []}, fn entry, {:ok, acc} ->
+      case validate_outbox_entry(entry, highest_seq) do
+        {:ok, validated} -> {:cont, {:ok, [validated | acc]}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+    |> case do
+      {:ok, list} ->
+        # Check for duplicate sequences in the outbox
+        reversed = Enum.reverse(list)
+        seqs = Enum.map(reversed, & &1["sequence"])
+
+        if length(seqs) == length(Enum.uniq(seqs)) do
+          {:ok, reversed}
+        else
+          {:error, :duplicate_sequence_in_outbox}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp validate_outbox_entry(entry, highest_seq) do
+    cond do
+      not is_map(entry) ->
+        {:error, :entry_not_a_map}
+
+      not is_integer(entry["sequence"]) or entry["sequence"] <= 0 ->
+        {:error, {:invalid_entry_sequence, entry["sequence"]}}
+
+      entry["sequence"] > highest_seq ->
+        {:error, {:entry_sequence_ahead_of_watermark, entry["sequence"], highest_seq}}
+
+      not is_map(entry["receipt"]) ->
+        {:error, {:entry_missing_receipt_map, entry["sequence"]}}
+
+      entry["receipt"]["observation_sequence"] != entry["sequence"] ->
+        {:error,
+         {:receipt_sequence_mismatch, entry["receipt"]["observation_sequence"], entry["sequence"]}}
+
+      not is_binary(entry["receipt"]["agent_id"]) or entry["receipt"]["agent_id"] == "" ->
+        {:error, {:missing_receipt_field, "agent_id", entry["sequence"]}}
+
+      not is_binary(entry["receipt"]["status"]) or entry["receipt"]["status"] == "" ->
+        {:error, {:missing_receipt_field, "status", entry["sequence"]}}
+
+      not is_binary(entry["receipt"]["applied_at"]) or entry["receipt"]["applied_at"] == "" ->
+        {:error, {:missing_receipt_field, "applied_at", entry["sequence"]}}
+
+      true ->
+        {:ok, entry}
     end
   end
 
@@ -412,32 +480,34 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
             base_seq = max(current_highest, core_seq)
             next_seq = base_seq + 1
 
-            receipt = Map.put(raw_receipt, "observation_sequence", next_seq)
-            now_iso = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+            if Enum.any?(current_outbox, &(&1["sequence"] == next_seq)) do
+              {:error, {:sequence_persistence_failed, {:sequence_collision, next_seq}}}
+            else
+              receipt = Map.put(raw_receipt, "observation_sequence", next_seq)
+              now_iso = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
 
-            entry = %{
-              "sequence" => next_seq,
-              "receipt" => receipt,
-              "enqueued_at" => now_iso
-            }
+              entry = %{
+                "sequence" => next_seq,
+                "receipt" => receipt,
+                "enqueued_at" => now_iso
+              }
 
-            # Filter out any duplicate sequence entry if it somehow existed
-            updated_outbox =
-              Enum.reject(current_outbox, &(&1["sequence"] == next_seq)) ++ [entry]
+              updated_outbox = current_outbox ++ [entry]
 
-            data = %{
-              "observation_sequence" => next_seq,
-              "outbox" => updated_outbox,
-              "updated_at" => now_iso
-            }
+              data = %{
+                "observation_sequence" => next_seq,
+                "outbox" => updated_outbox,
+                "updated_at" => now_iso
+              }
 
-            case write_and_fsync_sequence_data(base_dir, data, opts) do
-              :ok ->
-                notify_fs_op(opts, {:enqueue_observation, next_seq})
-                {:ok, next_seq, receipt}
+              case write_and_fsync_sequence_data(base_dir, data, opts) do
+                :ok ->
+                  notify_fs_op(opts, {:enqueue_observation, next_seq})
+                  {:ok, next_seq, receipt}
 
-              {:error, reason} ->
-                {:error, {:sequence_persistence_failed, reason}}
+                {:error, reason} ->
+                  {:error, {:sequence_persistence_failed, reason}}
+              end
             end
 
           {:error, reason} ->
@@ -482,6 +552,102 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   end
 
   @doc """
+  Durably writes a rejected observation receipt into the dead letter file
+  `<base_dir>/dead_letter_observations.json` and removes it from `<base_dir>/observation_sequence.json`.
+  """
+  @spec record_rejected_observation(Path.t(), map(), atom(), String.t(), keyword()) ::
+          :ok | {:error, term()}
+  def record_rejected_observation(base_dir, entry, error_code, error_reason, opts \\ [])
+      when is_map(entry) and is_atom(error_code) do
+    dead_letter_entry = %{
+      "sequence" => entry["sequence"],
+      "receipt" => entry["receipt"],
+      "enqueued_at" => entry["enqueued_at"],
+      "rejected_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601(),
+      "rejection_code" => to_string(error_code),
+      "rejection_reason" => error_reason
+    }
+
+    # 1. Append to dead-letter storage
+    case append_dead_letter_observation(base_dir, dead_letter_entry, opts) do
+      :ok ->
+        # 2. Acknowledge and remove from active outbox
+        acknowledge_observation(base_dir, entry["sequence"], opts)
+
+      {:error, reason} ->
+        {:error, {:dead_letter_persistence_failed, reason}}
+    end
+  end
+
+  @doc """
+  Reads dead letter observations from `<base_dir>/dead_letter_observations.json`.
+  Returns `{:ok, [map()]}` or `{:error, term()}`.
+  """
+  @spec read_dead_letter_observations(Path.t()) :: {:ok, [map()]} | {:error, term()}
+  def read_dead_letter_observations(base_dir) do
+    path = Path.join(base_dir, "dead_letter_observations.json")
+
+    case File.read(path) do
+      {:ok, content} ->
+        case decode_json_object(content) do
+          {:ok, %{"rejected_observations" => list}} when is_list(list) ->
+            {:ok, list}
+
+          {:ok, _} ->
+            {:error, :invalid_dead_letter_schema}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, :enoent} ->
+        {:ok, []}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp append_dead_letter_observation(base_dir, dead_letter_entry, opts) do
+    existing_entries =
+      case read_dead_letter_observations(base_dir) do
+        {:ok, entries} -> entries
+        _ -> []
+      end
+
+    updated_entries = existing_entries ++ [dead_letter_entry]
+
+    data = %{
+      "rejected_observations" => updated_entries,
+      "updated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+    }
+
+    tmp_id =
+      ".dead_letter.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+
+    tmp_path = Path.join(base_dir, tmp_id)
+    target_path = Path.join(base_dir, "dead_letter_observations.json")
+
+    case Jason.encode(data, pretty: true) do
+      {:ok, json} ->
+        with :ok <- ensure_secure_directory(base_dir),
+             :ok <- write_and_fsync_file(tmp_path, json),
+             :ok <- File.rename(tmp_path, target_path),
+             :ok <- fsync_dir(base_dir) do
+          notify_fs_op(opts, {:record_rejected_observation, dead_letter_entry["sequence"]})
+          :ok
+        else
+          {:error, reason} ->
+            _ = File.rm(tmp_path)
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Durably writes the observation sequence to `<base_dir>/observation_sequence.json`
   using atomic rename and directory fsync.
   """
@@ -506,6 +672,13 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
             receipt when is_map(receipt) ->
               p_seq = receipt["observation_sequence"] || seq
+
+              receipt =
+                if Map.has_key?(receipt, "applied_at") do
+                  receipt
+                else
+                  Map.put(receipt, "applied_at", now_iso)
+                end
 
               Enum.reject(current_outbox, &(&1["sequence"] == p_seq)) ++
                 [
