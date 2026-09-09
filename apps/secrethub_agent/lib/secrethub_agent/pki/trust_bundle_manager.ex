@@ -41,7 +41,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     sync_timer: nil,
     retry_timer: nil,
     retry_attempt: 0,
-    outbox_drain_timer: nil
+    outbox_drain_timer: nil,
+    store_opts: []
   ]
 
   @type t :: %__MODULE__{}
@@ -53,7 +54,14 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
   @impl true
   def init(opts) do
-    state_dir = Keyword.get(opts, :state_dir, Path.expand("~/.local/state/secrethub/agent"))
+    state_dir =
+      Keyword.get(opts, :state_dir) ||
+        System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
+        Application.get_env(
+          :secrethub_agent,
+          :state_dir,
+          Path.expand("~/.local/state/secrethub/agent")
+        )
 
     base_dir =
       Keyword.get(opts, :bundle_dir) ||
@@ -61,8 +69,27 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
         Application.get_env(:secrethub_agent, :client_auth_bundle_dir) ||
         Path.join(state_dir, "pki/client-auth")
 
-    agent_id = Keyword.get(opts, :agent_id)
+    agent_id =
+      Keyword.get(opts, :agent_id) ||
+        case SecretHub.Agent.IdentityStore.load(state_dir) do
+          {:ok, %SecretHub.Agent.IdentityStore{agent_id: id}} when is_binary(id) and id != "" ->
+            id
+
+          _ ->
+            nil
+        end
+
     conn_mod = Keyword.get(opts, :connection_mod, SecretHub.Agent.Connection)
+
+    store_opts =
+      Keyword.get(opts, :store_opts, []) ++
+        Keyword.take(opts, [
+          :inject_sequence_persistence_error,
+          :inject_sequence_rename_error,
+          :inject_watermark_fsync_error,
+          :record_operations_to,
+          :outbox_drain_backoff_ms
+        ])
 
     # 1. Read persistent watermark
     persistent_wm_res = AtomicStore.read_persistent_watermark(base_dir)
@@ -383,6 +410,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           end
       end
 
+    state = %{state | store_opts: store_opts}
+
     state =
       case AtomicStore.read_outbox(base_dir) do
         {:ok, %{highest_sequence: seq, outbox: ob}} ->
@@ -440,6 +469,97 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
   @spec status(pid() | module()) :: map()
   def status(server \\ __MODULE__) do
     GenServer.call(server, :get_status)
+  end
+
+  @doc """
+  Binds or updates the agent's verified identity.
+  Repairs any pending outbox entries missing `agent_id`, unquarantines corrupted outbox
+  state if repaired successfully, and drains the outbox.
+  Returns `:ok` or `{:error, {:identity_mismatch, established_id, new_id}}`.
+  """
+  @spec bind_identity(pid() | module(), String.t()) :: :ok | {:error, term()}
+  def bind_identity(server \\ __MODULE__, agent_id)
+      when is_binary(agent_id) and agent_id != "" do
+    GenServer.call(server, {:bind_identity, agent_id})
+  end
+
+  @doc false
+  def set_store_opts(server \\ __MODULE__, store_opts) do
+    GenServer.call(server, {:set_store_opts, store_opts})
+  end
+
+  @impl true
+  def handle_call({:bind_identity, agent_id}, _from, state) do
+    cond do
+      is_binary(state.agent_id) and state.agent_id != "" and state.agent_id != agent_id ->
+        Logger.error(
+          "TrustBundleManager: identity mismatch on bind_identity. Established: #{state.agent_id}, received: #{agent_id}"
+        )
+
+        {:reply, {:error, {:identity_mismatch, state.agent_id, agent_id}}, state}
+
+      true ->
+        state = %{state | agent_id: agent_id}
+
+        # Attempt to repair outbox metadata if any entries are missing agent_id
+        case AtomicStore.repair_outbox_metadata(state.base_dir, %{agent_id: agent_id}) do
+          :ok ->
+            Logger.info("TrustBundleManager: bound identity and repaired outbox metadata",
+              agent_id: agent_id
+            )
+
+          {:error, reason} ->
+            Logger.warning(
+              "TrustBundleManager: outbox repair returned error on bind_identity: #{inspect(reason)}"
+            )
+        end
+
+        # If manager was quarantined due to corrupted outbox, re-read outbox
+        state =
+          if state.recovery_mode == :quarantined and state.last_error_code == :corrupted_outbox do
+            case AtomicStore.read_outbox(state.base_dir) do
+              {:ok, %{highest_sequence: seq, outbox: ob}} ->
+                Logger.info(
+                  "TrustBundleManager: outbox validated after identity bind; unquarantining"
+                )
+
+                if ob != [] do
+                  send(self(), :drain_outbox)
+                end
+
+                %{
+                  state
+                  | recovery_mode: :none,
+                    status: if(state.needs_repair, do: "initializing", else: "applied"),
+                    last_error_code: nil,
+                    last_error_detail: nil,
+                    observation_sequence: seq
+                }
+
+              _ ->
+                state
+            end
+          else
+            case AtomicStore.read_outbox(state.base_dir) do
+              {:ok, %{highest_sequence: seq, outbox: ob}} ->
+                if ob != [] do
+                  send(self(), :drain_outbox)
+                end
+
+                %{state | observation_sequence: seq}
+
+              _ ->
+                state
+            end
+          end
+
+        {:reply, :ok, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:set_store_opts, store_opts}, _from, state) do
+    {:reply, :ok, %{state | store_opts: store_opts}}
   end
 
   @impl true
@@ -519,8 +639,26 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     core_seq = bundle["last_accepted_sequence"] || bundle[:last_accepted_sequence]
     enqueue_opts = if is_integer(core_seq), do: [core_seq: core_seq] ++ opts, else: opts
 
+    agent_id =
+      state.agent_id ||
+        case SecretHub.Agent.IdentityStore.load(state.state_dir) do
+          {:ok, %SecretHub.Agent.IdentityStore{agent_id: id}} when is_binary(id) and id != "" ->
+            id
+
+          _ ->
+            nil
+        end
+
     cond do
+      is_nil(agent_id) or agent_id == "" ->
+        Logger.warning(
+          "TrustBundleManager: waiting for verified agent identity before applying trust bundle"
+        )
+
+        {:error, :waiting_for_identity, nil, %{state | agent_id: nil}}
+
       state.recovery_mode == :quarantined and not force ->
+        state = %{state | agent_id: agent_id}
         # Durable quarantine prevents non-forced application or sync from mutating state
         error_code = :damaged_state_recovery_required
 
@@ -548,6 +686,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
         end
 
       true ->
+        state = %{state | agent_id: agent_id}
+
         with {:ok, validated} <- BundleValidator.validate(bundle, val_opts),
              :ok <- check_monotonicity_and_invariants(state, validated, force) do
           # Determine if disk already has this exact bundle installed and verified
@@ -952,7 +1092,7 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
           case normalize_submit_response(raw_response) do
             :ok ->
-              case AtomicStore.acknowledge_observation(state.base_dir, seq) do
+              case AtomicStore.acknowledge_observation(state.base_dir, seq, state.store_opts) do
                 :ok ->
                   if length(sorted_outbox) > 1 do
                     send(self(), :drain_outbox)
@@ -965,7 +1105,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                     "Failed to persist ACK for observation sequence #{seq}: #{inspect(reason)}; scheduling backoff"
                   )
 
-                  schedule_outbox_drain(state, 5_000)
+                  backoff_ms = Keyword.get(state.store_opts, :outbox_drain_backoff_ms, 5_000)
+                  schedule_outbox_drain(state, backoff_ms)
               end
 
             {:rejected, error_code, error_reason} ->
@@ -977,7 +1118,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                      state.base_dir,
                      entry,
                      error_code,
-                     error_reason
+                     error_reason,
+                     state.store_opts
                    ) do
                 :ok ->
                   if length(sorted_outbox) > 1 do
@@ -991,12 +1133,14 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                     "Failed to persist dead-letter observation for sequence #{seq}: #{inspect(reason)}; scheduling backoff"
                   )
 
-                  schedule_outbox_drain(state, 5_000)
+                  backoff_ms = Keyword.get(state.store_opts, :outbox_drain_backoff_ms, 5_000)
+                  schedule_outbox_drain(state, backoff_ms)
               end
 
             {:transient_error, reason} ->
               Logger.debug("Outbox drain submission failed: #{inspect(reason)}; will retry")
-              schedule_outbox_drain(state, 5_000)
+              backoff_ms = Keyword.get(state.store_opts, :outbox_drain_backoff_ms, 5_000)
+              schedule_outbox_drain(state, backoff_ms)
           end
         else
           # Connection not running yet, retry later

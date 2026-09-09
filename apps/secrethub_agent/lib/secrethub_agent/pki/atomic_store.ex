@@ -440,6 +440,116 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   end
 
   @doc """
+  Repairs outbox entries on disk by backfilling missing or blank receipt metadata
+  (e.g. `agent_id` or `applied_at`) without modifying sequence numbers, watermarks, or CA pins.
+  Preserves original file evidence to `.pre_repair_bak` before applying repairs.
+  Returns `:ok` or `{:error, reason}`.
+  """
+  @spec repair_outbox_metadata(Path.t(), map(), keyword()) :: :ok | {:error, term()}
+  def repair_outbox_metadata(base_dir, metadata, opts \\ []) when is_map(metadata) do
+    path = Path.join(base_dir, "observation_sequence.json")
+
+    case File.read(path) do
+      {:ok, content} ->
+        case decode_json_object(content) do
+          {:ok, %{"observation_sequence" => seq, "outbox" => entries} = data}
+          when is_integer(seq) and seq >= 0 and is_list(entries) ->
+            target_agent_id =
+              metadata[:agent_id] || metadata["agent_id"]
+
+            if not (is_binary(target_agent_id) and target_agent_id != "") do
+              {:error, :missing_target_agent_id}
+            else
+              # Check for conflicting nonempty agent_id in existing entries
+              conflicting_entry =
+                Enum.find(entries, fn entry ->
+                  is_map(entry) and is_map(entry["receipt"]) and
+                    is_binary(entry["receipt"]["agent_id"]) and
+                    entry["receipt"]["agent_id"] != "" and
+                    entry["receipt"]["agent_id"] != target_agent_id
+                end)
+
+              if conflicting_entry do
+                existing_id = conflicting_entry["receipt"]["agent_id"]
+                {:error, {:conflicting_outbox_identity, existing_id, target_agent_id}}
+              else
+                now_iso =
+                  DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+
+                needs_modification? =
+                  Enum.any?(entries, fn entry ->
+                    is_map(entry) and is_map(entry["receipt"]) and
+                      (is_nil(entry["receipt"]["agent_id"]) or entry["receipt"]["agent_id"] == "" or
+                         (is_nil(entry["receipt"]["applied_at"]) or
+                            entry["receipt"]["applied_at"] == ""))
+                  end)
+
+                if needs_modification? do
+                  repaired_entries =
+                    Enum.map(entries, fn entry ->
+                      if is_map(entry) and is_map(entry["receipt"]) do
+                        receipt = entry["receipt"]
+
+                        receipt =
+                          if is_nil(receipt["agent_id"]) or receipt["agent_id"] == "" do
+                            Map.put(receipt, "agent_id", target_agent_id)
+                          else
+                            receipt
+                          end
+
+                        receipt =
+                          if is_nil(receipt["applied_at"]) or receipt["applied_at"] == "" do
+                            Map.put(receipt, "applied_at", entry["enqueued_at"] || now_iso)
+                          else
+                            receipt
+                          end
+
+                        %{entry | "receipt" => receipt}
+                      else
+                        entry
+                      end
+                    end)
+
+                  case validate_outbox_entries(repaired_entries, seq) do
+                    {:ok, validated} ->
+                      # Preserve original evidence to .pre_repair_bak before modifying
+                      bak_path = Path.join(base_dir, "observation_sequence.json.pre_repair_bak")
+                      _ = File.write(bak_path, content)
+
+                      updated_data = %{
+                        data
+                        | "outbox" => validated,
+                          "updated_at" => now_iso
+                      }
+
+                      write_and_fsync_sequence_data(base_dir, updated_data, opts)
+
+                    {:error, reason} ->
+                      {:error, {:repair_failed, reason}}
+                  end
+                else
+                  # Already valid and no repair needed
+                  :ok
+                end
+              end
+            end
+
+          {:ok, _} ->
+            {:error, :invalid_observation_sequence_schema}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, :enoent} ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Reads the persisted observation sequence for the trust bundle from `<base_dir>/observation_sequence.json`.
   Returns `{:ok, seq}` (integer >= 0) or `{:ok, 0}` if not found.
   """
@@ -492,21 +602,26 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
                 "enqueued_at" => now_iso
               }
 
-              updated_outbox = current_outbox ++ [entry]
+              with {:ok, _validated_entry} <- validate_outbox_entry(entry, next_seq) do
+                updated_outbox = current_outbox ++ [entry]
 
-              data = %{
-                "observation_sequence" => next_seq,
-                "outbox" => updated_outbox,
-                "updated_at" => now_iso
-              }
+                data = %{
+                  "observation_sequence" => next_seq,
+                  "outbox" => updated_outbox,
+                  "updated_at" => now_iso
+                }
 
-              case write_and_fsync_sequence_data(base_dir, data, opts) do
-                :ok ->
-                  notify_fs_op(opts, {:enqueue_observation, next_seq})
-                  {:ok, next_seq, receipt}
+                case write_and_fsync_sequence_data(base_dir, data, opts) do
+                  :ok ->
+                    notify_fs_op(opts, {:enqueue_observation, next_seq})
+                    {:ok, next_seq, receipt}
 
+                  {:error, reason} ->
+                    {:error, {:sequence_persistence_failed, reason}}
+                end
+              else
                 {:error, reason} ->
-                  {:error, {:sequence_persistence_failed, reason}}
+                  {:error, {:sequence_persistence_failed, {:invalid_outbox_entry, reason}}}
               end
             end
 
@@ -608,42 +723,165 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
+  @doc false
+  def receipt_payload_digest(receipt) when is_map(receipt) do
+    canonical = sort_canonical_map(receipt)
+    :crypto.hash(:sha256, Jason.encode!(canonical)) |> Base.encode16(case: :lower)
+  end
+
+  def receipt_payload_digest(_), do: ""
+
+  defp sort_canonical_map(%{__struct__: _} = struct) do
+    struct |> Map.from_struct() |> sort_canonical_map()
+  end
+
+  defp sort_canonical_map(map) when is_map(map) do
+    pairs =
+      map
+      |> Enum.map(fn {k, v} -> {to_string(k), sort_canonical_map(v)} end)
+      |> Enum.sort_by(fn {k, _v} -> k end)
+
+    Jason.OrderedObject.new(pairs)
+  end
+
+  defp sort_canonical_map(list) when is_list(list) do
+    Enum.map(list, &sort_canonical_map/1)
+  end
+
+  defp sort_canonical_map(other), do: other
+
   defp append_dead_letter_observation(base_dir, dead_letter_entry, opts) do
-    existing_entries =
-      case read_dead_letter_observations(base_dir) do
-        {:ok, entries} -> entries
-        _ -> []
-      end
+    target_seq = dead_letter_entry["sequence"]
+    target_receipt = dead_letter_entry["receipt"]
+    target_digest = receipt_payload_digest(target_receipt)
 
-    updated_entries = existing_entries ++ [dead_letter_entry]
+    case read_dead_letter_observations(base_dir) do
+      {:ok, existing_entries} ->
+        case check_dead_letter_idempotency(
+               existing_entries,
+               target_seq,
+               target_receipt,
+               target_digest
+             ) do
+          :replay ->
+            # Replay of the same observation: do not append another logical rejection;
+            # complete any outstanding outbox removal.
+            :ok
 
-    data = %{
-      "rejected_observations" => updated_entries,
-      "updated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
-    }
+          {:conflict, conflicting_agent} ->
+            # Different payload under the same observation identity: return a conflict
+            # and preserve both the existing evidence and pending observation.
+            {:error, {:conflicting_observation_payload, target_seq, conflicting_agent}}
 
-    tmp_id =
-      ".dead_letter.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+          :not_found ->
+            # Entry not yet recorded: append new logical rejection record
+            entry_to_record = Map.put(dead_letter_entry, "receipt_digest", target_digest)
+            updated_entries = existing_entries ++ [entry_to_record]
 
-    tmp_path = Path.join(base_dir, tmp_id)
-    target_path = Path.join(base_dir, "dead_letter_observations.json")
+            data = %{
+              "rejected_observations" => updated_entries,
+              "updated_at" =>
+                DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+            }
 
-    case Jason.encode(data, pretty: true) do
-      {:ok, json} ->
-        with :ok <- ensure_secure_directory(base_dir),
-             :ok <- write_and_fsync_file(tmp_path, json),
-             :ok <- File.rename(tmp_path, target_path),
-             :ok <- fsync_dir(base_dir) do
-          notify_fs_op(opts, {:record_rejected_observation, dead_letter_entry["sequence"]})
-          :ok
-        else
-          {:error, reason} ->
-            _ = File.rm(tmp_path)
-            {:error, reason}
+            tmp_id =
+              ".dead_letter.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+
+            tmp_path = Path.join(base_dir, tmp_id)
+            target_path = Path.join(base_dir, "dead_letter_observations.json")
+
+            case Jason.encode(data, pretty: true) do
+              {:ok, json} ->
+                with :ok <- ensure_secure_directory(base_dir),
+                     :ok <- check_injected_dead_letter_write_error(opts),
+                     :ok <- write_and_fsync_file(tmp_path, json),
+                     :ok <- check_injected_dead_letter_sync_error(opts),
+                     :ok <- check_injected_dead_letter_error(opts),
+                     :ok <- File.rename(tmp_path, target_path),
+                     :ok <- fsync_dir(base_dir) do
+                  notify_fs_op(
+                    opts,
+                    {:record_rejected_observation, dead_letter_entry["sequence"]}
+                  )
+
+                  :ok
+                else
+                  {:error, reason} ->
+                    _ = File.rm(tmp_path)
+                    {:error, reason}
+                end
+
+              {:error, reason} ->
+                {:error, reason}
+            end
         end
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp check_dead_letter_idempotency(existing_entries, target_seq, target_receipt, target_digest) do
+    target_agent =
+      if is_map(target_receipt),
+        do: target_receipt["agent_id"] || target_receipt[:agent_id],
+        else: nil
+
+    matching_entry =
+      Enum.find(existing_entries, fn ex ->
+        ex_seq = ex["sequence"]
+        ex_receipt = ex["receipt"] || %{}
+        ex_agent = ex_receipt["agent_id"] || ex_receipt[:agent_id]
+
+        ex_seq == target_seq and
+          ((is_binary(target_agent) and target_agent != "" and ex_agent == target_agent) or
+             is_nil(target_agent) or target_agent == "")
+      end)
+
+    case matching_entry do
+      nil ->
+        :not_found
+
+      ex ->
+        ex_receipt = ex["receipt"] || %{}
+        ex_digest = ex["receipt_digest"] || receipt_payload_digest(ex_receipt)
+
+        if ex_digest == target_digest do
+          :replay
+        else
+          {:conflict, target_agent || ex_receipt["agent_id"]}
+        end
+    end
+  end
+
+  defp check_injected_dead_letter_write_error(opts) do
+    check_injected_opt(opts, :inject_dead_letter_write_error)
+  end
+
+  defp check_injected_dead_letter_sync_error(opts) do
+    check_injected_opt(opts, :inject_dead_letter_sync_error)
+  end
+
+  defp check_injected_dead_letter_error(opts) do
+    case check_injected_opt(opts, :inject_dead_letter_persistence_error) do
+      :ok -> check_injected_opt(opts, :inject_dead_letter_rename_error)
+      err -> err
+    end
+  end
+
+  defp check_injected_opt(opts, key) do
+    case Keyword.get(opts, key) do
+      nil ->
+        :ok
+
+      fun when is_function(fun, 0) ->
+        case fun.() do
+          nil -> :ok
+          err -> {:error, err}
+        end
+
+      err ->
+        {:error, err}
     end
   end
 
@@ -665,10 +903,10 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
             _ -> []
           end
 
-        outbox =
+        outbox_res =
           case Keyword.get(opts, :pending_receipt) do
             nil ->
-              current_outbox
+              {:ok, current_outbox}
 
             receipt when is_map(receipt) ->
               p_seq = receipt["observation_sequence"] || seq
@@ -680,23 +918,34 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
                   Map.put(receipt, "applied_at", now_iso)
                 end
 
-              Enum.reject(current_outbox, &(&1["sequence"] == p_seq)) ++
-                [
-                  %{
-                    "sequence" => p_seq,
-                    "receipt" => receipt,
-                    "enqueued_at" => now_iso
-                  }
-                ]
+              entry = %{
+                "sequence" => p_seq,
+                "receipt" => receipt,
+                "enqueued_at" => now_iso
+              }
+
+              case validate_outbox_entry(entry, max(seq, p_seq)) do
+                {:ok, _validated} ->
+                  {:ok, Enum.reject(current_outbox, &(&1["sequence"] == p_seq)) ++ [entry]}
+
+                {:error, reason} ->
+                  {:error, {:sequence_persistence_failed, {:invalid_outbox_entry, reason}}}
+              end
           end
 
-        data = %{
-          "observation_sequence" => seq,
-          "outbox" => outbox,
-          "updated_at" => now_iso
-        }
+        case outbox_res do
+          {:ok, outbox} ->
+            data = %{
+              "observation_sequence" => seq,
+              "outbox" => outbox,
+              "updated_at" => now_iso
+            }
 
-        write_and_fsync_sequence_data(base_dir, data, opts)
+            write_and_fsync_sequence_data(base_dir, data, opts)
+
+          {:error, _} = err ->
+            err
+        end
 
       err ->
         {:error, {:sequence_persistence_failed, err}}
@@ -712,6 +961,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
       {:ok, json} ->
         with :ok <- ensure_secure_directory(base_dir),
              :ok <- write_and_fsync_file(tmp_path, json),
+             :ok <- check_injected_sequence_rename_error(opts),
              :ok <- File.rename(tmp_path, target_path),
              :ok <- fsync_dir(base_dir) do
           notify_fs_op(opts, {:persist_observation_sequence, data["observation_sequence"]})
@@ -724,6 +974,23 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp check_injected_sequence_rename_error(opts) do
+    injected =
+      Keyword.get(opts, :inject_sequence_rename_error) ||
+        Keyword.get(opts, :inject_sequence_persistence_error)
+
+    err =
+      case injected do
+        fun when is_function(fun, 0) -> fun.()
+        val -> val
+      end
+
+    case err do
+      nil -> :ok
+      injected_err -> {:error, injected_err}
     end
   end
 

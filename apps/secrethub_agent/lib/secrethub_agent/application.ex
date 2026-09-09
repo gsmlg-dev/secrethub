@@ -34,20 +34,33 @@ defmodule SecretHub.Agent.Application do
           "/var/lib/secrethub/pki/client-auth"
         )
 
+    state_dir =
+      System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
+        Application.get_env(
+          :secrethub_agent,
+          :state_dir,
+          Path.expand("~/.local/state/secrethub/agent")
+        )
+
     pki_children =
       if client_auth_pki_enabled do
+        pki_opts = [
+          bundle_dir: bundle_dir,
+          state_dir: state_dir
+        ]
+
+        pki_opts =
+          case SecretHub.Agent.IdentityStore.load(state_dir) do
+            {:ok, %SecretHub.Agent.IdentityStore{agent_id: id}}
+            when is_binary(id) and id != "" ->
+              Keyword.put(pki_opts, :agent_id, id)
+
+            _ ->
+              pki_opts
+          end
+
         [
-          {SecretHub.Agent.PKI.TrustBundleManager,
-           [
-             bundle_dir: bundle_dir,
-             state_dir:
-               System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
-                 Application.get_env(
-                   :secrethub_agent,
-                   :state_dir,
-                   Path.expand("~/.local/state/secrethub/agent")
-                 )
-           ]}
+          {SecretHub.Agent.PKI.TrustBundleManager, pki_opts}
         ]
       else
         []
@@ -73,6 +86,7 @@ defmodule SecretHub.Agent.Application do
          [
            core_url: core_url,
            core_endpoints: core_endpoints,
+           state_dir: state_dir,
            enrollment_opts: Application.get_env(:secrethub_agent, :enrollment_opts, [])
          ]}
       ] ++
