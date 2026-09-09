@@ -80,7 +80,26 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
     with_runtime_authorized(socket, fn ->
       case SecretHub.Core.PKI.ClientAuth.current_bundle() do
         {:ok, bundle} ->
-          {:reply, {:ok, bundle}, socket}
+          last_seq =
+            case socket.assigns[:agent_id] do
+              agent_id when is_binary(agent_id) ->
+                case SecretHub.Core.PKI.ClientAuth.get_agent_receipt(agent_id) do
+                  {:ok, receipt} -> receipt.observation_sequence
+                  _ -> nil
+                end
+
+              _ ->
+                nil
+            end
+
+          payload =
+            if is_integer(last_seq) do
+              Map.put(bundle, "last_accepted_sequence", last_seq)
+            else
+              bundle
+            end
+
+          {:reply, {:ok, payload}, socket}
 
         {:error, reason} ->
           {:reply, {:error, %{reason: to_string(reason)}}, socket}

@@ -859,11 +859,20 @@ defmodule SecretHub.Core.PKI.ClientAuthTest do
           event_type: "pki.client_auth.agent_equivocation_detected"
         })
 
-      assert Enum.any?(events, fn ev ->
-               ev.actor_id == "agent-conflict-seq-test" and
-                 ev.access_granted == false and
-                 ev.hash_version == 2
-             end)
+      matching_events = Enum.filter(events, &(&1.actor_id == "agent-conflict-seq-test"))
+      assert length(matching_events) == 1
+      [conflict_ev] = matching_events
+      assert conflict_ev.access_granted == false
+      assert conflict_ev.hash_version == 2
+      assert conflict_ev.event_data["observation_sequence"] == 42
+      assert conflict_ev.event_data["reported_status"] == "failed"
+      assert conflict_ev.event_data["generation"] == bundle["generation"]
+
+      # Receipt in database must remain unchanged
+      assert {:ok, persisted_receipt} = ClientAuth.get_agent_receipt("agent-conflict-seq-test")
+      assert persisted_receipt.status == "applied"
+      assert persisted_receipt.observation_sequence == 42
+      assert persisted_receipt.last_error_code == nil
 
       assert {:ok, :valid} = SecretHub.Core.Audit.verify_chain()
     end

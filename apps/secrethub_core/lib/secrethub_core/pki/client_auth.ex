@@ -574,6 +574,21 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   end
 
   defp record_equivocation_audit_for_conflict(authority, receipt_attrs, _existing) do
+    event_data = %{
+      "agent_id" => receipt_attrs.agent_id,
+      "authority_id" => authority.id,
+      "generation" => receipt_attrs.generation,
+      "reported_bundle_sha256" => receipt_attrs.bundle_sha256,
+      "reported_status" => receipt_attrs.status
+    }
+
+    event_data =
+      if receipt_attrs[:observation_sequence] != nil do
+        Map.put(event_data, "observation_sequence", receipt_attrs[:observation_sequence])
+      else
+        event_data
+      end
+
     attrs = %{
       event_type: "pki.client_auth.agent_equivocation_detected",
       actor_type: "agent",
@@ -582,13 +597,7 @@ defmodule SecretHub.Core.PKI.ClientAuth do
       access_granted: false,
       correlation_id: authority.id,
       hash_version: 2,
-      event_data: %{
-        "agent_id" => receipt_attrs.agent_id,
-        "authority_id" => authority.id,
-        "generation" => receipt_attrs.generation,
-        "reported_bundle_sha256" => receipt_attrs.bundle_sha256,
-        "reported_status" => receipt_attrs.status
-      }
+      event_data: event_data
     }
 
     Audit.log_event(attrs)
@@ -604,6 +613,24 @@ defmodule SecretHub.Core.PKI.ClientAuth do
   end
 
   defp parse_receipt_datetime(_), do: nil
+
+  @doc """
+  Gets the recorded bundle receipt for an agent under the active authority.
+  """
+  @spec get_agent_receipt(binary(), binary()) ::
+          {:ok, ClientAuthBundleReceipt.t()} | {:error, :not_found | term()}
+  def get_agent_receipt(agent_id, slug \\ @default_authority_slug)
+      when is_binary(agent_id) and is_binary(slug) do
+    with {:ok, authority} <- get_active_authority(slug) do
+      case Repo.get_by(ClientAuthBundleReceipt,
+             client_auth_authority_id: authority.id,
+             agent_id: agent_id
+           ) do
+        nil -> {:error, :not_found}
+        receipt -> {:ok, receipt}
+      end
+    end
+  end
 
   @doc """
   Lists bundle receipts with pagination.
@@ -784,10 +811,12 @@ defmodule SecretHub.Core.PKI.ClientAuth do
     Audit.log_event(attrs)
   end
 
-  defp get_active_authority do
+  defp get_active_authority, do: get_active_authority(@default_authority_slug)
+
+  defp get_active_authority(slug) do
     case Repo.one(
            from(a in ClientAuthAuthority,
-             where: a.slug == "client-auth" and a.status == "active",
+             where: a.slug == ^slug and a.status == "active",
              preload: [:ca_certificate, :current_crl]
            )
          ) do

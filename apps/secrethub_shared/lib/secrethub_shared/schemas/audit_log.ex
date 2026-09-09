@@ -143,11 +143,13 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
         "authority_id",
         "generation",
         "reported_bundle_sha256",
-        "reported_status"
+        "reported_status",
+        "observation_sequence"
       ],
+      optional_keys: ["observation_sequence"],
       uuid_keys: ["authority_id"],
       sha256_keys: ["reported_bundle_sha256"],
-      integer_keys: ["generation"],
+      integer_keys: ["generation", "observation_sequence"],
       string_keys: ["agent_id", "reported_status"]
     }
   }

@@ -221,7 +221,13 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                 {:ok, current_val} when current_val.generation == surviving.generation ->
                   if wm_err == :not_found do
                     # No watermark file existed -> write replacement watermark & mark applied
-                    case AtomicStore.write_watermark(base_dir, surviving) do
+                    store_opts =
+                      Keyword.take(opts, [
+                        :inject_watermark_fsync_error,
+                        :record_operations_to
+                      ])
+
+                    case AtomicStore.write_watermark(base_dir, surviving, store_opts) do
                       :ok ->
                         %__MODULE__{
                           state_dir: state_dir,
@@ -384,6 +390,14 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
     state = %{state | observation_sequence: initial_seq}
 
+    case AtomicStore.read_pending_observation(base_dir) do
+      {:ok, %{} = pending_receipt} ->
+        submit_receipt_async(state, pending_receipt)
+
+      _ ->
+        :ok
+    end
+
     send(self(), :initial_reconcile)
     timer = schedule_periodic_sync()
     {:ok, %{state | sync_timer: timer}}
@@ -484,7 +498,16 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     val_opts = Keyword.put_new(opts, :pinned_ca_fingerprint, state.lkg_ca_fingerprint)
 
     # Next observation sequence allocated for every receipt
-    seq = (state.observation_sequence || 0) + 1
+    core_seq = bundle["last_accepted_sequence"] || bundle[:last_accepted_sequence]
+
+    base_seq =
+      if is_integer(core_seq) and core_seq > (state.observation_sequence || 0) do
+        core_seq
+      else
+        state.observation_sequence || 0
+      end
+
+    seq = base_seq + 1
 
     case AtomicStore.persist_observation_sequence(state.base_dir, seq) do
       :ok ->
@@ -512,6 +535,10 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
         }
 
         receipt = build_error_receipt(new_state, bundle, error_code, error_detail, now, seq)
+
+        _ =
+          AtomicStore.persist_observation_sequence(state.base_dir, seq, pending_receipt: receipt)
+
         submit_receipt_async(new_state, receipt)
         Logger.error("Client Auth trust bundle rejected: quarantined state requires force")
         {:error, error_code, receipt, new_state}
@@ -561,6 +588,12 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                 }
 
                 receipt = build_receipt(new_state, "applied", now, seq)
+
+                _ =
+                  AtomicStore.persist_observation_sequence(state.base_dir, seq,
+                    pending_receipt: receipt
+                  )
+
                 submit_receipt_async(new_state, receipt)
                 {:ok, receipt, new_state}
 
@@ -594,6 +627,11 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                     seq
                   )
 
+                _ =
+                  AtomicStore.persist_observation_sequence(state.base_dir, seq,
+                    pending_receipt: receipt
+                  )
+
                 submit_receipt_async(new_state, receipt)
                 {:error, normalized.code, receipt, new_state}
             end
@@ -621,6 +659,12 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                 }
 
                 receipt = build_receipt(new_state, "applied", now, seq)
+
+                _ =
+                  AtomicStore.persist_observation_sequence(state.base_dir, seq,
+                    pending_receipt: receipt
+                  )
+
                 submit_receipt_async(new_state, receipt)
 
                 Logger.info(
@@ -652,6 +696,11 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                     seq
                   )
 
+                _ =
+                  AtomicStore.persist_observation_sequence(state.base_dir, seq,
+                    pending_receipt: receipt
+                  )
+
                 submit_receipt_async(new_state, receipt)
                 {:error, normalized.code, receipt, new_state}
             end
@@ -667,6 +716,12 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
             }
 
             receipt = build_error_receipt(new_state, bundle, error_code, detail, now, seq)
+
+            _ =
+              AtomicStore.persist_observation_sequence(state.base_dir, seq,
+                pending_receipt: receipt
+              )
+
             submit_receipt_async(new_state, receipt)
             Logger.error("Client Auth trust bundle rejected: #{error_code} - #{detail}")
             {:error, error_code, receipt, new_state}
@@ -809,6 +864,16 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
   defp do_sync(state, opts) do
     case pull_bundle_from_core(state) do
       {:ok, bundle} ->
+        core_seq = bundle["last_accepted_sequence"] || bundle[:last_accepted_sequence]
+
+        state =
+          if is_integer(core_seq) and core_seq > (state.observation_sequence || 0) do
+            _ = AtomicStore.persist_observation_sequence(state.base_dir, core_seq)
+            %{state | observation_sequence: core_seq}
+          else
+            state
+          end
+
         case apply_bundle(state, bundle, opts) do
           {:ok, _receipt, new_state} ->
             new_state

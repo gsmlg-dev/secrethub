@@ -46,16 +46,23 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
          :ok <- write_and_fsync_file(Path.join(tmp_dir, "crl.pem"), crl_pem),
          {:ok, manifest} <- write_and_fsync_manifest(tmp_dir, bundle, now),
          :ok <- fsync_dir(tmp_dir),
-         :ok <- publish_generation_dir(tmp_dir, gen_dir, manifest),
+         :ok <- publish_generation_dir(tmp_dir, gen_dir, manifest, opts),
          :ok <- fsync_dir(generations_dir) do
+      notify_fs_op(opts, {:fsync_generations_dir, generations_dir})
+
       case write_and_fsync_watermark(base_dir, manifest, opts) do
         :ok ->
-          case switch_symlink(base_dir, generation) do
+          case switch_symlink(base_dir, generation, opts) do
             :ok ->
               sync_res =
                 case Keyword.get(opts, :inject_base_dir_fsync_error) do
-                  nil -> fsync_dir(base_dir)
-                  injected_err -> {:error, injected_err}
+                  nil ->
+                    res = fsync_dir(base_dir)
+                    notify_fs_op(opts, {:fsync_base_dir, base_dir})
+                    res
+
+                  injected_err ->
+                    {:error, injected_err}
                 end
 
               case sync_res do
@@ -336,17 +343,52 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   end
 
   @doc """
+  Reads any pending unacknowledged observation payload persisted alongside sequence.
+  Returns `{:ok, map() | nil}` or `{:error, term()}`.
+  """
+  @spec read_pending_observation(Path.t()) :: {:ok, map() | nil} | {:error, term()}
+  def read_pending_observation(base_dir) do
+    path = Path.join(base_dir, "observation_sequence.json")
+
+    case File.read(path) do
+      {:ok, content} ->
+        case decode_json_object(content) do
+          {:ok, %{"pending_receipt" => receipt}} when is_map(receipt) ->
+            {:ok, receipt}
+
+          {:ok, _} ->
+            {:ok, nil}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, :enoent} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Durably writes the observation sequence to `<base_dir>/observation_sequence.json`
   using atomic rename and directory fsync.
   """
   @spec persist_observation_sequence(Path.t(), non_neg_integer(), keyword()) ::
           :ok | {:error, term()}
-  def persist_observation_sequence(base_dir, seq, _opts \\ [])
+  def persist_observation_sequence(base_dir, seq, opts \\ [])
       when is_integer(seq) and seq >= 0 do
     data = %{
       "observation_sequence" => seq,
       "updated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
     }
+
+    data =
+      case Keyword.get(opts, :pending_receipt) do
+        nil -> data
+        receipt when is_map(receipt) -> Map.put(data, "pending_receipt", receipt)
+      end
 
     tmp_id = ".sequence.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
     tmp_path = Path.join(base_dir, tmp_id)
@@ -358,6 +400,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
              :ok <- write_and_fsync_file(tmp_path, json),
              :ok <- File.rename(tmp_path, target_path),
              :ok <- fsync_dir(base_dir) do
+          notify_fs_op(opts, {:persist_observation_sequence, seq})
           :ok
         else
           {:error, reason} ->
@@ -444,6 +487,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         with :ok <- ensure_secure_directory(base_dir),
              :ok <- write_and_fsync_file(tmp_path, json),
              :ok <- File.rename(tmp_path, target_path),
+             :ok <- notify_fs_op(opts, {:rename_watermark, target_path}),
              :ok <- sync_watermark_dir(base_dir, opts) do
           :ok
         else
@@ -458,6 +502,8 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   end
 
   defp sync_watermark_dir(base_dir, opts) do
+    notify_fs_op(opts, {:fsync_watermark_dir, base_dir})
+
     case Keyword.get(opts, :inject_watermark_fsync_error) do
       nil -> fsync_dir(base_dir)
       injected_err -> {:error, {:dir_sync_failed, injected_err}}
@@ -514,7 +560,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
-  defp publish_generation_dir(tmp_dir, gen_dir, manifest) do
+  defp publish_generation_dir(tmp_dir, gen_dir, manifest, opts) do
     case File.lstat(gen_dir) do
       {:ok, %File.Stat{type: :symlink}} ->
         File.rm_rf(tmp_dir)
@@ -530,6 +576,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
              {:ok, _validated} <-
                SecretHub.Agent.PKI.BundleValidator.validate_disk_bundle(gen_dir) do
           File.rm_rf(tmp_dir)
+          notify_fs_op(opts, {:reused_generation, gen_dir})
           :ok
         else
           _ ->
@@ -544,6 +591,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
       {:error, :enoent} ->
         case File.rename(tmp_dir, gen_dir) do
           :ok ->
+            notify_fs_op(opts, {:rename_generation, gen_dir})
             :ok
 
           {:error, reason} ->
@@ -557,7 +605,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
-  defp switch_symlink(base_dir, generation) do
+  defp switch_symlink(base_dir, generation, opts) do
     target = Path.join("generations", to_string(generation))
     tmp_symlink = Path.join(base_dir, "current.tmp")
     current_symlink = Path.join(base_dir, "current")
@@ -566,6 +614,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     with :ok <- File.ln_s(target, tmp_symlink),
          :ok <- File.rename(tmp_symlink, current_symlink) do
+      notify_fs_op(opts, {:switch_symlink, generation})
       :ok
     else
       {:error, reason} ->
@@ -634,6 +683,17 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp notify_fs_op(opts, op) when is_list(opts) do
+    case Keyword.get(opts, :record_operations_to) do
+      pid when is_pid(pid) ->
+        send(pid, {:atomic_store_op, op})
+        :ok
+
+      _ ->
+        :ok
     end
   end
 end

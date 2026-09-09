@@ -222,6 +222,41 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
              })
   end
 
+  test "pki:client_auth_bundle:get returns bundle and bootstraps last_accepted_sequence from recorded receipt" do
+    _ = SecretHub.Core.PKI.ClientAuth.initialize_authority()
+    %{cert_der: cert_der} = issue_valid_agent_certificate!()
+
+    assert {:ok, socket} =
+             connect(AgentTrustedSocket, %{}, connect_info: %{peer_data: %{ssl_cert: cert_der}})
+
+    assert {:ok, _reply, socket} =
+             subscribe_and_join(socket, AgentRuntimeChannel, "agent:runtime", %{})
+
+    # 1. Pull bundle before any receipt is recorded
+    ref1 = push(socket, "pki:client_auth_bundle:get", %{})
+    assert_reply ref1, :ok, bundle1, 1_000
+    assert is_map(bundle1)
+    refute Map.has_key?(bundle1, "last_accepted_sequence")
+
+    # 2. Record receipt with observation_sequence 100
+    receipt_payload = %{
+      "generation" => bundle1["generation"],
+      "crl_number" => bundle1["crl_number"],
+      "bundle_sha256" => bundle1["bundle_sha256"],
+      "status" => "applied",
+      "applied_at" => DateTime.utc_now() |> DateTime.to_iso8601(),
+      "observation_sequence" => 100
+    }
+
+    ref2 = push(socket, "pki:client_auth_bundle:receipt", receipt_payload)
+    assert_reply ref2, :ok, %{status: "recorded"}, 1_000
+
+    # 3. Pull bundle again: now Core returns last_accepted_sequence 100
+    ref3 = push(socket, "pki:client_auth_bundle:get", %{})
+    assert_reply ref3, :ok, bundle2, 1_000
+    assert bundle2["last_accepted_sequence"] == 100
+  end
+
   defp issue_valid_agent_certificate! do
     ssh_private_key = :public_key.generate_key({:rsa, 2048, 65_537})
     ssh_public_key = :ssh_file.extract_public_key(ssh_private_key)
