@@ -1766,5 +1766,173 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert receipt2["observation_sequence"] == 106
       assert {:ok, 106} = AtomicStore.read_observation_sequence(bundle_dir)
     end
+
+    test "recovery treats damaged non-directory installations as corrupted rather than empty (Finding 1)",
+         %{tmp_dir: tmp_dir} do
+      bundle_dir = Path.join(tmp_dir, "pki_damaged_entry_recovery_test")
+      File.mkdir_p!(bundle_dir)
+
+      # 1. Clean empty installation returns :empty_installation
+      assert {:error, :empty_installation} =
+               BundleValidator.find_surviving_disk_bundle(bundle_dir)
+
+      # 2. generations/ containing a regular file (not a dir)
+      gen_dir = Path.join(bundle_dir, "generations")
+      File.mkdir_p!(gen_dir)
+      bad_file = Path.join(gen_dir, "stray_file.txt")
+      File.write!(bad_file, "not a directory")
+
+      assert {:error, {:corrupted_candidate, ^bad_file, {:unexpected_file_type, :regular}}} =
+               BundleValidator.find_surviving_disk_bundle(bundle_dir)
+
+      # Manager must enter quarantine mode
+      {:ok, manager1} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-damaged-entry-test",
+          name: :test_damaged_entry_manager_1
+        )
+
+      status1 = TrustBundleManager.status(manager1)
+      assert status1.status == "recovery_required"
+      assert status1.recovery_mode == :quarantined
+      GenServer.stop(manager1)
+
+      # 3. generations/ containing a broken symlink
+      File.rm!(bad_file)
+      broken_symlink = Path.join(gen_dir, "broken_link")
+      File.ln_s!("/nonexistent/target/path", broken_symlink)
+
+      assert {:error, {:corrupted_candidate, ^broken_symlink, {:broken_symlink, :enoent}}} =
+               BundleValidator.find_surviving_disk_bundle(bundle_dir)
+
+      {:ok, manager2} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-damaged-entry-test",
+          name: :test_damaged_entry_manager_2
+        )
+
+      status2 = TrustBundleManager.status(manager2)
+      assert status2.status == "recovery_required"
+      assert status2.recovery_mode == :quarantined
+      GenServer.stop(manager2)
+    end
+
+    test "sequence persistence failure prevents receipt transmission and returns error (Finding 2)",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_sequence_failure_gating_test")
+      File.mkdir_p!(bundle_dir)
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-seq-fail-test",
+          name: :test_seq_fail_manager
+        )
+
+      # Inject sequence persistence error during process_bundle
+      assert {:error, :receipt_persistence_failed, nil} =
+               TrustBundleManager.process_bundle(manager, bundle,
+                 now: now,
+                 inject_sequence_persistence_error: :eio
+               )
+
+      # Bundle was written to disk, but receipt was NOT emitted/persisted
+      assert {:ok, %{highest_sequence: 0, outbox: []}} = AtomicStore.read_outbox(bundle_dir)
+
+      # Now process bundle without failure injection -> succeeds and enqueues receipt
+      assert {:ok, receipt} = TrustBundleManager.process_bundle(manager, bundle, now: now)
+      assert receipt["observation_sequence"] == 1
+
+      assert {:ok, %{highest_sequence: 1, outbox: [outbox_entry]}} =
+               AtomicStore.read_outbox(bundle_dir)
+
+      assert outbox_entry["sequence"] == 1
+      assert outbox_entry["receipt"]["observation_sequence"] == 1
+    end
+
+    test "durable outbox enqueues and drains receipts sequentially (Finding 3)",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_durable_outbox_test")
+      File.mkdir_p!(bundle_dir)
+
+      # Mock connection that records receipts in agent process
+      test_pid = self()
+
+      mock_conn =
+        spawn(fn ->
+          # Simple receive loop
+          receive_loop = fn loop ->
+            receive do
+              {:"$gen_call", from, {:submit_bundle_receipt, receipt}} ->
+                send(test_pid, {:submitted_receipt, receipt})
+                GenServer.reply(from, {:ok, %{"status" => "recorded"}})
+                loop.(loop)
+
+              _other ->
+                loop.(loop)
+            end
+          end
+
+          receive_loop.(receive_loop)
+        end)
+
+      Process.register(mock_conn, :test_mock_conn_pki)
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          agent_id: "agent-outbox-test",
+          connection_mod: :test_mock_conn_pki,
+          name: :test_outbox_manager
+        )
+
+      # Process first bundle
+      assert {:ok, receipt1} = TrustBundleManager.process_bundle(manager, bundle, now: now)
+      assert receipt1["observation_sequence"] == 1
+
+      # Receipt received by mock conn
+      assert_receive {:submitted_receipt, submitted1}, 2000
+      assert submitted1["observation_sequence"] == 1
+
+      # Give outbox loop a moment to acknowledge
+      Process.sleep(50)
+      assert {:ok, %{highest_sequence: 1, outbox: []}} = AtomicStore.read_outbox(bundle_dir)
+
+      GenServer.stop(manager)
+    end
+
+    test "existing-generation reuse validates json object shape and handles scalars safely (Finding 4)",
+         %{tmp_dir: tmp_dir, bundle: bundle} do
+      bundle_dir = Path.join(tmp_dir, "pki_json_shape_test")
+      File.mkdir_p!(bundle_dir)
+
+      gen1_dir = Path.join([bundle_dir, "generations", "1"])
+      File.mkdir_p!(gen1_dir)
+
+      # Write a scalar JSON (e.g. 123) as manifest.json
+      File.write!(Path.join(gen1_dir, "manifest.json"), "123")
+
+      # AtomicStore.write_bundle should return corrupted error without crashing with BadMapError
+      assert {:error, :corrupted_existing_generation} =
+               AtomicStore.write_bundle(bundle_dir, bundle)
+
+      # Write JSON array
+      File.write!(Path.join(gen1_dir, "manifest.json"), "[\"a\", \"b\"]")
+
+      assert {:error, :corrupted_existing_generation} =
+               AtomicStore.write_bundle(bundle_dir, bundle)
+
+      # Write JSON object with missing bundle_sha256
+      File.write!(Path.join(gen1_dir, "manifest.json"), "{\"other\": \"value\"}")
+
+      assert {:error, :corrupted_existing_generation} =
+               AtomicStore.write_bundle(bundle_dir, bundle)
+    end
   end
 end

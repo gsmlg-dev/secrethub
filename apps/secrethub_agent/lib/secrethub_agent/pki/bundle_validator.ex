@@ -128,105 +128,187 @@ defmodule SecretHub.Agent.PKI.BundleValidator do
     current_dir = Path.join(base_dir, "current")
     generations_dir = Path.join(base_dir, "generations")
 
-    gen_candidates =
-      case File.ls(generations_dir) do
-        {:ok, entries} ->
-          entries
-          |> Enum.reject(&String.starts_with?(&1, "."))
-          |> Enum.map(&Path.join(generations_dir, &1))
+    current_res = inspect_current_link(current_dir)
+    generations_res = inspect_generations_dir(generations_dir)
 
-        _ ->
-          []
-      end
+    with {:ok, current_candidate} <- current_res,
+         {:ok, gen_candidates} <- generations_res do
+      cond do
+        current_candidate == nil and gen_candidates == [] ->
+          {:error, :empty_installation}
 
-    has_current =
-      case File.lstat(current_dir) do
-        {:ok, _} -> true
-        _ -> false
-      end
-
-    cond do
-      not has_current and gen_candidates == [] ->
-        {:error, :empty_installation}
-
-      has_current and not File.dir?(current_dir) ->
-        {:error, {:corrupted_candidate, current_dir, :broken_current_link}}
-
-      true ->
-        all_candidate_paths =
-          if(has_current, do: [current_dir | gen_candidates], else: gen_candidates)
-          |> Enum.filter(&File.dir?/1)
-          |> Enum.uniq_by(fn path ->
-            case File.read_link(path) do
-              {:ok, target} -> Path.expand(target, Path.dirname(path))
-              _ -> path
-            end
-          end)
-
-        validation_results =
-          Enum.map(all_candidate_paths, fn path ->
-            {path, validate_disk_historical_evidence(path, opts)}
-          end)
-
-        damaged =
-          Enum.find(validation_results, fn {_path, res} ->
-            case res do
-              {:ok, _} -> false
-              _ -> true
-            end
-          end)
-
-        case damaged do
-          {damaged_path, {:error, reason}} ->
-            {:error, {:corrupted_candidate, damaged_path, reason}}
-
-          {damaged_path, {:error, reason, detail}} ->
-            {:error, {:corrupted_candidate, damaged_path, {reason, detail}}}
-
-          nil ->
-            valid_bundles =
-              Enum.map(validation_results, fn {path, {:ok, b}} ->
-                Map.put(b, :source_path, path)
-              end)
-
-            if valid_bundles == [] do
-              {:error, :empty_installation}
-            else
-              # 1. Check CA continuity: all surviving bundles must share the same CA fingerprint
-              fps =
-                valid_bundles
-                |> Enum.map(& &1.ca_fingerprint)
-                |> Enum.reject(&is_nil/1)
-                |> Enum.uniq()
-
-              cond do
-                length(fps) > 1 ->
-                  {:error, {:conflicting_recovery_evidence, :ca_fingerprint_conflict}}
-
-                true ->
-                  # 2. Check same-generation hash conflicts (equivocation)
-                  by_gen = Enum.group_by(valid_bundles, & &1.generation)
-
-                  has_equivocation =
-                    Enum.any?(by_gen, fn {_gen, list} ->
-                      list |> Enum.map(& &1.bundle_sha256) |> Enum.uniq() |> length() > 1
-                    end)
-
-                  if has_equivocation do
-                    {:error, {:conflicting_recovery_evidence, :generation_hash_conflict}}
-                  else
-                    # 3. Select the coherent tuple with highest generation (and highest crl_number)
-                    highest =
-                      valid_bundles
-                      |> Enum.sort_by(fn b -> {b.generation, b.crl_number} end, :desc)
-                      |> hd()
-
-                    {:ok, highest}
-                  end
+        true ->
+          all_candidate_paths =
+            (if(current_candidate, do: [current_candidate], else: []) ++ gen_candidates)
+            |> Enum.uniq_by(fn path ->
+              case File.read_link(path) do
+                {:ok, target} -> Path.expand(target, Path.dirname(path))
+                _ -> path
               end
-            end
-        end
+            end)
+
+          validation_results =
+            Enum.map(all_candidate_paths, fn path ->
+              {path, validate_disk_historical_evidence(path, opts)}
+            end)
+
+          damaged =
+            Enum.find(validation_results, fn {_path, res} ->
+              case res do
+                {:ok, _} -> false
+                _ -> true
+              end
+            end)
+
+          case damaged do
+            {damaged_path, {:error, reason}} ->
+              {:error, {:corrupted_candidate, damaged_path, reason}}
+
+            {damaged_path, {:error, reason, detail}} ->
+              {:error, {:corrupted_candidate, damaged_path, {reason, detail}}}
+
+            nil ->
+              valid_bundles =
+                Enum.map(validation_results, fn {path, {:ok, b}} ->
+                  Map.put(b, :source_path, path)
+                end)
+
+              if valid_bundles == [] do
+                {:error, :empty_installation}
+              else
+                # 1. Check CA continuity: all surviving bundles must share the same CA fingerprint
+                fps =
+                  valid_bundles
+                  |> Enum.map(& &1.ca_fingerprint)
+                  |> Enum.reject(&is_nil/1)
+                  |> Enum.uniq()
+
+                cond do
+                  length(fps) > 1 ->
+                    {:error, {:conflicting_recovery_evidence, :ca_fingerprint_conflict}}
+
+                  true ->
+                    # 2. Check same-generation hash conflicts (equivocation)
+                    by_gen = Enum.group_by(valid_bundles, & &1.generation)
+
+                    has_equivocation =
+                      Enum.any?(by_gen, fn {_gen, list} ->
+                        list |> Enum.map(& &1.bundle_sha256) |> Enum.uniq() |> length() > 1
+                      end)
+
+                    if has_equivocation do
+                      {:error, {:conflicting_recovery_evidence, :generation_hash_conflict}}
+                    else
+                      # 3. Select the coherent tuple with highest generation (and highest crl_number)
+                      highest =
+                        valid_bundles
+                        |> Enum.sort_by(fn b -> {b.generation, b.crl_number} end, :desc)
+                        |> hd()
+
+                      {:ok, highest}
+                    end
+                end
+              end
+          end
+      end
     end
+  end
+
+  defp inspect_current_link(current_dir) do
+    case File.lstat(current_dir) do
+      {:ok, %File.Stat{type: :symlink}} ->
+        case File.read_link(current_dir) do
+          {:ok, target} ->
+            target_abs = Path.expand(target, Path.dirname(current_dir))
+
+            case File.lstat(target_abs) do
+              {:ok, %File.Stat{type: :directory}} ->
+                {:ok, current_dir}
+
+              {:ok, %File.Stat{type: other}} ->
+                {:error, {:corrupted_candidate, current_dir, {:target_not_a_directory, other}}}
+
+              {:error, reason} ->
+                {:error, {:corrupted_candidate, current_dir, {:broken_current_link, reason}}}
+            end
+
+          {:error, reason} ->
+            {:error, {:corrupted_candidate, current_dir, {:read_link_failed, reason}}}
+        end
+
+      {:ok, %File.Stat{type: :directory}} ->
+        {:ok, current_dir}
+
+      {:ok, %File.Stat{type: other}} ->
+        {:error, {:corrupted_candidate, current_dir, {:unexpected_file_type, other}}}
+
+      {:error, :enoent} ->
+        {:ok, nil}
+
+      {:error, reason} ->
+        {:error, {:corrupted_candidate, current_dir, reason}}
+    end
+  end
+
+  defp inspect_generations_dir(generations_dir) do
+    case File.lstat(generations_dir) do
+      {:ok, %File.Stat{type: :directory}} ->
+        case File.ls(generations_dir) do
+          {:ok, entries} ->
+            entries
+            |> Enum.reject(&String.starts_with?(&1, "."))
+            |> Enum.map(&Path.join(generations_dir, &1))
+            |> inspect_candidate_entries()
+
+          {:error, reason} ->
+            {:error, {:corrupted_candidate, generations_dir, reason}}
+        end
+
+      {:ok, %File.Stat{type: other}} ->
+        {:error, {:corrupted_candidate, generations_dir, {:unexpected_file_type, other}}}
+
+      {:error, :enoent} ->
+        {:ok, []}
+
+      {:error, reason} ->
+        {:error, {:corrupted_candidate, generations_dir, reason}}
+    end
+  end
+
+  defp inspect_candidate_entries(paths) do
+    Enum.reduce_while(paths, {:ok, []}, fn path, {:ok, acc} ->
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :directory}} ->
+          {:cont, {:ok, [path | acc]}}
+
+        {:ok, %File.Stat{type: :symlink}} ->
+          case File.read_link(path) do
+            {:ok, target} ->
+              target_abs = Path.expand(target, Path.dirname(path))
+
+              case File.lstat(target_abs) do
+                {:ok, %File.Stat{type: :directory}} ->
+                  {:cont, {:ok, [path | acc]}}
+
+                {:ok, %File.Stat{type: other}} ->
+                  {:halt,
+                   {:error, {:corrupted_candidate, path, {:target_not_a_directory, other}}}}
+
+                {:error, reason} ->
+                  {:halt, {:error, {:corrupted_candidate, path, {:broken_symlink, reason}}}}
+              end
+
+            {:error, reason} ->
+              {:halt, {:error, {:corrupted_candidate, path, {:read_link_failed, reason}}}}
+          end
+
+        {:ok, %File.Stat{type: other}} ->
+          {:halt, {:error, {:corrupted_candidate, path, {:unexpected_file_type, other}}}}
+
+        {:error, reason} ->
+          {:halt, {:error, {:corrupted_candidate, path, reason}}}
+      end
+    end)
   end
 
   # Schema and type checking

@@ -314,18 +314,47 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   end
 
   @doc """
-  Reads the persisted observation sequence for the trust bundle from `<base_dir>/observation_sequence.json`.
-  Returns `{:ok, seq}` (integer >= 0) or `{:ok, 0}` if not found.
+  Reads the persisted observation sequence and durable outbox from `<base_dir>/observation_sequence.json`.
+  Returns `{:ok, %{highest_sequence: non_neg_integer(), outbox: [map()]}}` or `{:error, term()}`.
   """
-  @spec read_observation_sequence(Path.t()) :: {:ok, non_neg_integer()} | {:error, term()}
-  def read_observation_sequence(base_dir) do
+  @spec read_outbox(Path.t()) ::
+          {:ok, %{highest_sequence: non_neg_integer(), outbox: [map()]}}
+          | {:error, term()}
+  def read_outbox(base_dir) do
     path = Path.join(base_dir, "observation_sequence.json")
 
     case File.read(path) do
       {:ok, content} ->
         case decode_json_object(content) do
-          {:ok, %{"observation_sequence" => seq}} when is_integer(seq) and seq >= 0 ->
-            {:ok, seq}
+          {:ok, %{"observation_sequence" => seq} = data}
+          when is_integer(seq) and seq >= 0 ->
+            outbox =
+              case data["outbox"] do
+                list when is_list(list) ->
+                  Enum.filter(list, fn
+                    %{"sequence" => s, "receipt" => %{}} when is_integer(s) -> true
+                    _ -> false
+                  end)
+
+                _ ->
+                  case data["pending_receipt"] do
+                    %{} = pending ->
+                      p_seq = pending["observation_sequence"] || seq
+
+                      [
+                        %{
+                          "sequence" => p_seq,
+                          "receipt" => pending,
+                          "enqueued_at" => data["updated_at"]
+                        }
+                      ]
+
+                    _ ->
+                      []
+                  end
+              end
+
+            {:ok, %{highest_sequence: seq, outbox: outbox}}
 
           {:ok, _} ->
             {:error, :invalid_observation_sequence_schema}
@@ -335,10 +364,22 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         end
 
       {:error, :enoent} ->
-        {:ok, 0}
+        {:ok, %{highest_sequence: 0, outbox: []}}
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  @doc """
+  Reads the persisted observation sequence for the trust bundle from `<base_dir>/observation_sequence.json`.
+  Returns `{:ok, seq}` (integer >= 0) or `{:ok, 0}` if not found.
+  """
+  @spec read_observation_sequence(Path.t()) :: {:ok, non_neg_integer()} | {:error, term()}
+  def read_observation_sequence(base_dir) do
+    case read_outbox(base_dir) do
+      {:ok, %{highest_sequence: seq}} -> {:ok, seq}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -348,26 +389,95 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   """
   @spec read_pending_observation(Path.t()) :: {:ok, map() | nil} | {:error, term()}
   def read_pending_observation(base_dir) do
-    path = Path.join(base_dir, "observation_sequence.json")
+    case read_outbox(base_dir) do
+      {:ok, %{outbox: [%{"receipt" => receipt} | _]}} -> {:ok, receipt}
+      {:ok, %{outbox: []}} -> {:ok, nil}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
-    case File.read(path) do
-      {:ok, content} ->
-        case decode_json_object(content) do
-          {:ok, %{"pending_receipt" => receipt}} when is_map(receipt) ->
-            {:ok, receipt}
+  @doc """
+  Durably enqueues an observation receipt into `<base_dir>/observation_sequence.json`.
+  Allocates the next monotonic sequence number, attaches it to the receipt, records it
+  in the outbox, and syncs to disk before returning `{:ok, seq, receipt_with_seq}`.
+  """
+  @spec enqueue_observation(Path.t(), map(), keyword()) ::
+          {:ok, non_neg_integer(), map()} | {:error, term()}
+  def enqueue_observation(base_dir, raw_receipt, opts \\ []) when is_map(raw_receipt) do
+    case Keyword.get(opts, :inject_sequence_persistence_error) do
+      nil ->
+        case read_outbox(base_dir) do
+          {:ok, %{highest_sequence: current_highest, outbox: current_outbox}} ->
+            core_seq = Keyword.get(opts, :core_seq, 0) || 0
+            base_seq = max(current_highest, core_seq)
+            next_seq = base_seq + 1
 
-          {:ok, _} ->
-            {:ok, nil}
+            receipt = Map.put(raw_receipt, "observation_sequence", next_seq)
+            now_iso = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+
+            entry = %{
+              "sequence" => next_seq,
+              "receipt" => receipt,
+              "enqueued_at" => now_iso
+            }
+
+            # Filter out any duplicate sequence entry if it somehow existed
+            updated_outbox =
+              Enum.reject(current_outbox, &(&1["sequence"] == next_seq)) ++ [entry]
+
+            data = %{
+              "observation_sequence" => next_seq,
+              "outbox" => updated_outbox,
+              "updated_at" => now_iso
+            }
+
+            case write_and_fsync_sequence_data(base_dir, data, opts) do
+              :ok ->
+                notify_fs_op(opts, {:enqueue_observation, next_seq})
+                {:ok, next_seq, receipt}
+
+              {:error, reason} ->
+                {:error, {:sequence_persistence_failed, reason}}
+            end
 
           {:error, reason} ->
-            {:error, reason}
+            {:error, {:sequence_persistence_failed, reason}}
         end
 
-      {:error, :enoent} ->
-        {:ok, nil}
+      err ->
+        {:error, {:sequence_persistence_failed, err}}
+    end
+  end
+
+  @doc """
+  Durably acknowledges and removes an observation receipt from the outbox.
+  """
+  @spec acknowledge_observation(Path.t(), non_neg_integer(), keyword()) ::
+          :ok | {:error, term()}
+  def acknowledge_observation(base_dir, seq, opts \\ [])
+      when is_integer(seq) and seq >= 0 do
+    case read_outbox(base_dir) do
+      {:ok, %{highest_sequence: highest_seq, outbox: current_outbox}} ->
+        updated_outbox = Enum.reject(current_outbox, &(&1["sequence"] == seq))
+        now_iso = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+
+        data = %{
+          "observation_sequence" => highest_seq,
+          "outbox" => updated_outbox,
+          "updated_at" => now_iso
+        }
+
+        case write_and_fsync_sequence_data(base_dir, data, opts) do
+          :ok ->
+            notify_fs_op(opts, {:acknowledge_observation, seq})
+            :ok
+
+          {:error, reason} ->
+            {:error, {:sequence_persistence_failed, reason}}
+        end
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, {:sequence_persistence_failed, reason}}
     end
   end
 
@@ -379,17 +489,48 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
           :ok | {:error, term()}
   def persist_observation_sequence(base_dir, seq, opts \\ [])
       when is_integer(seq) and seq >= 0 do
-    data = %{
-      "observation_sequence" => seq,
-      "updated_at" => DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
-    }
+    case Keyword.get(opts, :inject_sequence_persistence_error) do
+      nil ->
+        now_iso = DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
 
-    data =
-      case Keyword.get(opts, :pending_receipt) do
-        nil -> data
-        receipt when is_map(receipt) -> Map.put(data, "pending_receipt", receipt)
-      end
+        current_outbox =
+          case read_outbox(base_dir) do
+            {:ok, %{outbox: ob}} -> ob
+            _ -> []
+          end
 
+        outbox =
+          case Keyword.get(opts, :pending_receipt) do
+            nil ->
+              current_outbox
+
+            receipt when is_map(receipt) ->
+              p_seq = receipt["observation_sequence"] || seq
+
+              Enum.reject(current_outbox, &(&1["sequence"] == p_seq)) ++
+                [
+                  %{
+                    "sequence" => p_seq,
+                    "receipt" => receipt,
+                    "enqueued_at" => now_iso
+                  }
+                ]
+          end
+
+        data = %{
+          "observation_sequence" => seq,
+          "outbox" => outbox,
+          "updated_at" => now_iso
+        }
+
+        write_and_fsync_sequence_data(base_dir, data, opts)
+
+      err ->
+        {:error, {:sequence_persistence_failed, err}}
+    end
+  end
+
+  defp write_and_fsync_sequence_data(base_dir, data, opts) do
     tmp_id = ".sequence.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
     tmp_path = Path.join(base_dir, tmp_id)
     target_path = Path.join(base_dir, "observation_sequence.json")
@@ -400,7 +541,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
              :ok <- write_and_fsync_file(tmp_path, json),
              :ok <- File.rename(tmp_path, target_path),
              :ok <- fsync_dir(base_dir) do
-          notify_fs_op(opts, {:persist_observation_sequence, seq})
+          notify_fs_op(opts, {:persist_observation_sequence, data["observation_sequence"]})
           :ok
         else
           {:error, reason} ->
@@ -571,7 +712,8 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         mf_path = Path.join(gen_dir, "manifest.json")
 
         with {:ok, mf_json} <- File.read(mf_path),
-             {:ok, existing_manifest} <- Jason.decode(mf_json),
+             {:ok, %{} = existing_manifest} <- decode_json_object(mf_json),
+             true <- is_binary(existing_manifest["bundle_sha256"]),
              true <- existing_manifest["bundle_sha256"] == manifest["bundle_sha256"],
              {:ok, _validated} <-
                SecretHub.Agent.PKI.BundleValidator.validate_disk_bundle(gen_dir) do
