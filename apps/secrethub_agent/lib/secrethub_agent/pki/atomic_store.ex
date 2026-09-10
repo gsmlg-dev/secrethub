@@ -583,7 +583,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         {:error, {:is_directory, backup_path}}
 
       {:ok, %File.Stat{type: :regular}} ->
-        validate_and_reuse_existing_backup(base_dir, backup_path, content, content_sha256)
+        validate_and_reuse_existing_backup(base_dir, backup_path, content, content_sha256, opts)
 
       {:ok, %File.Stat{type: other}} ->
         {:error, {:unexpected_file_type, other, backup_path}}
@@ -595,12 +595,20 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
              :ok <- write_backup_fd(fd, content, backup_path),
              :ok <- check_injected_backup_sync_error(opts, fd, backup_path),
              :ok <- sync_and_close_backup_fd(fd),
+             :ok <- notify_fs_op(opts, {:sync_backup_file, backup_path}),
              :ok <- File.chmod(backup_path, 0o600),
-             :ok <- fsync_dir(base_dir) do
+             :ok <- fsync_dir(base_dir),
+             :ok <- notify_fs_op(opts, {:sync_parent_dir, base_dir}) do
           {:ok, backup_path}
         else
           {:error, {:backup_already_exists, ^backup_path}} ->
-            validate_and_reuse_existing_backup(base_dir, backup_path, content, content_sha256)
+            validate_and_reuse_existing_backup(
+              base_dir,
+              backup_path,
+              content,
+              content_sha256,
+              opts
+            )
 
           {:error, reason} ->
             {:error, reason}
@@ -611,30 +619,68 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
     end
   end
 
-  defp validate_and_reuse_existing_backup(base_dir, backup_path, content, expected_sha256) do
+  defp validate_and_reuse_existing_backup(base_dir, backup_path, content, expected_sha256, opts) do
     case File.lstat(backup_path) do
       {:ok, %File.Stat{type: :regular}} ->
-        case File.read(backup_path) do
-          {:ok, existing_content} when existing_content === content ->
-            existing_sha256 =
-              :crypto.hash(:sha256, existing_content) |> Base.encode16(case: :lower)
+        with :ok <- File.chmod(backup_path, 0o600),
+             {:ok, fd} <- open_existing_backup_file(backup_path) do
+          try do
+            case :file.read_file_info(fd) do
+              {:ok,
+               {:file_info, size, :regular, _access, _atime, _mtime, _ctime, _mode, _links,
+                _major, _minor, _inode, _uid, _gid}} ->
+                if size == byte_size(content) do
+                  case :file.read(fd, size + 1) do
+                    {:ok, existing_content} when existing_content === content ->
+                      existing_sha256 =
+                        :crypto.hash(:sha256, existing_content) |> Base.encode16(case: :lower)
 
-            if existing_sha256 === expected_sha256 do
-              with :ok <- File.chmod(backup_path, 0o600),
-                   :ok <- fsync_dir(base_dir) do
-                {:ok, backup_path}
-              else
-                {:error, reason} -> {:error, reason}
-              end
-            else
-              {:error, {:backup_already_exists, backup_path}}
+                      if existing_sha256 === expected_sha256 do
+                        notify_fs_op(opts, {:validate_backup, backup_path})
+
+                        with :ok <- check_injected_reused_backup_sync_error(opts, fd, backup_path),
+                             :ok <- :file.sync(fd) do
+                          notify_fs_op(opts, {:sync_backup_file, backup_path})
+
+                          case fsync_dir(base_dir) do
+                            :ok ->
+                              notify_fs_op(opts, {:sync_parent_dir, base_dir})
+                              {:ok, backup_path}
+
+                            {:error, reason} ->
+                              {:error, reason}
+                          end
+                        else
+                          {:error, reason} ->
+                            {:error, reason}
+                        end
+                      else
+                        {:error, {:backup_already_exists, backup_path}}
+                      end
+
+                    {:ok, _mismatch_or_incomplete} ->
+                      {:error, {:backup_already_exists, backup_path}}
+
+                    {:error, reason} ->
+                      {:error, reason}
+                  end
+                else
+                  {:error, {:backup_already_exists, backup_path}}
+                end
+
+              {:ok,
+               {:file_info, _size, other_type, _access, _atime, _mtime, _ctime, _mode, _links,
+                _major, _minor, _inode, _uid, _gid}} ->
+                {:error, {:unexpected_file_type, other_type, backup_path}}
+
+              {:error, reason} ->
+                {:error, reason}
             end
-
-          {:ok, _mismatch_or_incomplete} ->
-            {:error, {:backup_already_exists, backup_path}}
-
-          {:error, reason} ->
-            {:error, reason}
+          after
+            _ = :file.close(fd)
+          end
+        else
+          {:error, reason} -> {:error, reason}
         end
 
       {:ok, %File.Stat{type: :symlink}} ->
@@ -645,6 +691,32 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
       {:ok, %File.Stat{type: other}} ->
         {:error, {:unexpected_file_type, other, backup_path}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp open_existing_backup_file(path) do
+    case :file.open(String.to_charlist(path), [:read, :write, :binary, :raw]) do
+      {:ok, fd} ->
+        {:ok, fd}
+
+      {:error, reason} when reason in [:eacces, :eperm] ->
+        case :file.open(String.to_charlist(path), [:read, :binary, :raw]) do
+          {:ok, fd} -> {:ok, fd}
+          {:error, err} -> {:error, err}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp check_injected_reused_backup_sync_error(opts, _fd, _path) do
+    case check_injected_opt(opts, :inject_backup_sync_error) do
+      :ok ->
+        check_injected_opt(opts, :inject_reused_backup_sync_error)
 
       {:error, reason} ->
         {:error, reason}
@@ -1213,6 +1285,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
              :ok <- write_and_fsync_file(tmp_path, json),
              :ok <- check_injected_sequence_rename_error(opts),
              :ok <- File.rename(tmp_path, target_path),
+             :ok <- notify_fs_op(opts, {:replace_active_outbox, target_path}),
              :ok <- fsync_dir(base_dir) do
           notify_fs_op(opts, {:persist_observation_sequence, data["observation_sequence"]})
           :ok
@@ -1444,7 +1517,8 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
     File.rm(tmp_symlink)
 
-    with :ok <- File.ln_s(target, tmp_symlink),
+    with :ok <- check_injected_opt(opts, :inject_symlink_switch_error),
+         :ok <- File.ln_s(target, tmp_symlink),
          :ok <- File.rename(tmp_symlink, current_symlink) do
       notify_fs_op(opts, {:switch_symlink, generation})
       :ok

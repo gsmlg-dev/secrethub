@@ -4003,5 +4003,310 @@ defmodule SecretHub.Agent.PKIBundleTest do
 
       GenServer.stop(manager)
     end
+
+    # --- Reproduction Tests for Review Findings ---
+
+    test "identity binding and outbox repair preserves unresolved trust-installation rollback and repair requirement",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_rollback_preservation_test")
+      File.mkdir_p!(bundle_dir)
+
+      make_bundle = fn gen ->
+        transcript =
+          [
+            bundle["schema_version"],
+            bundle["authority"],
+            gen,
+            bundle["ca_fingerprint"],
+            bundle["crl_number"],
+            bundle["crl_der_sha256"],
+            bundle["this_update"],
+            bundle["next_update"],
+            bundle["ca_bundle_pem"],
+            bundle["crl_pem"]
+          ]
+          |> Enum.map(&to_string/1)
+          |> Enum.join("|")
+
+        bundle
+        |> Map.put("generation", gen)
+        |> Map.put(
+          "bundle_sha256",
+          :crypto.hash(:sha256, transcript) |> Base.encode16(case: :lower)
+        )
+      end
+
+      # 1. Publish generation 9
+      bundle_gen9 = make_bundle.(9)
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, bundle_gen9, now: now)
+
+      # 2. Publish generation 10
+      bundle_gen10 = make_bundle.(10)
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, bundle_gen10, now: now)
+
+      # Both generations 9 and 10 exist on disk.
+      # Persistent watermark is at generation 10.
+      # Artificially switch current/ symlink back to generation 9 to simulate a rollback!
+      current_symlink = Path.join(bundle_dir, "current")
+      File.rm!(current_symlink)
+      File.ln_s!(Path.join("generations", "9"), current_symlink)
+
+      # Ensure outbox exists and has a missing agent_id so bind_identity performs repair work
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      File.write!(outbox_path, Jason.encode!(raw_data))
+
+      # 3. Start manager with Core unavailable so automatic reconciliation cannot hide test condition
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          name: :test_rollback_preservation_manager,
+          connection_mod: :fake_unavailable_conn
+        )
+
+      # 4. Confirm rollback error and needs_repair on startup
+      status = TrustBundleManager.status(manager)
+      assert status.current_generation == 9
+      assert status.lkg_generation == 10
+      assert status.needs_repair == true
+      assert status.recovery_mode == :quarantined
+
+      # 5. Bind legitimate identity (repairs outbox and clears outbox restriction)
+      assert :ok = TrustBundleManager.bind_identity(manager, "agent-legitimate-id")
+
+      # 6. Assert the rollback error/repair requirement survives and disk is unchanged!
+      status_rebound = TrustBundleManager.status(manager)
+      assert status_rebound.current_generation == 9
+      assert status_rebound.lkg_generation == 10
+      assert status_rebound.needs_repair == true
+      assert status_rebound.status == "error"
+      assert status_rebound.last_error_code == :generation_rollback
+      assert status_rebound.recovery_mode == :none
+      assert status_rebound.outbox_restriction == nil
+      assert status_rebound.trust_recovery_restriction == nil
+      assert File.read_link!(current_symlink) == "generations/9"
+
+      # 7. Successfully install generation 10; only now may readiness become applied!
+      assert {:ok, receipt} =
+               TrustBundleManager.process_bundle(manager, bundle_gen10, now: now)
+
+      assert receipt["status"] == "applied"
+
+      status_final = TrustBundleManager.status(manager)
+      assert status_final.current_generation == 10
+      assert status_final.lkg_generation == 10
+      assert status_final.status == "applied"
+      assert status_final.needs_repair == false
+      assert status_final.last_error_code == nil
+      assert status_final.recovery_mode == :none
+
+      GenServer.stop(manager)
+    end
+
+    test "injecting failure at reused-backup file synchronization halts repair and preserves active outbox and backup",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_backup_sync_fail_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      # Create watermark file to verify it stays untouched
+      wm_data = %{"highest_seen_generation" => 5, "highest_seen_crl_number" => 1}
+      File.write!(Path.join(bundle_dir, "watermark.json"), Jason.encode!(wm_data))
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      content_sha256 = :crypto.hash(:sha256, raw_json) |> Base.encode16(case: :lower)
+      bak_path = Path.join(bundle_dir, "observation_sequence.json.bak-" <> content_sha256)
+
+      # Existing backup left before file sync
+      File.write!(bak_path, raw_json)
+
+      # 1. Inject failure at reused-backup file synchronization
+      assert {:error, {:backup_failed, :eio}} =
+               AtomicStore.repair_outbox_metadata(
+                 bundle_dir,
+                 %{agent_id: "agent-fail-sync"},
+                 inject_backup_sync_error: :eio
+               )
+
+      # 2. Assert active outbox bytes, sequences, and trust watermarks are completely unchanged
+      assert File.read!(outbox_path) == raw_json
+      assert File.read!(bak_path) == raw_json
+      assert Jason.decode!(File.read!(Path.join(bundle_dir, "watermark.json"))) == wm_data
+
+      # 3. Retry after failure resolution and verify successful resumable repair
+      assert :ok =
+               AtomicStore.repair_outbox_metadata(
+                 bundle_dir,
+                 %{agent_id: "agent-fail-sync"}
+               )
+
+      # Repaired outbox contains new agent_id
+      assert {:ok, %{highest_sequence: 1, outbox: [repaired]}} =
+               AtomicStore.read_outbox(bundle_dir)
+
+      assert repaired["receipt"]["agent_id"] == "agent-fail-sync"
+      assert File.read!(bak_path) == raw_json
+    end
+
+    test "publication failure after watermark advance but before pointer switch preserves error across identity binding",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_post_wm_failure_preservation_test")
+      File.mkdir_p!(bundle_dir)
+
+      make_bundle = fn gen ->
+        transcript =
+          [
+            bundle["schema_version"],
+            bundle["authority"],
+            gen,
+            bundle["ca_fingerprint"],
+            bundle["crl_number"],
+            bundle["crl_der_sha256"],
+            bundle["this_update"],
+            bundle["next_update"],
+            bundle["ca_bundle_pem"],
+            bundle["crl_pem"]
+          ]
+          |> Enum.map(&to_string/1)
+          |> Enum.join("|")
+
+        bundle
+        |> Map.put("generation", gen)
+        |> Map.put(
+          "bundle_sha256",
+          :crypto.hash(:sha256, transcript) |> Base.encode16(case: :lower)
+        )
+      end
+
+      # 1. Install generation 1 first
+      bundle_gen1 = make_bundle.(1)
+      assert {:ok, _} = AtomicStore.write_bundle(bundle_dir, bundle_gen1, now: now)
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          agent_id: "agent-post-wm",
+          name: :test_post_wm_failure_manager,
+          connection_mod: :fake_unavailable_conn
+        )
+
+      status1 = TrustBundleManager.status(manager)
+      assert status1.current_generation == 1
+      assert status1.status == "applied"
+      assert status1.needs_repair == false
+
+      # 2. Attempt to publish generation 2, but inject symlink switch error (after watermark committed)
+      bundle_gen2 = make_bundle.(2)
+
+      assert {:error, :pointer_switch_failed, _receipt} =
+               TrustBundleManager.process_bundle(
+                 manager,
+                 bundle_gen2,
+                 inject_symlink_switch_error: :eio,
+                 now: now
+               )
+
+      status2 = TrustBundleManager.status(manager)
+      assert status2.status == "failed"
+      assert status2.needs_repair == true
+      assert status2.last_error_code == "pointer_switch_failed"
+      assert status2.lkg_generation == 2
+      assert status2.current_generation == 1
+
+      # 3. Call bind_identity; publication failure and repair requirement must survive!
+      assert :ok = TrustBundleManager.bind_identity(manager, "agent-post-wm")
+
+      status3 = TrustBundleManager.status(manager)
+      assert status3.status == "failed"
+      assert status3.needs_repair == true
+      assert status3.last_error_code == "pointer_switch_failed"
+      assert status3.lkg_generation == 2
+      assert status3.current_generation == 1
+
+      GenServer.stop(manager)
+    end
+
+    test "reusing existing backup verifies durability and traces validate -> sync backup -> sync parent -> replace outbox",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_backup_durability_trace_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      content_sha256 = :crypto.hash(:sha256, raw_json) |> Base.encode16(case: :lower)
+      bak_path = Path.join(bundle_dir, "observation_sequence.json.bak-" <> content_sha256)
+
+      # Write pre-existing backup file (simulating left before sync)
+      File.write!(bak_path, raw_json)
+
+      # 1. Trace actual operation order
+      assert :ok =
+               AtomicStore.repair_outbox_metadata(
+                 bundle_dir,
+                 %{agent_id: "agent-trace-test"},
+                 record_operations_to: self()
+               )
+
+      assert_receive {:atomic_store_op, {:validate_backup, ^bak_path}}
+      assert_receive {:atomic_store_op, {:sync_backup_file, ^bak_path}}
+      assert_receive {:atomic_store_op, {:sync_parent_dir, ^bundle_dir}}
+      assert_receive {:atomic_store_op, {:replace_active_outbox, ^outbox_path}}
+      assert_receive {:atomic_store_op, {:repair_outbox_metadata, ^bak_path}}
+    end
   end
 end

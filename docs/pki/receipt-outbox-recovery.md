@@ -29,6 +29,7 @@ The fixed version handles recovery automatically upon startup:
    - Symlinks and directories occupying the backup path are strictly rejected without being followed.
    - Backup file contents and directory entries are synchronized (`fsync`) to disk before active state is modified.
    - **Resumption & Replay Safety**: If a prior repair attempt was interrupted after backup creation (e.g. system crash or I/O error during active outbox replacement), retrying repair (even after a process restart) safely validates and reuses the existing byte-identical content-addressed backup file. Mismatching or truncated backups remain an error.
+   - **Backup Durability on Reuse**: When reusing an existing backup, the backup file descriptor is safely opened without truncation (`[:read, :write, :binary, :raw]`), validated for regular file type and SHA-256 byte equality, and both the backup file and parent directory are explicitly `fsync`'d before replacing the active outbox. The execution order is strictly guaranteed: `validate backup` -> `sync backup file` -> `sync parent dir` -> `replace active outbox`. If synchronization fails, the existing backup file is strictly preserved for forensic analysis and never deleted.
 3. **Safe In-Place Repair**:
    - Backfills missing or empty `agent_id` with the local enrolled identity.
    - Backfills missing timestamps with the original enqueue timestamp.
@@ -37,6 +38,7 @@ The fixed version handles recovery automatically upon startup:
 4. **Scoped Unquarantine & Trust Isolation**: Once the repaired outbox passes strict schema validation, `TrustBundleManager` clears only the outbox-related restriction (`outbox_restriction: nil`).
    - If no trust-level restriction is active, the quarantine is lifted (`recovery_mode: :none`), active status is restored, and outbox draining resumes.
    - If the manager is under an independent trust quarantine (e.g. corrupt watermark or conflicting bundle evidence), trust quarantine **remains strictly enforced** (`recovery_mode: :quarantined`, `status: "recovery_required"`).
+   - **Preservation of Trust Installation Errors**: Unresolved trust-installation errors (such as rollback where `installed_generation < lkg_generation`, hash equivocation, CRL downgrade, CA fingerprint mismatch, or publication failures) are decoupled from outbox quarantine. Binding identity or repairing the outbox will never clear trust-bundle repair requirements (`needs_repair: true`) or report `status: "applied"`. Only a successful bundle publication or explicit authorized trust recovery can clear trust repair requirements.
 5. **Authorized Trust Recovery Transitions**: When an operator authorizes recovery (`process_bundle/3` with `force: true`):
    - Upon durable commitment of validated trust material to disk, the resolved `trust_recovery_restriction` is cleared.
    - Any independently unresolved outbox restriction is preserved.

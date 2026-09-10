@@ -89,6 +89,7 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           :inject_sequence_persistence_error,
           :inject_sequence_rename_error,
           :inject_watermark_fsync_error,
+          :inject_symlink_switch_error,
           :record_operations_to,
           :outbox_drain_backoff_ms
         ])
@@ -721,6 +722,10 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                       installed_crl_number: validated.crl_number,
                       installed_ca_fingerprint: validated.ca_fingerprint,
                       installed_bundle_sha256: validated.bundle_sha256,
+                      needs_repair: false,
+                      last_error_code: nil,
+                      last_error_detail: nil,
+                      status: "applied",
                       retry_attempt: 0,
                       trust_recovery_restriction: nil
                   }
@@ -795,6 +800,10 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                       installed_ca_fingerprint: validated.ca_fingerprint,
                       installed_bundle_sha256: validated.bundle_sha256,
                       last_applied_at: now,
+                      needs_repair: false,
+                      last_error_code: nil,
+                      last_error_detail: nil,
+                      status: "applied",
                       retry_attempt: 0,
                       trust_recovery_restriction: nil
                   }
@@ -1325,28 +1334,143 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           state
           | recovery_mode: :quarantined,
             status: "recovery_required",
-            needs_repair: true,
-            last_error_code: state.outbox_restriction,
+            needs_repair: state.needs_repair,
+            last_error_code: state.last_error_code || state.outbox_restriction,
             last_error_detail:
               state.last_error_detail ||
                 "Durable outbox corrupted; repair or recovery required."
         }
 
       true ->
-        is_installed = state.installed_generation > 0
+        recovery_mode = :none
 
-        %{
-          state
-          | recovery_mode: :none,
-            status:
-              if(is_installed,
-                do: "applied",
-                else: if(state.needs_repair, do: "initializing", else: "applied")
-              ),
-            needs_repair: if(is_installed, do: false, else: state.needs_repair),
-            last_error_code: nil,
-            last_error_detail: nil
-        }
+        quarantine_codes = [
+          :corrupted_outbox,
+          "corrupted_outbox",
+          :damaged_state_recovery_required,
+          "damaged_state_recovery_required"
+        ]
+
+        effective_last_error_code =
+          if state.last_error_code in quarantine_codes, do: nil, else: state.last_error_code
+
+        effective_last_error_detail =
+          if state.last_error_code in quarantine_codes, do: nil, else: state.last_error_detail
+
+        effective_status =
+          if state.status == "recovery_required", do: "error", else: state.status
+
+        cond do
+          # Invariant violation: installed generation < persistent watermark (rollback)
+          state.installed_generation < state.lkg_generation ->
+            %{
+              state
+              | recovery_mode: recovery_mode,
+                needs_repair: true,
+                status:
+                  if(effective_status in ["error", "failed", "repair_required"],
+                    do: effective_status,
+                    else: "error"
+                  ),
+                last_error_code: effective_last_error_code || :generation_rollback,
+                last_error_detail:
+                  effective_last_error_detail ||
+                    "disk generation #{state.installed_generation} is lower than persistent watermark #{state.lkg_generation}"
+            }
+
+          # Invariant violation: installed generation matches watermark but hash equivocated
+          state.installed_generation == state.lkg_generation and
+            state.lkg_bundle_sha256 != nil and
+              state.installed_bundle_sha256 != state.lkg_bundle_sha256 ->
+            %{
+              state
+              | recovery_mode: recovery_mode,
+                needs_repair: true,
+                status:
+                  if(effective_status in ["error", "failed", "repair_required"],
+                    do: effective_status,
+                    else: "error"
+                  ),
+                last_error_code: effective_last_error_code || :equivocation_detected,
+                last_error_detail:
+                  effective_last_error_detail ||
+                    "disk bundle hash does not match persistent watermark"
+            }
+
+          # Invariant violation: installed CRL number < persistent watermark
+          state.installed_generation >= state.lkg_generation and
+              state.installed_crl_number < state.lkg_crl_number ->
+            %{
+              state
+              | recovery_mode: recovery_mode,
+                needs_repair: true,
+                status:
+                  if(effective_status in ["error", "failed", "repair_required"],
+                    do: effective_status,
+                    else: "error"
+                  ),
+                last_error_code: effective_last_error_code || :crl_number_downgrade,
+                last_error_detail:
+                  effective_last_error_detail ||
+                    "disk CRL number is lower than persistent watermark"
+            }
+
+          # Invariant violation: installed CA fingerprint differs from pinned CA
+          state.lkg_ca_fingerprint != nil and
+              state.installed_ca_fingerprint != state.lkg_ca_fingerprint ->
+            %{
+              state
+              | recovery_mode: recovery_mode,
+                needs_repair: true,
+                status:
+                  if(effective_status in ["error", "failed", "repair_required"],
+                    do: effective_status,
+                    else: "error"
+                  ),
+                last_error_code: effective_last_error_code || :ca_fingerprint_mismatch,
+                last_error_detail:
+                  effective_last_error_detail ||
+                    "disk CA fingerprint differs from persistent watermark"
+            }
+
+          # First-time initialization: no bundle installed yet
+          state.installed_generation == 0 ->
+            %{
+              state
+              | recovery_mode: recovery_mode,
+                needs_repair: true,
+                status: "initializing",
+                last_error_code: effective_last_error_code,
+                last_error_detail: effective_last_error_detail
+            }
+
+          # Explicit unresolved publication error or explicit repair requirement
+          effective_last_error_code != nil or
+              (state.needs_repair and effective_status in ["error", "failed", "repair_required"]) ->
+            %{
+              state
+              | recovery_mode: recovery_mode,
+                needs_repair: true,
+                status:
+                  if(effective_status in ["error", "failed", "repair_required", "initializing"],
+                    do: effective_status,
+                    else: "error"
+                  ),
+                last_error_code: effective_last_error_code,
+                last_error_detail: effective_last_error_detail
+            }
+
+          # All facts verify complete health and ready installation!
+          true ->
+            %{
+              state
+              | recovery_mode: recovery_mode,
+                status: "applied",
+                needs_repair: false,
+                last_error_code: nil,
+                last_error_detail: nil
+            }
+        end
     end
   end
 end
