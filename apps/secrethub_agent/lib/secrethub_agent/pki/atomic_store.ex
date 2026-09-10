@@ -638,7 +638,8 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
                       if existing_sha256 === expected_sha256 do
                         notify_fs_op(opts, {:validate_backup, backup_path})
 
-                        with :ok <- check_injected_reused_backup_sync_error(opts, fd, backup_path),
+                        with :ok <-
+                               check_injected_reused_backup_sync_error(opts, fd, backup_path),
                              :ok <- :file.sync(fd) do
                           notify_fs_op(opts, {:sync_backup_file, backup_path})
 

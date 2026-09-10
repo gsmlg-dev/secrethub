@@ -1493,37 +1493,46 @@ defmodule SecretHub.Agent.PKIBundleTest do
         bundle_sha256: String.duplicate("b", 64)
       }
 
+      tracer1 = start_op_tracer()
+
       assert :ok =
-               AtomicStore.write_watermark(bundle_dir, dummy_val, record_operations_to: self())
+               AtomicStore.write_watermark(bundle_dir, dummy_val, record_operations_to: tracer1)
 
       wm_path = Path.join(bundle_dir, "watermark.json")
+      ops1 = get_traced_ops(tracer1)
 
       # Strict ordering assertion: rename precedes fsync
-      assert_receive {:atomic_store_op, {:rename_watermark, ^wm_path}}
-      assert_receive {:atomic_store_op, {:fsync_watermark_dir, ^bundle_dir}}
-      refute_receive {:atomic_store_op, _}
+      assert ops1 == [
+               {:rename_watermark, wm_path},
+               {:fsync_watermark_dir, bundle_dir}
+             ]
 
       # 2. Full publication via write_bundle
       bundle_dir_pub = Path.join(tmp_dir, "pki_op_tracing_pub_test")
       File.mkdir_p!(bundle_dir_pub)
 
+      tracer2 = start_op_tracer()
+
       assert {:ok, _} =
                AtomicStore.write_bundle(bundle_dir_pub, bundle,
                  now: now,
-                 record_operations_to: self()
+                 record_operations_to: tracer2
                )
 
       pub_wm_path = Path.join(bundle_dir_pub, "watermark.json")
       pub_gen_dir = Path.join([bundle_dir_pub, "generations", to_string(bundle["generation"])])
       pub_gens_dir = Path.join(bundle_dir_pub, "generations")
 
-      assert_receive {:atomic_store_op, {:rename_generation, ^pub_gen_dir}}
-      assert_receive {:atomic_store_op, {:fsync_generations_dir, ^pub_gens_dir}}
-      assert_receive {:atomic_store_op, {:rename_watermark, ^pub_wm_path}}
-      assert_receive {:atomic_store_op, {:fsync_watermark_dir, ^bundle_dir_pub}}
-      assert_receive {:atomic_store_op, {:switch_symlink, _gen}}
-      assert_receive {:atomic_store_op, {:fsync_base_dir, ^bundle_dir_pub}}
-      refute_receive {:atomic_store_op, _}
+      ops2 = get_traced_ops(tracer2)
+
+      assert ops2 == [
+               {:rename_generation, pub_gen_dir},
+               {:fsync_generations_dir, pub_gens_dir},
+               {:rename_watermark, pub_wm_path},
+               {:fsync_watermark_dir, bundle_dir_pub},
+               {:switch_symlink, bundle["generation"]},
+               {:fsync_base_dir, bundle_dir_pub}
+             ]
     end
 
     test "unified recovery quarantines conflicting retained generations with different CA keys",
@@ -4295,18 +4304,143 @@ defmodule SecretHub.Agent.PKIBundleTest do
       File.write!(bak_path, raw_json)
 
       # 1. Trace actual operation order
+      tracer = start_op_tracer()
+
       assert :ok =
                AtomicStore.repair_outbox_metadata(
                  bundle_dir,
                  %{agent_id: "agent-trace-test"},
-                 record_operations_to: self()
+                 record_operations_to: tracer
                )
 
-      assert_receive {:atomic_store_op, {:validate_backup, ^bak_path}}
-      assert_receive {:atomic_store_op, {:sync_backup_file, ^bak_path}}
-      assert_receive {:atomic_store_op, {:sync_parent_dir, ^bundle_dir}}
-      assert_receive {:atomic_store_op, {:replace_active_outbox, ^outbox_path}}
-      assert_receive {:atomic_store_op, {:repair_outbox_metadata, ^bak_path}}
+      ops = get_traced_ops(tracer)
+
+      # Deterministic, ordered arrival assertions requiring:
+      # validate_backup -> sync_backup_file -> sync_parent_dir -> replace_active_outbox
+      assert_operation_order(ops, [
+        {:validate_backup, bak_path},
+        {:sync_backup_file, bak_path},
+        {:sync_parent_dir, bundle_dir},
+        {:replace_active_outbox, outbox_path}
+      ])
+
+      assert ops == [
+               {:validate_backup, bak_path},
+               {:sync_backup_file, bak_path},
+               {:sync_parent_dir, bundle_dir},
+               {:replace_active_outbox, outbox_path},
+               {:persist_observation_sequence, 1},
+               {:repair_outbox_metadata, bak_path}
+             ]
     end
+
+    test "order verification predicate rejects deliberately reordered traces (e.g. outbox replacement before backup sync)",
+         %{tmp_dir: tmp_dir} do
+      bak_path = Path.join(tmp_dir, "observation_sequence.json.bak-dummy")
+      outbox_path = Path.join(tmp_dir, "observation_sequence.json")
+      bundle_dir = tmp_dir
+
+      expected_order = [
+        {:validate_backup, bak_path},
+        {:sync_backup_file, bak_path},
+        {:sync_parent_dir, bundle_dir},
+        {:replace_active_outbox, outbox_path}
+      ]
+
+      # 1. Valid trace passes
+      valid_trace = [
+        {:validate_backup, bak_path},
+        {:sync_backup_file, bak_path},
+        {:sync_parent_dir, bundle_dir},
+        {:replace_active_outbox, outbox_path},
+        {:persist_observation_sequence, 1},
+        {:repair_outbox_metadata, bak_path}
+      ]
+
+      assert :ok = assert_operation_order(valid_trace, expected_order)
+
+      # 2. Negative test: replace_active_outbox happens before sync_backup_file
+      reordered_outbox_first = [
+        {:validate_backup, bak_path},
+        {:replace_active_outbox, outbox_path},
+        {:sync_backup_file, bak_path},
+        {:sync_parent_dir, bundle_dir}
+      ]
+
+      assert_raise ExUnit.AssertionError, fn ->
+        assert_operation_order(reordered_outbox_first, expected_order)
+      end
+
+      # 3. Negative test: sync_parent_dir happens before sync_backup_file
+      reordered_parent_first = [
+        {:validate_backup, bak_path},
+        {:sync_parent_dir, bundle_dir},
+        {:sync_backup_file, bak_path},
+        {:replace_active_outbox, outbox_path}
+      ]
+
+      assert_raise ExUnit.AssertionError, fn ->
+        assert_operation_order(reordered_parent_first, expected_order)
+      end
+
+      # 4. Negative test: sync_backup_file omitted completely
+      missing_sync_step = [
+        {:validate_backup, bak_path},
+        {:sync_parent_dir, bundle_dir},
+        {:replace_active_outbox, outbox_path}
+      ]
+
+      assert_raise ExUnit.AssertionError, fn ->
+        assert_operation_order(missing_sync_step, expected_order)
+      end
+    end
+  end
+
+  # --- Tracing and Order Assertion Helpers ---
+
+  defp start_op_tracer do
+    parent = self()
+    spawn_link(fn -> op_tracer_loop([], parent) end)
+  end
+
+  defp op_tracer_loop(acc, parent) do
+    receive do
+      {:atomic_store_op, op} ->
+        op_tracer_loop([op | acc], parent)
+
+      {:get_ops, caller} ->
+        send(caller, {:traced_ops, Enum.reverse(acc)})
+    end
+  end
+
+  defp get_traced_ops(tracer, timeout \\ 1000) do
+    send(tracer, {:get_ops, self()})
+
+    receive do
+      {:traced_ops, ops} -> ops
+    after
+      timeout -> flunk("Timed out waiting for traced ops")
+    end
+  end
+
+  defp assert_operation_order(actual_ops, expected_ops) do
+    expected_tags = Enum.map(expected_ops, fn {tag, _} -> tag end)
+    filtered_ops = Enum.filter(actual_ops, fn {tag, _} -> tag in expected_tags end)
+
+    if filtered_ops != expected_ops do
+      flunk("""
+      Operation order assertion failed!
+      Expected ordered subsequence:
+      #{inspect(expected_ops, pretty: true)}
+
+      Actual filtered operations:
+      #{inspect(filtered_ops, pretty: true)}
+
+      All captured operations:
+      #{inspect(actual_ops, pretty: true)}
+      """)
+    end
+
+    :ok
   end
 end
