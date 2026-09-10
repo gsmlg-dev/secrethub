@@ -430,18 +430,15 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
           %{
             state
-            | needs_repair: true,
-              outbox_restriction: :corrupted_outbox,
-              recovery_mode: :quarantined,
-              status: "recovery_required",
-              last_error_code: state.trust_recovery_restriction || :corrupted_outbox,
+            | outbox_restriction: :corrupted_outbox,
+              observation_sequence: 0,
               last_error_detail:
                 if(state.trust_recovery_restriction,
                   do: state.last_error_detail,
                   else: inspect(reason)
-                ),
-              observation_sequence: 0
+                )
           }
+          |> derive_recovery_state()
 
         {:error, reason} ->
           Logger.error("Failed to read outbox during init: #{inspect(reason)}")
@@ -531,37 +528,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                     send(self(), :drain_outbox)
                   end
 
-                  new_outbox_rest = nil
-
-                  new_recovery_mode =
-                    if state.trust_recovery_restriction, do: :quarantined, else: :none
-
-                  new_status =
-                    if state.trust_recovery_restriction do
-                      "recovery_required"
-                    else
-                      if state.needs_repair, do: "initializing", else: "applied"
-                    end
-
-                  new_error_code =
-                    if state.trust_recovery_restriction,
-                      do: state.trust_recovery_restriction,
-                      else: nil
-
-                  new_error_detail =
-                    if state.trust_recovery_restriction,
-                      do: state.last_error_detail,
-                      else: nil
-
-                  %{
-                    state
-                    | outbox_restriction: new_outbox_rest,
-                      recovery_mode: new_recovery_mode,
-                      status: new_status,
-                      last_error_code: new_error_code,
-                      last_error_detail: new_error_detail,
-                      observation_sequence: seq
-                  }
+                  %{state | outbox_restriction: nil, observation_sequence: seq}
+                  |> derive_recovery_state()
 
                 _ ->
                   state
@@ -742,23 +710,21 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           if !force and is_disk_already_matching do
             case maybe_repair_watermark(state.base_dir, validated) do
               :ok ->
-                new_state = %{
-                  state
-                  | lkg_generation: validated.generation,
-                    lkg_crl_number: validated.crl_number,
-                    lkg_ca_fingerprint: validated.ca_fingerprint,
-                    lkg_bundle_sha256: validated.bundle_sha256,
-                    installed_generation: validated.generation,
-                    installed_crl_number: validated.crl_number,
-                    installed_ca_fingerprint: validated.ca_fingerprint,
-                    installed_bundle_sha256: validated.bundle_sha256,
-                    needs_repair: false,
-                    status: "applied",
-                    recovery_mode: :none,
-                    last_error_code: nil,
-                    last_error_detail: nil,
-                    retry_attempt: 0
-                }
+                new_state =
+                  %{
+                    state
+                    | lkg_generation: validated.generation,
+                      lkg_crl_number: validated.crl_number,
+                      lkg_ca_fingerprint: validated.ca_fingerprint,
+                      lkg_bundle_sha256: validated.bundle_sha256,
+                      installed_generation: validated.generation,
+                      installed_crl_number: validated.crl_number,
+                      installed_ca_fingerprint: validated.ca_fingerprint,
+                      installed_bundle_sha256: validated.bundle_sha256,
+                      retry_attempt: 0,
+                      trust_recovery_restriction: nil
+                  }
+                  |> derive_recovery_state()
 
                 raw_receipt = build_receipt(new_state, "applied", now)
 
@@ -817,24 +783,22 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           else
             case AtomicStore.write_bundle(state.base_dir, bundle, opts) do
               {:ok, _result} ->
-                new_state = %{
-                  state
-                  | lkg_generation: validated.generation,
-                    lkg_crl_number: validated.crl_number,
-                    lkg_ca_fingerprint: validated.ca_fingerprint,
-                    lkg_bundle_sha256: validated.bundle_sha256,
-                    installed_generation: validated.generation,
-                    installed_crl_number: validated.crl_number,
-                    installed_ca_fingerprint: validated.ca_fingerprint,
-                    installed_bundle_sha256: validated.bundle_sha256,
-                    last_applied_at: now,
-                    needs_repair: false,
-                    last_error_code: nil,
-                    last_error_detail: nil,
-                    status: "applied",
-                    recovery_mode: :none,
-                    retry_attempt: 0
-                }
+                new_state =
+                  %{
+                    state
+                    | lkg_generation: validated.generation,
+                      lkg_crl_number: validated.crl_number,
+                      lkg_ca_fingerprint: validated.ca_fingerprint,
+                      lkg_bundle_sha256: validated.bundle_sha256,
+                      installed_generation: validated.generation,
+                      installed_crl_number: validated.crl_number,
+                      installed_ca_fingerprint: validated.ca_fingerprint,
+                      installed_bundle_sha256: validated.bundle_sha256,
+                      last_applied_at: now,
+                      retry_attempt: 0,
+                      trust_recovery_restriction: nil
+                  }
+                  |> derive_recovery_state()
 
                 raw_receipt = build_receipt(new_state, "applied", now)
 
@@ -1182,17 +1146,14 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
         %{
           state
-          | needs_repair: true,
-            outbox_restriction: :corrupted_outbox,
-            recovery_mode: :quarantined,
-            status: "recovery_required",
-            last_error_code: state.trust_recovery_restriction || :corrupted_outbox,
+          | outbox_restriction: :corrupted_outbox,
             last_error_detail:
               if(state.trust_recovery_restriction,
                 do: state.last_error_detail,
                 else: inspect(reason)
               )
         }
+        |> derive_recovery_state()
 
       {:error, reason} ->
         Logger.error("Failed to read outbox for draining: #{inspect(reason)}")
@@ -1342,6 +1303,50 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
       {:error, _reason} ->
         AtomicStore.write_watermark(base_dir, validated)
+    end
+  end
+
+  defp derive_recovery_state(state) do
+    cond do
+      state.trust_recovery_restriction != nil ->
+        %{
+          state
+          | recovery_mode: :quarantined,
+            status: "recovery_required",
+            needs_repair: true,
+            last_error_code: state.trust_recovery_restriction,
+            last_error_detail:
+              state.last_error_detail ||
+                "Trust bundle state requires operator recovery or authorization."
+        }
+
+      state.outbox_restriction != nil ->
+        %{
+          state
+          | recovery_mode: :quarantined,
+            status: "recovery_required",
+            needs_repair: true,
+            last_error_code: state.outbox_restriction,
+            last_error_detail:
+              state.last_error_detail ||
+                "Durable outbox corrupted; repair or recovery required."
+        }
+
+      true ->
+        is_installed = state.installed_generation > 0
+
+        %{
+          state
+          | recovery_mode: :none,
+            status:
+              if(is_installed,
+                do: "applied",
+                else: if(state.needs_repair, do: "initializing", else: "applied")
+              ),
+            needs_repair: if(is_installed, do: false, else: state.needs_repair),
+            last_error_code: nil,
+            last_error_detail: nil
+        }
     end
   end
 end

@@ -21,13 +21,14 @@ This placed `TrustBundleManager` into `recovery_mode: :quarantined`, which block
 The fixed version handles recovery automatically upon startup:
 
 1. **Identity Source of Truth**: On startup or upon completion of enrollment, `TrustBundleManager` resolves the verified enrolled Agent identity from `IdentityStore.load(state_dir)` and `RuntimeBootstrapper`.
-2. **Immutable Pre-Repair Backup**: When `TrustBundleManager.bind_identity/2` is invoked, `AtomicStore.repair_outbox_metadata/3` is executed. Before modifying the active outbox, it durably creates an immutable, content-addressed backup file:
+2. **Immutable Pre-Repair Backup & Resumption Safety**: When `TrustBundleManager.bind_identity/2` is invoked, `AtomicStore.repair_outbox_metadata/3` is executed. Before modifying the active outbox, it durably creates an immutable, content-addressed backup file:
    ```
    <state_dir>/pki/client-auth/observation_sequence.json.bak-<content_sha256>
    ```
    - Backups are created exclusively (`:exclusive` flag) to guarantee existing files are never overwritten.
    - Symlinks and directories occupying the backup path are strictly rejected without being followed.
    - Backup file contents and directory entries are synchronized (`fsync`) to disk before active state is modified.
+   - **Resumption & Replay Safety**: If a prior repair attempt was interrupted after backup creation (e.g. system crash or I/O error during active outbox replacement), retrying repair (even after a process restart) safely validates and reuses the existing byte-identical content-addressed backup file. Mismatching or truncated backups remain an error.
 3. **Safe In-Place Repair**:
    - Backfills missing or empty `agent_id` with the local enrolled identity.
    - Backfills missing timestamps with the original enqueue timestamp.
@@ -36,6 +37,10 @@ The fixed version handles recovery automatically upon startup:
 4. **Scoped Unquarantine & Trust Isolation**: Once the repaired outbox passes strict schema validation, `TrustBundleManager` clears only the outbox-related restriction (`outbox_restriction: nil`).
    - If no trust-level restriction is active, the quarantine is lifted (`recovery_mode: :none`), active status is restored, and outbox draining resumes.
    - If the manager is under an independent trust quarantine (e.g. corrupt watermark or conflicting bundle evidence), trust quarantine **remains strictly enforced** (`recovery_mode: :quarantined`, `status: "recovery_required"`).
+5. **Authorized Trust Recovery Transitions**: When an operator authorizes recovery (`process_bundle/3` with `force: true`):
+   - Upon durable commitment of validated trust material to disk, the resolved `trust_recovery_restriction` is cleared.
+   - Any independently unresolved outbox restriction is preserved.
+   - Manager `recovery_mode` and `status` are derived consistently: if all restrictions are resolved, `recovery_mode` transitions to `:none` and `status` to `"applied"`, allowing subsequent updates without `force: true`. Rebinding identity does not re-quarantine the manager.
 
 ---
 

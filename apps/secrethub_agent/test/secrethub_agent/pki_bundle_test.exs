@@ -3573,5 +3573,435 @@ defmodule SecretHub.Agent.PKIBundleTest do
 
       Supervisor.stop(sup)
     end
+
+    # --- Finding 1: Interrupted Outbox Repair Resumption ---
+
+    test "interrupted outbox metadata repair resumes and preserves durable backup across retries and restarts",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_interrupted_repair_resumption_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      content_sha256 = :crypto.hash(:sha256, raw_json) |> Base.encode16(case: :lower)
+      bak_path = Path.join(bundle_dir, "observation_sequence.json.bak-" <> content_sha256)
+
+      # 1. First repair attempt: backup succeeds, but active-outbox replacement fails
+      assert {:error, {:repair_persistence_failed, :eio}} =
+               AtomicStore.repair_outbox_metadata(
+                 bundle_dir,
+                 %{agent_id: "agent-interrupted"},
+                 inject_sequence_rename_error: :eio
+               )
+
+      # Durable backup file was created and is byte-for-byte identical to pre-repair outbox
+      assert File.exists?(bak_path)
+      assert File.read!(bak_path) == raw_json
+
+      # Active outbox bytes remain completely unmodified
+      assert File.read!(outbox_path) == raw_json
+
+      # 2. Simulate process restart between attempts: TrustBundleManager starts against interrupted state
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          agent_id: "agent-interrupted",
+          name: :test_interrupted_repair_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.recovery_mode == :quarantined
+      assert status.outbox_restriction == :corrupted_outbox
+
+      # 3. Retry without injection: reuses validated existing backup and completes repair
+      assert :ok = TrustBundleManager.bind_identity(manager, "agent-interrupted")
+
+      status_after = TrustBundleManager.status(manager)
+      assert status_after.recovery_mode == :none
+      assert status_after.outbox_restriction == nil
+      assert status_after.trust_recovery_restriction == nil
+
+      # Original backup bytes remain intact throughout
+      assert File.read!(bak_path) == raw_json
+
+      # Active outbox now contains repaired agent_id
+      assert {:ok, %{highest_sequence: 1, outbox: [repaired_entry]}} =
+               AtomicStore.read_outbox(bundle_dir)
+
+      assert repaired_entry["receipt"]["agent_id"] == "agent-interrupted"
+      assert repaired_entry["sequence"] == 1
+
+      GenServer.stop(manager)
+
+      # 4. Restart again after successful repair; manager starts cleanly without quarantine
+      {:ok, manager2} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          agent_id: "agent-interrupted",
+          name: :test_interrupted_repair_manager_restarted
+        )
+
+      status_restart = TrustBundleManager.status(manager2)
+      assert status_restart.recovery_mode == :none
+      assert status_restart.outbox_restriction == nil
+
+      GenServer.stop(manager2)
+    end
+
+    test "repair_outbox_metadata rejects truncated or mismatching existing backup file",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_truncated_backup_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      content_sha256 = :crypto.hash(:sha256, raw_json) |> Base.encode16(case: :lower)
+      bak_path = Path.join(bundle_dir, "observation_sequence.json.bak-" <> content_sha256)
+
+      # Truncated or incomplete backup file
+      File.write!(bak_path, binary_part(raw_json, 0, div(byte_size(raw_json), 2)))
+
+      # Repair must reject incomplete backup and not modify active state
+      assert {:error, {:backup_failed, {:backup_already_exists, ^bak_path}}} =
+               AtomicStore.repair_outbox_metadata(bundle_dir, %{agent_id: "agent-1"})
+
+      assert File.read!(outbox_path) == raw_json
+    end
+
+    # --- Finding 2: Authorized Trust Recovery State Transitions ---
+
+    test "authorized trust recovery clears trust restriction, avoids rebinding re-quarantine, and allows subsequent unforced updates",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_authorized_recovery_lifecycle_test")
+      File.mkdir_p!(bundle_dir)
+
+      # 1. Damaged trust watermark with no surviving bundle
+      File.write!(
+        Path.join(bundle_dir, "watermark.json"),
+        "{\"highest_seen_generation\": 10, \"highest_seen_crl_number\": 0}"
+      )
+
+      # 2. Supply verified Agent identity
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          agent_id: "agent-verified-lifecycle",
+          name: :test_authorized_recovery_lifecycle_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.recovery_mode == :quarantined
+      assert status.trust_recovery_restriction == :damaged_state_recovery_required
+      assert status.status == "recovery_required"
+      assert status.recovery_reasons == [:damaged_state_recovery_required]
+
+      # 3. Perform explicitly authorized recovery operation (force: true)
+      assert {:ok, receipt} =
+               TrustBundleManager.process_bundle(manager, bundle, force: true, now: now)
+
+      assert receipt["status"] == "applied"
+
+      # 4. Assert resolved trust restriction is cleared
+      status_after = TrustBundleManager.status(manager)
+      assert status_after.trust_recovery_restriction == nil
+      assert status_after.outbox_restriction == nil
+      assert status_after.recovery_mode == :none
+      assert status_after.status == "applied"
+      assert status_after.needs_repair == false
+      assert status_after.recovery_reasons == []
+
+      # 5. Bind the same identity again; quarantine must not return
+      assert :ok = TrustBundleManager.bind_identity(manager, "agent-verified-lifecycle")
+      status_rebound = TrustBundleManager.status(manager)
+      assert status_rebound.recovery_mode == :none
+      assert status_rebound.trust_recovery_restriction == nil
+      assert status_rebound.status == "applied"
+      assert status_rebound.recovery_reasons == []
+
+      # 6. Process a newer valid bundle (generation 2) without force; it must succeed
+      transcript2 =
+        [
+          bundle["schema_version"],
+          bundle["authority"],
+          2,
+          bundle["ca_fingerprint"],
+          bundle["crl_number"],
+          bundle["crl_der_sha256"],
+          bundle["this_update"],
+          bundle["next_update"],
+          bundle["ca_bundle_pem"],
+          bundle["crl_pem"]
+        ]
+        |> Enum.map(&to_string/1)
+        |> Enum.join("|")
+
+      bundle_gen2 =
+        bundle
+        |> Map.put("generation", 2)
+        |> Map.put(
+          "bundle_sha256",
+          :crypto.hash(:sha256, transcript2) |> Base.encode16(case: :lower)
+        )
+
+      assert {:ok, receipt2} =
+               TrustBundleManager.process_bundle(manager, bundle_gen2, now: now)
+
+      assert receipt2["status"] == "applied"
+      status_gen2 = TrustBundleManager.status(manager)
+      assert status_gen2.current_generation == 2
+      assert status_gen2.recovery_mode == :none
+      assert status_gen2.status == "applied"
+
+      GenServer.stop(manager)
+
+      # 7. Restart and verify consistent recovered state
+      {:ok, restarted_manager} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          agent_id: "agent-verified-lifecycle",
+          name: :test_authorized_recovery_lifecycle_manager_restarted
+        )
+
+      status_restarted = TrustBundleManager.status(restarted_manager)
+      assert status_restarted.recovery_mode == :none
+      assert status_restarted.status == "applied"
+      assert status_restarted.trust_recovery_restriction == nil
+      assert status_restarted.outbox_restriction == nil
+      assert status_restarted.current_generation == 2
+
+      GenServer.stop(restarted_manager)
+    end
+
+    test "failed validation or publication during recovery retains trust restriction",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_failed_recovery_retains_restriction_test")
+      File.mkdir_p!(bundle_dir)
+
+      # Damaged watermark with no surviving bundle
+      File.write!(
+        Path.join(bundle_dir, "watermark.json"),
+        "{\"highest_seen_generation\": 10, \"highest_seen_crl_number\": 0}"
+      )
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          agent_id: "agent-failed-rec-test",
+          name: :test_failed_rec_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.recovery_mode == :quarantined
+      assert status.trust_recovery_restriction == :damaged_state_recovery_required
+
+      # 1. Validation failure (unsupported schema version)
+      invalid_bundle = Map.put(bundle, "schema_version", 99)
+
+      assert {:error, :invalid_schema_version, receipt1} =
+               TrustBundleManager.process_bundle(manager, invalid_bundle, force: true, now: now)
+
+      assert receipt1["status"] == "failed"
+      status1 = TrustBundleManager.status(manager)
+      assert status1.trust_recovery_restriction == :damaged_state_recovery_required
+      assert status1.recovery_mode == :quarantined
+      assert status1.status == "failed"
+
+      # 2. Publication failure (injected watermark fsync error)
+      assert {:error, :watermark_commit_failed, receipt2} =
+               TrustBundleManager.process_bundle(
+                 manager,
+                 bundle,
+                 force: true,
+                 inject_watermark_fsync_error: :eio,
+                 now: now
+               )
+
+      assert receipt2["status"] == "failed"
+      status2 = TrustBundleManager.status(manager)
+      assert status2.trust_recovery_restriction == :damaged_state_recovery_required
+      assert status2.recovery_mode == :quarantined
+
+      GenServer.stop(manager)
+    end
+
+    test "outbox-only repair preserves independent trust restriction",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_outbox_repair_preserves_trust_test")
+      File.mkdir_p!(bundle_dir)
+
+      # 1. Damaged trust watermark with no surviving bundle
+      File.write!(
+        Path.join(bundle_dir, "watermark.json"),
+        "{\"highest_seen_generation\": 10, \"highest_seen_crl_number\": 0}"
+      )
+
+      # 2. Corrupted outbox (nil agent_id)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      File.write!(outbox_path, Jason.encode!(raw_data))
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          name: :test_outbox_repair_preserves_trust_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.recovery_mode == :quarantined
+      assert status.trust_recovery_restriction == :damaged_state_recovery_required
+      assert status.outbox_restriction == :corrupted_outbox
+
+      # 3. Repair outbox via bind_identity
+      assert :ok = TrustBundleManager.bind_identity(manager, "agent-outbox-only")
+
+      status_after = TrustBundleManager.status(manager)
+      # Outbox restriction was cleared
+      assert status_after.outbox_restriction == nil
+      # Trust restriction remains strictly enforced!
+      assert status_after.trust_recovery_restriction == :damaged_state_recovery_required
+      assert status_after.recovery_mode == :quarantined
+      assert status_after.status == "recovery_required"
+
+      # Candidate bundle submissions without force remain rejected
+      assert {:error, :damaged_state_recovery_required, _} =
+               TrustBundleManager.process_bundle(manager, bundle, now: now)
+
+      GenServer.stop(manager)
+    end
+
+    test "successful trust recovery does not clear independently unresolved outbox restriction",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_trust_recovery_preserves_outbox_test")
+      File.mkdir_p!(bundle_dir)
+
+      # 1. Damaged trust watermark with no surviving bundle
+      File.write!(
+        Path.join(bundle_dir, "watermark.json"),
+        "{\"highest_seen_generation\": 10, \"highest_seen_crl_number\": 0}"
+      )
+
+      # 2. Corrupted outbox (nil agent_id)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      File.write!(outbox_path, Jason.encode!(raw_data))
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          bundle_dir: bundle_dir,
+          agent_id: "agent-dual-restriction",
+          name: :test_trust_recovery_preserves_outbox_manager
+        )
+
+      status = TrustBundleManager.status(manager)
+      assert status.recovery_mode == :quarantined
+      assert status.trust_recovery_restriction == :damaged_state_recovery_required
+      assert status.outbox_restriction == :corrupted_outbox
+
+      # 3. Perform authorized trust recovery (force: true)
+      # Trust material commits to disk, but receipt persistence fails because outbox is corrupted.
+      assert {:error, :receipt_persistence_failed, nil} =
+               TrustBundleManager.process_bundle(manager, bundle, force: true, now: now)
+
+      status_after_trust = TrustBundleManager.status(manager)
+      # Trust recovery committed to disk and trust restriction resolved/cleared:
+      assert status_after_trust.trust_recovery_restriction == nil
+      # Outbox restriction was NOT cleared by trust recovery:
+      assert status_after_trust.outbox_restriction == :corrupted_outbox
+      assert status_after_trust.recovery_mode == :quarantined
+      assert status_after_trust.status == "recovery_required"
+      assert status_after_trust.recovery_reasons == [:corrupted_outbox]
+
+      # Candidate bundle submissions without force remain rejected because manager is still quarantined
+      assert {:error, rejected_code, _} =
+               TrustBundleManager.process_bundle(manager, bundle, now: now)
+
+      assert rejected_code in [:damaged_state_recovery_required, :receipt_persistence_failed]
+      assert TrustBundleManager.status(manager).recovery_mode == :quarantined
+
+      # 4. Now repair outbox via bind_identity
+      assert :ok = TrustBundleManager.bind_identity(manager, "agent-dual-restriction")
+
+      status_final = TrustBundleManager.status(manager)
+      assert status_final.outbox_restriction == nil
+      assert status_final.trust_recovery_restriction == nil
+      assert status_final.recovery_mode == :none
+      assert status_final.status == "applied"
+      assert status_final.needs_repair == false
+      assert status_final.recovery_reasons == []
+
+      GenServer.stop(manager)
+    end
   end
 end

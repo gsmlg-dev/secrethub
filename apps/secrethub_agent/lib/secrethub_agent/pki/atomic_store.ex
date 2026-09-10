@@ -583,7 +583,7 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         {:error, {:is_directory, backup_path}}
 
       {:ok, %File.Stat{type: :regular}} ->
-        {:error, {:backup_already_exists, backup_path}}
+        validate_and_reuse_existing_backup(base_dir, backup_path, content, content_sha256)
 
       {:ok, %File.Stat{type: other}} ->
         {:error, {:unexpected_file_type, other, backup_path}}
@@ -599,9 +599,52 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
              :ok <- fsync_dir(base_dir) do
           {:ok, backup_path}
         else
+          {:error, {:backup_already_exists, ^backup_path}} ->
+            validate_and_reuse_existing_backup(base_dir, backup_path, content, content_sha256)
+
           {:error, reason} ->
             {:error, reason}
         end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp validate_and_reuse_existing_backup(base_dir, backup_path, content, expected_sha256) do
+    case File.lstat(backup_path) do
+      {:ok, %File.Stat{type: :regular}} ->
+        case File.read(backup_path) do
+          {:ok, existing_content} when existing_content === content ->
+            existing_sha256 =
+              :crypto.hash(:sha256, existing_content) |> Base.encode16(case: :lower)
+
+            if existing_sha256 === expected_sha256 do
+              with :ok <- File.chmod(backup_path, 0o600),
+                   :ok <- fsync_dir(base_dir) do
+                {:ok, backup_path}
+              else
+                {:error, reason} -> {:error, reason}
+              end
+            else
+              {:error, {:backup_already_exists, backup_path}}
+            end
+
+          {:ok, _mismatch_or_incomplete} ->
+            {:error, {:backup_already_exists, backup_path}}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:ok, %File.Stat{type: :symlink}} ->
+        {:error, {:symlink_detected, backup_path}}
+
+      {:ok, %File.Stat{type: :directory}} ->
+        {:error, {:is_directory, backup_path}}
+
+      {:ok, %File.Stat{type: other}} ->
+        {:error, {:unexpected_file_type, other, backup_path}}
 
       {:error, reason} ->
         {:error, reason}
