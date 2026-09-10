@@ -34,6 +34,8 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
     # Synchronization status
     status: "initializing",
     recovery_mode: :none,
+    trust_recovery_restriction: nil,
+    outbox_restriction: nil,
     observation_sequence: 0,
     last_error_code: nil,
     last_error_detail: nil,
@@ -378,6 +380,7 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                   installed_bundle_sha256: nil,
                   needs_repair: true,
                   recovery_mode: :quarantined,
+                  trust_recovery_restriction: :damaged_state_recovery_required,
                   status: "recovery_required",
                   last_error_code: :damaged_state_recovery_required,
                   last_error_detail:
@@ -402,6 +405,7 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
                 installed_bundle_sha256: nil,
                 needs_repair: true,
                 recovery_mode: :quarantined,
+                trust_recovery_restriction: :damaged_state_recovery_required,
                 status: "recovery_required",
                 last_error_code: :damaged_state_recovery_required,
                 last_error_detail:
@@ -427,10 +431,15 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
           %{
             state
             | needs_repair: true,
+              outbox_restriction: :corrupted_outbox,
               recovery_mode: :quarantined,
               status: "recovery_required",
-              last_error_code: :corrupted_outbox,
-              last_error_detail: inspect(reason),
+              last_error_code: state.trust_recovery_restriction || :corrupted_outbox,
+              last_error_detail:
+                if(state.trust_recovery_restriction,
+                  do: state.last_error_detail,
+                  else: inspect(reason)
+                ),
               observation_sequence: 0
           }
 
@@ -502,58 +511,71 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
         state = %{state | agent_id: agent_id}
 
         # Attempt to repair outbox metadata if any entries are missing agent_id
-        case AtomicStore.repair_outbox_metadata(state.base_dir, %{agent_id: agent_id}) do
+        repair_res =
+          AtomicStore.repair_outbox_metadata(
+            state.base_dir,
+            %{agent_id: agent_id},
+            state.store_opts
+          )
+
+        case repair_res do
           :ok ->
             Logger.info("TrustBundleManager: bound identity and repaired outbox metadata",
               agent_id: agent_id
             )
 
+            state =
+              case AtomicStore.read_outbox(state.base_dir) do
+                {:ok, %{highest_sequence: seq, outbox: ob}} ->
+                  if ob != [] do
+                    send(self(), :drain_outbox)
+                  end
+
+                  new_outbox_rest = nil
+
+                  new_recovery_mode =
+                    if state.trust_recovery_restriction, do: :quarantined, else: :none
+
+                  new_status =
+                    if state.trust_recovery_restriction do
+                      "recovery_required"
+                    else
+                      if state.needs_repair, do: "initializing", else: "applied"
+                    end
+
+                  new_error_code =
+                    if state.trust_recovery_restriction,
+                      do: state.trust_recovery_restriction,
+                      else: nil
+
+                  new_error_detail =
+                    if state.trust_recovery_restriction,
+                      do: state.last_error_detail,
+                      else: nil
+
+                  %{
+                    state
+                    | outbox_restriction: new_outbox_rest,
+                      recovery_mode: new_recovery_mode,
+                      status: new_status,
+                      last_error_code: new_error_code,
+                      last_error_detail: new_error_detail,
+                      observation_sequence: seq
+                  }
+
+                _ ->
+                  state
+              end
+
+            {:reply, :ok, state}
+
           {:error, reason} ->
             Logger.warning(
               "TrustBundleManager: outbox repair returned error on bind_identity: #{inspect(reason)}"
             )
+
+            {:reply, {:error, {:repair_failed, reason}}, state}
         end
-
-        # If manager was quarantined due to corrupted outbox, re-read outbox
-        state =
-          if state.recovery_mode == :quarantined and state.last_error_code == :corrupted_outbox do
-            case AtomicStore.read_outbox(state.base_dir) do
-              {:ok, %{highest_sequence: seq, outbox: ob}} ->
-                Logger.info(
-                  "TrustBundleManager: outbox validated after identity bind; unquarantining"
-                )
-
-                if ob != [] do
-                  send(self(), :drain_outbox)
-                end
-
-                %{
-                  state
-                  | recovery_mode: :none,
-                    status: if(state.needs_repair, do: "initializing", else: "applied"),
-                    last_error_code: nil,
-                    last_error_detail: nil,
-                    observation_sequence: seq
-                }
-
-              _ ->
-                state
-            end
-          else
-            case AtomicStore.read_outbox(state.base_dir) do
-              {:ok, %{highest_sequence: seq, outbox: ob}} ->
-                if ob != [] do
-                  send(self(), :drain_outbox)
-                end
-
-                %{state | observation_sequence: seq}
-
-              _ ->
-                state
-            end
-          end
-
-        {:reply, :ok, state}
     end
   end
 
@@ -575,6 +597,10 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
 
   @impl true
   def handle_call(:get_status, _from, state) do
+    recovery_reasons =
+      [state.trust_recovery_restriction, state.outbox_restriction]
+      |> Enum.reject(&is_nil/1)
+
     info = %{
       current_generation: state.installed_generation,
       lkg_generation: state.lkg_generation,
@@ -584,6 +610,10 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
       last_applied_at: state.last_applied_at,
       status: state.status,
       recovery_mode: state.recovery_mode,
+      trust_recovery_restriction: state.trust_recovery_restriction,
+      outbox_restriction: state.outbox_restriction,
+      recovery_reasons: recovery_reasons,
+      agent_id: state.agent_id,
       observation_sequence: state.observation_sequence,
       needs_repair: state.needs_repair,
       last_error_code: state.last_error_code,
@@ -1153,10 +1183,15 @@ defmodule SecretHub.Agent.PKI.TrustBundleManager do
         %{
           state
           | needs_repair: true,
+            outbox_restriction: :corrupted_outbox,
             recovery_mode: :quarantined,
             status: "recovery_required",
-            last_error_code: :corrupted_outbox,
-            last_error_detail: inspect(reason)
+            last_error_code: state.trust_recovery_restriction || :corrupted_outbox,
+            last_error_detail:
+              if(state.trust_recovery_restriction,
+                do: state.last_error_detail,
+                else: inspect(reason)
+              )
         }
 
       {:error, reason} ->

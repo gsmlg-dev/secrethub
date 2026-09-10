@@ -2352,8 +2352,11 @@ defmodule SecretHub.Agent.PKIBundleTest do
       # Run repair
       assert :ok = AtomicStore.repair_outbox_metadata(bundle_dir, %{agent_id: "agent-repaired"})
 
-      # Verify original file evidence was preserved in .pre_repair_bak before modification
-      bak_path = Path.join(bundle_dir, "observation_sequence.json.pre_repair_bak")
+      # Verify original file evidence was preserved in immutable content-addressed backup before modification
+      content_sha256 =
+        :crypto.hash(:sha256, Jason.encode!(raw_data)) |> Base.encode16(case: :lower)
+
+      bak_path = Path.join(bundle_dir, "observation_sequence.json.bak-" <> content_sha256)
       assert File.exists?(bak_path)
       assert File.read!(bak_path) == Jason.encode!(raw_data)
 
@@ -2484,7 +2487,9 @@ defmodule SecretHub.Agent.PKIBundleTest do
       File.write!(dl_path, "{\"rejected_observations\": []}")
       File.chmod!(dl_path, 0o000)
 
-      assert {:error, {:dead_letter_persistence_failed, :eacces}} =
+      assert {:error,
+              {:dead_letter_persistence_failed,
+               {:corrupted_dead_letter_archive, {:read_failed, :eacces}}}} =
                AtomicStore.record_rejected_observation(bundle_dir, entry, :some_error, "reason")
 
       # Restore permission and verify original content preserved
@@ -2615,7 +2620,7 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert length(dl_list) == 1
     end
 
-    test "real application startup and runtime bootstrap binds identity and avoids quarantine during bundle and CRL updates (Finding 1)",
+    test "application options and runtime bootstrap handoff binds identity and avoids quarantine during bundle and CRL updates",
          %{tmp_dir: tmp_dir, bundle: bundle, now: now, ca_cert: ca_cert, ca_key: ca_key} do
       bundle_dir = Path.join(tmp_dir, "pki_real_app_startup_test")
       state_dir = Path.join(tmp_dir, "agent_state_dir")
@@ -2825,6 +2830,748 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert receipt["status"] == "applied"
 
       GenServer.stop(manager)
+    end
+
+    test "corrupt watermark with no surviving bundle retains trust quarantine after outbox repair",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_corrupt_wm_and_outbox_test")
+      File.mkdir_p!(bundle_dir)
+      wm_path = Path.join(bundle_dir, "watermark.json")
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      # 1. Corrupt watermark file on disk
+      File.write!(wm_path, "{\"highest_seen_generation\": -1}")
+
+      # 2. Repairable nil-ID outbox on disk
+      raw_outbox = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => DateTime.to_iso8601(now)
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      File.write!(outbox_path, Jason.encode!(raw_outbox))
+
+      # 3. Start manager without initial agent_id
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          name: :test_corrupt_wm_outbox_manager
+        )
+
+      status_init = TrustBundleManager.status(manager)
+      assert status_init.recovery_mode == :quarantined
+
+      # 4. Bind verified identity -> outbox repair succeeds
+      assert :ok = TrustBundleManager.bind_identity(manager, "agent-verified-111")
+
+      # 5. Confirm trust quarantine REMAINS!
+      status_after_bind = TrustBundleManager.status(manager)
+      assert status_after_bind.recovery_mode == :quarantined
+      assert status_after_bind.status == "recovery_required"
+
+      assert status_after_bind.last_error_code in [
+               :damaged_state_recovery_required,
+               "damaged_state_recovery_required"
+             ]
+
+      # 6. Submit valid candidate multiple times without explicit trust recovery
+      # Every attempt must remain rejected!
+      assert {:error, :damaged_state_recovery_required, receipt_err1} =
+               TrustBundleManager.process_bundle(manager, bundle, now: now)
+
+      assert receipt_err1["status"] == "failed"
+
+      assert {:error, :damaged_state_recovery_required, receipt_err2} =
+               TrustBundleManager.process_bundle(manager, bundle, now: now)
+
+      assert receipt_err2["status"] == "failed"
+
+      # 7. Assert watermark and current symlink are completely unchanged
+      assert File.read!(wm_path) == "{\"highest_seen_generation\": -1}"
+      refute File.exists?(Path.join(bundle_dir, "current"))
+
+      GenServer.stop(manager)
+    end
+
+    test "repair_outbox_metadata fails and preserves active outbox when backup path is occupied by a directory",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_backup_failure_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      # Create directory at backup path
+      # Under content-addressed or pre_repair_bak naming:
+      # If we specify backup_path as a directory:
+      backup_dir_path = Path.join(bundle_dir, "backup_as_directory")
+      File.mkdir_p!(backup_dir_path)
+
+      # Calling repair with backup_path occupied by a directory must return error
+      assert {:error, {:backup_failed, _}} =
+               AtomicStore.repair_outbox_metadata(bundle_dir, %{agent_id: "agent-new"},
+                 backup_path: backup_dir_path
+               )
+
+      # Active outbox raw bytes and counters must be completely unchanged
+      assert File.read!(outbox_path) == raw_json
+    end
+
+    test "record_rejected_observation returns structured error on malformed dead-letter entries instead of raising",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_malformed_dl_test")
+      File.mkdir_p!(bundle_dir)
+      dl_path = Path.join(bundle_dir, "dead_letter_observations.json")
+
+      # Put malformed archive containing scalar member [123]
+      File.write!(dl_path, "{\"rejected_observations\": [123]}")
+
+      entry = %{
+        "sequence" => 1,
+        "receipt" => %{
+          "agent_id" => "agent-test",
+          "observation_sequence" => 1,
+          "status" => "failed",
+          "applied_at" => DateTime.to_iso8601(now)
+        }
+      }
+
+      # Calling record_rejected_observation must not raise ArgumentError!
+      # It must return structured error
+      assert {:error,
+              {:dead_letter_persistence_failed,
+               {:corrupted_dead_letter_archive, {:invalid_entry_shape, 123}}}} =
+               AtomicStore.record_rejected_observation(bundle_dir, entry, :some_error, "reason")
+    end
+
+    test "conflicting retained trust evidence maintains trust quarantine after outbox repair",
+         %{tmp_dir: tmp_dir, bundle: bundle, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_conflicting_evidence_test")
+      File.mkdir_p!(bundle_dir)
+      generations_dir = Path.join(bundle_dir, "generations")
+      gen1_dir = Path.join(generations_dir, "gen-1")
+      File.mkdir_p!(gen1_dir)
+
+      # Put damaged/corrupted candidate evidence in generations/gen-1
+      File.write!(Path.join(gen1_dir, "manifest.json"), "{corrupted_manifest")
+
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_outbox = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => DateTime.to_iso8601(now)
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      File.write!(outbox_path, Jason.encode!(raw_outbox))
+
+      # Start manager
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          name: :test_conflicting_evidence_manager
+        )
+
+      status_init = TrustBundleManager.status(manager)
+      assert status_init.recovery_mode == :quarantined
+      assert status_init.trust_recovery_restriction == :damaged_state_recovery_required
+
+      # Bind verified identity
+      assert :ok = TrustBundleManager.bind_identity(manager, "agent-verified-222")
+
+      # Trust quarantine must remain enforced!
+      status_after = TrustBundleManager.status(manager)
+      assert status_after.recovery_mode == :quarantined
+      assert status_after.trust_recovery_restriction == :damaged_state_recovery_required
+      assert status_after.outbox_restriction == nil
+
+      # Candidate bundle submissions remain rejected
+      assert {:error, :damaged_state_recovery_required, _} =
+               TrustBundleManager.process_bundle(manager, bundle, now: now)
+
+      GenServer.stop(manager)
+    end
+
+    test "repair_outbox_metadata fails and preserves active outbox on injected backup write and sync errors",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_backup_injected_error_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      # 1. Injected write error
+      assert {:error, {:backup_failed, :injected_backup_write_error}} =
+               AtomicStore.repair_outbox_metadata(
+                 bundle_dir,
+                 %{agent_id: "agent-1"},
+                 inject_backup_write_error: :injected_backup_write_error
+               )
+
+      assert File.read!(outbox_path) == raw_json
+
+      assert {:error, {:corrupted_outbox, {:missing_receipt_field, "agent_id", 1}}} =
+               AtomicStore.read_observation_sequence(bundle_dir)
+
+      # 2. Injected sync error
+      assert {:error, {:backup_failed, :injected_backup_sync_error}} =
+               AtomicStore.repair_outbox_metadata(
+                 bundle_dir,
+                 %{agent_id: "agent-1"},
+                 inject_backup_sync_error: :injected_backup_sync_error
+               )
+
+      assert File.read!(outbox_path) == raw_json
+
+      assert {:error, {:corrupted_outbox, {:missing_receipt_field, "agent_id", 1}}} =
+               AtomicStore.read_observation_sequence(bundle_dir)
+    end
+
+    test "repair_outbox_metadata refuses to overwrite existing backup and leaves active outbox unchanged",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_backup_overwrite_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      content_sha256 = :crypto.hash(:sha256, raw_json) |> Base.encode16(case: :lower)
+      bak_path = Path.join(bundle_dir, "observation_sequence.json.bak-" <> content_sha256)
+
+      # Create pre-existing backup file with initial evidence
+      File.write!(bak_path, "PRIOR_IMMUTABLE_EVIDENCE")
+
+      # Attempting repair on content with existing backup must fail
+      assert {:error, {:backup_failed, {:backup_already_exists, ^bak_path}}} =
+               AtomicStore.repair_outbox_metadata(bundle_dir, %{agent_id: "agent-new"})
+
+      # Existing backup was NOT modified
+      assert File.read!(bak_path) == "PRIOR_IMMUTABLE_EVIDENCE"
+      # Active outbox bytes and sequence counters are completely unchanged
+      assert File.read!(outbox_path) == raw_json
+    end
+
+    test "repair_outbox_metadata rejects backup symlink without following and preserves active outbox",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_backup_symlink_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+      victim_path = Path.join(bundle_dir, "important_data.txt")
+      File.write!(victim_path, "DO_NOT_OVERWRITE")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      content_sha256 = :crypto.hash(:sha256, raw_json) |> Base.encode16(case: :lower)
+      symlink_path = Path.join(bundle_dir, "observation_sequence.json.bak-" <> content_sha256)
+      File.ln_s!(victim_path, symlink_path)
+
+      # Attempting repair must reject the symlink
+      assert {:error, {:backup_failed, {:symlink_detected, ^symlink_path}}} =
+               AtomicStore.repair_outbox_metadata(bundle_dir, %{agent_id: "agent-new"})
+
+      # Victim file was NOT overwritten
+      assert File.read!(victim_path) == "DO_NOT_OVERWRITE"
+      # Active outbox is unchanged
+      assert File.read!(outbox_path) == raw_json
+    end
+
+    test "bind_identity returns meaningful repair error when backup fails, keeping agent_id and quarantine",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_bind_id_backup_failure_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      # Start manager with injected backup write error
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          name: :test_bind_id_backup_fail_mgr,
+          store_opts: [inject_backup_write_error: :disk_full]
+        )
+
+      assert {:error, {:repair_failed, {:backup_failed, :disk_full}}} =
+               TrustBundleManager.bind_identity(manager, "agent-new-id")
+
+      # Identity was bound, but quarantine remains due to un-repaired outbox
+      status = TrustBundleManager.status(manager)
+      assert status.agent_id == "agent-new-id"
+      assert status.recovery_mode == :quarantined
+      assert status.outbox_restriction == :corrupted_outbox
+
+      # Active outbox on disk was NOT modified
+      assert File.read!(outbox_path) == raw_json
+
+      GenServer.stop(manager)
+    end
+
+    test "interrupted repair or restart does not destroy earliest evidence",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_earliest_evidence_test")
+      File.mkdir_p!(bundle_dir)
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      raw_data = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => nil,
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => ""
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      raw_json = Jason.encode!(raw_data)
+      File.write!(outbox_path, raw_json)
+
+      content_sha256 = :crypto.hash(:sha256, raw_json) |> Base.encode16(case: :lower)
+      bak_path = Path.join(bundle_dir, "observation_sequence.json.bak-" <> content_sha256)
+
+      # First repair creates backup and repairs file
+      assert :ok = AtomicStore.repair_outbox_metadata(bundle_dir, %{agent_id: "agent-1"})
+      assert File.exists?(bak_path)
+      assert File.read!(bak_path) == raw_json
+
+      # Another repair attempt on the already-repaired file (no repair needed)
+      assert :ok = AtomicStore.repair_outbox_metadata(bundle_dir, %{agent_id: "agent-1"})
+
+      # Earliest evidence in backup remains intact
+      assert File.read!(bak_path) == raw_json
+    end
+
+    test "read_dead_letter_observations rejects scalar members: number, string, boolean, null",
+         %{tmp_dir: tmp_dir} do
+      bundle_dir = Path.join(tmp_dir, "pki_dl_scalars_test")
+      File.mkdir_p!(bundle_dir)
+      dl_path = Path.join(bundle_dir, "dead_letter_observations.json")
+
+      for scalar <- [42, "string", true, false, nil] do
+        payload = Jason.encode!(%{"rejected_observations" => [scalar]})
+        File.write!(dl_path, payload)
+
+        assert {:error, {:corrupted_dead_letter_archive, {:invalid_entry_shape, ^scalar}}} =
+                 AtomicStore.read_dead_letter_observations(bundle_dir)
+      end
+    end
+
+    test "read_dead_letter_observations rejects entry with receipt as a scalar or list",
+         %{tmp_dir: tmp_dir} do
+      bundle_dir = Path.join(tmp_dir, "pki_dl_invalid_receipt_test")
+      File.mkdir_p!(bundle_dir)
+      dl_path = Path.join(bundle_dir, "dead_letter_observations.json")
+
+      for invalid_rec <- [123, "not_a_map", ["list"], true, nil] do
+        entry = %{"sequence" => 1, "receipt" => invalid_rec}
+        File.write!(dl_path, Jason.encode!(%{"rejected_observations" => [entry]}))
+
+        assert {:error, {:corrupted_dead_letter_archive, {:invalid_receipt_shape, ^invalid_rec}}} =
+                 AtomicStore.read_dead_letter_observations(bundle_dir)
+      end
+    end
+
+    test "read_dead_letter_observations rejects invalid or inconsistent sequence metadata",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_dl_inconsistent_seq_test")
+      File.mkdir_p!(bundle_dir)
+      dl_path = Path.join(bundle_dir, "dead_letter_observations.json")
+
+      # Negative sequence
+      entry1 = %{
+        "sequence" => -1,
+        "receipt" => %{
+          "agent_id" => "agent-1",
+          "observation_sequence" => -1,
+          "status" => "failed",
+          "applied_at" => DateTime.to_iso8601(now)
+        }
+      }
+
+      File.write!(dl_path, Jason.encode!(%{"rejected_observations" => [entry1]}))
+
+      assert {:error, {:corrupted_dead_letter_archive, {:invalid_sequence, -1}}} =
+               AtomicStore.read_dead_letter_observations(bundle_dir)
+
+      # Non-integer sequence
+      entry2 = %{
+        "sequence" => "one",
+        "receipt" => %{
+          "agent_id" => "agent-1",
+          "observation_sequence" => 1,
+          "status" => "failed",
+          "applied_at" => DateTime.to_iso8601(now)
+        }
+      }
+
+      File.write!(dl_path, Jason.encode!(%{"rejected_observations" => [entry2]}))
+
+      assert {:error, {:corrupted_dead_letter_archive, {:invalid_sequence, "one"}}} =
+               AtomicStore.read_dead_letter_observations(bundle_dir)
+
+      # Inconsistent observation_sequence vs sequence
+      entry3 = %{
+        "sequence" => 1,
+        "receipt" => %{
+          "agent_id" => "agent-1",
+          "observation_sequence" => 2,
+          "status" => "failed",
+          "applied_at" => DateTime.to_iso8601(now)
+        }
+      }
+
+      File.write!(dl_path, Jason.encode!(%{"rejected_observations" => [entry3]}))
+
+      assert {:error, {:corrupted_dead_letter_archive, {:inconsistent_sequence, 1, 2}}} =
+               AtomicStore.read_dead_letter_observations(bundle_dir)
+    end
+
+    test "read_dead_letter_observations rejects invalid or mismatching stored digest",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_dl_digest_check_test")
+      File.mkdir_p!(bundle_dir)
+      dl_path = Path.join(bundle_dir, "dead_letter_observations.json")
+
+      receipt = %{
+        "agent_id" => "agent-1",
+        "observation_sequence" => 1,
+        "status" => "failed",
+        "applied_at" => DateTime.to_iso8601(now)
+      }
+
+      # 1. Invalid digest format (not 64 hex chars)
+      entry1 = %{"sequence" => 1, "receipt" => receipt, "receipt_digest" => "bad_format"}
+      File.write!(dl_path, Jason.encode!(%{"rejected_observations" => [entry1]}))
+
+      assert {:error,
+              {:corrupted_dead_letter_archive, {:invalid_stored_digest_format, "bad_format"}}} =
+               AtomicStore.read_dead_letter_observations(bundle_dir)
+
+      # 2. Mismatched digest (valid 64 hex chars but doesn't match payload)
+      fake_digest = String.duplicate("0", 64)
+      entry2 = %{"sequence" => 1, "receipt" => receipt, "receipt_digest" => fake_digest}
+      File.write!(dl_path, Jason.encode!(%{"rejected_observations" => [entry2]}))
+
+      assert {:error, {:corrupted_dead_letter_archive, {:digest_mismatch, _}}} =
+               AtomicStore.read_dead_letter_observations(bundle_dir)
+    end
+
+    test "read_dead_letter_observations accepts valid legacy record without digest and supports idempotent replay",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_dl_legacy_test")
+      File.mkdir_p!(bundle_dir)
+      dl_path = Path.join(bundle_dir, "dead_letter_observations.json")
+
+      legacy_entry = %{
+        "sequence" => 1,
+        "receipt" => %{
+          "agent_id" => "agent-legacy",
+          "observation_sequence" => 1,
+          "status" => "applied",
+          "applied_at" => DateTime.to_iso8601(now)
+        },
+        "rejected_at" => DateTime.to_iso8601(now)
+      }
+
+      File.write!(dl_path, Jason.encode!(%{"rejected_observations" => [legacy_entry]}))
+
+      assert {:ok, [loaded]} = AtomicStore.read_dead_letter_observations(bundle_dir)
+      assert loaded["sequence"] == 1
+      assert loaded["receipt"]["agent_id"] == "agent-legacy"
+      assert is_binary(loaded["receipt_digest"])
+
+      # Replaying identical rejection through record_rejected_observation recognizes it as :replay
+      assert :ok =
+               AtomicStore.record_rejected_observation(
+                 bundle_dir,
+                 legacy_entry,
+                 :conflict,
+                 "replayed"
+               )
+
+      # Archive retains exactly 1 record
+      assert {:ok, dl_list} = AtomicStore.read_dead_letter_observations(bundle_dir)
+      assert length(dl_list) == 1
+    end
+
+    test "record_rejected_observation detects differing payload under same identity as conflict",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_dl_conflict_test")
+      File.mkdir_p!(bundle_dir)
+
+      entry1 = %{
+        "sequence" => 1,
+        "receipt" => %{
+          "agent_id" => "agent-conflict",
+          "observation_sequence" => 1,
+          "status" => "applied",
+          "applied_at" => DateTime.to_iso8601(now)
+        }
+      }
+
+      assert :ok =
+               AtomicStore.record_rejected_observation(bundle_dir, entry1, :some_code, "first")
+
+      # Different receipt payload under same sequence and identity
+      entry2 = %{
+        "sequence" => 1,
+        "receipt" => %{
+          "agent_id" => "agent-conflict",
+          "observation_sequence" => 1,
+          "status" => "failed",
+          "applied_at" => DateTime.to_iso8601(now)
+        }
+      }
+
+      assert {:error,
+              {:dead_letter_persistence_failed,
+               {:conflicting_observation_payload, 1, "agent-conflict"}}} =
+               AtomicStore.record_rejected_observation(bundle_dir, entry2, :some_code, "second")
+    end
+
+    test "TrustBundleManager outbox draining stays alive and preserves outbox on corrupted dead-letter archive",
+         %{tmp_dir: tmp_dir, now: now} do
+      bundle_dir = Path.join(tmp_dir, "pki_mgr_corrupt_dl_drain_test")
+      File.mkdir_p!(bundle_dir)
+      dl_path = Path.join(bundle_dir, "dead_letter_observations.json")
+      outbox_path = Path.join(bundle_dir, "observation_sequence.json")
+
+      # Write corrupted dead-letter archive
+      File.write!(dl_path, "{\"rejected_observations\": [123]}")
+
+      # Write active outbox entry
+      raw_outbox = %{
+        "observation_sequence" => 1,
+        "outbox" => [
+          %{
+            "sequence" => 1,
+            "receipt" => %{
+              "agent_id" => "agent-drain-test",
+              "observation_sequence" => 1,
+              "status" => "applied",
+              "applied_at" => DateTime.to_iso8601(now)
+            },
+            "enqueued_at" => DateTime.to_iso8601(now)
+          }
+        ],
+        "updated_at" => DateTime.to_iso8601(now)
+      }
+
+      File.write!(outbox_path, Jason.encode!(raw_outbox))
+
+      # Mock connection that rejects receipt submission
+      test_pid = self()
+
+      mock_conn =
+        spawn(fn ->
+          receive do
+            {:"$gen_call", from, {:submit_bundle_receipt, receipt}} ->
+              send(test_pid, {:submitted_receipt, receipt})
+
+              GenServer.reply(
+                from,
+                {:error, {:rejected, :invalid_receipt, "permanently rejected"}}
+              )
+          end
+        end)
+
+      Process.register(mock_conn, :test_mock_dl_drain_conn)
+
+      {:ok, manager} =
+        TrustBundleManager.start_link(
+          state_dir: tmp_dir,
+          bundle_dir: bundle_dir,
+          connection_mod: :test_mock_dl_drain_conn,
+          agent_id: "agent-drain-test",
+          name: :test_mgr_corrupt_dl_drain,
+          outbox_drain_backoff_ms: 10_000
+        )
+
+      # Receipt was submitted
+      assert_receive {:submitted_receipt, _receipt}, 2000
+
+      # Give manager a moment to process rejection
+      Process.sleep(50)
+
+      # Manager must remain alive and responsive!
+      assert Process.alive?(manager)
+      status = TrustBundleManager.status(manager)
+      assert status.status in ["applied", "initializing", "recovery_required"]
+
+      # Corrupt dead letter archive bytes must NOT have been overwritten
+      assert File.read!(dl_path) == "{\"rejected_observations\": [123]}"
+
+      # Outbox entry must be preserved!
+      assert {:ok, %{outbox: [entry]}} = AtomicStore.read_outbox(bundle_dir)
+      assert entry["sequence"] == 1
+
+      GenServer.stop(manager)
+    end
+
+    test "SecretHub.Agent.Application child specs start TrustBundleManager under Supervisor",
+         %{tmp_dir: tmp_dir} do
+      state_dir = Path.join(tmp_dir, "app_sup_state_dir")
+      bundle_dir = Path.join(tmp_dir, "app_sup_bundle_dir")
+      File.mkdir_p!(state_dir)
+      File.mkdir_p!(bundle_dir)
+
+      material = %{
+        agent_id: "agent-supervisor-spec-test",
+        private_key_pem: "---FAKE KEY---",
+        certificate_pem: "---FAKE CERT---",
+        ca_chain_pem: "---FAKE CA CHAIN---",
+        connect_info: %{"endpoint" => "wss://localhost:4664/socket/agent/runtime"},
+        identity: %{"agent_id" => "agent-supervisor-spec-test"}
+      }
+
+      assert :ok = SecretHub.Agent.IdentityStore.write(state_dir, material)
+
+      pki_opts = [
+        bundle_dir: bundle_dir,
+        state_dir: state_dir,
+        name: :test_app_supervisor_manager
+      ]
+
+      child_spec = {SecretHub.Agent.PKI.TrustBundleManager, pki_opts}
+
+      {:ok, sup} = Supervisor.start_link([child_spec], strategy: :one_for_one)
+
+      children = Supervisor.which_children(sup)
+
+      assert [
+               {SecretHub.Agent.PKI.TrustBundleManager, pid, :worker,
+                [SecretHub.Agent.PKI.TrustBundleManager]}
+             ] = children
+
+      assert is_pid(pid)
+      assert Process.alive?(pid)
+
+      status = TrustBundleManager.status(pid)
+      assert status.agent_id == "agent-supervisor-spec-test"
+      assert status.recovery_mode == :none
+
+      Supervisor.stop(sup)
     end
   end
 end

@@ -512,17 +512,26 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
 
                   case validate_outbox_entries(repaired_entries, seq) do
                     {:ok, validated} ->
-                      # Preserve original evidence to .pre_repair_bak before modifying
-                      bak_path = Path.join(base_dir, "observation_sequence.json.pre_repair_bak")
-                      _ = File.write(bak_path, content)
+                      case create_durable_outbox_backup(base_dir, content, opts) do
+                        {:ok, backup_path} ->
+                          updated_data = %{
+                            data
+                            | "outbox" => validated,
+                              "updated_at" => now_iso
+                          }
 
-                      updated_data = %{
-                        data
-                        | "outbox" => validated,
-                          "updated_at" => now_iso
-                      }
+                          case write_and_fsync_sequence_data(base_dir, updated_data, opts) do
+                            :ok ->
+                              notify_fs_op(opts, {:repair_outbox_metadata, backup_path})
+                              :ok
 
-                      write_and_fsync_sequence_data(base_dir, updated_data, opts)
+                            {:error, reason} ->
+                              {:error, {:repair_persistence_failed, reason}}
+                          end
+
+                        {:error, reason} ->
+                          {:error, {:backup_failed, reason}}
+                      end
 
                     {:error, reason} ->
                       {:error, {:repair_failed, reason}}
@@ -545,6 +554,116 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         :ok
 
       {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Creates an exclusive, immutable durable backup of outbox content before repair.
+  Ensures that existing files, symlinks, or directories at the backup target are never overwritten.
+  Fsyncs the backup file and directory before returning.
+  """
+  @spec create_durable_outbox_backup(Path.t(), binary(), keyword()) ::
+          {:ok, Path.t()} | {:error, term()}
+  def create_durable_outbox_backup(base_dir, content, opts \\ []) when is_binary(content) do
+    content_sha256 = :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
+
+    backup_path =
+      opts[:backup_path] ||
+        Path.join(
+          base_dir,
+          opts[:backup_name] || "observation_sequence.json.bak-" <> content_sha256
+        )
+
+    case File.lstat(backup_path) do
+      {:ok, %File.Stat{type: :symlink}} ->
+        {:error, {:symlink_detected, backup_path}}
+
+      {:ok, %File.Stat{type: :directory}} ->
+        {:error, {:is_directory, backup_path}}
+
+      {:ok, %File.Stat{type: :regular}} ->
+        {:error, {:backup_already_exists, backup_path}}
+
+      {:ok, %File.Stat{type: other}} ->
+        {:error, {:unexpected_file_type, other, backup_path}}
+
+      {:error, :enoent} ->
+        with :ok <- ensure_secure_directory(base_dir),
+             {:ok, fd} <- open_exclusive_file(backup_path),
+             :ok <- check_injected_backup_write_error(opts, fd, backup_path),
+             :ok <- write_backup_fd(fd, content, backup_path),
+             :ok <- check_injected_backup_sync_error(opts, fd, backup_path),
+             :ok <- sync_and_close_backup_fd(fd),
+             :ok <- File.chmod(backup_path, 0o600),
+             :ok <- fsync_dir(base_dir) do
+          {:ok, backup_path}
+        else
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp open_exclusive_file(path) do
+    case :file.open(String.to_charlist(path), [:write, :exclusive, :binary, :raw]) do
+      {:ok, fd} ->
+        {:ok, fd}
+
+      {:error, :eexist} ->
+        {:error, {:backup_already_exists, path}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp check_injected_backup_write_error(opts, fd, path) do
+    case check_injected_opt(opts, :inject_backup_write_error) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        _ = :file.close(fd)
+        _ = File.rm(path)
+        {:error, reason}
+    end
+  end
+
+  defp write_backup_fd(fd, content, path) do
+    case :file.write(fd, content) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        _ = :file.close(fd)
+        _ = File.rm(path)
+        {:error, reason}
+    end
+  end
+
+  defp check_injected_backup_sync_error(opts, fd, path) do
+    case check_injected_opt(opts, :inject_backup_sync_error) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        _ = :file.close(fd)
+        _ = File.rm(path)
+        {:error, reason}
+    end
+  end
+
+  defp sync_and_close_backup_fd(fd) do
+    with :ok <- :file.sync(fd),
+         :ok <- :file.close(fd) do
+      :ok
+    else
+      {:error, reason} ->
+        _ = :file.close(fd)
         {:error, reason}
     end
   end
@@ -706,20 +825,82 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
       {:ok, content} ->
         case decode_json_object(content) do
           {:ok, %{"rejected_observations" => list}} when is_list(list) ->
-            {:ok, list}
+            validate_dead_letter_entries(list)
 
           {:ok, _} ->
-            {:error, :invalid_dead_letter_schema}
+            {:error, {:corrupted_dead_letter_archive, :invalid_dead_letter_schema}}
 
           {:error, reason} ->
-            {:error, reason}
+            {:error, {:corrupted_dead_letter_archive, {:invalid_json, reason}}}
         end
 
       {:error, :enoent} ->
         {:ok, []}
 
       {:error, reason} ->
-        {:error, reason}
+        {:error, {:corrupted_dead_letter_archive, {:read_failed, reason}}}
+    end
+  end
+
+  defp validate_dead_letter_entries(list) when is_list(list) do
+    Enum.reduce_while(list, {:ok, []}, fn entry, {:ok, acc} ->
+      case validate_dead_letter_entry(entry) do
+        {:ok, validated} ->
+          {:cont, {:ok, [validated | acc]}}
+
+        {:error, reason} ->
+          {:halt, {:error, {:corrupted_dead_letter_archive, reason}}}
+      end
+    end)
+    |> case do
+      {:ok, rev} -> {:ok, Enum.reverse(rev)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp validate_dead_letter_entry(entry) do
+    if not is_map(entry) do
+      {:error, {:invalid_entry_shape, entry}}
+    else
+      seq = entry["sequence"]
+      receipt = entry["receipt"]
+      stored_digest = entry["receipt_digest"]
+
+      cond do
+        not (is_integer(seq) and seq >= 0) ->
+          {:error, {:invalid_sequence, seq}}
+
+        not is_map(receipt) ->
+          {:error, {:invalid_receipt_shape, receipt}}
+
+        not (is_binary(receipt["agent_id"]) and receipt["agent_id"] != "") ->
+          {:error, {:missing_agent_id, receipt}}
+
+        is_integer(receipt["observation_sequence"]) and
+            receipt["observation_sequence"] != seq ->
+          {:error, {:inconsistent_sequence, seq, receipt["observation_sequence"]}}
+
+        is_binary(stored_digest) and stored_digest != "" ->
+          if not Regex.match?(@sha256_hex, stored_digest) do
+            {:error, {:invalid_stored_digest_format, stored_digest}}
+          else
+            computed = receipt_payload_digest(receipt)
+
+            if stored_digest != computed do
+              {:error, {:digest_mismatch, stored: stored_digest, computed: computed}}
+            else
+              {:ok, entry}
+            end
+          end
+
+        is_nil(stored_digest) or stored_digest == "" ->
+          # Valid legacy record without a digest: attach computed digest for downstream idempotency
+          computed = receipt_payload_digest(receipt)
+          {:ok, Map.put(entry, "receipt_digest", computed)}
+
+        true ->
+          {:error, {:invalid_stored_digest_format, stored_digest}}
+      end
     end
   end
 
@@ -751,73 +932,85 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
   defp sort_canonical_map(other), do: other
 
   defp append_dead_letter_observation(base_dir, dead_letter_entry, opts) do
-    target_seq = dead_letter_entry["sequence"]
-    target_receipt = dead_letter_entry["receipt"]
-    target_digest = receipt_payload_digest(target_receipt)
+    if not is_map(dead_letter_entry) do
+      {:error, :invalid_dead_letter_entry}
+    else
+      target_seq = dead_letter_entry["sequence"]
+      target_receipt = dead_letter_entry["receipt"]
 
-    case read_dead_letter_observations(base_dir) do
-      {:ok, existing_entries} ->
-        case check_dead_letter_idempotency(
-               existing_entries,
-               target_seq,
-               target_receipt,
-               target_digest
-             ) do
-          :replay ->
-            # Replay of the same observation: do not append another logical rejection;
-            # complete any outstanding outbox removal.
-            :ok
+      if not (is_integer(target_seq) and is_map(target_receipt)) do
+        {:error, :invalid_dead_letter_entry}
+      else
+        target_digest = receipt_payload_digest(target_receipt)
 
-          {:conflict, conflicting_agent} ->
-            # Different payload under the same observation identity: return a conflict
-            # and preserve both the existing evidence and pending observation.
-            {:error, {:conflicting_observation_payload, target_seq, conflicting_agent}}
+        case read_dead_letter_observations(base_dir) do
+          {:ok, existing_entries} ->
+            case check_dead_letter_idempotency(
+                   existing_entries,
+                   target_seq,
+                   target_receipt,
+                   target_digest
+                 ) do
+              :replay ->
+                # Replay of the same observation: do not append another logical rejection;
+                # complete any outstanding outbox removal.
+                :ok
 
-          :not_found ->
-            # Entry not yet recorded: append new logical rejection record
-            entry_to_record = Map.put(dead_letter_entry, "receipt_digest", target_digest)
-            updated_entries = existing_entries ++ [entry_to_record]
+              {:conflict, conflicting_agent} ->
+                # Different payload under the same observation identity: return a conflict
+                # and preserve both the existing evidence and pending observation.
+                {:error, {:conflicting_observation_payload, target_seq, conflicting_agent}}
 
-            data = %{
-              "rejected_observations" => updated_entries,
-              "updated_at" =>
-                DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
-            }
+              :not_found ->
+                # Entry not yet recorded: append new logical rejection record
+                entry_to_record = Map.put(dead_letter_entry, "receipt_digest", target_digest)
+                updated_entries = existing_entries ++ [entry_to_record]
 
-            tmp_id =
-              ".dead_letter.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
+                data = %{
+                  "rejected_observations" => updated_entries,
+                  "updated_at" =>
+                    DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
+                }
 
-            tmp_path = Path.join(base_dir, tmp_id)
-            target_path = Path.join(base_dir, "dead_letter_observations.json")
+                tmp_id =
+                  ".dead_letter.tmp-" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
 
-            case Jason.encode(data, pretty: true) do
-              {:ok, json} ->
-                with :ok <- ensure_secure_directory(base_dir),
-                     :ok <- check_injected_dead_letter_write_error(opts),
-                     :ok <- write_and_fsync_file(tmp_path, json),
-                     :ok <- check_injected_dead_letter_sync_error(opts),
-                     :ok <- check_injected_dead_letter_error(opts),
-                     :ok <- File.rename(tmp_path, target_path),
-                     :ok <- fsync_dir(base_dir) do
-                  notify_fs_op(
-                    opts,
-                    {:record_rejected_observation, dead_letter_entry["sequence"]}
-                  )
+                tmp_path = Path.join(base_dir, tmp_id)
+                target_path = Path.join(base_dir, "dead_letter_observations.json")
 
-                  :ok
-                else
+                case Jason.encode(data, pretty: true) do
+                  {:ok, json} ->
+                    with :ok <- ensure_secure_directory(base_dir),
+                         :ok <- check_injected_dead_letter_write_error(opts),
+                         :ok <- write_and_fsync_file(tmp_path, json),
+                         :ok <- check_injected_dead_letter_sync_error(opts),
+                         :ok <- check_injected_dead_letter_error(opts),
+                         :ok <- File.rename(tmp_path, target_path),
+                         :ok <- fsync_dir(base_dir) do
+                      notify_fs_op(
+                        opts,
+                        {:record_rejected_observation, dead_letter_entry["sequence"]}
+                      )
+
+                      :ok
+                    else
+                      {:error, reason} ->
+                        _ = File.rm(tmp_path)
+                        {:error, reason}
+                    end
+
                   {:error, reason} ->
-                    _ = File.rm(tmp_path)
                     {:error, reason}
                 end
 
               {:error, reason} ->
                 {:error, reason}
             end
-        end
 
-      {:error, reason} ->
-        {:error, reason}
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end
     end
   end
 
@@ -827,29 +1020,43 @@ defmodule SecretHub.Agent.PKI.AtomicStore do
         do: target_receipt["agent_id"] || target_receipt[:agent_id],
         else: nil
 
-    matching_entry =
-      Enum.find(existing_entries, fn ex ->
-        ex_seq = ex["sequence"]
-        ex_receipt = ex["receipt"] || %{}
-        ex_agent = ex_receipt["agent_id"] || ex_receipt[:agent_id]
+    cond do
+      not is_map(target_receipt) ->
+        {:error, :invalid_target_receipt}
 
-        ex_seq == target_seq and
-          ((is_binary(target_agent) and target_agent != "" and ex_agent == target_agent) or
-             is_nil(target_agent) or target_agent == "")
-      end)
+      not (is_integer(target_seq) and target_seq >= 0) ->
+        {:error, :invalid_target_sequence}
 
-    case matching_entry do
-      nil ->
-        :not_found
+      not (is_binary(target_agent) and target_agent != "") ->
+        {:error, :missing_target_agent_id}
 
-      ex ->
-        ex_receipt = ex["receipt"] || %{}
-        ex_digest = ex["receipt_digest"] || receipt_payload_digest(ex_receipt)
+      true ->
+        matching_entry =
+          Enum.find(existing_entries, fn ex ->
+            if is_map(ex) and is_map(ex["receipt"]) do
+              ex_seq = ex["sequence"]
+              ex_receipt = ex["receipt"]
+              ex_agent = ex_receipt["agent_id"] || ex_receipt[:agent_id]
 
-        if ex_digest == target_digest do
-          :replay
-        else
-          {:conflict, target_agent || ex_receipt["agent_id"]}
+              ex_seq == target_seq and ex_agent == target_agent
+            else
+              false
+            end
+          end)
+
+        case matching_entry do
+          nil ->
+            :not_found
+
+          ex ->
+            ex_receipt = ex["receipt"] || %{}
+            ex_digest = ex["receipt_digest"] || receipt_payload_digest(ex_receipt)
+
+            if ex_digest == target_digest do
+              :replay
+            else
+              {:conflict, target_agent}
+            end
         end
     end
   end

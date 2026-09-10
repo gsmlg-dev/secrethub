@@ -21,16 +21,21 @@ This placed `TrustBundleManager` into `recovery_mode: :quarantined`, which block
 The fixed version handles recovery automatically upon startup:
 
 1. **Identity Source of Truth**: On startup or upon completion of enrollment, `TrustBundleManager` resolves the verified enrolled Agent identity from `IdentityStore.load(state_dir)` and `RuntimeBootstrapper`.
-2. **Atomic Pre-Repair Backup**: When `TrustBundleManager.bind_identity/2` is invoked, `AtomicStore.repair_outbox_metadata/2` is executed. Before modifying the outbox, it backs up the original file to:
+2. **Immutable Pre-Repair Backup**: When `TrustBundleManager.bind_identity/2` is invoked, `AtomicStore.repair_outbox_metadata/3` is executed. Before modifying the active outbox, it durably creates an immutable, content-addressed backup file:
    ```
-   <state_dir>/pki/client-auth/observation_sequence.json.pre_repair_bak
+   <state_dir>/pki/client-auth/observation_sequence.json.bak-<content_sha256>
    ```
+   - Backups are created exclusively (`:exclusive` flag) to guarantee existing files are never overwritten.
+   - Symlinks and directories occupying the backup path are strictly rejected without being followed.
+   - Backup file contents and directory entries are synchronized (`fsync`) to disk before active state is modified.
 3. **Safe In-Place Repair**:
    - Backfills missing or empty `agent_id` with the local enrolled identity.
    - Backfills missing timestamps with the original enqueue timestamp.
    - **Preserves all observation sequences, the persistent high-water counter, CA pins, and CRL watermarks without reset.**
    - Strictly refuses to overwrite any existing non-empty `agent_id` that differs from the verified enrolled identity.
-4. **Automatic Unquarantine**: Once the repaired outbox passes strict schema validation, `TrustBundleManager` automatically clears the quarantine (`recovery_mode: :none`), restores active status, and resumes draining the outbox to Core.
+4. **Scoped Unquarantine & Trust Isolation**: Once the repaired outbox passes strict schema validation, `TrustBundleManager` clears only the outbox-related restriction (`outbox_restriction: nil`).
+   - If no trust-level restriction is active, the quarantine is lifted (`recovery_mode: :none`), active status is restored, and outbox draining resumes.
+   - If the manager is under an independent trust quarantine (e.g. corrupt watermark or conflicting bundle evidence), trust quarantine **remains strictly enforced** (`recovery_mode: :quarantined`, `status: "recovery_required"`).
 
 ---
 
@@ -74,17 +79,26 @@ If running inside an interactive shell (`iex -S mix` or `bin/secrethub_agent rem
 SecretHub.Agent.PKI.TrustBundleManager.status()
 
 # Manually trigger binding & repair with verified enrolled identity:
-SecretHub.Agent.PKI.TrustBundleManager.bind_identity("agent-your-enrolled-id")
+# Returns :ok on complete success, or {:error, {:repair_failed, reason}} if outbox repair fails.
+case SecretHub.Agent.PKI.TrustBundleManager.bind_identity("agent-your-enrolled-id") do
+  :ok ->
+    IO.puts("Identity bound and outbox repaired successfully.")
 
-# Verify recovery mode is cleared:
+  {:error, {:repair_failed, reason}} ->
+    IO.puts("Identity bound, but outbox repair failed: #{inspect(reason)}")
+
+  {:error, {:identity_mismatch, current, proposed}} ->
+    IO.puts("Identity mismatch: manager already bound to #{current}")
+end
+
+# Verify manager status:
 SecretHub.Agent.PKI.TrustBundleManager.status()
-# => %{recovery_mode: :none, status: "applied", ...}
 ```
 
 ### Step 4: Verify Backup
 Verify that the pre-repair backup was preserved:
 ```bash
-ls -l ~/.local/state/secrethub/agent/pki/client-auth/observation_sequence.json.pre_repair_bak
+ls -l ~/.local/state/secrethub/agent/pki/client-auth/observation_sequence.json.bak-*
 ```
 
 ---
@@ -95,3 +109,13 @@ If `observation_sequence.json` contains a non-empty `agent_id` that disagrees wi
 - Automatic repair halts and retains the quarantine to prevent emitting falsified receipts under a different identity.
 - The operator must verify whether the agent host was re-enrolled with a new identity before old receipts were acknowledged.
 - In that scenario, compare the client certificate serial in `agent-cert.pem` against Core records. After audit review, remove or archive `observation_sequence.json` to begin clean receipt tracking under the new identity.
+
+---
+
+## 5. Partial-Failure & Backup Guarantees
+
+If backup creation fails for any reason (e.g. backup path occupied by an unexpected directory, existing backup file collision, symlink detected, or disk I/O error):
+1. **Zero State Mutation**: Active outbox bytes, observation sequences, watermarks, and CA pins are never modified.
+2. **Error Propagation**: `repair_outbox_metadata/3` returns `{:error, {:backup_failed, reason}}`.
+3. **Caller Visibility**: `TrustBundleManager.bind_identity/2` returns `{:error, {:repair_failed, {:backup_failed, reason}}}` rather than reporting unqualified success.
+4. **Evidence Preservation**: Prior forensic evidence is never overwritten. All historical backup files remain immutable.
