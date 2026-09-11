@@ -1075,12 +1075,12 @@ defmodule SecretHub.Core.PKI.CA do
   defp pki_master_key do
     case Process.whereis(SealState) do
       nil ->
-        dev_fallback_key()
+        if(dev_pki_unsealed_fallback?(), do: dev_fallback_key())
 
       _pid ->
         case SealState.get_master_key() do
           {:ok, key} -> key
-          {:error, _reason} -> if(dev_pki_unsealed_fallback?(), do: dev_fallback_key())
+          {:error, _reason} -> nil
         end
     end
   end
@@ -1459,17 +1459,26 @@ defmodule SecretHub.Core.PKI.CA do
   def revoke_certificate(cert_id, reason \\ "manual_revocation") do
     with {:ok, uuid} <- Ecto.UUID.cast(cert_id),
          %Certificate{} = cert <- Repo.get(Certificate, uuid) do
-      cert
-      |> Certificate.revoke_changeset(reason)
-      |> Repo.update()
-      |> case do
-        {:ok, revoked_cert} ->
-          with :ok <- record_certificate_revoked_event(revoked_cert, reason) do
-            {:ok, revoked_cert}
-          end
+      if cert.cert_type in [
+           :client_auth_ca,
+           :client_auth_client,
+           "client_auth_ca",
+           "client_auth_client"
+         ] do
+        {:error, :client_auth_revocation_disallowed}
+      else
+        cert
+        |> Certificate.revoke_changeset(reason)
+        |> Repo.update()
+        |> case do
+          {:ok, revoked_cert} ->
+            with :ok <- record_certificate_revoked_event(revoked_cert, reason) do
+              {:ok, revoked_cert}
+            end
 
-        {:error, _reason} = error ->
-          error
+          {:error, _reason} = error ->
+            error
+        end
       end
     else
       :error -> {:error, :not_found}
@@ -1484,12 +1493,21 @@ defmodule SecretHub.Core.PKI.CA do
   def delete_certificate(cert_id) do
     with {:ok, uuid} <- Ecto.UUID.cast(cert_id),
          %Certificate{} = cert <- Repo.get(Certificate, uuid) do
-      cert
-      |> Ecto.Changeset.change()
-      |> Ecto.Changeset.no_assoc_constraint(:issued_bootstrap_tokens)
-      |> Ecto.Changeset.no_assoc_constraint(:renewals_from)
-      |> Ecto.Changeset.no_assoc_constraint(:renewals_issued)
-      |> Repo.delete()
+      if cert.cert_type in [
+           :client_auth_ca,
+           :client_auth_client,
+           "client_auth_ca",
+           "client_auth_client"
+         ] do
+        {:error, :client_auth_deletion_disallowed}
+      else
+        cert
+        |> Ecto.Changeset.change()
+        |> Ecto.Changeset.no_assoc_constraint(:issued_bootstrap_tokens)
+        |> Ecto.Changeset.no_assoc_constraint(:renewals_from)
+        |> Ecto.Changeset.no_assoc_constraint(:renewals_issued)
+        |> Repo.delete()
+      end
     else
       :error -> {:error, :not_found}
       nil -> {:error, :not_found}
@@ -1497,11 +1515,14 @@ defmodule SecretHub.Core.PKI.CA do
   end
 
   @doc """
-  List all certificates.
-  TODO: Add pagination and filtering options.
+  List all certificates (excluding dedicated Client Auth certificates).
   """
   def list_certificates do
-    Repo.all(Certificate)
+    Repo.all(
+      from(c in Certificate,
+        where: c.cert_type not in [:client_auth_ca, :client_auth_client]
+      )
+    )
   end
 
   @doc """

@@ -84,6 +84,8 @@ defmodule SecretHub.Agent.Connection do
   def runtime_event(:get_dynamic_secret), do: "secret:read"
   def runtime_event(:renew_lease), do: "secret:lease_renew"
   def runtime_event(:heartbeat), do: "agent:heartbeat"
+  def runtime_event(:pull_trust_bundle), do: "pki:client_auth_bundle:get"
+  def runtime_event(:submit_bundle_receipt), do: "pki:client_auth_bundle:receipt"
 
   @doc false
   def in_memory_certs_key(cert_pem, private_key) do
@@ -91,6 +93,23 @@ defmodule SecretHub.Agent.Connection do
       cert: pem_entry_der(cert_pem, :Certificate),
       key: private_key_der_entry(private_key)
     }
+  end
+
+  @doc """
+  Pulls the latest public client auth trust bundle from Core.
+  """
+  @spec pull_trust_bundle(GenServer.server(), timeout()) :: {:ok, map()} | {:error, term()}
+  def pull_trust_bundle(server \\ __MODULE__, timeout \\ 5000) do
+    GenServer.call(server, :pull_trust_bundle, timeout)
+  end
+
+  @doc """
+  Submits a convergence receipt for the client auth trust bundle to Core.
+  """
+  @spec submit_bundle_receipt(GenServer.server(), map(), timeout()) ::
+          {:ok, map()} | {:error, term()}
+  def submit_bundle_receipt(server \\ __MODULE__, receipt, timeout \\ 5000) do
+    GenServer.call(server, {:submit_bundle_receipt, receipt}, timeout)
   end
 
   @doc """
@@ -251,6 +270,28 @@ defmodule SecretHub.Agent.Connection do
   end
 
   @impl true
+  def handle_call(:pull_trust_bundle, from, state) do
+    case state.connection_status do
+      :connected ->
+        send_request(state, from, runtime_event(:pull_trust_bundle), %{})
+
+      _ ->
+        {:reply, {:error, :not_connected}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:submit_bundle_receipt, receipt}, from, state) do
+    case state.connection_status do
+      :connected ->
+        send_request(state, from, runtime_event(:submit_bundle_receipt), receipt)
+
+      _ ->
+        {:reply, {:error, :not_connected}, state}
+    end
+  end
+
+  @impl true
   def handle_call(:status, _from, state) do
     {:reply, state.connection_status, state}
   end
@@ -314,6 +355,11 @@ defmodule SecretHub.Agent.Connection do
             })
             |> notify_runtime_accepted(response)
 
+          # Trigger initial PKI trust bundle sync on connect
+          if Process.whereis(SecretHub.Agent.PKI.TrustBundleManager) do
+            SecretHub.Agent.PKI.TrustBundleManager.sync_bundle()
+          end
+
           {:noreply, next_state}
 
         {:error, reason} ->
@@ -333,6 +379,21 @@ defmodule SecretHub.Agent.Connection do
   @impl true
   def handle_info(%Message{event: "connected", payload: payload}, state) do
     Logger.info("Core connection confirmed", payload: payload)
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info(%Message{event: "pki:client_auth_bundle:updated", payload: payload}, state) do
+    Logger.info("Client Auth trust bundle updated push received",
+      agent_id: state.agent_id,
+      generation: payload["generation"],
+      crl_number: payload["crl_number"]
+    )
+
+    if Process.whereis(SecretHub.Agent.PKI.TrustBundleManager) do
+      SecretHub.Agent.PKI.TrustBundleManager.sync_bundle()
+    end
+
     {:noreply, state}
   end
 

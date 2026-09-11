@@ -152,7 +152,11 @@ defmodule SecretHub.Web.PKIManagementLive do
   def handle_event("request_remove_certificate", %{"cert_id" => cert_id}, socket) do
     case CA.get_certificate(cert_id) do
       {:ok, certificate} ->
-        {:noreply, assign(socket, remove_cert: certificate, validation_errors: [])}
+        if is_client_auth_cert?(certificate) do
+          {:noreply, put_flash(socket, :error, "Client Auth certificates cannot be deleted")}
+        else
+          {:noreply, assign(socket, remove_cert: certificate, validation_errors: [])}
+        end
 
       {:error, _reason} ->
         {:noreply, put_flash(socket, :error, "Failed to load certificate")}
@@ -190,6 +194,14 @@ defmodule SecretHub.Web.PKIManagementLive do
          |> reload_pki()
          |> assign(:selected_cert, nil)
          |> put_flash(:info, "Certificate revoked successfully")}
+
+      {:error, :client_auth_revocation_disallowed} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Client Auth certificates must be revoked through the Client Auth PKI dashboard"
+         )}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, "Failed to revoke certificate: #{inspect(reason)}")}
@@ -568,25 +580,34 @@ defmodule SecretHub.Web.PKIManagementLive do
               >
                 <.dm_mdi name="eye-outline" class="h-4 w-4" /> View Details
               </button>
-              <%= if !cert.revoked and cert.cert_type not in [:root_ca, :intermediate_ca] do %>
+              <%= if is_client_auth_cert?(cert) do %>
+                <.link
+                  navigate={~p"/admin/pki/client-auth"}
+                  class="inline-flex items-center gap-1 rounded border border-primary px-2 py-1 text-xs text-primary"
+                >
+                  <.dm_mdi name="shield-key-outline" class="h-4 w-4" /> Client Auth PKI
+                </.link>
+              <% else %>
+                <%= if !cert.revoked and cert.cert_type not in [:root_ca, :intermediate_ca] do %>
+                  <button
+                    type="button"
+                    phx-click="revoke_certificate"
+                    phx-value-cert_id={cert.id}
+                    data-confirm="Are you sure you want to revoke this certificate?"
+                    class="inline-flex items-center gap-1 rounded border border-error px-2 py-1 text-xs text-error"
+                  >
+                    <.dm_mdi name="cancel" class="h-4 w-4" /> Revoke
+                  </button>
+                <% end %>
                 <button
                   type="button"
-                  phx-click="revoke_certificate"
+                  phx-click="request_remove_certificate"
                   phx-value-cert_id={cert.id}
-                  data-confirm="Are you sure you want to revoke this certificate?"
                   class="inline-flex items-center gap-1 rounded border border-error px-2 py-1 text-xs text-error"
                 >
-                  <.dm_mdi name="cancel" class="h-4 w-4" /> Revoke
+                  <.dm_mdi name="trash-can-outline" class="h-4 w-4" /> Remove
                 </button>
               <% end %>
-              <button
-                type="button"
-                phx-click="request_remove_certificate"
-                phx-value-cert_id={cert.id}
-                class="inline-flex items-center gap-1 rounded border border-error px-2 py-1 text-xs text-error"
-              >
-                <.dm_mdi name="trash-can-outline" class="h-4 w-4" /> Remove
-              </button>
             </div>
           </:col>
         </.dm_table>
@@ -718,6 +739,17 @@ defmodule SecretHub.Web.PKIManagementLive do
       </.dm_link>
       <.dm_card shadow="sm">
         <:title>Certificate Details</:title>
+        <%= if is_client_auth_cert?(@certificate) do %>
+          <div class="mb-4 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
+            <span class="text-on-surface">This certificate belongs to the dedicated Client Auth PKI subsystem.</span>
+            <.link
+              navigate={~p"/admin/pki/client-auth"}
+              class="inline-flex items-center gap-1 rounded border border-primary px-2 py-1 text-xs text-primary"
+            >
+              <.dm_mdi name="shield-key-outline" class="h-4 w-4" /> Open Client Auth PKI
+            </.link>
+          </div>
+        <% end %>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <.detail_item label="Common Name" value={@certificate.common_name} />
           <.detail_item label="Type" value={format_cert_type(@certificate.cert_type)} />
@@ -916,6 +948,18 @@ defmodule SecretHub.Web.PKIManagementLive do
         </div>
 
         <div class="space-y-4 px-6 py-4">
+          <%= if is_client_auth_cert?(@certificate) do %>
+            <div class="flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
+              <span class="text-on-surface">This certificate belongs to the dedicated Client Auth PKI subsystem.</span>
+              <.link
+                navigate={~p"/admin/pki/client-auth"}
+                class="inline-flex items-center gap-1 rounded border border-primary px-2 py-1 text-xs text-primary"
+              >
+                <.dm_mdi name="shield-key-outline" class="h-4 w-4" /> Open Client Auth PKI
+              </.link>
+            </div>
+          <% end %>
+
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
             <.detail_item label="Common Name" value={@certificate.common_name} />
             <.detail_item label="Type" value={format_cert_type(@certificate.cert_type)} />
@@ -1048,6 +1092,13 @@ defmodule SecretHub.Web.PKIManagementLive do
          |> assign(:remove_cert, nil)
          |> assign(:validation_errors, [])
          |> put_flash(:info, "Certificate removed successfully")}
+
+      {:error, :client_auth_deletion_disallowed} ->
+        {:noreply,
+         socket
+         |> assign(:remove_cert, nil)
+         |> assign(:validation_errors, [])
+         |> put_flash(:error, "Client Auth certificates cannot be deleted")}
 
       {:error, reason} ->
         {:noreply,
@@ -1622,4 +1673,10 @@ defmodule SecretHub.Web.PKIManagementLive do
     |> Enum.chunk_every(2)
     |> Enum.join(":")
   end
+
+  defp is_client_auth_cert?(%{cert_type: type}) do
+    type in [:client_auth_ca, :client_auth_client, "client_auth_ca", "client_auth_client"]
+  end
+
+  defp is_client_auth_cert?(_), do: false
 end

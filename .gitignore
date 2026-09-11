@@ -32,6 +32,8 @@ log/
 *.swp
 *.swo
 *~
+tmp/
+/apps/*/tmp/
 .DS_Store
 .idea/
 .vscode/

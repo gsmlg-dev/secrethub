@@ -129,3 +129,24 @@ jobs:
 
       - name: Run Dialyzer
         run: mix dialyzer --halt-exit-status
+
+  caddy-pki-go:
+    name: Caddy PKI Go Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run Go vet
+        working-directory: caddy-secrethub-pki
+        run: go vet ./...
+
+      - name: Run Go tests with race detector
+        working-directory: caddy-secrethub-pki
+        run: go test -v -race ./...

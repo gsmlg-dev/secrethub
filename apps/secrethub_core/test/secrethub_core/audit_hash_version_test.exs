@@ -259,6 +259,115 @@ defmodule SecretHub.Core.AuditHashVersionTest do
     end
   end
 
+  describe "Client Auth PKI audit events (version 2 requirement & evidence validation)" do
+    test "requires hash_version: 2 for client auth events" do
+      attrs = %{
+        event_type: "pki.client_auth.crl_published",
+        hash_version: 1,
+        actor_type: "system",
+        actor_id: "pki-core",
+        access_granted: true,
+        event_data: %{
+          "authority" => "client-auth",
+          "generation" => 1,
+          "crl_number" => 1,
+          "revoked_count" => 0,
+          "crl_der_sha256" => @report_hash,
+          "next_update" => "2026-09-08T12:00:00Z"
+        }
+      }
+
+      assert {:error, changeset} = Audit.log_event(attrs)
+      assert errors_on(changeset).hash_version != []
+    end
+
+    test "rejects unrecognized extra fields or invalid values in client auth event_data" do
+      # Extra field injected
+      invalid_extra = %{
+        event_type: "pki.client_auth.crl_published",
+        hash_version: 2,
+        actor_type: "system",
+        actor_id: "pki-core",
+        access_granted: true,
+        event_data: %{
+          "authority" => "client-auth",
+          "generation" => 1,
+          "crl_number" => 1,
+          "revoked_count" => 0,
+          "crl_der_sha256" => @report_hash,
+          "next_update" => "2026-09-08T12:00:00Z",
+          "extra_leaked_secret" => "secret_value"
+        }
+      }
+
+      assert {:error, changeset} = Audit.log_event(invalid_extra)
+      assert errors_on(changeset).event_data != []
+
+      # Negative integer
+      invalid_int = %{
+        event_type: "pki.client_auth.crl_published",
+        hash_version: 2,
+        actor_type: "system",
+        actor_id: "pki-core",
+        access_granted: true,
+        event_data: %{
+          "authority" => "client-auth",
+          "generation" => -1,
+          "crl_number" => 1,
+          "revoked_count" => 0,
+          "crl_der_sha256" => @report_hash,
+          "next_update" => "2026-09-08T12:00:00Z"
+        }
+      }
+
+      assert {:error, changeset} = Audit.log_event(invalid_int)
+      assert errors_on(changeset).event_data != []
+
+      # Uppercase hash
+      invalid_hash = %{
+        event_type: "pki.client_auth.crl_published",
+        hash_version: 2,
+        actor_type: "system",
+        actor_id: "pki-core",
+        access_granted: true,
+        event_data: %{
+          "authority" => "client-auth",
+          "generation" => 1,
+          "crl_number" => 1,
+          "revoked_count" => 0,
+          "crl_der_sha256" => String.upcase(@report_hash),
+          "next_update" => "2026-09-08T12:00:00Z"
+        }
+      }
+
+      assert {:error, changeset} = Audit.log_event(invalid_hash)
+      assert errors_on(changeset).event_data != []
+    end
+
+    test "persists valid client auth audit log and verifies hash chain" do
+      assert {:ok, log} =
+               Audit.log_event(%{
+                 event_type: "pki.client_auth.crl_published",
+                 hash_version: 2,
+                 actor_type: "system",
+                 actor_id: "pki-core",
+                 access_granted: true,
+                 event_data: %{
+                   "authority" => "client-auth",
+                   "generation" => 1,
+                   "crl_number" => 1,
+                   "revoked_count" => 0,
+                   "crl_der_sha256" => @report_hash,
+                   "next_update" => "2026-09-08T12:00:00Z"
+                 }
+               })
+
+      assert log.hash_version == 2
+      assert log.current_hash =~ @sha256_hex
+      assert {:ok, :valid} = Audit.verify_chain()
+    end
+  end
+
   defp gate_event(overrides \\ %{}) do
     Map.merge(
       %{

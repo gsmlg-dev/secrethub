@@ -10,7 +10,13 @@ defmodule SecretHub.Core.PKI.CASealedVaultTest do
       GenServer.stop(pid)
     end
 
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthBundleReceipt)
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthIssuanceRequest)
+    _ = Repo.query("UPDATE client_auth_authorities SET current_crl_id = NULL", [])
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthCrl)
     Repo.delete_all(Certificate)
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthIdentity)
+    Repo.delete_all(SecretHub.Shared.Schemas.ClientAuthAuthority)
     Repo.delete_all(VaultConfig)
 
     start_supervised!(SealState)

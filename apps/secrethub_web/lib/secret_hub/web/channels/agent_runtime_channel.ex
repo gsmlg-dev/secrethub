@@ -25,6 +25,7 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
       }
 
       :ok = ConnectionManager.register_connection(agent_id, cert_serial, self(), metadata)
+      :ok = SecretHub.Core.PKI.ClientAuth.Notifier.subscribe()
 
       {:ok,
        %{
@@ -75,6 +76,51 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
     end)
   end
 
+  def handle_in("pki:client_auth_bundle:get", _payload, socket) do
+    with_runtime_authorized(socket, fn ->
+      case SecretHub.Core.PKI.ClientAuth.current_bundle() do
+        {:ok, bundle} ->
+          last_seq =
+            case socket.assigns[:agent_id] do
+              agent_id when is_binary(agent_id) ->
+                case SecretHub.Core.PKI.ClientAuth.get_agent_receipt(agent_id) do
+                  {:ok, receipt} -> receipt.observation_sequence
+                  _ -> nil
+                end
+
+              _ ->
+                nil
+            end
+
+          payload =
+            if is_integer(last_seq) do
+              Map.put(bundle, "last_accepted_sequence", last_seq)
+            else
+              bundle
+            end
+
+          {:reply, {:ok, payload}, socket}
+
+        {:error, reason} ->
+          {:reply, {:error, %{reason: to_string(reason)}}, socket}
+      end
+    end)
+  end
+
+  def handle_in("pki:client_auth_bundle:receipt", payload, socket) do
+    with_runtime_authorized(socket, fn ->
+      attrs = Map.put(payload, "agent_id", socket.assigns.agent_id)
+
+      case SecretHub.Core.PKI.ClientAuth.record_bundle_receipt(attrs) do
+        {:ok, _receipt} ->
+          {:reply, {:ok, %{status: "recorded"}}, socket}
+
+        {:error, reason} ->
+          {:reply, {:error, %{reason: to_string(reason)}}, socket}
+      end
+    end)
+  end
+
   def handle_in("agent:status", payload, socket) do
     with_runtime_authorized(socket, fn ->
       Logger.info("Agent status event", agent_id: socket.assigns.agent_id, payload: payload)
@@ -91,6 +137,12 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
 
   def handle_in(event, _payload, socket) do
     {:reply, {:error, %{reason: "unknown_event", event: event}}, socket}
+  end
+
+  @impl true
+  def handle_info({:client_auth_bundle_updated, payload}, socket) do
+    push(socket, "pki:client_auth_bundle:updated", payload)
+    {:noreply, socket}
   end
 
   @impl true

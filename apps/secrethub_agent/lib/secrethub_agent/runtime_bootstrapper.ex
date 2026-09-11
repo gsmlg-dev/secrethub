@@ -398,6 +398,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
   defp start_runtime(%IdentityStore{} = material, callback, state) do
     Logger.info("Starting trusted Agent runtime connection", agent_id: material.agent_id)
+    bind_pki_identity(material.agent_id)
 
     case start_runtime_process(material, callback) do
       {:ok, pid} -> {:noreply, %{state | runtime_pid: pid}}
@@ -408,6 +409,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
   defp start_enrolled_runtime(material, callback, finalization, state) do
     Logger.info("Starting trusted Agent runtime connection", agent_id: material.agent_id)
+    bind_pki_identity(material.agent_id)
 
     case start_runtime_process(material, callback) do
       {:ok, pid} ->
@@ -422,6 +424,22 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
         {:noreply, %{state | pending_finalization: retry}}
     end
   end
+
+  defp bind_pki_identity(agent_id) when is_binary(agent_id) and agent_id != "" do
+    case Process.whereis(SecretHub.Agent.PKI.TrustBundleManager) do
+      pid when is_pid(pid) ->
+        try do
+          SecretHub.Agent.PKI.TrustBundleManager.bind_identity(pid, agent_id)
+        catch
+          _, _ -> :ok
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp bind_pki_identity(_), do: :ok
 
   defp start_runtime_process(material, callback) do
     TrustedConnection.start_link(trusted_connection_opts(material, callback))
@@ -591,6 +609,11 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   defp binary_present?(value), do: is_binary(value) and value != ""
 
   defp default_state_dir do
-    Path.expand(@default_state_dir)
+    System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
+      Application.get_env(
+        :secrethub_agent,
+        :state_dir,
+        Path.expand(@default_state_dir)
+      )
   end
 end
