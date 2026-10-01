@@ -565,6 +565,7 @@ defmodule SecretHub.Agent.Connection do
     base_opts = [
       url: url,
       json_library: Jason,
+      topic_channel_map: %{runtime_topic() => SecretHub.Agent.RuntimeChannel},
       heartbeat_interval: 30_000,
       reconnect_interval: 5_000
     ]
