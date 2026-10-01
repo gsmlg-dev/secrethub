@@ -77,7 +77,8 @@ priv/plts/
 *.plt.hash
 
 # Release artifacts
-rel/
+rel/*
+!rel/env.sh.eex
 releases/
 burrito_out/
 
@@ -93,3 +94,14 @@ helm/
 *.db
 *.sqlite
 *.sqlite3
+
+# Isolated worktrees, private runtime state, and locally installed assets
+.trees/
+**/node_modules/
+**/_build/
+**/priv/cert/
+**/priv/keys/
+*.pem
+*.key
+*.p12
+*.pfx

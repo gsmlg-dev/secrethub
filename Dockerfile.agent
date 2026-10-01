@@ -1,99 +1,28 @@
-# Multi-stage Dockerfile for SecretHub Agent
-# Lightweight daemon for deployment alongside applications
-
-# =====================================
-# Build Stage
-# =====================================
-FROM elixir:1.18-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache \
-    build-base \
-    git
-
-# Set working directory
+FROM elixir:1.18.4-otp-28-alpine@sha256:d8313656ddc1e96c0ee90e680e430c861abd00082ad16ea4a532163dc1031f21 AS builder
+RUN apk add --no-cache build-base git
 WORKDIR /app
-
-# Set build ENV
 ENV MIX_ENV=prod
-
-# Install Elixir & Erlang tooling
-RUN mix local.hex --force && \
-    mix local.rebar --force
-
-# Copy entire umbrella project
+RUN mix local.hex --force && mix local.rebar --force
 COPY mix.exs mix.lock ./
 COPY config ./config
 COPY apps ./apps
-
-# Install dependencies
-RUN mix deps.get --only prod
-
-# Compile dependencies
-RUN mix deps.compile
-
-# Compile application
-RUN mix compile
-
-# Build OTP release for agent
+COPY rel ./rel
+RUN mix deps.get --only prod && mix deps.compile
+RUN mix compile --warnings-as-errors
 RUN mix release secrethub_agent
 
-# =====================================
-# Runtime Stage
-# =====================================
-FROM alpine:3.22 AS runtime
-
-# Install runtime dependencies
-RUN apk add --no-cache \
-    openssl \
-    ncurses-libs \
-    ca-certificates \
-    curl \
-    socat \
-    libgcc \
-    libstdc++ \
-    && rm -rf /var/cache/apk/*
-
-# Create non-root user for security
-RUN addgroup -g 1002 -S secrethub && \
-    adduser -D -u 1002 -G secrethub -S secrethub
-
-# Create application directory
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS runtime
+RUN apk add --no-cache openssl ncurses-libs ca-certificates curl socat libgcc libstdc++
+RUN addgroup -g 1002 -S secrethub && adduser -D -u 1002 -G secrethub -S secrethub
 WORKDIR /app
-
-# Copy built OTP release from builder stage
 COPY --from=builder --chown=secrethub:secrethub /app/_build/prod/rel/secrethub_agent ./
-
-# Set environment variables
-ENV HOME=/app
-ENV AGENT_ID=${AGENT_ID:-agent-default}
-ENV CORE_URL=${CORE_URL:-ws://localhost:4000}
-ENV MIX_ENV=prod
-ENV RELEASE_COOKIE=change-me-in-production
-
-# Create necessary directories for agent operation
-RUN mkdir -p /app/var/log && \
-    mkdir -p /app/var/run && \
-    mkdir -p /app/tmp && \
-    mkdir -p /app/etc/certs && \
-    chown -R secrethub:secrethub /app
-
-# Switch to non-root user
+ENV HOME=/app MIX_ENV=prod RELEASE_DISTRIBUTION=none ERL_CRASH_DUMP=/dev/null
+RUN mkdir -p /app/tmp /var/lib/secrethub /var/run/secrethub && chown secrethub:secrethub /app/tmp /var/lib/secrethub /var/run/secrethub
+ENV TMPDIR=/app/tmp
+ENV SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub/agent SECRET_HUB_AGENT_SOCKET_PATH=/var/run/secrethub/agent.sock SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR=/var/lib/secrethub/pki/client-auth
+RUN mkdir -p /var/lib/secrethub/agent /var/lib/secrethub/pki/client-auth && chown -R secrethub:secrethub /var/lib/secrethub
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD printf '%s\n' '{"action":"ping"}' | socat -T2 - UNIX-CONNECT:"$SECRET_HUB_AGENT_SOCKET_PATH" | grep -q 'pong' || exit 1
 USER secrethub
-
-# Health check for the agent
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD test -f /app/var/run/agent.pid || exit 1
-
-# Entrypoint
 ENTRYPOINT ["/app/bin/secrethub_agent"]
-
-# Default command to run if no arguments provided
 CMD ["start"]
-
-# Labels for orchestration
-LABEL maintainer="SecretHub Development Team" \
-      version="0.1.0" \
-      description="SecretHub Agent - Daemon for secure secret delivery to applications" \
-      org.opencontainers.image.source="https://github.com/gsmlg-dev/secrethub" \
-      org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/gsmlg-dev/secrethub" org.opencontainers.image.licenses="MIT"

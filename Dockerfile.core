@@ -1,117 +1,34 @@
-# Multi-stage Dockerfile for SecretHub Core Service
-# Optimized for production deployment with security best practices
-
-# =====================================
-# Build Stage
-# =====================================
-FROM elixir:1.18-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache \
-    build-base \
-    git \
-    nodejs \
-    npm
-
-# Set working directory
+FROM oven/bun:1.3.13-alpine@sha256:4de475389889577f346c636f956b42a5c31501b654664e9ae5726f94d7bb5349 AS bun
+FROM elixir:1.18.4-otp-28-alpine@sha256:d8313656ddc1e96c0ee90e680e430c861abd00082ad16ea4a532163dc1031f21 AS builder
+RUN apk add --no-cache build-base git
 WORKDIR /app
-
-# Set build ENV
 ENV MIX_ENV=prod
-ENV SECRET_HUB_CLUSTER_NODE_ID=build-only-docker-core
-
-# Install Elixir & Erlang tooling
-RUN mix local.hex --force && \
-    mix local.rebar --force
-
-# Copy entire umbrella project
+RUN mix local.hex --force && mix local.rebar --force
 COPY mix.exs mix.lock ./
 COPY config ./config
 COPY apps ./apps
+COPY rel ./rel
+RUN mix deps.get --only prod && mix deps.compile
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --ignore-scripts
+RUN cd apps/secrethub_web && bun ./node_modules/@tailwindcss/cli/dist/index.mjs --input=assets/css/app.css --output=priv/static/assets/css/app.css --minify && bun build assets/js/app.js --outdir=priv/static/assets/js --external '/fonts/*' --external '/images/*' --minify
+RUN mix compile --warnings-as-errors
+RUN mix phx.digest --no-compile
+RUN mix release secrethub_core
 
-# Install dependencies
-RUN mix deps.get --only prod
-
-# Compile dependencies
-RUN mix deps.compile
-
-# Install frontend node_modules (Tailwind CSS v4 uses @duskmoon-dev/core npm package)
-RUN cd apps/secrethub_web && npm install --prefer-offline
-
-# Build assets using bun and tailwind
-# Dummy DATABASE_URL, SECRET_KEY_BASE, and the builder-only cluster identity are
-# needed because Mix tasks evaluate config/runtime.exs in prod mode.
-# Real values are provided at container runtime via environment variables.
-RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
-    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
-    mix assets.setup && \
-    DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
-    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
-    mix assets.deploy
-
-# Compile application
-RUN mix compile
-
-# Build OTP release for core
-RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
-    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
-    mix release secrethub_core
-
-# =====================================
-# Runtime Stage
-# =====================================
-FROM alpine:3.22 AS runtime
-
-# Install runtime dependencies
-RUN apk add --no-cache \
-    openssl \
-    ncurses-libs \
-    ca-certificates \
-    curl \
-    libgcc \
-    libstdc++ \
-    && rm -rf /var/cache/apk/*
-
-# Create non-root user
-RUN addgroup -g 1001 -S secrethub && \
-    adduser -D -u 1001 -G secrethub -S secrethub
-
-# Create application directory
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS runtime
+RUN apk add --no-cache openssl ncurses-libs ca-certificates curl socat libgcc libstdc++
+RUN addgroup -g 1001 -S secrethub && adduser -D -u 1001 -G secrethub -S secrethub
 WORKDIR /app
-
-# Copy built OTP release from builder stage
 COPY --from=builder --chown=secrethub:secrethub /app/_build/prod/rel/secrethub_core ./
-
-# Set environment
-ENV HOME=/app
-ENV PORT=4664
-ENV MIX_ENV=prod
-ENV RELEASE_COOKIE=change-me-in-production
-
-# Create necessary directories
-RUN mkdir -p /app/var/log && \
-    mkdir -p /app/tmp && \
-    chown -R secrethub:secrethub /app
-
-# Expose the public HTTP, trusted Agent mTLS, and admin mTLS listeners.
-EXPOSE 4664 4665 4667
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:4664/health || exit 1
-
-# Switch to non-root user
+ENV HOME=/app MIX_ENV=prod RELEASE_DISTRIBUTION=none ERL_CRASH_DUMP=/dev/null
+RUN mkdir -p /app/tmp /var/lib/secrethub /var/run/secrethub && chown secrethub:secrethub /app/tmp /var/lib/secrethub /var/run/secrethub
+ENV TMPDIR=/app/tmp
+ENV PHX_SERVER=true PORT=4664
+EXPOSE 4665 4668
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD curl -fsS http://127.0.0.1:4664/v1/sys/health/live >/dev/null || exit 1
 USER secrethub
-
-# Entrypoint
 ENTRYPOINT ["/app/bin/secrethub_core"]
-
-# Default command
 CMD ["start"]
-
-# Labels for orchestration
-LABEL maintainer="SecretHub Development Team" \
-      version="0.1.0" \
-      description="SecretHub Core Service - Enterprise secrets management platform" \
-      org.opencontainers.image.source="https://github.com/gsmlg-dev/secrethub" \
-      org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/gsmlg-dev/secrethub" org.opencontainers.image.licenses="MIT"
