@@ -18,6 +18,54 @@ verification and provisional artifact checks below are scoped evidence.
 | WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. | Selected nonempty upgrade/compatible rollback and monitoring qualification; final full restore/RTO/RPO evidence |
 | WP6 | Artifact harness underway. Provisional Core/Agent images built, empty candidate explicitly migrated, real nonroot Core started outside checkout. | All G01–G20 tied to a frozen source and exact final image identifiers |
 
+## Current acceptance audit
+
+The report files were inspected again after commits `8c88de3` and `181e0f2`.
+No frozen final candidate is accepted. The current diagnostic Core image
+`1eb1bcc88a87` still has source revision `e5e1107` and
+`secrethub.source.dirty=true`; committed harness updates do not change that
+image's source provenance. The early Core gates used `ab0e6cbc24ae`, not this
+diagnostic image. Every gate below requires replay on the frozen final artifacts.
+
+| Gate | Inspected provisional evidence | Remaining acceptance |
+| --- | --- | --- |
+| G01 | Runtime audit-key gate passed on `ab0e6cbc24ae` | Final image runtime-key and invalid-input checks |
+| G02 | Empty-database initialization passed on `ab0e6cbc24ae` | Final image durability/share-release checks |
+| G03 | Unavailable/corrupt database rejection passed on `ab0e6cbc24ae` | Final image startup negatives |
+| G04 | Repeated/concurrent initialization passed on `ab0e6cbc24ae` | Final image preservation/concurrency checks |
+| G05 | Invalid-share negatives passed on `ab0e6cbc24ae` | Final image rejection/process-survival checks |
+| G06 | Restart/correct-share ciphertext readback passed on `ab0e6cbc24ae` | Final image identity/old-data checks |
+| G07 | Protected administrative access passed on `ab0e6cbc24ae` | Final image protected workflows |
+| G08 | Separate ingress-negative invocation passed on `ab0e6cbc24ae` | Final image route/network/spoofing negatives |
+| G09 | Origin/CSRF negatives passed on `ab0e6cbc24ae` | Final image browser/connected-transport negatives |
+| G10 | Sealed lifecycle passed on `ab0e6cbc24ae` | Final image liveness, unseal reachability and secret/signing refusal |
+| G11 | Real enrollment/restart/reconnect passed on `43715c4edce1` | Final Core/Agent lifecycle and damaged-state rejection |
+| G12 | Actual consumer lifecycle passed on `1eb1bcc88a87`/`3b95f124b819` | Final pair read/update/denial/revocation/restart readback |
+| G13 | Actual outage rejection and separately observed live expiry passed; helper report remains partial | One final-pair report joining cache/outage/reauthorization observations and debug-configuration scope |
+| G14 | Real PKI consumer issue/revoke/reconnect report passed | Final pair enforcement measurement with fresh leaves and explicit session semantics |
+| G15 | Copy-only corrupt-state checks passed; report remains partial | Final artifacts' old/corrupt-state behavior, with supported recovery or explicit fail-closed hold |
+| G16 | Restricted integrity, PKI reopen and actual static-consumer reopen passed in separate provisional drills | Full final-artifact restore inventory, consumers and measured recovery/data-loss window |
+| G17 | Actual older-7/newer-9 history refusal and authoritative reconciliation passed provisionally; report remains partial | Final-artifact older-database restriction and safe recovery with retained history |
+| G18 | Current-schema migration and incompatible rollback refusal report remains partial | Selected nonempty older-artifact upgrade and reviewed compatible binary rollback/recovery boundary |
+| G19 | Scoped VM fault/log redaction passed on `43715c4edce1`; later helpers keep raw inputs private | Final image logs/crash reports and complete exported-artifact scan |
+| G20 | Required-worker stop/readiness/restart recovery passed on `1eb1bcc88a87`; report remains partial | Final image replay and selected existing monitoring integration; host alert delivery is unexecuted |
+
+Inspected private report references: `artifact-core-refreshed-1/report.json`,
+`artifact-core-refreshed-ingress-1/report.json`,
+`artifact-core-refreshed-extra-1/report.json`,
+`artifact-core-vm-fault4-run1/report.json`,
+`runtime-artifact5-pushfix-run1/runtime-report.json`,
+`static-runtime-auth-artifact-run1/static-report.json`,
+`static-cache-expiry-runtime-auth-observation2/report.json`,
+`pki-runtime-artifact5-pushfix-run1/report.json`,
+`corruption-artifact7-run3/report.json`,
+`history-artifact7-versus9-run1/report.json`,
+`restore10/static-service-readback10-run2/static-restore-report.json`, and
+`monitoring11/worker-health-report11.json`. Raw private inputs and diagnostics
+remain outside the checkout. The final archive must identify the accepted source,
+artifact digests, platform, format/schema versions, commands and measurements;
+this audit table is not that archive or a release acceptance claim.
+
 ## Review repairs
 
 Legacy PKI used a known development encryption key in some historical paths.
