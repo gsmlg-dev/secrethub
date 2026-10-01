@@ -693,8 +693,8 @@ defmodule SecretHub.Core.Secrets do
     # Encrypt using the master key (use encrypt_to_blob for compatibility with decrypt_from_blob)
     Encryption.encrypt_to_blob(json_data, master_key)
   rescue
-    e ->
-      {:error, "Encryption failed: #{inspect(e)}"}
+    _ ->
+      {:error, "Encryption failed"}
   end
 
   defp encrypt_secret_data(_data, _master_key), do: {:error, "Secret data must be a map"}
@@ -704,8 +704,8 @@ defmodule SecretHub.Core.Secrets do
          {:ok, data} <- Jason.decode(json_data) do
       {:ok, data}
     else
-      {:error, reason} ->
-        {:error, "Decryption failed: #{inspect(reason)}"}
+      {:error, _} ->
+        {:error, "Decryption failed"}
     end
   end
 

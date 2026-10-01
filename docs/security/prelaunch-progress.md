@@ -31,8 +31,9 @@ persistence transaction; an audit failure rolls back. Unseal exposes the verifie
 key only after successful auditing. Four review regressions (provenance plus
 initialize/recover/unseal audit failure) failed before repair and passed after it.
 The final combined suite completed with 128 tests, zero failures and two existing
-skips. Independent review covered the original implementation; independent
-re-review of these repairs remains pending.
+skips. Independent read-only re-review of these repairs passed with no remaining
+blocking finding; the reviewer separately ran four signing-key tests. This
+review does not replace artifact, compatibility or restore acceptance.
 
 ## Provisional artifact observations
 
@@ -76,3 +77,32 @@ Remaining work is consumer authorization/integration, final-image qualification,
 full restore/security-history reconciliation, G01–G20 evidence and runbook
 verification. [Launch operations](launch-operations.md) is the authoritative
 operations procedure; production cutover remains the operator's responsibility.
+
+## Latest consumer and redaction checks
+
+Agent/CLI proof, identity, floor and cache regressions passed for completed
+source slices (59 Agent tests and 38 CLI tests before the final lint-only refresh).
+An independent Python/OpenSSL application exercised the actual Agent UDS with
+isolated Core responses: initial/update private atomic file readback succeeded;
+denial and outage preserved the file; stdout excluded values (13 tests, no
+failures in that focused socket suite). These remain source fixtures.
+
+Core authorization now has 25 focused tests with one remaining failure; actual
+independent-connection concurrency, revocation and floor-race cases passed.
+The outstanding query casts `text[]` against a `varchar[]` policy column.
+A one-line matching-type patch is prepared but unapplied. The recovery
+specialist exhausted its two-round developer limit and explicitly requires
+operator authorization for another round. The permission question is pending;
+this restriction is not an application security-design gate.
+
+The actual channel suite passed 15 of 16 tests using real independent database
+connections; its remaining legacy-read failure reaches that same Core query.
+It was not weakened or skipped. No Core authorization commit or final source
+freeze is claimed yet.
+
+Four new redaction regressions failed before the fix: secret/changeset inspection,
+JSON encoding/decoding errors and low-level encryption exception detail. Secret
+fields now redact inspection and error helpers return bounded strings. Final
+focused evidence is 36 Shared tests plus two Core tests, all passing.
+`go test -mod=readonly ./...` passed for the local Caddy consumer module and its
+new executable entrypoint. Full image-level PKI enforcement remains pending.

@@ -22,10 +22,10 @@ defmodule SecretHub.Shared.Schemas.Secret do
   schema "secrets" do
     field(:name, :string)
     field(:secret_path, :string)
-    field(:value, :string, virtual: true)
+    field(:value, :string, virtual: true, redact: true)
     field(:secret_type, Ecto.Enum, values: [:static, :dynamic])
     field(:engine_type, :string, default: "static")
-    field(:encrypted_data, :binary)
+    field(:encrypted_data, :binary, redact: true)
     field(:version, :integer, default: 1)
     field(:metadata, :map, default: %{})
     field(:description, :string)

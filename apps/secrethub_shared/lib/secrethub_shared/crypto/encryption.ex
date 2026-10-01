@@ -66,8 +66,8 @@ defmodule SecretHub.Shared.Crypto.Encryption do
        version: 1
      }}
   rescue
-    error ->
-      {:error, "Encryption failed: #{inspect(error)}"}
+    _ ->
+      {:error, "Encryption failed"}
   end
 
   def encrypt(_plaintext, _encryption_key) do
@@ -108,8 +108,8 @@ defmodule SecretHub.Shared.Crypto.Encryption do
         {:ok, plaintext}
     end
   rescue
-    error ->
-      {:error, "Decryption failed: #{inspect(error)}"}
+    _ ->
+      {:error, "Decryption failed"}
   end
 
   def decrypt(_encrypted_data, _encryption_key) do
