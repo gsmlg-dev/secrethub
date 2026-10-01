@@ -233,3 +233,50 @@ the authorization migrations and typed-runtime gate. Current Agent requests
 already require that newer contract. Source API inspection is preparation,
 not G12/G13 acceptance; a separate release `eval` cannot inspect a live Agent's
 cache because release distribution is disabled.
+
+Consistent disposable snapshots now include the enrolled Agent's private
+identity, SSH host key and monotonic trust state, kept separately from database
+archives and independently held unseal/audit material. Generation-7 and later
+generation-9 database backups were taken with the owned Core and Agent stopped;
+the original services were restarted and Agent identity digests preserved. The
+snapshot operations measured 21.139 and 34.587 seconds respectively. Both were
+restored into new empty databases in the isolated recovery cluster without
+dropping or overwriting the earlier databases (3.500 and 3.518 seconds including
+fixture preparation). These durations do not establish full application RTO.
+
+The generation-7 restore passed restricted static decryption, historical audit
+verification and CA signing checks. A fresh PKI invocation independently retained
+generation/CRL 9 after a newer revocation; the old generation-7 signed bundle was
+rejected against that history with actual revoked/control requests. All leaves
+used for those requests passed expiry checks. Earlier expired leaves were not
+used as revocation evidence. The first restricted check selected equal supplied
+counters (7 versus 7) and correctly failed its older-history assertion; its
+report is retained. The later independently checked 7-versus-9 case passed.
+
+Authoritative PKI reconciliation selected the complete newer generation-9 backup
+rather than modifying the older database or raising its counters. Its restricted
+integrity/key-use checks passed in 23.125 seconds, with the original CA pin,
+signed publication, old static data and historical audit preserved. The first
+attempt failed because ordinary file copying lost the original service group;
+the copied inputs now preserve exact numeric ownership and `0640` modes, with no
+change to original files or broader permissions.
+
+A controlled PKI service restore then passed in 61.596 seconds after database
+import/preflight. The restored Core started sealed, was manually unsealed through
+the existing protected ingress, and the copied Agent reconnected with a fresh
+heartbeat and identical identity digests. The restored publication matched
+retained generation/CRL 9; the actual Caddy consumer denied the revoked leaf and
+allowed the control, with expiry checked before and after. No new CA or counter
+reset was used. All serving drill containers were removed and both original
+fixture services are healthy. The older databases and diagnostic state remain
+held. New-generation distribution during this restore was unexecuted; the
+retained valid generation was used. G16/G17 and the full plan remain partial:
+static-consumer recovery and immutable final-artifact acceptance are outstanding.
+
+Remaining qualification depends on the matched Core authorization artifact.
+The prepared `text[]` to `varchar[]` policy-query repair remains unapplied pending
+the previously requested extra focused repair round. Live fixture catalog
+inspection confirms `entity_bindings` is `character varying(255)[]`. The same
+approval dependency has persisted across goal continuations; provisional source
+and image checks do not authorize bypassing that recovery limit or freezing a
+candidate while the focused Core/channel failures remain.
