@@ -28,6 +28,7 @@ in
 
   # Language configuration
   languages.elixir.enable = true;
+  languages.elixir.package = pkgs-stable.beam.packages.erlang_28.elixir_1_18;
 
   # JavaScript / Bun
   languages.javascript.enable = true;
@@ -96,7 +97,6 @@ in
     # Database URLs (using Unix domain socket for security and performance)
     DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=${config.devenv.root}/.devenv/state/postgres";
     DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=${config.devenv.root}/.devenv/state/postgres";
-    HUMAN_DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_human_dev?host=${config.devenv.root}/.devenv/state/postgres";
 
     # Asset tooling — tells Mix hex packages to use Nix-managed binaries
     MIX_BUN_PATH = lib.getExe pkgs-stable.bun;
