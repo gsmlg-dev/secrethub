@@ -16,6 +16,8 @@ defmodule SecretHub.Core.Release do
 
   @app :secrethub_core
 
+  def preflight, do: SecretHub.Core.Preflight.run()
+
   def migrate do
     load_app()
 

@@ -29,6 +29,7 @@ defmodule SecretHub.Shared.MixProject do
     [
       {:ecto, "~> 3.12"},
       {:ecto_network, "~> 1.5"},
+      {:jason, "~> 1.4"},
       {:crontab, "~> 1.1"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

@@ -8,6 +8,7 @@ defmodule SecretHub.Agent.HostKey do
 
   alias X509.Certificate.Extension
 
+  @derive {Inspect, except: [:private_key, :private_key_pem]}
   defstruct [
     :algorithm,
     :path,

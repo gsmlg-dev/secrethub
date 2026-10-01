@@ -78,218 +78,84 @@ end
 # when mix bun/tailwind tasks run.
 
 if config_env() == :prod do
-  cluster_node_id =
-    System.get_env("SECRET_HUB_CLUSTER_NODE_ID") ||
-      raise """
-      environment variable SECRET_HUB_CLUSTER_NODE_ID is missing.
-      Set it to a stable, deployment-owned identifier for this Core node.
-      """
+  alias SecretHub.Shared.{RuntimeConfig, RuntimeSecrets}
 
-  config :secrethub_core, cluster_node_id: cluster_node_id
-
-  # Database configuration from environment
-  database_url =
-    System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: postgresql://user:password@host/database
-      Or with Unix socket: postgresql://user:password@/database?host=/var/run/postgresql
-      """
-
-  maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
-
-  if human_enabled do
-    human_database_url =
-      System.get_env("HUMAN_DATABASE_URL") ||
-        raise """
-        environment variable HUMAN_DATABASE_URL is missing.
-        For example: postgresql://user:password@host/secrethub_human
-        """
-
-    human_secret_key_base =
-      System.get_env("HUMAN_SECRET_KEY_BASE") ||
-        raise """
-        environment variable HUMAN_SECRET_KEY_BASE is missing.
-        You can generate one by calling: mix phx.gen.secret
-        """
-
-    human_host = System.get_env("HUMAN_ENDPOINT_HOST") || "localhost"
-    human_port = String.to_integer(System.get_env("HUMAN_ENDPOINT_PORT") || "4666")
-    human_pool_size = String.to_integer(System.get_env("HUMAN_DB_POOL_SIZE") || "40")
-
-    config :secrethub_human, SecretHub.Human.Repo,
-      url: human_database_url,
-      pool_size: human_pool_size,
-      socket_options: maybe_ipv6
-
-    config :secrethub_human, SecretHub.HumanWeb.Endpoint,
-      url: [host: human_host, port: human_port],
-      http: [
-        ip: {0, 0, 0, 0, 0, 0, 0, 0},
-        port: human_port
-      ],
-      secret_key_base: human_secret_key_base,
-      check_origin: :conn
+  if secrethub_role != :core or human_enabled do
+    raise ArgumentError, "SECRETHUB_ROLE: single_operator_requires_core"
   end
+
+  if System.get_env("SECRET_HUB_ADMIN_ENDPOINT_SERVER") in ~w(true 1) do
+    raise ArgumentError, "SECRET_HUB_ADMIN_ENDPOINT_SERVER: unsupported_duplicate_authentication"
+  end
+
+  RuntimeConfig.distribution!()
+  cluster_node_id = RuntimeSecrets.read!("SECRET_HUB_CLUSTER_NODE_ID")
+  database_url = RuntimeConfig.database_url!(RuntimeSecrets.read!("DATABASE_URL"))
+  secret_key_base = RuntimeSecrets.read!("SECRET_KEY_BASE")
+
+  if byte_size(secret_key_base) < 64 or String.starts_with?(secret_key_base, "build-only") do
+    raise ArgumentError, "SECRET_KEY_BASE: invalid_key"
+  end
+
+  audit_key = RuntimeConfig.decode_key!("AUDIT_HMAC_KEY", RuntimeSecrets.read!("AUDIT_HMAC_KEY"))
+  audit_key_id = RuntimeSecrets.read!("AUDIT_HMAC_KEY_ID")
+
+  verification_keys =
+    RuntimeConfig.verification_keys!(
+      RuntimeSecrets.read!("AUDIT_HMAC_VERIFICATION_KEYS", required: false)
+    )
+
+  config :secrethub_core,
+    cluster_node_id: cluster_node_id,
+    launch_profile: :single_operator,
+    enabled_features: [:static_secrets, :client_auth_pki],
+    audit_hmac_secret: audit_key,
+    audit_hmac_key_id: audit_key_id,
+    audit_hmac_verification_keys: verification_keys
+
+  config :secrethub_human, enabled: false
 
   config :secrethub_core, SecretHub.Core.Repo,
     url: database_url,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    socket_options: maybe_ipv6
+    pool_size: RuntimeConfig.port!("POOL_SIZE", 10),
+    socket_options: if(System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: [])
 
-  # The secret key base is used to sign/encrypt cookies and other secrets.
-  # A default value is used in config/dev.exs and config/test.exs but you
-  # want to use a different value for prod and you most likely don't want
-  # to check this value into version control, so we use an environment
-  # variable instead.
-  secret_key_base =
-    System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
+  # The public origin is independent of the private transport address and Host headers.
+  origin =
+    RuntimeConfig.https_url!(
+      "SECRET_HUB_MANAGEMENT_ORIGIN",
+      RuntimeSecrets.read!("SECRET_HUB_MANAGEMENT_ORIGIN")
+    )
 
-  host = System.get_env("PHX_HOST") || "localhost"
-  port = String.to_integer(System.get_env("PORT") || "4664")
+  if origin.path not in [nil, "", "/"],
+    do: raise(ArgumentError, "SECRET_HUB_MANAGEMENT_ORIGIN: invalid_origin")
 
-  config :secrethub_web, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
+  port = RuntimeConfig.port!("PORT", 4664)
+  management_ip = RuntimeConfig.private_ip!("SECRET_HUB_MANAGEMENT_BIND_IP", "127.0.0.1")
+  proxy_ip = RuntimeConfig.private_ip!("SECRET_HUB_TRUSTED_PROXY_IP", "127.0.0.1")
+  machine_port = RuntimeConfig.port!("SECRET_HUB_MACHINE_PORT", 4668)
+  agent_port = RuntimeConfig.port!("SECRET_HUB_AGENT_ENDPOINT_PORT", 4665)
 
-  config :secrethub_web, SecretHub.Web.Endpoint,
-    url: [host: host, port: port],
-    http: [
-      ip: {0, 0, 0, 0, 0, 0, 0, 0},
-      port: port
-    ],
-    secret_key_base: secret_key_base,
-    check_origin: :conn
-
-  if System.get_env("SECRET_HUB_ADMIN_ENDPOINT_SERVER") in ~w(true 1) do
-    admin_port =
-      String.to_integer(System.get_env("SECRET_HUB_ADMIN_ENDPOINT_PORT") || "4667")
-
-    conflicting_port =
-      cond do
-        admin_port == port ->
-          "PORT"
-
-        System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) and
-            admin_port ==
-              String.to_integer(System.get_env("SECRET_HUB_AGENT_ENDPOINT_PORT") || "4665") ->
-          "SECRET_HUB_AGENT_ENDPOINT_PORT"
-
-        human_enabled and
-            admin_port == String.to_integer(System.get_env("HUMAN_ENDPOINT_PORT") || "4666") ->
-          "HUMAN_ENDPOINT_PORT"
-
-        true ->
-          nil
-      end
-
-    if conflicting_port do
-      raise "SECRET_HUB_ADMIN_ENDPOINT_PORT must differ from #{conflicting_port}"
-    end
-
-    admin_certfile =
-      System.get_env("SECRET_HUB_ADMIN_ENDPOINT_CERT_PATH") ||
-        raise "SECRET_HUB_ADMIN_ENDPOINT_CERT_PATH is required when the admin mTLS endpoint is enabled"
-
-    admin_keyfile =
-      System.get_env("SECRET_HUB_ADMIN_ENDPOINT_KEY_PATH") ||
-        raise "SECRET_HUB_ADMIN_ENDPOINT_KEY_PATH is required when the admin mTLS endpoint is enabled"
-
-    admin_cacertfile =
-      System.get_env("SECRET_HUB_ADMIN_ENDPOINT_CA_CERT_PATH") ||
-        raise "SECRET_HUB_ADMIN_ENDPOINT_CA_CERT_PATH is required when the admin mTLS endpoint is enabled"
-
-    admin_fingerprints =
-      case System.get_env("SECRET_HUB_ADMIN_CERT_FINGERPRINTS") do
-        nil ->
-          raise "SECRET_HUB_ADMIN_CERT_FINGERPRINTS is required when the admin mTLS endpoint is enabled"
-
-        fingerprints ->
-          fingerprints
-          |> String.split(~r/[\s,]+/, trim: true)
-          |> Enum.map(&String.downcase/1)
-          |> Enum.uniq()
-      end
-
-    if admin_fingerprints == [] or
-         Enum.any?(admin_fingerprints, &(not Regex.match?(~r/\A[0-9a-f]{64}\z/, &1))) do
-      raise "SECRET_HUB_ADMIN_CERT_FINGERPRINTS must contain comma-separated SHA-256 fingerprints"
-    end
-
-    config :secrethub_web, :ADMIN_CERT_FINGERPRINTS, admin_fingerprints
-
-    # This is a second, direct-TLS listener on the Core endpoint. The normal
-    # HTTP listener above remains available for browser/API traffic behind a
-    # reverse proxy, while this dedicated port requires a client certificate.
-    config :secrethub_web, SecretHub.Web.Endpoint,
-      server: true,
-      https: [
-        ip: {0, 0, 0, 0, 0, 0, 0, 0},
-        port: admin_port,
-        cipher_suite: :strong,
-        certfile: admin_certfile,
-        keyfile: admin_keyfile,
-        thousand_island_options: [
-          transport_options: [
-            cacertfile: String.to_charlist(admin_cacertfile),
-            verify: :verify_peer,
-            fail_if_no_peer_cert: true,
-            versions: [:"tlsv1.2", :"tlsv1.3"],
-            ipv6_v6only: false
-          ]
-        ]
-      ]
+  if length(Enum.uniq([port, machine_port, agent_port])) != 3 do
+    raise ArgumentError, "listeners: conflicting_ports"
   end
 
-  # ## SSL Support
-  #
-  # To get SSL working, you will need to add the `https` key
-  # to your endpoint configuration:
-  #
-  #     config :secrethub_web, SecretHub.Web.Endpoint,
-  #       https: [
-  #         ...,
-  #         port: 443,
-  #         cipher_suite: :strong,
-  #         keyfile: System.get_env("SOME_APP_SSL_KEY_PATH"),
-  #         certfile: System.get_env("SOME_APP_SSL_CERT_PATH")
-  #       ]
-  #
-  # The `cipher_suite` is set to `:strong` to support only the
-  # latest and more secure SSL ciphers. This means old browsers
-  # and clients may not be supported. You can set it to
-  # `:compatible` for wider support.
-  #
-  # `:keyfile` and `:certfile` expect an absolute path to the key
-  # and cert in disk or a relative path inside priv, for example
-  # "priv/ssl/server.key". For all supported SSL configuration
-  # options, see https://hexdocs.pm/plug/Plug.SSL.html#configure/1
-  #
-  # We also recommend setting `force_ssl` in your config/prod.exs,
-  # ensuring no data is ever sent via http, always redirecting to https:
-  #
-  #     config :secrethub_web, SecretHub.Web.Endpoint,
-  #       force_ssl: [hsts: true]
-  #
-  # Check `Plug.SSL` for all available options in `force_ssl`.
+  config :secrethub_web, SecretHub.Web.Endpoint,
+    url: [scheme: "https", host: origin.host, port: origin.port, path: ""],
+    http: [ip: management_ip, port: port],
+    https: nil,
+    trusted_proxy_ips: [proxy_ip],
+    secret_key_base: secret_key_base,
+    check_origin: [URI.to_string(%{origin | path: nil})]
 
-  # ## Configuring the mailer
-  #
-  # In production you need to configure the mailer to use a different adapter.
-  # Here is an example configuration for Mailgun:
-  #
-  #     config :secrethub_web, SecretHub.Web.Mailer,
-  #       adapter: Swoosh.Adapters.Mailgun,
-  #       api_key: System.get_env("MAILGUN_API_KEY"),
-  #       domain: System.get_env("MAILGUN_DOMAIN")
-  #
-  # Most non-SMTP adapters require an API client. Swoosh supports Req, Hackney,
-  # and Finch out-of-the-box. This configuration is typically done at
-  # compile-time in your config/prod.exs:
-  #
-  #     config :swoosh, :api_client, Swoosh.ApiClient.Req
-  #
-  # See https://hexdocs.pm/swoosh/Swoosh.html#module-installation for details.
+  # Machine enrollment and application-token APIs use an explicit separate route set.
+  config :secrethub_web, SecretHub.Web.MachineEndpoint,
+    server: System.get_env("SECRET_HUB_MACHINE_ENDPOINT_SERVER") in ~w(true 1),
+    url: [host: System.get_env("SECRET_HUB_MACHINE_HOST") || "localhost", port: machine_port],
+    http: [
+      ip: RuntimeConfig.private_ip!("SECRET_HUB_MACHINE_BIND_IP", "127.0.0.1"),
+      port: machine_port
+    ],
+    secret_key_base: secret_key_base,
+    check_origin: false
 end

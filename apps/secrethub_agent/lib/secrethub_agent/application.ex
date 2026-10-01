@@ -8,7 +8,9 @@ defmodule SecretHub.Agent.Application do
     # Check if agent is enabled (default: true)
     # Set `config :secrethub_agent, enabled: false` in dev.exs to disable
     if Application.get_env(:secrethub_agent, :enabled, true) do
-      start_agent()
+      with :ok <- SecretHub.Agent.Preflight.startup_validate() do
+        start_agent()
+      end
     else
       # Return empty supervisor when disabled
       Supervisor.start_link([], strategy: :one_for_one, name: SecretHub.Agent.Supervisor)
