@@ -1,407 +1,232 @@
 defmodule SecretHub.Shared.Crypto.Shamir do
   @moduledoc """
-  Shamir's Secret Sharing implementation for secure key splitting.
+  Byte-wise Shamir sharing over GF(256), with the AES polynomial `0x11b`.
 
-  This module implements Shamir's Secret Sharing algorithm to split the master
-  encryption key into N shares, where any K shares can reconstruct the original
-  secret. This is used for the unseal mechanism.
+  Every secret byte is the constant coefficient of an independent polynomial.
+  All remaining coefficients are independent uniform random bytes, including
+  zero. Shares use distinct nonzero coordinates 1 through 251. Any threshold
+  shares recover the secret; fewer reveal no information about its bytes.
 
-  ## Security Properties
-  - Information-theoretic security
-  - Any K-1 shares reveal no information about the secret
-  - Exactly K shares are required to reconstruct
-  - Shares can be distributed to different administrators
-
-  ## Typical Configuration
-  - Total shares (N): 5
-  - Threshold (K): 3
-  - This means 5 key shares are generated, and any 3 can unseal the vault
+  Version 4 envelopes bind the parameters to a 16-byte share-set generation.
+  This metadata is not authentication: callers must compare the generation to
+  durable Vault state and authenticate the reconstructed key before unsealing.
+  Versions 1–3 are deliberately unsupported and require verified recovery.
+  See `docs/security/shamir-v4.md` for the wire specification and vectors.
   """
 
-  # Use largest prime < 256 for byte-wise Shamir sharing
-  # This ensures all values stay within byte range (0-255)
-  @prime 251
-  # Limited by prime
+  import Bitwise
+
+  @version 4
   @max_shares 251
+  @max_secret_length 4096
+  @header_length 22
+  @max_encoded_length div((@header_length + @max_secret_length) * 4 + 2, 3)
 
   @type share :: %{
-          id: non_neg_integer(),
+          version: 4,
+          share_set_id: binary(),
+          id: pos_integer(),
           value: binary(),
-          threshold: non_neg_integer(),
-          total_shares: non_neg_integer(),
-          secret_length: non_neg_integer(),
-          adjustment_mask: binary()
+          threshold: pos_integer(),
+          total_shares: pos_integer(),
+          secret_length: pos_integer()
         }
 
-  @doc """
-  Splits a secret into N shares with threshold K.
-
-  ## Parameters
-  - `secret`: The secret to split (typically 32 bytes for AES-256 key)
-  - `total_shares`: Total number of shares to generate (N)
-  - `threshold`: Minimum shares required to reconstruct (K)
-
-  ## Examples
-
-      iex> secret = :crypto.strong_rand_bytes(32)
-      iex> {:ok, shares} = Shamir.split(secret, 5, 3)
-      iex> length(shares)
-      5
-  """
+  @doc "Splits a nonempty secret of at most 4096 bytes into a fresh share set."
   @spec split(binary(), pos_integer(), pos_integer()) :: {:ok, [share()]} | {:error, String.t()}
-  def split(secret, total_shares, threshold)
-      when is_binary(secret) and
-             total_shares > 0 and total_shares <= @max_shares and
-             threshold > 0 and threshold <= total_shares do
-    {normalized_bytes, adjustment_mask} = normalize_secret_bytes(secret)
-    data_polynomials = generate_polynomials(normalized_bytes, threshold)
+  def split(secret, total_shares, threshold) do
+    split(secret, total_shares, threshold, :crypto.strong_rand_bytes(16))
+  end
+
+  @doc "Splits a secret with a caller-supplied raw 16-byte Vault generation."
+  @spec split(binary(), pos_integer(), pos_integer(), binary()) ::
+          {:ok, [share()]} | {:error, String.t()}
+  def split(secret, total, threshold, share_set_id)
+      when is_binary(secret) and byte_size(secret) in 1..@max_secret_length and
+             is_integer(total) and total in 1..@max_shares and
+             is_integer(threshold) and threshold in 1..total//1 and
+             is_binary(share_set_id) and byte_size(share_set_id) == 16 do
+    polynomials =
+      for <<byte <- secret>> do
+        # No reduction, rejection, or forced nonzero leading coefficient:
+        # all 256 coefficients are equally likely, including zero.
+        [byte | :binary.bin_to_list(:crypto.strong_rand_bytes(threshold - 1))]
+      end
 
     shares =
-      build_shares(data_polynomials, total_shares, threshold, byte_size(secret), adjustment_mask)
+      for id <- 1..total do
+        value = for coefficients <- polynomials, into: <<>>, do: <<evaluate(coefficients, id)>>
+
+        %{
+          version: @version,
+          share_set_id: share_set_id,
+          id: id,
+          value: value,
+          threshold: threshold,
+          total_shares: total,
+          secret_length: byte_size(secret)
+        }
+      end
 
     {:ok, shares}
   end
 
-  def split(_secret, total_shares, _threshold) when total_shares > @max_shares do
-    {:error, "Maximum #{@max_shares} shares allowed (limited by prime #{@prime})"}
-  end
+  def split(_secret, total, _threshold, _share_set_id)
+      when is_integer(total) and total > @max_shares,
+      do: {:error, "Maximum #{@max_shares} shares allowed"}
 
-  def split(_secret, total_shares, threshold) when threshold > total_shares do
-    {:error, "Threshold cannot exceed total shares"}
-  end
+  def split(_secret, total, threshold, _share_set_id)
+      when is_integer(total) and is_integer(threshold) and threshold > total,
+      do: {:error, "Threshold cannot exceed total shares"}
 
-  def split(_secret, _total_shares, _threshold) do
-    {:error, "Invalid parameters"}
-  end
+  def split(_secret, _total, _threshold, _share_set_id), do: {:error, "Invalid parameters"}
 
-  @doc """
-  Combines K shares to reconstruct the original secret.
-
-  Uses Lagrange interpolation to reconstruct the polynomial at x=0.
-
-  ## Examples
-
-      iex> secret = :crypto.strong_rand_bytes(32)
-      iex> {:ok, shares} = Shamir.split(secret, 5, 3)
-      iex> {:ok, reconstructed} = Shamir.combine(Enum.take(shares, 3))
-      iex> reconstructed == secret
-      true
-  """
+  @doc "Validates complete v4 envelopes, then interpolates at coordinate zero."
   @spec combine([share()]) :: {:ok, binary()} | {:error, String.t()}
-  def combine(shares) when is_list(shares) and length(shares) > 0 do
-    # Verify all shares have the same threshold and secret_length
-    thresholds = shares |> Enum.map(& &1.threshold) |> Enum.uniq()
-    secret_lengths = shares |> Enum.map(&Map.get(&1, :secret_length, 32)) |> Enum.uniq()
+  def combine([]), do: {:error, "No shares provided"}
 
+  def combine([first | _] = shares) when length(shares) <= @max_shares do
     cond do
-      length(thresholds) != 1 ->
+      not Enum.all?(shares, &valid_share?/1) ->
+        {:error, "Invalid share"}
+
+      not Enum.all?(shares, &(&1.threshold == first.threshold)) ->
         {:error, "All shares must have the same threshold"}
 
-      length(shares) < hd(thresholds) ->
-        {:error, "Not enough shares. Need #{hd(thresholds)}, got #{length(shares)}"}
+      not Enum.all?(shares, &(parameters(&1) == parameters(first))) ->
+        {:error, "Inconsistent share parameters or share-set generation"}
+
+      length(Enum.uniq_by(shares, & &1.id)) != length(shares) ->
+        {:error, "Duplicate share coordinates"}
+
+      length(shares) < first.threshold ->
+        {:error, "Not enough shares. Need #{first.threshold}, got #{length(shares)}"}
 
       true ->
-        # Get the secret length and adjustment mask
-        secret_length = hd(secret_lengths)
-        adjustment_mask = hd(shares).adjustment_mask |> :binary.bin_to_list()
+        weighted = Enum.map(shares, &{&1.value, lagrange_weight(&1.id, shares)})
 
-        # Convert share values to byte lists
-        share_byte_lists =
-          Enum.map(shares, fn share ->
-            {share.id, :binary.bin_to_list(share.value)}
-          end)
-
-        # Reconstruct each byte independently using Lagrange interpolation
-        reconstructed_bytes =
-          for byte_index <- 0..(secret_length - 1) do
-            # Get the byte at this index from each share
-            points =
-              Enum.map(share_byte_lists, fn {id, bytes} ->
-                {id, Enum.at(bytes, byte_index)}
+        secret =
+          for position <- 0..(first.secret_length - 1), into: <<>> do
+            byte =
+              Enum.reduce(weighted, 0, fn {value, weight}, acc ->
+                bxor(acc, multiply(:binary.at(value, position), weight))
               end)
 
-            # Reconstruct this byte using Lagrange interpolation at x=0
-            reconstructed_byte = lagrange_interpolation(points, 0)
-
-            # Apply adjustment if this byte was >= 251 originally
-            # Use rem/2 to ensure result is always a valid byte (0-255)
-            if Enum.at(adjustment_mask, byte_index) == 1 do
-              rem(reconstructed_byte + @prime, 256)
-            else
-              rem(reconstructed_byte, 256)
-            end
+            <<byte>>
           end
-
-        # Convert back to binary
-        secret = :binary.list_to_bin(reconstructed_bytes)
 
         {:ok, secret}
     end
   end
 
-  def combine([]) do
-    {:error, "No shares provided"}
-  end
+  def combine(_invalid), do: {:error, "Invalid shares"}
 
-  @doc """
-  Validates that a share has the correct structure.
-
-  ## Examples
-
-      iex> share = %{id: 1, value: <<1,2,3>>, threshold: 3, total_shares: 5, secret_length: 32, adjustment_mask: <<0>>}
-      iex> Shamir.valid_share?(share)
-      true
-  """
+  @doc "Checks every required v4 field and its bounds without raising."
   @spec valid_share?(any()) :: boolean()
-  # Modern shares with adjustment_mask
   def valid_share?(%{
+        version: @version,
+        share_set_id: generation,
         id: id,
         value: value,
         threshold: threshold,
         total_shares: total,
-        adjustment_mask: mask
+        secret_length: length
       })
-      when is_integer(id) and id > 0 and
-             is_binary(value) and
-             is_binary(mask) and
-             is_integer(threshold) and threshold > 0 and
-             is_integer(total) and total > 0 and threshold <= total do
-    true
-  end
+      when is_binary(generation) and byte_size(generation) == 16 and
+             is_integer(total) and total in 1..@max_shares and
+             is_integer(id) and id in 1..total//1 and
+             is_integer(threshold) and threshold in 1..total//1 and
+             is_integer(length) and length in 1..@max_secret_length and
+             is_binary(value) and byte_size(value) == length,
+      do: true
 
-  # Legacy shares without adjustment_mask (backwards compatibility)
-  def valid_share?(%{id: id, value: value, threshold: threshold, total_shares: total})
-      when is_integer(id) and id > 0 and
-             is_binary(value) and
-             is_integer(threshold) and threshold > 0 and
-             is_integer(total) and total > 0 and threshold <= total do
-    true
-  end
+  def valid_share?(_invalid), do: false
 
-  def valid_share?(_), do: false
+  @doc "Encodes a valid v4 share as unpadded URL-safe base64; rejects invalid maps."
+  @spec encode_share(share()) :: String.t() | {:error, String.t()}
+  def encode_share(share) do
+    if valid_share?(share) do
+      blob =
+        <<@version, share.id, share.threshold, share.total_shares,
+          share.secret_length::unsigned-big-16, share.share_set_id::binary-size(16),
+          share.value::binary>>
 
-  @doc """
-  Encodes a share as a base64 string for safe transmission.
-
-  ## Examples
-
-      iex> share = %{id: 1, value: <<1,2,3>>, threshold: 3, total_shares: 5, secret_length: 32}
-      iex> encoded = Shamir.encode_share(share)
-      iex> String.starts_with?(encoded, "secrethub-share-")
-      true
-  """
-  @spec encode_share(share()) :: String.t()
-  def encode_share(%{
-        id: id,
-        value: value,
-        threshold: threshold,
-        total_shares: total,
-        secret_length: secret_length,
-        adjustment_mask: adjustment_mask
-      }) do
-    # Format: [version(3)][id(1)][threshold(1)][total(1)][secret_length(1)]
-    # [mask_length(1)][adjustment_mask(N)][value(M)]
-    mask_length = byte_size(adjustment_mask)
-
-    blob =
-      <<3::8, id::8, threshold::8, total::8, secret_length::8, mask_length::8,
-        adjustment_mask::binary, value::binary>>
-
-    encoded = Base.url_encode64(blob, padding: false)
-    "secrethub-share-#{encoded}"
-  end
-
-  @doc """
-  Decodes a base64-encoded share string.
-
-  ## Examples
-
-      iex> share = %{id: 1, value: <<1,2,3>>, threshold: 3, total_shares: 5, secret_length: 32}
-      iex> encoded = Shamir.encode_share(share)
-      iex> {:ok, decoded} = Shamir.decode_share(encoded)
-      iex> decoded.id
-      1
-  """
-  @spec decode_share(String.t()) :: {:ok, share()} | {:error, String.t()}
-  def decode_share("secrethub-share-" <> encoded_blob) do
-    case Base.url_decode64(encoded_blob, padding: false) do
-      {:ok, blob} ->
-        case blob do
-          # Version 3: includes adjustment_mask
-          <<3::8, id::8, threshold::8, total::8, secret_length::8, mask_length::8, rest::binary>> ->
-            <<adjustment_mask::binary-size(mask_length), value::binary>> = rest
-
-            {:ok,
-             %{
-               id: id,
-               value: value,
-               threshold: threshold,
-               total_shares: total,
-               secret_length: secret_length,
-               adjustment_mask: adjustment_mask
-             }}
-
-          # Version 2: includes secret_length (backwards compat - no adjustment)
-          <<2::8, id::8, threshold::8, total::8, secret_length::8, value::binary>> ->
-            {:ok,
-             %{
-               id: id,
-               value: value,
-               threshold: threshold,
-               total_shares: total,
-               secret_length: secret_length,
-               # No adjustments
-               adjustment_mask: <<0::size(secret_length)-unit(8)>>
-             }}
-
-          # Version 1: backwards compatibility (assume 32 bytes)
-          <<1::8, id::8, threshold::8, total::8, value::binary>> ->
-            {:ok,
-             %{
-               id: id,
-               value: value,
-               threshold: threshold,
-               total_shares: total,
-               secret_length: 32,
-               # No adjustments
-               adjustment_mask: <<0::size(32)-unit(8)>>
-             }}
-
-          _ ->
-            {:error, "Invalid share format"}
-        end
-
-      _ ->
-        {:error, "Invalid share format"}
-    end
-  end
-
-  def decode_share(_invalid) do
-    {:error, "Invalid share format - must start with 'secrethub-share-'"}
-  end
-
-  # Private helper functions
-
-  defp normalize_secret_bytes(secret) do
-    secret_bytes = :binary.bin_to_list(secret)
-
-    # For bytes >= @prime, we need to map them to valid field elements
-    # Map 251->0, 252->1, 253->2, 254->3, 255->4 (offset by -251)
-    normalized_bytes =
-      Enum.map(secret_bytes, fn byte ->
-        if byte >= @prime, do: byte - @prime, else: byte
-      end)
-
-    # Track which bytes were adjusted (for reconstruction)
-    adjustment_mask =
-      Enum.map(secret_bytes, fn byte ->
-        if byte >= @prime, do: 1, else: 0
-      end)
-
-    {normalized_bytes, adjustment_mask}
-  end
-
-  defp generate_polynomials(normalized_bytes, threshold) do
-    # Generate one polynomial per byte of the secret
-    # Each polynomial: P(x) = secret_byte + a1*x + a2*x^2 + ... + a(k-1)*x^(k-1)
-    for byte <- normalized_bytes do
-      [byte | generate_coefficients(threshold - 1)]
-    end
-  end
-
-  defp build_shares(data_polynomials, total_shares, threshold, secret_length, adjustment_mask) do
-    # Encode adjustment mask in the share (simple approach: store as binary)
-    adjustment_bin = :binary.list_to_bin(adjustment_mask)
-
-    # Generate shares by evaluating each polynomial at points 1..N
-    for id <- 1..total_shares do
-      # For each share, evaluate all polynomials at this ID
-      share_bytes =
-        for coefficients <- data_polynomials do
-          evaluate_polynomial(coefficients, id)
-        end
-
-      %{
-        id: id,
-        value: :binary.list_to_bin(share_bytes),
-        threshold: threshold,
-        total_shares: total_shares,
-        secret_length: secret_length,
-        # Store which bytes need +251 adjustment
-        adjustment_mask: adjustment_bin
-      }
-    end
-  end
-
-  defp generate_coefficients(count) when count <= 0, do: []
-
-  defp generate_coefficients(count) do
-    for _ <- 1..count do
-      # Generate random coefficients in GF(257) (0-256)
-      :crypto.strong_rand_bytes(1) |> :binary.decode_unsigned() |> rem(@prime)
-    end
-  end
-
-  defp evaluate_polynomial(coefficients, x) do
-    coefficients
-    |> Enum.with_index()
-    |> Enum.reduce(0, fn {coeff, power}, acc ->
-      term = modular_mult(coeff, modular_pow(x, power))
-      modular_add(acc, term)
-    end)
-  end
-
-  defp lagrange_interpolation(points, x) do
-    points
-    |> Enum.reduce(0, fn {xi, yi}, acc ->
-      basis = lagrange_basis(points, xi, x)
-      term = modular_mult(yi, basis)
-      modular_add(acc, term)
-    end)
-  end
-
-  defp lagrange_basis(points, xi, x) do
-    points
-    |> Enum.reject(fn {xj, _} -> xj == xi end)
-    |> Enum.reduce(1, fn {xj, _}, acc ->
-      numerator = modular_sub(x, xj)
-      denominator = modular_sub(xi, xj)
-      denominator_inv = modular_inverse(denominator)
-      term = modular_mult(numerator, denominator_inv)
-      modular_mult(acc, term)
-    end)
-  end
-
-  # Modular arithmetic operations
-
-  defp modular_add(a, b), do: rem(a + b, @prime)
-
-  defp modular_sub(a, b), do: rem(a - b + @prime, @prime)
-
-  defp modular_mult(a, b), do: rem(a * b, @prime)
-
-  defp modular_pow(_base, 0), do: 1
-
-  defp modular_pow(base, exp) when exp > 0 do
-    half = modular_pow(base, div(exp, 2))
-    half_squared = modular_mult(half, half)
-
-    if rem(exp, 2) == 0 do
-      half_squared
+      "secrethub-share-" <> Base.url_encode64(blob, padding: false)
     else
-      modular_mult(base, half_squared)
+      {:error, "Invalid share"}
     end
   end
 
-  defp modular_inverse(a) do
-    # Extended Euclidean algorithm
-    extended_gcd(a, @prime) |> elem(0) |> rem(@prime) |> modular_add(@prime)
+  @doc "Decodes bounded v4 input, rejecting malformed or legacy envelopes."
+  @spec decode_share(any()) :: {:ok, share()} | {:error, String.t()}
+  def decode_share("secrethub-share-" <> encoded)
+      when byte_size(encoded) <= @max_encoded_length do
+    with {:ok, blob} <- Base.url_decode64(encoded, padding: false),
+         true <- Base.url_encode64(blob, padding: false) == encoded do
+      decode_blob(blob)
+    else
+      _invalid -> {:error, "Invalid share format"}
+    end
   end
 
-  defp extended_gcd(_a, 0), do: {1, 0}
+  def decode_share("secrethub-share-" <> _oversized), do: {:error, "Share exceeds size limit"}
 
-  defp extended_gcd(a, b) do
-    {x1, y1} = extended_gcd(b, rem(a, b))
-    {y1, x1 - div(a, b) * y1}
+  def decode_share(_invalid),
+    do: {:error, "Invalid share format - must start with 'secrethub-share-'"}
+
+  defp decode_blob(
+         <<@version, id, threshold, total, length::unsigned-big-16, generation::binary-size(16),
+           value::binary>>
+       ) do
+    share = %{
+      version: @version,
+      share_set_id: generation,
+      id: id,
+      value: value,
+      threshold: threshold,
+      total_shares: total,
+      secret_length: length
+    }
+
+    if valid_share?(share), do: {:ok, share}, else: {:error, "Invalid share envelope"}
+  end
+
+  defp decode_blob(<<version, _rest::binary>>) when version in 1..3,
+    do: {:error, "Legacy share version unsupported; verified Vault recovery required"}
+
+  defp decode_blob(_invalid), do: {:error, "Invalid or unsupported share format"}
+
+  defp parameters(share),
+    do: {share.version, share.share_set_id, share.total_shares, share.secret_length}
+
+  defp evaluate(coefficients, x) do
+    coefficients |> Enum.reverse() |> Enum.reduce(0, &bxor(&1, multiply(&2, x)))
+  end
+
+  defp lagrange_weight(id, shares) do
+    Enum.reduce(shares, 1, fn
+      %{id: ^id}, weight -> weight
+      %{id: other}, weight -> multiply(weight, multiply(other, power(bxor(id, other), 254)))
+    end)
+  end
+
+  # Carryless shift-and-add, reducing modulo x^8+x^4+x^3+x+1 (0x11b).
+  defp multiply(a, b), do: multiply(a, b, 0, 8)
+  defp multiply(_a, _b, product, 0), do: product
+
+  defp multiply(a, b, product, remaining) do
+    product = if band(b, 1) == 1, do: bxor(product, a), else: product
+    shifted = bsl(a, 1)
+    a = if band(a, 0x80) == 0, do: shifted, else: bxor(shifted, 0x11B)
+    multiply(a, bsr(b, 1), product, remaining - 1)
+  end
+
+  # For a nonzero field element, a^254 is its multiplicative inverse.
+  defp power(_base, 0), do: 1
+
+  defp power(base, exponent) do
+    half = power(base, div(exponent, 2))
+    square = multiply(half, half)
+    if rem(exponent, 2) == 0, do: square, else: multiply(square, base)
   end
 end

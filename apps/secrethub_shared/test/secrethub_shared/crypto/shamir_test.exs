@@ -164,10 +164,13 @@ defmodule SecretHub.Shared.Crypto.ShamirTest do
   describe "valid_share?/1" do
     test "validates correct share structure" do
       share = %{
+        version: 4,
+        share_set_id: <<0::128>>,
         id: 1,
         value: <<1, 2, 3>>,
         threshold: 3,
-        total_shares: 5
+        total_shares: 5,
+        secret_length: 3
       }
 
       assert Shamir.valid_share?(share) == true
@@ -316,10 +319,7 @@ defmodule SecretHub.Shared.Crypto.ShamirTest do
       # Mix shares from different secrets
       mixed = [Enum.at(shares1, 0), Enum.at(shares2, 1), Enum.at(shares1, 2)]
 
-      # Combine will succeed but produce wrong result
-      assert {:ok, reconstructed} = Shamir.combine(mixed)
-      assert reconstructed != secret1
-      assert reconstructed != secret2
+      assert {:error, _} = Shamir.combine(mixed)
     end
   end
 
@@ -379,8 +379,278 @@ defmodule SecretHub.Shared.Crypto.ShamirTest do
       # Use same share twice plus one different share
       duplicated = [Enum.at(shares, 0), Enum.at(shares, 0), Enum.at(shares, 1)]
 
-      # Should reconstruct (duplicate is ignored by having same ID)
-      assert {:ok, _} = Shamir.combine(duplicated)
+      assert {:error, _} = Shamir.combine(duplicated)
     end
+  end
+
+  describe "v4 finite-field and envelope regressions" do
+    test "all byte values survive every three-of-five threshold subset" do
+      secret = :binary.list_to_bin(Enum.to_list(0..255))
+      assert {:ok, shares} = Shamir.split(secret, 5, 3)
+
+      for [a, b, c] <- subsets(shares, 3) do
+        assert {:ok, ^secret} = Shamir.combine([a, b, c])
+      end
+    end
+
+    test "random 32-byte keys survive threshold subsets and encoded round trips" do
+      for _ <- 1..25, threshold <- 1..5 do
+        secret = :crypto.strong_rand_bytes(32)
+        assert {:ok, shares} = Shamir.split(secret, 5, threshold)
+        assert {:ok, ^secret} = Shamir.combine(Enum.take_random(shares, threshold))
+
+        decoded =
+          Enum.map(shares, fn share ->
+            assert {:ok, ^share} = Shamir.decode_share(Shamir.encode_share(share))
+            share
+          end)
+
+        assert {:ok, ^secret} = Shamir.combine(decoded)
+      end
+    end
+
+    test "independent AES-field vectors include the old maximum coordinate 251" do
+      secret = <<0, 1, 250, 251, 252, 253, 254, 255>>
+
+      vectors = [
+        {1, "9998050403020100"},
+        {2, "a3d92b2c21261d1a"},
+        {3, "3a40d4d3ded9e2e5"},
+        {17, "8590cfc5dfd56369"},
+        {250, "47ee1fe6f20b3bc2"},
+        {251, "de77e0190df4c43d"}
+      ]
+
+      shares =
+        Enum.map(vectors, fn {id, hex} ->
+          vector_share(id, Base.decode16!(hex, case: :lower))
+        end)
+
+      for subset <- subsets(shares, 3) do
+        assert {:ok, ^secret} = Shamir.combine(subset)
+      end
+
+      assert {:ok, ^secret} = Shamir.combine(shares)
+      refute List.last(shares).value == secret
+    end
+
+    test "split evaluations agree with independent carryless polynomial reduction" do
+      secret = :binary.list_to_bin(Enum.to_list(0..255))
+      assert {:ok, [first | _] = shares} = Shamir.split(secret, 251, 2)
+      coefficients = xor_bytes(secret, first.value)
+
+      for share <- shares do
+        expected =
+          for {byte, coefficient} <- Enum.zip(:binary.bin_to_list(secret), coefficients),
+              into: <<>>,
+              do: <<Bitwise.bxor(byte, reference_multiply(coefficient, share.id))>>
+
+        assert share.value == expected
+      end
+
+      assert {:ok, ^secret} = Shamir.combine(Enum.take(shares, -2))
+    end
+
+    test "linear coefficients use the full byte space including zero without modulo bias" do
+      coefficients =
+        for _ <- 1..8 do
+          assert {:ok, [share]} = Shamir.split(<<0::4096-unit(8)>>, 1, 1)
+          assert share.value == <<0::4096-unit(8)>>
+          assert {:ok, [first, _]} = Shamir.split(<<0::4096-unit(8)>>, 2, 2)
+          :binary.bin_to_list(first.value)
+        end
+        |> List.flatten()
+        |> Enum.frequencies()
+
+      assert map_size(coefficients) == 256
+      # Expected count is 128. These broad bounds catch the old modulo-251
+      # sampling while making a random false failure negligibly unlikely.
+      assert Enum.all?(coefficients, fn {_byte, count} -> count in 48..224 end)
+    end
+
+    test "split binds each share to a fresh or caller supplied 16-byte generation" do
+      generation = <<42::128>>
+      assert {:ok, shares} = Shamir.split(<<251, 255>>, 3, 2, generation)
+      assert Enum.all?(shares, &(&1.version == 4 and &1.share_set_id == generation))
+      assert Enum.all?(shares, &(not Map.has_key?(&1, :adjustment_mask)))
+      assert {:ok, [other | _]} = Shamir.split(<<251, 255>>, 3, 2)
+      refute other.share_set_id == generation
+      assert byte_size(other.share_set_id) == 16
+      assert {:error, _} = Shamir.split(<<1>>, 3, 2, <<1>>)
+    end
+
+    test "v4 wire format has exact lengths and preserves the complete envelope" do
+      share = vector_share(251, <<251, 255>>)
+      blob = <<4, 251, 3, 251, 2::16, 42::128, 251, 255>>
+      encoded = wire(blob)
+      assert Shamir.encode_share(share) == encoded
+      assert {:ok, ^share} = Shamir.decode_share(encoded)
+    end
+
+    test "rejects empty oversized and noninteger split parameters" do
+      for args <- [
+            {<<>>, 3, 2},
+            {:binary.copy(<<1>>, 4097), 3, 2},
+            {<<1>>, 3.0, 2},
+            {<<1>>, 3, 2.0},
+            {nil, 3, 2},
+            {<<1>>, 0, 0},
+            {<<1>>, 3, 0},
+            {<<1>>, 3, -1}
+          ] do
+        assert {:error, _} = apply(Shamir, :split, Tuple.to_list(args))
+      end
+    end
+
+    test "rejects every malformed envelope field before interpolation" do
+      valid = vector_share(1, <<1, 2>>)
+
+      changes = [
+        version: 3,
+        version: 5,
+        share_set_id: <<1>>,
+        id: 0,
+        id: -1,
+        id: 252,
+        id: 255,
+        id: 256,
+        id: 1.0,
+        total_shares: 252,
+        total_shares: 0,
+        threshold: 0,
+        threshold: 252,
+        secret_length: 0,
+        secret_length: 4097,
+        secret_length: 1,
+        value: <<1>>,
+        value: nil,
+        value: :binary.copy(<<1>>, 4097)
+      ]
+
+      for {field, value} <- changes do
+        invalid = Map.put(valid, field, value)
+        refute Shamir.valid_share?(invalid)
+        assert {:error, _} = Shamir.combine([invalid])
+        assert {:error, _} = Shamir.encode_share(invalid)
+      end
+
+      for field <- Map.keys(valid) do
+        invalid = Map.delete(valid, field)
+        refute Shamir.valid_share?(invalid)
+        assert {:error, _} = Shamir.combine([invalid])
+      end
+
+      for input <- [nil, 1, %{}, "bad", [nil], [valid, nil]] do
+        assert {:error, _} = Shamir.combine(input)
+      end
+    end
+
+    test "rejects conflicting metadata mixed generations and duplicate coordinates" do
+      assert {:ok, [a, b, c | _]} = Shamir.split(<<1, 2>>, 5, 3)
+
+      for changed <- [
+            %{b | share_set_id: <<99::128>>},
+            %{b | total_shares: 6},
+            %{b | threshold: 2},
+            %{b | secret_length: 1, value: <<1>>},
+            %{b | id: a.id}
+          ] do
+        assert {:error, _} = Shamir.combine([a, changed, c])
+      end
+    end
+
+    test "truncated oversized invalid and unsupported encoded input never raises" do
+      blob = <<4, 1, 2, 3, 2::16, 42::128, 1, 2>>
+
+      for length <- 0..(byte_size(blob) - 1) do
+        assert {:error, _} = Shamir.decode_share(wire(binary_part(blob, 0, length)))
+      end
+
+      for bad <- [
+            blob <> <<0>>,
+            <<4, 1, 2, 3, 4097::16, 42::128>>,
+            <<4, 0, 2, 3, 2::16, 42::128, 1, 2>>,
+            <<4, 252, 2, 252, 2::16, 42::128, 1, 2>>,
+            <<5, 0>>
+          ] do
+        assert {:error, _} = Shamir.decode_share(wire(bad))
+      end
+
+      for input <- [
+            nil,
+            42,
+            "secrethub-share-%%%",
+            "secrethub-share-_",
+            "secrethub-share-" <> String.duplicate("A", 6000)
+          ] do
+        assert {:error, _} = Shamir.decode_share(input)
+      end
+    end
+
+    test "rejects padding appended to otherwise valid unpadded base64" do
+      share = vector_share(1, <<0>>)
+      encoded = Shamir.encode_share(share)
+      assert {:ok, ^share} = Shamir.decode_share(encoded)
+      assert {:error, "Invalid share format"} = Shamir.decode_share(encoded <> "=")
+    end
+
+    test "rejects noncanonical discarded base64 pad bits" do
+      share = vector_share(1, <<0>>)
+      encoded = Shamir.encode_share(share)
+      assert String.ends_with?(encoded, "A")
+      noncanonical = binary_part(encoded, 0, byte_size(encoded) - 1) <> "B"
+      assert {:ok, ^share} = Shamir.decode_share(encoded)
+      assert {:error, "Invalid share format"} = Shamir.decode_share(noncanonical)
+    end
+
+    test "legacy versions fail closed with a recovery blocking explanation" do
+      for version <- 1..3 do
+        assert {:error, message} = Shamir.decode_share(wire(<<version, 1, 2, 3, 2, 255>>))
+        assert message =~ "Legacy"
+        assert message =~ "recovery"
+      end
+    end
+  end
+
+  defp vector_share(id, value) do
+    %{
+      version: 4,
+      share_set_id: <<42::128>>,
+      id: id,
+      value: value,
+      threshold: 3,
+      total_shares: 251,
+      secret_length: byte_size(value)
+    }
+  end
+
+  defp wire(blob), do: "secrethub-share-" <> Base.url_encode64(blob, padding: false)
+
+  defp subsets(_items, 0), do: [[]]
+  defp subsets([], _count), do: []
+
+  defp subsets([item | rest], count),
+    do: Enum.map(subsets(rest, count - 1), &[item | &1]) ++ subsets(rest, count)
+
+  defp xor_bytes(left, right),
+    do: Enum.zip_with(:binary.bin_to_list(left), :binary.bin_to_list(right), &Bitwise.bxor/2)
+
+  # Independent reference: carryless polynomial convolution followed by long
+  # division, rather than the production shift-and-add multiplication.
+  defp reference_multiply(a, b) do
+    product =
+      for i <- 0..7, j <- 0..7, reduce: 0 do
+        acc ->
+          if Bitwise.band(Bitwise.bsr(a, i), 1) == 1 and
+               Bitwise.band(Bitwise.bsr(b, j), 1) == 1,
+             do: Bitwise.bxor(acc, Bitwise.bsl(1, i + j)),
+             else: acc
+      end
+
+    Enum.reduce(14..8//-1, product, fn bit, acc ->
+      if Bitwise.band(Bitwise.bsr(acc, bit), 1) == 1,
+        do: Bitwise.bxor(acc, Bitwise.bsl(0x11B, bit - 8)),
+        else: acc
+    end)
   end
 end
