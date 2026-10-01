@@ -315,6 +315,8 @@ class Harness:
             report['commands'].append('docker run --rm <same exact Core image> eval/start <bounded runtime fixture probes>')
         if executed & {'G01', 'G03', 'G18'}:
             report['commands'].append('docker exec <explicit isolated PostgreSQL> createdb/psql/pg_dump <owned disposable databases>')
+        if 'G19' in executed and self.shares is not None:
+            report['commands'].append('docker run --network none <same exact Core image> eval <VM fault; private fixture material on stdin>; inspect exit and filesystem diff; remove owned process')
         report.update(created_at=datetime.now(timezone.utc).isoformat(), gates=self.results,
                       selected_gates=self.selected, disposable_databases=self.fixture_databases,
                       candidate_status='provisional' if self.provisional else 'pending_acceptance',
@@ -508,7 +510,42 @@ class Harness:
                 'incompatible_downgrade': 'refused_data_and_schema_preserved',
                 'older_binary_upgrade_and_compatible_binary_rollback': 'unexecuted_requires_selected_older_artifact'}
 
+    def crash_fault(self):
+        require(self.config.get('isolated_fixture') is True and self.shares is not None)
+        environment = dict(item.split('=', 1) for item in self.container_info['Config']['Env'])
+        require(environment.get('ERL_CRASH_DUMP') == '/dev/null')
+        artifact = json.loads(command(['docker', 'image', 'inspect', self.config['core_image_id']]))[0]
+        image_environment = dict(item.split('=', 1) for item in artifact['Config']['Env'])
+        require(image_environment.get('ERL_CRASH_DUMP') == '/dev/null')
+        environment.pop('ERL_CRASH_DUMP')
+        name = 'secrethub-prelaunch-crash-' + uuid.uuid4().hex[:12]
+        args = ['docker', 'run', '--name', name, '--network', 'none', '-i']
+        for mount in self.container_info['Mounts']:
+            require(mount['Type'] == 'bind')
+            args += ['--mount', 'type=bind,src=' + mount['Source'] + ',dst=' + mount['Destination'] + ',readonly']
+        for key, value in environment.items():
+            args += ['-e', key + '=' + value]
+        code = ('Process.put(:prelaunch_sensitive_material, IO.read(:stdio, :eof)); '
+                'IO.puts("PRELAUNCH_FAULT_READY"); '
+                ':erlang.halt(String.to_charlist("prelaunch synthetic VM failure"))')
+        args += [self.config['core_image_id'], 'eval', code]
+        try:
+            payload = json.dumps({'shares': self.shares, 'plaintext': 'disposable-prelaunch-v1'}).encode()
+            result = subprocess.run(args, input=payload, capture_output=True, timeout=60)
+            self.fixture_logs.append(result.stdout + result.stderr)
+            require(result.returncode != 0 and b'PRELAUNCH_FAULT_READY' in result.stdout)
+            require(b'Crash dump is being written to: /dev/null' in result.stdout + result.stderr)
+            state = json.loads(command(['docker', 'inspect', name]))[0]['State']
+            require(state['Running'] is False and state['ExitCode'] != 0)
+            require('erl_crash.dump' not in command(['docker', 'diff', name]))
+        finally:
+            removed = subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=20)
+            require(removed.returncode == 0)
+
     def redaction(self):
+        fault_executed = self.shares is not None
+        if fault_executed:
+            self.crash_fault()
         result = subprocess.run(['docker', 'logs', self.config['core_container']], capture_output=True, timeout=20)
         require(result.returncode == 0)
         logs = result.stdout + result.stderr
@@ -546,11 +583,11 @@ class Harness:
         require(not any(needle in content for needle in needles))
         require(re.search(rb'-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----', content) is None)
         require(re.search(rb'(?:postgres(?:ql)?|ecto|https?)://[^\s/]*:[^\s/@]+@', content) is None)
-        # This run does not deliberately create a VM crash dump. Say so rather
-        # than transferring source redaction tests to crash-artifact acceptance.
-        return {'partial': True, 'captured_core_and_fixture_logs': 'no_known_fixture_secret_or_private_key_marker',
+        return {'partial': not fault_executed, 'captured_core_and_fixture_logs': 'no_known_fixture_secret_or_private_key_marker',
                 'additional_private_logs_scanned': len(self.config.get('additional_private_logs', [])),
-                'crash_dump_fault_injection': 'unexecuted', 'private_inputs_and_shares': 'excluded_from_export'}
+                'crash_dump_fault_injection': ('actual VM failure holding private fixture shares/plaintext; image disables dump to /dev/null; no dump file retained'
+                                               if fault_executed else 'unexecuted; independent fixture shares required'),
+                'private_inputs_and_shares': 'excluded_from_export'}
 
     def worker(self):
         expression = ('(alias SecretHub.Core.Workers.ClientAuthCRLRefresher; '

@@ -6,9 +6,15 @@ existing-mechanism isolated Caddy mTLS ingress and real PostgreSQL/Core/Agent
 processes. Do not aim them at existing production data or reuse production keys.
 
 `acceptance.py` executes the Core Vault/management checks G01–G10 and G20,
-and records partial compatibility/log evidence for G18/G19. G18 does not claim
-an older binary upgrade or compatible binary rollback. G19 does not claim
-fault-injected VM crash-dump coverage. Omitted gates stay `unexecuted`; partial
+and records compatibility/log evidence for G18/G19. G18 remains partial: it does
+not claim an older binary upgrade or compatible binary rollback. With independent
+fixture shares and `isolated_fixture: true`, G19 also runs a transient isolated
+VM fault while holding fixture shares/plaintext in memory. It verifies that the
+image's existing `ERL_CRASH_DUMP=/dev/null` suppresses a retained VM dump and
+scans captured diagnostics for fixture secrets. It does not change the dump
+configuration to make the test pass. Without shares this coverage stays partial.
+The crash process exposes no listeners, accesses no application database and
+is removed after diagnostics; existing Core is never crashed. Omitted gates stay `unexecuted`; partial
 or provisional results never make a report complete. The other harnesses below
 exercise the static consumer and recovery paths separately.
 
@@ -27,6 +33,7 @@ Place fixture configuration in a private JSON file. Required fields:
 
 ```json
 {
+  "isolated_fixture": true,
   "core_container": "secrethub-prelaunch-<unique-fixture>",
   "core_image_id": "sha256:<exact-64-digit-image-id>",
   "source_sha": "<committed-source-sha>",

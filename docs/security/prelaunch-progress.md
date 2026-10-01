@@ -144,3 +144,11 @@ history is newer; reconciliation and identity/consumer recovery remain required.
 
 All these images and reports are provisional, built before a final source
 freeze. Full G01–G20 acceptance against immutable final artifacts remains open.
+
+G19 subsequently passed on Core image `43715c4edce1` with a deliberate VM failure
+in a separate isolated release process holding private fixture shares and a
+plaintext sentinel. The exact image's `ERL_CRASH_DUMP=/dev/null` default was
+verified and inherited without override. The process failed as intended,
+retained no VM dump, and its captured diagnostics and current Core logs contained
+no known fixture material or private-key/credential-URL markers. The live Core
+was not faulted. This remains artifact-specific provisional evidence.
