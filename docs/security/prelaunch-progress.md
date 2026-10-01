@@ -15,7 +15,7 @@ verification and provisional artifact checks below are scoped evidence.
 | WP2 | Private transport-peer management boundary before HTTP/socket dispatch, no second login/allowlist, CSRF/exact Origin/no-store and separate machine route set. Combined Web regression suite: 115 tests, zero failures. | Final image and actual deployment-network boundary |
 | WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot provisional OCI builds, locked assets/digest and release assembly passed. | Frozen committed source and exact final image qualification; provisional evidence must be rerun |
 | WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. | One legacy SQL failure each in scoped Core/channel suites; extra repair round approval pending. Final exact-artifact qualification |
-| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation and controlled PKI and static-consumer reopen passed provisionally. | Selected nonempty upgrade/compatible rollback, required-worker recovery and monitoring qualification; final full restore/RTO/RPO evidence |
+| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. | Selected nonempty upgrade/compatible rollback and monitoring qualification; final full restore/RTO/RPO evidence |
 | WP6 | Artifact harness underway. Provisional Core/Agent images built, empty candidate explicitly migrated, real nonroot Core started outside checkout. | All G01–G20 tied to a frozen source and exact final image identifiers |
 
 ## Review repairs
@@ -411,3 +411,22 @@ Import (39.808 seconds), restricted integrity (17.175 seconds) and controlled
 reopen durations are separately scoped observations, not an accepted end-to-end
 RTO/RPO. G16 and full-plan acceptance remain partial and recovery held; no result
 is transferred to a future frozen candidate.
+
+The copied-database required-worker helper passed nine worker offline checks,
+embedded Elixir/source API review and 19 independent reviewer cases with no
+repair rounds. A separate new empty database was restored from snapshot 10 for
+this test; runtime input ownership/modes were preserved and independent shares
+were supplied separately. No original service was stopped or modified.
+
+The exact provisional Core worker lifecycle passed in 11.422 seconds: initially
+healthy required CRL refresher and unsealed readiness, supervised child stop,
+`crl_worker_unavailable` with background/readiness false and overall degraded,
+then explicit child restart with healthy readiness recovered. Seal state stayed
+unsealed, and liveness/internal management health stayed available. The actual
+persisted authority/current CRL was present, avoiding an absent-authority health
+shortcut. Unique node identity and owned VM absence were confirmed; diagnostics
+excluded held shares. Normal CRL/audit/cluster mutations occurred only in the
+retained copy. Original Core/Agent are still healthy. G20/monitoring remain
+partial because this network-free drill does not test protected HTTP/Caddy or
+existing host alert routing/delivery. Final immutable-artifact replay, selected
+upgrade/rollback and the pending legacy-query repair authorization remain open.
