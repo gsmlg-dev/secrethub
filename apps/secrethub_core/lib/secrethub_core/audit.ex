@@ -58,20 +58,10 @@ defmodule SecretHub.Core.Audit do
   import Ecto.Query
 
   alias SecretHub.Core.{CanonicalJSON, Repo}
+  alias SecretHub.Core.Audit.SigningKeys
   alias SecretHub.Shared.Schemas.AuditLog
 
-  @hmac_secret Application.compile_env(:secrethub_core, :audit_hmac_secret, "dev-audit-secret")
   @append_lock_name "secrethub:audit-log-append:v1"
-
-  if @hmac_secret == "dev-audit-secret" and
-       Application.compile_env(:secrethub_core, :env) == :prod do
-    @external_resource "compile_warning"
-    IO.warn(
-      "SECURITY: :audit_hmac_secret is using the default dev value in production. " <>
-        "Set config :secrethub_core, :audit_hmac_secret to a strong random value.",
-      []
-    )
-  end
 
   @doc """
   Log an audit event with hash chain integrity.
@@ -106,18 +96,20 @@ defmodule SecretHub.Core.Audit do
   """
   @spec log_event(map()) :: {:ok, AuditLog.t()} | {:error, Ecto.Changeset.t()}
   def log_event(event_attrs) do
-    Repo.transaction(fn ->
-      acquire_append_lock!()
-      do_log_event(event_attrs, 0)
-    end)
-    |> case do
-      {:ok, result} -> result
-      {:error, reason} -> {:error, reason}
+    with {:ok, signing_key} <- SigningKeys.active(Application.get_all_env(:secrethub_core)) do
+      Repo.transaction(fn ->
+        acquire_append_lock!()
+        do_log_event(event_attrs, 0, signing_key)
+      end)
+      |> case do
+        {:ok, result} -> result
+        {:error, reason} -> {:error, reason}
+      end
     end
   end
 
   @max_retries 10
-  defp do_log_event(event_attrs, retry_count) do
+  defp do_log_event(event_attrs, retry_count, signing_key) do
     # Get the last log entry to build the chain
     last_entry = get_last_audit_entry()
 
@@ -132,13 +124,15 @@ defmodule SecretHub.Core.Audit do
       |> Map.put(:sequence_number, sequence_number)
       |> Map.put(:timestamp, DateTime.utc_now() |> DateTime.truncate(:second))
       |> Map.put(:previous_hash, previous_hash)
+      |> Map.put(:signature_version, signing_key.version)
+      |> Map.put(:signing_key_id, signing_key.id)
       |> Map.put(:correlation_id, Map.get(event_attrs, :correlation_id, Ecto.UUID.generate()))
       |> Map.put(:created_at, DateTime.utc_now() |> DateTime.truncate(:second))
 
     with {:ok, changeset} <- validate_and_normalize_attrs(attrs) do
       audit_log = Ecto.Changeset.apply_changes(changeset)
       current_hash = calculate_entry_hash(audit_log)
-      signature = sign_entry(%{audit_log | current_hash: current_hash})
+      signature = sign_entry(%{audit_log | current_hash: current_hash}, signing_key.secret)
 
       changeset
       |> Ecto.Changeset.put_change(:current_hash, current_hash)
@@ -166,7 +160,7 @@ defmodule SecretHub.Core.Audit do
     Ecto.ConstraintError ->
       if retry_count < @max_retries do
         # Sequence number collision from concurrent inserts; retry with fresh sequence
-        do_log_event(event_attrs, retry_count + 1)
+        do_log_event(event_attrs, retry_count + 1, signing_key)
       else
         Logger.error("Failed to log audit event after #{@max_retries} retries",
           event_type: event_attrs[:event_type]
@@ -529,19 +523,41 @@ defmodule SecretHub.Core.Audit do
     |> sha256()
   end
 
-  defp sign_entry(attrs) do
+  defp sign_entry(attrs, key) do
     attrs
-    |> signature_content(Map.get(attrs, :hash_version, 1))
-    |> hmac()
+    |> signature_payload()
+    |> hmac(key)
   end
 
   defp verify_signature(log) do
-    expected_signature =
-      log
-      |> signature_content(log.hash_version)
-      |> hmac()
+    with {:ok, key} <-
+           SigningKeys.verification_key(
+             Application.get_all_env(:secrethub_core),
+             log.signing_key_id,
+             log.signature_version
+           ),
+         true <- is_binary(log.signature),
+         expected = sign_entry(log, key),
+         true <- byte_size(log.signature) == byte_size(expected) do
+      :crypto.hash_equals(log.signature, expected)
+    else
+      _ -> false
+    end
+  end
 
-    log.signature == expected_signature
+  defp signature_payload(attrs) do
+    content = signature_content(attrs, attrs.hash_version)
+
+    if attrs.signature_version == 2 do
+      CanonicalJSON.encode!(%{
+        "signature_version" => 2,
+        "signing_key_id" => attrs.signing_key_id,
+        "hash_version" => attrs.hash_version,
+        "content" => content
+      })
+    else
+      content
+    end
   end
 
   defp signature_content(attrs, 1) do
@@ -568,8 +584,8 @@ defmodule SecretHub.Core.Audit do
     |> Base.encode16(case: :lower)
   end
 
-  defp hmac(content) do
-    :crypto.mac(:hmac, :sha256, @hmac_secret, content)
+  defp hmac(content, key) do
+    :crypto.mac(:hmac, :sha256, key, content)
     |> Base.encode16(case: :lower)
   end
 

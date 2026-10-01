@@ -8,6 +8,13 @@ defmodule SecretHub.Core.Application do
 
   @impl true
   def start(_type, _args) do
+    case SecretHub.Core.Audit.SigningKeys.active(Application.get_all_env(:secrethub_core)) do
+      {:ok, _} -> start_supervisor()
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp start_supervisor do
     # Trap exits to enable graceful shutdown
     Process.flag(:trap_exit, true)
 

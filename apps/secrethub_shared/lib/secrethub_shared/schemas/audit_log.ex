@@ -277,6 +277,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     field(:previous_hash, :string)
     field(:current_hash, :string)
     field(:signature, :string)
+    field(:signature_version, :integer, default: 1)
+    field(:signing_key_id, :string)
 
     # Performance tracking
     field(:response_time_ms, :integer)
@@ -318,6 +320,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       :previous_hash,
       :current_hash,
       :signature,
+      :signature_version,
+      :signing_key_id,
       :response_time_ms,
       :correlation_id,
       :created_at
@@ -325,6 +329,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     |> validate_required([:event_id, :sequence_number, :timestamp, :event_type, :hash_version])
     |> validate_inclusion(:event_type, valid_event_types())
     |> validate_inclusion(:hash_version, @hash_versions)
+    |> validate_inclusion(:signature_version, [1, 2])
+    |> validate_signature_key_id()
     |> validate_hash_version_event_type()
     |> validate_upgrade_gate_evidence()
     |> validate_client_auth_pki_evidence()
@@ -399,12 +405,25 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "vault_started",
       "vault_initialized",
       "vault_unsealed",
+      "vault_legacy_recovered",
       "vault_sealed",
       "vault_auto_sealed"
     ]
   end
 
   @client_auth_evidence_error "must contain exactly the sanitized client auth PKI evidence"
+
+  defp validate_signature_key_id(changeset) do
+    case get_field(changeset, :signature_version) do
+      2 ->
+        changeset
+        |> validate_required([:signing_key_id])
+        |> validate_format(:signing_key_id, ~r/\A[a-zA-Z0-9_.-]{1,64}\z/)
+
+      _ ->
+        changeset
+    end
+  end
 
   defp validate_hash_version_event_type(changeset) do
     event_type = get_field(changeset, :event_type)
