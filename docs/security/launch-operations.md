@@ -1,0 +1,181 @@
+# Single-operator launch and operations
+
+This is the authoritative operations runbook for the Linux amd64 OCI launch
+profile: one Core, PostgreSQL 16, existing Caddy management mTLS, Client Auth PKI
+and one static-secret consumer. Production cutover is operator-owned. Follow
+this runbook only after the exact-candidate G01–G20 report passes; provisional
+images and source tests are insufficient. Current acceptance is incomplete.
+
+## Required inventory
+
+Record the immutable Core/Agent image IDs/digests, source SHA, platform, release
+versions and exact migration set. Preserve deployment inputs in the existing
+secure configuration system. See [runtime inputs](runtime-contract.md) and
+[ingress boundary](ingress-contract.md). Existing Caddy authentication, its
+protected management routing, and the private backend network are prerequisites.
+This runbook does not provision or replace that administrative trust authority.
+
+Hold recovery material independently of SecretHub: unseal shares and generation,
+audit signing/verification keys and IDs, listener keys/trust, Agent host identity
+and enrolled identity, Agent/Caddy watermarks, authorization floor, backup
+manifest/checksum and independent authoritative revocation evidence. A database
+dump does not back up cluster-global roles, runtime secrets or consumer state.
+Never archive the dump together with sufficient material to decrypt it.
+
+## Startup and explicit migration
+
+1. Confirm the accepted image/platform and configuration. Keep management private;
+   the trusted proxy peer is a network boundary, not a certificate-header check.
+   Human endpoints, dynamic engines and rotation remain disabled. Review any
+   historical dynamic leases before adopting this profile.
+2. Start the existing PostgreSQL service with the intended role/extensions and
+   persistent storage. Take a verified backup before a nonempty upgrade. Do not
+   run `db-reset`, demo seeds or any schema/data reset.
+3. Run the accepted Core image as UID 1001 with the final runtime-only input files
+   and persistent mounts. Run `bin/secrethub_core eval
+   'SecretHub.Core.Release.migrate()'` as a separate explicit operation before
+   service startup; migration is never implicit in boot.
+4. Run `bin/secrethub_core eval 'SecretHub.Core.Release.preflight()'` in that
+   environment. Its redacted checks must pass, including exact schema, independent
+   machine/Agent listeners and readable mTLS files. A partially configured system
+   does not pass preflight just because liveness works.
+5. Start Core. `/v1/sys/health/live` must return 200. Empty/sealed readiness is
+   expected to return 503; it must not cause a restart loop. Reach protected
+   `/v1/sys/health/management` through existing Caddy and verify management access.
+6. Initialize only a verified empty Vault through protected `/vault/init`, once.
+   Securely capture the returned shares after successful durable creation.
+   Database errors/loading/corruption are not proof that initialization is needed.
+   For an existing Vault, use its existing shares; never create a replacement.
+7. Manually unseal through `/vault/unseal`. Verify readiness and old-secret access.
+   Wrong, mixed or malformed shares must leave service sealed. Legacy recovery
+   follows [key integrity](vault-key-integrity.md); certificate-only ciphertext
+   cannot establish the provenance of a historical Vault key.
+8. Start Agent as UID 1002 with its persistent identity/bundle directories and
+   existing host key readable only by the required service identity. Run its
+   preflight first. Do not enable the development host-key fallback, run the whole
+   service as root, or loosen all host-key permissions to fix access.
+9. Complete the established pending enrollment and operator approval when needed.
+   Subsequent starts load the same Core-issued certificate and state. Partial or
+   corrupt identity must fail; deleting state to force enrollment is not recovery.
+10. Verify the actual local application read/reload and Client Auth allow/reject
+    requests. A receipt, written bundle or Agent socket ping is insufficient.
+
+Release distribution is explicitly disabled. `rpc` is unavailable in this
+profile. Use supported protected APIs for live state. Release `eval` runs a
+separate process; it is not an RPC into an already unsealed service and cannot
+inherit that service's in-memory key.
+
+For a protected JSON mutation, fetch `/v1/sys/csrf-token`, keep its secure session
+cookie and send `X-CSRF-Token`. This is CSRF state, never a second operator login.
+Do not print response bodies from initialization/unseal or export browser traces
+containing them. Exact public Origin checks apply to WebSocket and long-poll.
+
+## Normal restart and consumer checks
+
+Record the Vault ID and consumer version before restart. Stop and restart Core
+with the same accepted artifact, configuration and persistent data. Expect
+restart-sealed status, successful liveness and reachable protected unseal. Supply
+correct shares manually, then check readiness, old-secret readback, audit
+verification and stable Agent reconnection. Do not use an unseal sidecar or store
+sufficient shares in application configuration.
+
+Agent restart must retain identity, CA pinning, authorization floor and trust
+high-water marks. Each static delivery requires fresh Core authorization (an
+exact-revision `not_modified` response may confirm a cached value). An offline
+Agent cannot authorize a new secret delivery. Application-held values already
+received cannot be remotely erased; the application's own expiry/reload and
+credential revocation govern those values.
+
+For Client Auth PKI, record Core publication generation/CRL number, Agent applied
+state and the independent Caddy watermark. Confirm valid authentication and
+unrelated-certificate rejection using real requests. Test a revoked certificate
+with a new handshake, session resumption and an already-open connection. Use the
+measured enforcement interval in the accepted report. Never promise that a CRL
+refresh automatically terminates an existing TLS session.
+
+## Required monitoring and responses
+
+Use the existing host logging/alert system with these actionable inputs. Do not
+export raw secret-bearing logs or create a new notification provider.
+
+| Signal | Observe | Operator action |
+| --- | --- | --- |
+| Core unavailable | Private process liveness and supervisor/container exit | Check runtime-input/preflight failure and service logs; retain original data |
+| Awaiting manual unseal | Readiness 503, sealed state, management 200 | Manual unseal after an expected restart; investigate unexpected loss of verified key |
+| Database unavailable/schema mismatch | Bounded health/preflight result | Restore connectivity or compatible schema; never initialize based on this error |
+| Backup failed/stale | Script nonzero exit, `latest-backup.json` UTC finish time | Restore destination/tool access; require a recent verified backup before upgrade |
+| Agent disconnected | Core Agent monitoring and local runtime connection state | Restore transport/identity validity; do not remove persisted identity |
+| Bundle lag/application failed | Publication versus applied receipts, local manifest/watermarks and actual consumer requests | Investigate failed validation/application; retain monotonic history |
+| Certificate/CRL expiry approaching | Persisted certificate validity and current CRL `next_update` | Renew/refresh through established paths before expiry; verify publication/convergence |
+| Required CRL worker failed/stopped | Readiness worker heartbeat/next timer/result | Repair the required worker; readiness must remain false while unhealthy |
+| Audit append/verification failed | Bounded audit failure logs and protected audit verification | Restrict sensitive operations and preserve evidence; check runtime keys/storage |
+
+Select explicit alert thresholds in the existing deployment configuration: backup
+staleness from the chosen cadence; certificate/CRL warning before expiry; bundle
+lag from the measured configured enforcement bound. No RPO/RTO or revocation bound
+is accepted until the candidate report measures it. An Agent ping establishes
+only local responsiveness, not consumer convergence.
+
+## Upgrade and compatible rollback
+
+Take and verify a backup and independent recovery inventory. Stop affected writes,
+record the existing Vault/key/share/schema/audit formats and monotonic state, run
+explicit migrations, and repeat preflight and enabled consumer checks. Release
+only the artifact that was accepted; rebuilding changes the artifact identity.
+
+Rollback is allowed only across a reviewed compatible schema/key/share/signature
+boundary. The authenticated Vault envelope and version-2 audit rows block their
+schema downgrade. New authorization floor/revision state must also be preserved;
+do not run older software that ignores an activated floor. When compatibility is
+unproven, stop service and use a reviewed recovery path rather than an older
+binary. Restoring an older database loses later data and security decisions.
+
+## Backup and full restore
+
+Follow [database recovery](../testing/disaster-recovery-procedures.md) using the
+existing destination and pinned PostgreSQL 16 tools. Configure nonsecret artifact,
+deployment and independent-inventory references. Recurring backup execution never
+changes bucket lifecycle, retention or notification policy.
+
+Restore only into an explicitly selected empty, isolated database with no other
+clients. Validate the manifest and dump checksum, required role/extensions,
+matching PostgreSQL major and restored inventory. The restore script never drops
+schemas, kills other clients or overwrites existing data. `database_restored` is
+not full recovery acceptance.
+
+Start the accepted image against the restored database, run preflight and manually
+unseal. Read a pre-backup secret, verify historical audit signatures using the
+preserved keyring, use the existing PKI keys, and reconnect Agents/consumers with
+their original identity and independent watermarks. Measure total elapsed time
+through consumer checks separately from the database import duration. Record the
+snapshot/data-loss window and the configured cadence without claiming an
+unmeasured objective.
+
+If the database predates a retained Agent/Caddy watermark, activated authorization
+floor or certificate revocation, isolate affected issuance/publication and
+consumers. Preserve the newer history and reconcile against independently held
+authoritative evidence through an explicit operator recovery procedure. Do not
+lower watermarks, wipe floor files, create a replacement CA, bump generation to
+hide missing revocations, or copy old revoked credentials into a running
+consumer. Until reconciliation is proven, affected delivery remains restricted.
+
+## Incident stop
+
+The manual `seal` operation intentionally does nothing. Its API returns the real
+state; it is not an emergency stop. Stop Core through the existing service manager
+and restrict machine ingress to prevent further Core-authorized operations.
+Stopping Core does not erase values already delivered. Stop/isolate affected
+Agents and consumers, revoke or rotate compromised credentials through the
+appropriate authoritative system, and account for cached files, open connections
+and TLS resumption. Keep revocation evidence and monotonic state for recovery.
+Never delete persistent data or recovery inventory as part of stopping service.
+
+## Acceptance evidence
+
+The redacted candidate report must identify source SHA, immutable image IDs,
+platform, schema/key/share versions, executed commands and G01–G20 outcomes,
+including measured restore/revocation intervals and existing/resumed-session
+behavior. Mark every skipped/unexecuted gate explicitly. Keep test credentials,
+shares, private keys, plaintext secrets, raw HTTP/RPC output and crash dumps out
+of exported evidence. Only after all enabled gates pass may the operator freeze
+and cut over that exact candidate.
