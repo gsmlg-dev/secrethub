@@ -170,3 +170,23 @@ The later forced CRL refresh did not reach the Agent within the selected
 Diagnosis found that the socket library's default channel sends bare payloads
 while Agent Connection expects event envelopes. A public channel adapter fix and
 new-image validation are pending; neither the bound nor trust state was reset.
+
+The adapter fix in `4cdf41c` preserves runtime event envelopes and existing
+request-reply correlation through the library's public API. Its focused
+regressions failed before the fix and passed afterward; the combined Connection
+suite passed 16 tests, with scoped format and warnings-as-errors compilation
+checks. Independent review cleared it. Rebuilt artifact validation remains open;
+two builds encountered Hex registry/tarball timeouts. The Agent dependency fetch
+now uses documented concurrency/timeout settings; validation has not been
+weakened.
+
+The actual older-database trust rehearsal passed selected G17 checks in 54.54
+seconds using Core `43715c4edce1`, Agent `13cc6bd2aa1e` and the exact Caddy
+consumer. It exported the restored generation/CRL 1 while sealed with its worker
+stopped and no listeners. The artifact manager retained generation/CRL 5 and
+rejected the older signed bundle without changing its trust watermark/current
+bundle. Independently read Caddy watermarks advanced monotonically from 4 to the
+already retained 5. The revoked leaf was denied and the unrevoked control
+allowed, with expiry, CA signatures and revocation membership checked. Restored
+Vault/PKI/audit inventory remained unchanged. G17 stays partial: authoritative
+reconciliation and full service reopen remain unexecuted, with recovery held.
