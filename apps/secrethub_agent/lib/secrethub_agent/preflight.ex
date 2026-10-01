@@ -12,6 +12,7 @@ defmodule SecretHub.Agent.Preflight do
     %{
       role: Keyword.get(config, :launch_profile) == :single_operator,
       host_key: secure_host_key?(paths),
+      enrollment_trust: valid_enrollment_trust?(Keyword.get(config, :enrollment_req_options, [])),
       state_directory: writable_directory?(state_dir),
       socket_directory: writable_directory?(directory(Keyword.get(config, :socket_path))),
       bundle_directory: writable_directory?(Keyword.get(config, :client_auth_bundle_dir)),
@@ -35,6 +36,24 @@ defmodule SecretHub.Agent.Preflight do
     passed = Enum.all?(checks, fn {_, passed} -> passed end)
     IO.puts(Jason.encode!(%{role: "agent", passed: passed, checks: checks}))
     if passed, do: :ok, else: System.stop(1)
+  end
+
+  defp valid_enrollment_trust?(options) do
+    case get_in(options, [:connect_options, :transport_opts, :cacertfile]) do
+      nil ->
+        true
+
+      path ->
+        with {:ok, %{type: :regular, size: size}} when size in 1..1_048_576 <- File.stat(path),
+             {:ok, pem} <- File.read(path),
+             [_ | _] = entries <- :public_key.pem_decode(pem) do
+          Enum.all?(entries, &match?({:Certificate, _, :not_encrypted}, &1))
+        else
+          _ -> false
+        end
+    end
+  rescue
+    _ -> false
   end
 
   defp secure_host_key?(paths) do

@@ -51,6 +51,26 @@ defmodule SecretHub.Agent.PreflightTest do
     assert {:error, :agent_preflight_failed} = Preflight.startup_validate()
   end
 
+  test "configured enrollment trust file must be readable", %{tmp_dir: dir} do
+    path = Path.join(dir, "missing-ca.pem")
+
+    Application.put_env(:secrethub_agent, :enrollment_req_options,
+      connect_options: [transport_opts: [cacertfile: path, verify: :verify_peer]]
+    )
+
+    refute Preflight.checks().enrollment_trust
+    assert {:error, :agent_preflight_failed} = Preflight.startup_validate()
+    File.write!(path, "invalid-certificate")
+    refute Preflight.checks().enrollment_trust
+    key = X509.PrivateKey.new_ec(:secp256r1)
+
+    certificate =
+      X509.Certificate.self_signed(key, "/CN=Isolated Enrollment CA", template: :root_ca)
+
+    File.write!(path, X509.Certificate.to_pem(certificate))
+    assert Preflight.checks().enrollment_trust
+  end
+
   test "inspect redacts private host and runtime key material" do
     refute inspect(%HostKey{
              private_key_pem: "private-marker",

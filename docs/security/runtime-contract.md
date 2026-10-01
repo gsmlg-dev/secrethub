@@ -32,7 +32,11 @@ or authorized by this change.
 Agent requires `SECRET_HUB_AGENT_CORE_URL` (HTTPS enrollment/machine URL),
 `SECRET_HUB_AGENT_HOST_KEY_PATH`, `SECRET_HUB_AGENT_STATE_DIR`,
 `SECRET_HUB_AGENT_SOCKET_PATH`, and `SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR`. It does
-not read Core database, Phoenix signing, or Human subsystem secrets. The host
+not read Core database, Phoenix signing, or Human subsystem secrets. An optional
+`SECRET_HUB_AGENT_ENROLLMENT_CA_PATH` supplies an existing private enrollment TLS
+CA bundle; HTTPS still verifies the peer. Otherwise the existing operating-system
+trust store is used. Agent preflight rejects unreadable/malformed configured CA
+material. This CA input does not replace the persisted Core-issued runtime chain. The host
 key must be an existing supported RSA/ECDSA identity readable by the service UID
 without world access. Agent preflight refuses partially present identity files;
 it never fixes damaged identity by re-enrolling automatically.
@@ -87,10 +91,11 @@ responsiveness, not connection to Core or consumer convergence.
 
 ## Current limitations
 
-Production artifact and consumer acceptance is still pending. Existing local
-Agent delivery skips application policy checks and uses a shared path cache;
-its missing-CA mock behavior is unsuitable for launch. Static delivery must
-pass the consumer authorization and bounded-cache gate before launch is claimed.
+Production artifact and consumer acceptance is still pending. Agent proof
+authentication, fresh Core authorization and revision-scoped caching are being
+implemented and require complete scoped and real-consumer verification. Missing
+CA trust and offline authorization must fail closed. No source-only check
+qualifies static delivery or PKI consumer enforcement for launch.
 Historical dynamic leases and rotation jobs need an operator inventory before
 adopting the restricted profile; disabling unfinished features does not revoke
 credentials already issued by older configurations.

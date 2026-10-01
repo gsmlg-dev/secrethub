@@ -11,6 +11,14 @@ host_key_path = RuntimeSecrets.read!("SECRET_HUB_AGENT_HOST_KEY_PATH")
 state_dir = RuntimeSecrets.read!("SECRET_HUB_AGENT_STATE_DIR")
 socket_path = RuntimeSecrets.read!("SECRET_HUB_AGENT_SOCKET_PATH")
 bundle_dir = RuntimeSecrets.read!("SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR")
+enrollment_ca = RuntimeSecrets.read!("SECRET_HUB_AGENT_ENROLLMENT_CA_PATH", required: false)
+
+enrollment_req_options =
+  if enrollment_ca do
+    [connect_options: [transport_opts: [cacertfile: enrollment_ca, verify: :verify_peer]]]
+  else
+    []
+  end
 
 config :secrethub_agent,
   enabled: true,
@@ -21,4 +29,5 @@ config :secrethub_agent,
   state_dir: state_dir,
   socket_path: socket_path,
   client_auth_bundle_dir: bundle_dir,
+  enrollment_req_options: enrollment_req_options,
   enrollment_opts: [paths: [ecdsa: host_key_path, rsa: host_key_path]]
