@@ -13,9 +13,9 @@ verification and provisional artifact checks below are scoped evidence.
 | --- | --- | --- |
 | WP1 | v4 GF(256) sharing, uniform coefficients, strict/canonical envelopes, independent vectors: 49 tests passed. Separate wrapping/data keys, authenticated generation-bound envelope, durable singleton creation, conservative loading/recovery, restart sealed and manual seal no-op. Combined Vault/audit checks: 128 tests, zero failures, two pre-existing skips. | Final frozen artifact, compatibility and full restore checks |
 | WP2 | Private transport-peer management boundary before HTTP/socket dispatch, no second login/allowlist, CSRF/exact Origin/no-store and separate machine route set. Combined Web regression suite: 115 tests, zero failures. | Final image and actual deployment-network boundary |
-| WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot OCI builds and frozen Bun lock install. | Corrected asset manifest and final rebuilt images; runtime-key artifact gate |
-| WP4 | Agent/CLI proof authentication source implementation and Core policy/revision/floor work are underway. Agent/CLI focused checks have passed for completed slices. | Complete Core/channel validation, concurrent read/revoke behavior, actual static and PKI consumers, outage/reconnect/revocation measurements |
-| WP5 | Manifest/checksum backups, optional existing S3, transactional empty-target restore. Ten contract tests passed; two real PG16 tests additionally passed under isolated opt-in. Separate two S3 mocked checks passed. | Full service/consumer restore, old DB versus newer security history, complete operational monitoring acceptance |
+| WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot provisional OCI builds, locked assets/digest and release assembly passed. | Frozen committed source and exact final image qualification; provisional evidence must be rerun |
+| WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. | One legacy SQL failure each in scoped Core/channel suites; extra repair round approval pending. Final exact-artifact qualification |
+| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation and controlled PKI and static-consumer reopen passed provisionally. | Selected nonempty upgrade/compatible rollback, required-worker recovery and monitoring qualification; final full restore/RTO/RPO evidence |
 | WP6 | Artifact harness underway. Provisional Core/Agent images built, empty candidate explicitly migrated, real nonroot Core started outside checkout. | All G01–G20 tied to a frozen source and exact final image identifiers |
 
 ## Review repairs
@@ -361,3 +361,53 @@ legacy policy cast. The static report leaves G13 partial because its own code
 does not run the separately verified debug-clone TTL observer; the independent
 expiry report remains scoped evidence. Full restore with this static consumer,
 upgrade/monitoring qualification and final frozen-artifact G01–G20 remain open.
+
+Snapshot 10 adds the accepted version-2/revision-3 static consumer to a consistent
+database/Agent/consumer backup. Original Core and Agent were stopped for the
+snapshot and recovered afterward with the same certificate, key, CA, auth floor,
+enrollment and actual consumer readback. Database backup, separate identity
+archives and ownership-preserving Core input copies completed in 70.064 seconds;
+shares and audit inputs remain separately held. This does not establish full RTO.
+
+The snapshot was imported into a new empty database in the isolated recovery
+cluster without overwriting earlier restores. Restricted exact-image evaluation
+passed static decryption, historical audit verification and original PKI key use;
+Vault/PKI inventory and historical audit rows remained unchanged, and temporary
+VM absence was confirmed. The copied database URL retained its original numeric
+ownership and mode. The first fixture setup rejected an empty environment entry;
+continuation corrected only that private environment and reused the already
+restored database, without another import or reset. This current-generation
+integrity check does not claim the older-database G17 scenario.
+
+The new read-only static restore helper and its instructions passed independent
+source review, including deny-path and cleanup/report checks. Serving restore
+execution remains pending. G16 stays partial, G17 retains its separately scoped
+history evidence, and the recovery hold and final-candidate gates remain open.
+
+The first controlled static service reopen reached restart-sealed status and
+protected manual unseal but failed before restore-helper construction: its
+baseline validator incorrectly required a bare UUID for the canonical
+`agent-<UUID>` runtime identity. No identity change or database replacement was
+used to bypass it. The original services recovered with unchanged identity and
+version-2/revision-3 readback; all owned serving/evaluator/consumer containers
+were confirmed absent. The failed 73.326-second report and copied restore state
+are retained. A scoped helper correction/review is pending; this failed attempt
+does not clear G16.
+
+The canonical runtime-ID correction passed 30 focused worker checks and ten
+independent reviewer cases; database UUID validation and exact baseline identity
+comparisons were preserved. The second service reopen reused the same restored
+database and copied identity, with new report paths. It passed in 110.229 seconds
+including original-fixture recovery; the selected read-only helper portion took
+70.129 seconds. Restart-sealed status, protected manual unseal, post-start Agent
+heartbeat, original Agent certificate/key/CA/floor/enrollment and Core certificate
+association, typed authorization gate/hash/generation and real UID1002 consumer
+version-2/revision-3 readback all passed. Eight unique owned Core evaluations
+preserved serving-node registration/incarnation/capabilities; all temporary VMs
+and both serving restore containers were confirmed absent. Original services
+remain healthy with identity and actual consumer readback preserved. The imported
+database, copied identity/trust and unsuccessful first report remain retained.
+Import (39.808 seconds), restricted integrity (17.175 seconds) and controlled
+reopen durations are separately scoped observations, not an accepted end-to-end
+RTO/RPO. G16 and full-plan acceptance remain partial and recovery held; no result
+is transferred to a future frozen candidate.
