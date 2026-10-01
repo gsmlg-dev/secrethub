@@ -237,9 +237,12 @@ defmodule SecretHub.Core.RotationManager do
   @doc """
   Performs a rotation for the given schedule.
   """
-  def perform_rotation(rotation_target, opts \\ [])
+  def perform_rotation(rotation_target, opts \\ []) do
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:rotation),
+         do: do_perform_rotation(rotation_target, opts)
+  end
 
-  def perform_rotation(%RotationSchedule{} = schedule, opts) do
+  defp do_perform_rotation(%RotationSchedule{} = schedule, opts) do
     # Create history record
     {:ok, history} =
       create_history(%{
@@ -312,7 +315,7 @@ defmodule SecretHub.Core.RotationManager do
     end
   end
 
-  def perform_rotation(%SecretRotator{} = rotator, opts) do
+  defp do_perform_rotation(%SecretRotator{} = rotator, opts) do
     {:ok, history} =
       create_history(%{
         rotator_id: rotator.id,

@@ -89,7 +89,7 @@ defmodule SecretHub.Core.Application do
 
   # Start LeaseManager for dynamic secret lease tracking
   defp lease_manager_children do
-    if runtime_environment?() do
+    if runtime_environment?() and SecretHub.Shared.LaunchProfile.enabled?(:dynamic_secrets) do
       [SecretHub.Core.LeaseManager]
     else
       []

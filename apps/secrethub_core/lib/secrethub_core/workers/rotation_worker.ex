@@ -47,7 +47,14 @@ defmodule SecretHub.Core.Workers.RotationWorker do
   alias SecretHub.Shared.Schemas.{RotationSchedule, SecretRotator}
 
   @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"rotator_id" => rotator_id}}) do
+  def perform(job) do
+    case SecretHub.Shared.LaunchProfile.check(:rotation) do
+      :ok -> do_perform(job)
+      {:error, :feature_unavailable} -> {:discard, :feature_unavailable}
+    end
+  end
+
+  defp do_perform(%Oban.Job{args: %{"rotator_id" => rotator_id}}) do
     Logger.info("Starting rotator job", rotator_id: rotator_id)
 
     with {:ok, rotator} <- Secrets.get_secret_rotator(rotator_id),
@@ -86,8 +93,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
     end
   end
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"schedule_id" => schedule_id}}) do
+  defp do_perform(%Oban.Job{args: %{"schedule_id" => schedule_id}}) do
     Logger.info("Starting rotation job", schedule_id: schedule_id)
 
     with {:ok, schedule} <- RotationManager.get_schedule(schedule_id),
@@ -126,8 +132,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
     end
   end
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
+  defp do_perform(%Oban.Job{args: args}) do
     Logger.error("Invalid rotation job arguments", args: inspect(args))
     {:discard, :invalid_arguments}
   end
@@ -137,9 +142,12 @@ defmodule SecretHub.Core.Workers.RotationWorker do
 
   Returns `{:ok, job}` on success or `{:error, changeset}` on failure.
   """
-  def schedule_rotation(rotation_target, opts \\ [])
+  def schedule_rotation(rotation_target, opts \\ []) do
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:rotation),
+         do: do_schedule_rotation(rotation_target, opts)
+  end
 
-  def schedule_rotation(%SecretRotator{} = rotator, opts) do
+  defp do_schedule_rotation(%SecretRotator{} = rotator, opts) do
     scheduled_at = Keyword.get(opts, :scheduled_at)
 
     args = %{rotator_id: rotator.id}
@@ -154,7 +162,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
     Oban.insert(job)
   end
 
-  def schedule_rotation(%RotationSchedule{} = schedule, opts) do
+  defp do_schedule_rotation(%RotationSchedule{} = schedule, opts) do
     scheduled_at = Keyword.get(opts, :scheduled_at)
 
     args = %{schedule_id: schedule.id}
@@ -178,6 +186,10 @@ defmodule SecretHub.Core.Workers.RotationWorker do
   Returns the number of jobs scheduled.
   """
   def schedule_due_rotations do
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:rotation), do: do_schedule_due_rotations()
+  end
+
+  defp do_schedule_due_rotations do
     due_rotators = RotationManager.get_due_rotators()
     due_schedules = RotationManager.get_due_schedules()
     due_targets = due_rotators ++ due_schedules

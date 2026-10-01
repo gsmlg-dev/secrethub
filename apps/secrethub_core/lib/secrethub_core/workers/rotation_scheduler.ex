@@ -57,7 +57,14 @@ defmodule SecretHub.Core.Workers.RotationScheduler do
   alias SecretHub.Core.Workers.RotationWorker
 
   @impl Oban.Worker
-  def perform(%Oban.Job{}) do
+  def perform(job) do
+    case SecretHub.Shared.LaunchProfile.check(:rotation) do
+      :ok -> do_perform(job)
+      {:error, :feature_unavailable} -> {:discard, :feature_unavailable}
+    end
+  end
+
+  defp do_perform(%Oban.Job{}) do
     Logger.info("Starting rotation scheduler check")
 
     start_time = System.monotonic_time(:millisecond)

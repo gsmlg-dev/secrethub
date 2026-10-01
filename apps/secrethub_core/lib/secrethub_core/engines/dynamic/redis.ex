@@ -71,6 +71,12 @@ defmodule SecretHub.Core.Engines.Dynamic.Redis do
 
   @impl Dynamic
   def generate_credentials(role_name, opts) do
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:dynamic_secrets) do
+      do_generate_credentials(role_name, opts)
+    end
+  end
+
+  defp do_generate_credentials(role_name, opts) do
     config = Keyword.fetch!(opts, :config)
     requested_ttl = Keyword.get(opts, :ttl)
 
@@ -138,6 +144,12 @@ defmodule SecretHub.Core.Engines.Dynamic.Redis do
 
   @impl Dynamic
   def renew_lease(lease_id, opts) do
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:dynamic_secrets) do
+      do_renew_lease(lease_id, opts)
+    end
+  end
+
+  defp do_renew_lease(lease_id, opts) do
     requested_increment = Keyword.get(opts, :increment, @default_ttl)
     current_credentials = Keyword.get(opts, :credentials, %{})
     metadata = current_credentials["metadata"] || current_credentials[:metadata] || %{}

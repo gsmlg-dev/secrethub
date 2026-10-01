@@ -11,13 +11,19 @@ defmodule SecretHub.Core.Engines.Dynamic.AWSSTS do
   alias SecretHub.Core.Engines.Dynamic
 
   @impl Dynamic
-  def generate_credentials(_role_name, _opts), do: {:error, :aws_sts_engine_not_available}
+  def generate_credentials(_role_name, _opts) do
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:dynamic_secrets),
+         do: {:error, :aws_sts_engine_not_available}
+  end
 
   @impl Dynamic
   def revoke_credentials(_lease_id, _credentials), do: :ok
 
   @impl Dynamic
-  def renew_lease(_lease_id, _opts), do: {:error, :not_renewable}
+  def renew_lease(_lease_id, _opts) do
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:dynamic_secrets),
+         do: {:error, :not_renewable}
+  end
 
   @impl Dynamic
   def validate_config(_config), do: {:error, ["AWS STS engine is not available in this build"]}

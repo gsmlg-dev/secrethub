@@ -73,7 +73,8 @@ defmodule SecretHub.Core.LeaseManager do
   - `{:error, changeset}` - Validation failed
   """
   def create_lease(attrs) do
-    GenServer.call(__MODULE__, {:create_lease, attrs})
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:dynamic_secrets),
+         do: GenServer.call(__MODULE__, {:create_lease, attrs})
   end
 
   @doc """
@@ -92,7 +93,8 @@ defmodule SecretHub.Core.LeaseManager do
   - `{:error, reason}` - Engine-specific renewal failure
   """
   def renew_lease(lease_id, increment \\ nil) do
-    GenServer.call(__MODULE__, {:renew_lease, lease_id, increment})
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:dynamic_secrets),
+         do: GenServer.call(__MODULE__, {:renew_lease, lease_id, increment})
   end
 
   @doc """
@@ -111,7 +113,8 @@ defmodule SecretHub.Core.LeaseManager do
   - `{:error, reason}` - Failed to revoke credentials
   """
   def revoke_lease(lease_id) do
-    GenServer.call(__MODULE__, {:revoke_lease, lease_id})
+    with :ok <- SecretHub.Shared.LaunchProfile.check(:dynamic_secrets),
+         do: GenServer.call(__MODULE__, {:revoke_lease, lease_id})
   end
 
   @doc """

@@ -1,262 +1,159 @@
 defmodule SecretHub.Core.Health do
-  @moduledoc """
-  Health check module for SecretHub Core.
+  @moduledoc "Bounded health checks for process, management and secret-serving availability."
 
-  Provides comprehensive health monitoring for high availability deployments:
-  - Database connectivity
-  - Seal status
-  - System resources
-  - Background job health
-  - Readiness and liveness checks for Kubernetes
-
-  ## Health Check Types
-
-  - **Liveness**: Is the application running? (Used by k8s to restart pods)
-  - **Readiness**: Can the application serve traffic? (Used by k8s/load balancers)
-  - **Health**: Detailed health status (Used for monitoring/alerting)
-  """
-
-  require Logger
   alias SecretHub.Core.{Repo, Shutdown, Vault.SealState}
+  alias SecretHub.Core.Workers.ClientAuthCRLRefresher
+  alias SecretHub.Shared.LaunchProfile
 
-  @type health_status :: :healthy | :degraded | :unhealthy
-  @type check_result :: {:ok, map()} | {:error, term()}
+  @timeout 500
 
-  @doc """
-  Liveness check - minimal check to determine if the process is alive.
+  def liveness, do: {:ok, %{status: "alive", timestamp: timestamp()}}
 
-  Returns 200 if the application is running, regardless of functionality.
-  Used by Kubernetes to determine if the pod should be restarted.
-  """
-  @spec liveness() :: {:ok, map()}
-  def liveness do
-    {:ok,
-     %{
-       status: "alive",
-       timestamp: DateTime.utc_now() |> DateTime.truncate(:second)
-     }}
-  end
-
-  @doc """
-  Readiness check - determines if the application can serve traffic.
-
-  Returns 200 only if the application is ready to handle requests:
-  - Not in shutdown state
-  - Database is accessible
-  - Vault is initialized (but can be sealed)
-  - Critical dependencies are available
-
-  Used by Kubernetes and load balancers to route traffic.
-  """
-  @spec readiness() :: {:ok, map()} | {:error, map()}
-  def readiness do
-    # Check if graceful shutdown is in progress
-    shutting_down = Shutdown.shutting_down?()
-
-    checks = %{
-      shutdown_state:
-        if(shutting_down,
-          do: {:error, %{state: "shutting down"}},
-          else: {:ok, %{state: "ready"}}
-        ),
+  def management_readiness do
+    readiness_result("management", %{
       database: check_database(),
-      vault_initialized: check_vault_initialized()
-    }
-
-    ready =
-      !shutting_down && Enum.all?(checks, fn {_name, result} -> match?({:ok, _}, result) end)
-
-    result = %{
-      ready: ready,
-      shutting_down: shutting_down,
-      checks: format_check_results(checks),
-      timestamp: DateTime.utc_now() |> DateTime.truncate(:second)
-    }
-
-    if ready do
-      {:ok, result}
-    else
-      {:error, result}
-    end
+      vault: check_vault(),
+      shutdown_state: check_shutdown()
+    })
   end
 
-  @doc """
-  Comprehensive health check with detailed status.
+  def readiness do
+    readiness_result("secrets", %{
+      database: check_database(),
+      vault_initialized: check_vault_initialized(),
+      seal_status: check_seal_status(),
+      background_jobs: check_background_jobs(),
+      shutdown_state: check_shutdown()
+    })
+  end
 
-  Returns detailed health information including:
-  - Overall health status (healthy/degraded/unhealthy)
-  - Database connectivity
-  - Seal status
-  - Background job health
-  - System metrics
-
-  Used for monitoring, alerting, and debugging.
-  """
-  @spec health(keyword()) :: {:ok, map()}
   def health(opts \\ []) do
-    include_details = Keyword.get(opts, :details, true)
-
     checks = %{
       database: check_database(),
       vault: check_vault(),
       seal_status: check_seal_status()
     }
 
-    # Add optional detailed checks
     checks =
-      if include_details do
-        Map.merge(checks, %{
-          background_jobs: check_background_jobs()
-        })
-      else
-        checks
+      if Keyword.get(opts, :details, true),
+        do: Map.put(checks, :background_jobs, check_background_jobs()),
+        else: checks
+
+    vault =
+      case checks.vault do
+        {:ok, data} -> data
+        {:error, _} -> %{initialized: false, sealed: true}
       end
-
-    # Determine overall status
-    status = determine_overall_status(checks)
-
-    result = %{
-      status: status,
-      initialized: vault_initialized?(),
-      sealed: vault_sealed?(),
-      shutting_down: Shutdown.shutting_down?(),
-      active_connections: Shutdown.active_connections(),
-      checks: format_check_results(checks),
-      timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
-      version: Application.spec(:secrethub_core, :vsn) |> to_string()
-    }
-
-    {:ok, result}
-  end
-
-  @doc """
-  Check database connectivity.
-  """
-  @spec check_database() :: check_result()
-  def check_database do
-    case Repo.query("SELECT 1", [], timeout: 5000) do
-      {:ok, _result} ->
-        {:ok, %{status: "connected", latency_ms: measure_db_latency()}}
-
-      {:error, reason} ->
-        {:error, %{status: "error", reason: inspect(reason)}}
-    end
-  rescue
-    e ->
-      {:error, %{status: "error", reason: Exception.message(e)}}
-  end
-
-  @doc """
-  Check vault initialization status.
-  """
-  @spec check_vault_initialized() :: check_result()
-  def check_vault_initialized do
-    if vault_initialized?() do
-      {:ok, %{initialized: true}}
-    else
-      {:error, %{initialized: false, reason: "Vault not initialized"}}
-    end
-  end
-
-  @doc """
-  Check comprehensive vault status.
-  """
-  @spec check_vault() :: check_result()
-  def check_vault do
-    status = SealState.status()
 
     {:ok,
      %{
-       initialized: status.initialized,
-       sealed: status.sealed,
-       threshold: status.threshold,
-       shares: status.total_shares
+       status: overall_status(checks),
+       initialized: vault.initialized,
+       sealed: vault.sealed,
+       shutting_down: Shutdown.shutting_down?(),
+       checks: format_checks(checks),
+       timestamp: timestamp(),
+       version: Application.spec(:secrethub_core, :vsn) |> to_string()
      }}
-  rescue
-    e ->
-      {:error, %{reason: Exception.message(e)}}
   end
 
-  @doc """
-  Check seal status specifically.
-  """
-  @spec check_seal_status() :: check_result()
+  def check_database do
+    start = System.monotonic_time(:microsecond)
+
+    case Repo.query("SELECT 1", [], timeout: @timeout, pool_timeout: @timeout) do
+      {:ok, _} ->
+        {:ok, %{latency_ms: Float.round((System.monotonic_time(:microsecond) - start) / 1000, 2)}}
+
+      {:error, _} ->
+        error("database_unavailable")
+    end
+  rescue
+    _ -> error("database_unavailable")
+  catch
+    :exit, _ -> error("database_unavailable")
+  end
+
+  def check_vault do
+    case GenServer.call(SealState, :status, @timeout) do
+      %{state: state} when state in [:loading, :unavailable] ->
+        error("vault_unavailable")
+
+      status ->
+        {:ok,
+         Map.take(status, [
+           :state,
+           :initialized,
+           :sealed,
+           :threshold,
+           :total_shares,
+           :recovery_required
+         ])}
+    end
+  rescue
+    _ -> error("vault_unavailable")
+  catch
+    :exit, _ -> error("vault_unavailable")
+  end
+
+  def check_vault_initialized do
+    case check_vault() do
+      {:ok, %{initialized: true, recovery_required: false}} -> {:ok, %{initialized: true}}
+      {:ok, _} -> error("vault_not_initialized_or_recovery_required")
+      error -> error
+    end
+  end
+
   def check_seal_status do
-    if vault_sealed?() do
-      {:error, %{sealed: true, reason: "Vault is sealed"}}
-    else
-      {:ok, %{sealed: false}}
+    case GenServer.call(SealState, :get_master_key, @timeout) do
+      {:ok, key} when is_binary(key) and byte_size(key) == 32 -> {:ok, %{sealed: false}}
+      _ -> {:error, %{sealed: true, reason: "vault_sealed_or_key_unverified"}}
     end
+  rescue
+    _ -> error("vault_unavailable")
+  catch
+    :exit, _ -> error("vault_unavailable")
   end
 
-  @doc """
-  Check background job health (Oban).
-  """
-  @spec check_background_jobs() :: check_result()
   def check_background_jobs do
-    # Check if Oban is running and healthy
-    # This is a basic check - could be enhanced with Oban.check_queue/1
-    {:ok, %{status: "running"}}
-  rescue
-    e ->
-      {:error, %{status: "error", reason: Exception.message(e)}}
-  end
-
-  ## Private Functions
-
-  defp vault_initialized? do
-    status = SealState.status()
-    status.initialized
-  rescue
-    _ -> false
-  end
-
-  defp vault_sealed? do
-    status = SealState.status()
-    status.sealed
-  rescue
-    _ -> true
-  end
-
-  defp measure_db_latency do
-    {time_microseconds, _result} =
-      :timer.tc(fn ->
-        Repo.query("SELECT 1", [], timeout: 5000)
-      end)
-
-    Float.round(time_microseconds / 1000, 2)
-  end
-
-  defp determine_overall_status(checks) do
-    results = Map.values(checks)
-
-    cond do
-      # All checks passing - healthy
-      Enum.all?(results, &match?({:ok, _}, &1)) ->
-        :healthy
-
-      # Some non-critical checks failing - degraded
-      Enum.any?(results, &match?({:error, _}, &1)) and
-          match?({:ok, _}, checks[:database]) ->
-        :degraded
-
-      # Critical checks failing - unhealthy
-      true ->
-        :unhealthy
+    if LaunchProfile.enabled?(:client_auth_pki) do
+      ClientAuthCRLRefresher.health_status()
+    else
+      {:ok, %{required: false}}
     end
   end
 
-  defp format_check_results(checks) do
-    checks
-    |> Enum.map(fn {name, result} ->
-      case result do
-        {:ok, data} ->
-          {name, Map.put(data, :status, "passing")}
+  defp readiness_result(service, checks) do
+    ready = Enum.all?(checks, fn {_name, result} -> match?({:ok, _}, result) end)
 
-        {:error, data} ->
-          {name, Map.put(data, :status, "failing")}
-      end
-    end)
-    |> Map.new()
+    result = %{
+      ready: ready,
+      service: service,
+      shutting_down: Shutdown.shutting_down?(),
+      checks: format_checks(checks),
+      timestamp: timestamp()
+    }
+
+    if ready, do: {:ok, result}, else: {:error, result}
   end
+
+  defp check_shutdown do
+    if Shutdown.shutting_down?(), do: error("shutting_down"), else: {:ok, %{state: "ready"}}
+  end
+
+  defp overall_status(checks) do
+    cond do
+      Enum.all?(checks, fn {_key, result} -> match?({:ok, _}, result) end) -> :healthy
+      match?({:error, _}, checks.database) or match?({:error, _}, checks.vault) -> :unhealthy
+      true -> :degraded
+    end
+  end
+
+  defp format_checks(checks) do
+    Map.new(checks, fn {name, {status, data}} ->
+      {name, Map.put(data, :status, if(status == :ok, do: "passing", else: "failing"))}
+    end)
+  end
+
+  defp error(reason), do: {:error, %{reason: reason}}
+  defp timestamp, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

@@ -39,7 +39,48 @@ defmodule SecretHub.Core.Workers.ClientAuthCRLRefresher do
       send(self(), :reconcile_startup)
     end
 
-    {:ok, %{interval: interval, enabled: enabled, retry_attempt: 0, timer: nil}}
+    {:ok,
+     %{
+       interval: interval,
+       enabled: enabled,
+       retry_attempt: 0,
+       timer: nil,
+       last_checked_at: nil,
+       last_error: nil
+     }}
+  end
+
+  def health_status do
+    GenServer.call(__MODULE__, :health_status, 500)
+  catch
+    :exit, _ -> {:error, %{reason: "crl_worker_unavailable"}}
+  end
+
+  @impl true
+  def handle_call(:health_status, _from, state) do
+    result =
+      cond do
+        not state.enabled ->
+          {:error, %{reason: "crl_worker_disabled"}}
+
+        not is_nil(state.last_error) ->
+          {:error, %{reason: "crl_refresh_failed"}}
+
+        is_nil(state.last_checked_at) ->
+          {:error, %{reason: "crl_worker_starting"}}
+
+        System.monotonic_time(:millisecond) - state.last_checked_at >
+            state.interval + @max_jitter_ms + 120_000 ->
+          {:error, %{reason: "crl_worker_stale"}}
+
+        is_nil(state.timer) or Process.read_timer(state.timer) == false ->
+          {:error, %{reason: "crl_worker_unscheduled"}}
+
+        true ->
+          {:ok, %{required: true, retry_attempt: state.retry_attempt}}
+      end
+
+    {:reply, result, state}
   end
 
   @impl true
@@ -132,6 +173,8 @@ defmodule SecretHub.Core.Workers.ClientAuthCRLRefresher do
   end
 
   defp do_reconcile(state) do
+    state = %{state | last_checked_at: System.monotonic_time(:millisecond), last_error: nil}
+
     case get_current_crl_next_update() do
       {:ok, next_update} ->
         now = DateTime.utc_now()
@@ -162,6 +205,7 @@ defmodule SecretHub.Core.Workers.ClientAuthCRLRefresher do
         %{state | retry_attempt: 0, timer: timer}
 
       {:error, _reason} ->
+        state = %{state | last_error: :reconcile_failed}
         attempt = state.retry_attempt + 1
         backoff_ms = min(60_000, 5_000 * trunc(:math.pow(2, min(attempt, 4))))
         timer = Process.send_after(self(), :check_crl, backoff_ms)
@@ -182,12 +226,12 @@ defmodule SecretHub.Core.Workers.ClientAuthCRLRefresher do
         %{state | retry_attempt: 0, timer: timer}
 
       _ ->
-        timer = schedule_next_check(state.interval)
-        %{state | retry_attempt: 0, timer: timer}
+        schedule_refresh_retry(state, :post_refresh_reconcile_failed)
     end
   end
 
   defp schedule_refresh_retry(state, reason) do
+    state = %{state | last_error: :refresh_failed}
     attempt = state.retry_attempt + 1
     backoff_ms = min(60_000, 5_000 * trunc(:math.pow(2, min(attempt, 4))))
 
