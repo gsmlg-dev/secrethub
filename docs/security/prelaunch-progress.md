@@ -209,3 +209,27 @@ The strengthened G11 lifecycle check also passed on this push-fix Agent in
 64.032 seconds. Both restarts preserved identity and enrollment inventory, fresh
 heartbeats followed restart completion, Core restarted sealed until manual
 unseal, and a damaged identity copy was rejected without changing live state.
+
+Copy-only G15 selected negative checks passed in 87.361 seconds against the
+push-fix Agent and the exact Caddy consumer, using retained generation/CRL 7.
+The running consumer observed a bundle-transcript integrity failure after CRL
+disk damage, retained last-known-good trust, denied the revoked leaf and allowed
+the unrevoked control. A new consumer process exited nonzero on the damaged
+bundle and denied the control. With every copied generation's CRL and the copied
+manager watermark damaged, the manager quarantined itself and twice rejected
+application with `damaged_state_recovery_required`. Consumer watermarks, current
+link and copied identity inventory stayed unchanged; the original source volume
+inventory stayed byte-identical. All invocation-owned containers stopped and
+all diagnostic copies remain. No forced recovery was selected or authorized;
+G15 remains partial in the report, with recovery held. The two failed prior
+reports are retained. The successful run includes a socket-probe correction:
+`SO_REUSEADDR` permits a free port in `TIME_WAIT` while still rejecting an active
+listener, verified against the actual helper before and after the change.
+
+The independent static-consumer image `ae6125bf3306` starts as UID1002 outside
+the checkout and passes its CLI contract probe. Authorized delivery remains
+unexecuted: Core `43715c4edce1` predates application-principal/revisioned reads,
+the authorization migrations and typed-runtime gate. Current Agent requests
+already require that newer contract. Source API inspection is preparation,
+not G12/G13 acceptance; a separate release `eval` cannot inspect a live Agent's
+cache because release distribution is disabled.
