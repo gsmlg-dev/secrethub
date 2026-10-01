@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the design for issuing certificates to applications that need to authenticate with SecretHub Agents. Applications use these certificates to establish mTLS connections via Unix Domain Sockets (UDS) to retrieve secrets.
+This document describes the design for issuing certificates to applications that need to authenticate with SecretHub Agents. The current [application UDS auth-v2 contract](../security/app-uds-auth-v2.md) supersedes this document's older one-message UDS examples and application-name SAN descriptions: applications prove private-key possession over the owner-only Unix socket, and Core checks authorization on every static read.
 
 ## Goals
 

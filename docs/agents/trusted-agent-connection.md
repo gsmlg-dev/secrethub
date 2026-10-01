@@ -44,6 +44,7 @@ The result was that the trusted Agent-to-Core runtime connection did not work re
    - Phoenix/Core verification checks stored fingerprint, certificate state, certificate type, EKU, SANs, enrollment binding, and Agent status.
 14. A single Agent startup coordinator owns material loading, enrollment, runtime startup, finalization, and renewal scheduling.
 15. `SecretHub.Agent.Connection` remains the low-level Phoenix Socket client. Lifecycle orchestration moves out of `SecretHub.Agent.ConnectionManager` into the startup coordinator.
+16. Application secret reads follow the [UDS auth-v2 contract](../security/app-uds-auth-v2.md): private-key possession, independent Core Agent/app policy checks, fresh authorization before cached value release, and a monotonic Core-issued authentication floor persisted before runtime acceptance.
 
 ## Current Code Touchpoints
 

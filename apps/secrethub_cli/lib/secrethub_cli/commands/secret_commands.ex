@@ -81,7 +81,8 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
     if agent_socket = Keyword.get(opts, :agent_socket) do
       AgentClient.get_secret(path,
         socket_path: agent_socket,
-        certificate_path: Keyword.get(opts, :agent_cert)
+        certificate_path: Keyword.get(opts, :agent_cert),
+        private_key_path: Keyword.get(opts, :agent_key)
       )
     else
       with {:ok, _token} <- Auth.ensure_authenticated() do

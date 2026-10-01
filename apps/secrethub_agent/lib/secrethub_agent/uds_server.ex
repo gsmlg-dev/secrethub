@@ -1,704 +1,422 @@
 defmodule SecretHub.Agent.UDSServer do
-  @moduledoc """
-  Unix Domain Socket server for local application connections.
-
-  This server listens on a Unix Domain Socket and accepts connections from
-  applications running on the same host. Applications authenticate via mTLS
-  and can request secrets from the Agent's cache or Core.
-
-  ## Architecture
-
-  ```
-  Application → UDS Socket → UDSServer → Cache/Core → Response
-       ↑                         ↓
-       └─────── mTLS Auth ────────┘
-  ```
-
-  ## Features
-
-  - Unix Domain Socket listener for local connections
-  - mTLS authentication for applications
-  - Request/response protocol (JSON over socket)
-  - Connection pooling and limits
-  - Request timeouts
-  - Graceful shutdown
-
-  ## Socket Location
-
-  Default: `/var/run/secrethub/agent.sock`
-  Configurable via: `config :secrethub_agent, :socket_path`
-
-  ## Protocol
-
-  All messages are JSON-encoded and newline-delimited.
-
-  ### Authentication
-
-  Clients MUST authenticate before making any other requests:
-
-  **Auth Request:**
-  ```json
-  {
-    "request_id": "uuid",
-    "action": "authenticate",
-    "params": {
-      "certificate": "base64-encoded-cert-pem"
-    }
-  }
-  ```
-
-  **Auth Response:**
-  ```json
-  {
-    "request_id": "uuid",
-    "status": "ok",
-    "data": {
-      "app_id": "app-uuid",
-      "authenticated": true
-    }
-  }
-  ```
-
-  ### Secret Requests
-
-  After authentication, clients can request secrets:
-
-  **Request:**
-  ```json
-  {
-    "request_id": "uuid",
-    "action": "get_secret",
-    "params": {
-      "path": "prod.db.password"
-    }
-  }
-  ```
-
-  **Response:**
-  ```json
-  {
-    "request_id": "uuid",
-    "status": "ok",
-    "data": {
-      "value": "secret_value",
-      "version": 1
-    }
-  }
-  ```
-
-  ## Usage
-
-  The server is automatically started by the Agent application supervisor:
-
-  ```elixir
-  children = [
-    # ...
-    {SecretHub.Agent.UDSServer, socket_path: "/var/run/secrethub/agent.sock"}
-  ]
-  ```
-  """
-
+  @moduledoc "Owner-only newline UDS with connection-bound app private-key proof and Core-authorized reads."
   use GenServer
-  require Logger
+  alias SecretHub.Agent.{Cache, CertVerifier, Connection, IdentityStore, UDSAuth}
 
-  alias SecretHub.Agent.{Cache, CertVerifier, Connection}
+  @frame_limit 65_536
 
-  @default_socket_path "/var/run/secrethub/agent.sock"
-  @max_connections 100
-  @connection_timeout 30_000
-  @request_timeout 10_000
+  def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def get_stats, do: GenServer.call(__MODULE__, :get_stats)
+  def shutdown, do: GenServer.call(__MODULE__, :shutdown)
 
-  # Client API
-
-  @doc """
-  Start the UDS server.
-
-  ## Options
-
-    - `:socket_path` - Path to Unix Domain Socket (default: "/var/run/secrethub/agent.sock")
-    - `:max_connections` - Maximum concurrent connections (default: 100)
-    - `:connection_timeout` - Connection timeout in ms (default: 30000)
-    - `:request_timeout` - Request timeout in ms (default: 10000)
-  """
-  def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
-  end
-
-  @doc """
-  Get server statistics.
-  """
-  def get_stats do
-    GenServer.call(__MODULE__, :get_stats)
-  end
-
-  @doc """
-  Gracefully shutdown the server.
-  """
-  def shutdown do
-    GenServer.call(__MODULE__, :shutdown)
-  end
-
-  # Server Callbacks
+  def configure_runtime(agent_id, floor),
+    do: GenServer.call(__MODULE__, {:configure_runtime, agent_id, floor})
 
   @impl true
   def init(opts) do
-    socket_path = Keyword.get(opts, :socket_path, @default_socket_path)
-    max_connections = Keyword.get(opts, :max_connections, @max_connections)
-    connection_timeout = Keyword.get(opts, :connection_timeout, @connection_timeout)
-    request_timeout = Keyword.get(opts, :request_timeout, @request_timeout)
+    path = Keyword.get(opts, :socket_path, "/var/run/secrethub/agent.sock")
+    File.mkdir_p!(Path.dirname(path))
+    File.rm(path)
 
-    # Initialize certificate verifier
-    case CertVerifier.init() do
-      :ok ->
-        Logger.debug("Certificate verifier initialized")
+    with {:ok, listener} <-
+           :gen_tcp.listen(0, [
+             :binary,
+             ifaddr: {:local, to_charlist(path)},
+             packet: :line,
+             packet_size: @frame_limit,
+             active: false,
+             reuseaddr: true
+           ]),
+         :ok <- File.chmod(path, 0o600) do
+      {agent_id, floor} = persisted_runtime(Keyword.get(opts, :state_dir))
+      send(self(), :accept)
 
-      {:error, reason} ->
-        Logger.warning("Certificate verifier initialization failed (continuing in mock mode)",
-          reason: inspect(reason)
-        )
-    end
-
-    state = %{
-      socket_path: socket_path,
-      max_connections: max_connections,
-      connection_timeout: connection_timeout,
-      request_timeout: request_timeout,
-      listen_socket: nil,
-      connections: %{},
-      stats: %{
-        total_connections: 0,
-        active_connections: 0,
-        total_requests: 0,
-        failed_requests: 0,
-        auth_failures: 0,
-        auth_successes: 0
-      }
-    }
-
-    # Start listening in init
-    case start_listening(state) do
-      {:ok, new_state} ->
-        Logger.info("UDS server started",
-          socket_path: socket_path,
-          max_connections: max_connections
-        )
-
-        {:ok, new_state}
-
-      {:error, reason} ->
-        Logger.error("Failed to start UDS server", reason: inspect(reason), path: socket_path)
-        {:stop, reason}
+      {:ok,
+       %{
+         socket_path: path,
+         listener: listener,
+         agent_id: agent_id,
+         minimum_uds_auth_version: floor,
+         connections: %{},
+         max_connections: Keyword.get(opts, :max_connections, 100),
+         connection_timeout: Keyword.get(opts, :connection_timeout, 30_000),
+         request_timeout: Keyword.get(opts, :request_timeout, 10_000),
+         stats: %{
+           total_connections: 0,
+           active_connections: 0,
+           total_requests: 0,
+           failed_requests: 0,
+           auth_failures: 0,
+           auth_successes: 0
+         }
+       }}
+    else
+      {:error, reason} -> {:stop, reason}
     end
   end
 
   @impl true
-  def handle_call(:get_stats, _from, state) do
-    {:reply, {:ok, state.stats}, state}
-  end
+  def handle_call(:get_stats, _from, state), do: {:reply, {:ok, state.stats}, state}
+  def handle_call(:shutdown, _from, state), do: {:stop, :normal, :ok, state}
 
-  @impl true
-  def handle_call(:shutdown, _from, state) do
-    Logger.info("UDS server shutting down gracefully")
+  def handle_call({:configure_runtime, agent_id, floor}, _from, state)
+      when is_binary(agent_id) and floor in [1, 2] do
+    floor = max(floor, state.minimum_uds_auth_version)
+    state = %{state | agent_id: agent_id, minimum_uds_auth_version: floor}
 
-    # Close all active connections
-    Enum.each(state.connections, fn {_ref, connection} ->
-      :gen_tcp.close(connection.socket)
-    end)
+    state =
+      Enum.reduce(state.connections, state, fn {socket, connection}, acc ->
+        if connection.auth_version < floor and connection.auth_state == :authenticated,
+          do: close_connection(acc, socket),
+          else: acc
+      end)
 
-    # Close listen socket
-    if state.listen_socket do
-      :gen_tcp.close(state.listen_socket)
-    end
-
-    # Remove socket file
-    File.rm(state.socket_path)
-
-    {:stop, :normal, :ok, state}
-  end
-
-  @impl true
-  def handle_info({:tcp, socket, data}, state) do
-    # Handle incoming data from client
-    # process_request always returns {:ok, new_state}
-    {:ok, new_state} = process_request(socket, data, state)
-    {:noreply, new_state}
-  end
-
-  @impl true
-  def handle_info({:tcp_closed, socket}, state) do
-    # Client closed connection
-    Logger.debug("Client connection closed", socket: inspect(socket))
-
-    new_state =
-      state
-      |> remove_connection(socket)
-      |> update_stats(:connection_closed)
-
-    {:noreply, new_state}
-  end
-
-  @impl true
-  def handle_info({:tcp_error, socket, reason}, state) do
-    Logger.warning("TCP error on socket", socket: inspect(socket), reason: inspect(reason))
-
-    new_state =
-      state
-      |> remove_connection(socket)
-      |> update_stats(:connection_error)
-
-    {:noreply, new_state}
+    {:reply, :ok, state}
   end
 
   @impl true
   def handle_info(:accept, state) do
-    # Accept new connection
-    case accept_connection(state) do
-      {:ok, new_state} ->
-        # Continue accepting
-        send(self(), :accept)
-        {:noreply, new_state}
+    next =
+      case :gen_tcp.accept(state.listener, 50) do
+        {:ok, socket} when map_size(state.connections) < state.max_connections ->
+          :ok = :inet.setopts(socket, active: :once, packet: :line, packet_size: @frame_limit)
 
-      {:error, :too_many_connections} ->
-        Logger.warning("Connection rejected - too many connections",
-          current: state.stats.active_connections,
-          max: state.max_connections
-        )
+          timer =
+            Process.send_after(
+              self(),
+              {:authentication_timeout, socket},
+              state.connection_timeout
+            )
 
-        send(self(), :accept)
-        {:noreply, state}
+          connection = %{
+            connection_id: Ecto.UUID.generate(),
+            auth_state: :unauthenticated,
+            auth_version: 0,
+            principal: nil,
+            challenge: nil,
+            attempts: 0,
+            timer: timer
+          }
 
-      {:error, reason} ->
-        Logger.error("Failed to accept connection", reason: inspect(reason))
-        send(self(), :accept)
-        {:noreply, state}
+          state
+          |> put_in([:connections, socket], connection)
+          |> count(:total_connections)
+          |> count(:active_connections)
+
+        {:ok, socket} ->
+          :gen_tcp.close(socket)
+          state
+
+        {:error, :timeout} ->
+          state
+
+        {:error, _} ->
+          state
+      end
+
+    send(self(), :accept)
+    {:noreply, next}
+  end
+
+  def handle_info({:tcp, socket, frame}, state) do
+    state = handle_frame(socket, frame, state)
+    if Map.has_key?(state.connections, socket), do: :inet.setopts(socket, active: :once)
+    {:noreply, state}
+  end
+
+  def handle_info({:tcp_closed, socket}, state), do: {:noreply, close_connection(state, socket)}
+
+  def handle_info({:tcp_error, socket, _reason}, state),
+    do: {:noreply, close_connection(state, socket)}
+
+  def handle_info({:authentication_timeout, socket}, state) do
+    case state.connections[socket] do
+      %{auth_state: :authenticated} -> {:noreply, state}
+      nil -> {:noreply, state}
+      _ -> {:noreply, close_connection(state, socket)}
     end
   end
 
-  @impl true
-  def handle_info({:timeout, socket}, state) do
-    # Connection timeout
-    Logger.warning("Connection timeout", socket: inspect(socket))
-
-    send_error(socket, "timeout", "Connection timeout")
-    :gen_tcp.close(socket)
-
-    new_state =
-      state
-      |> remove_connection(socket)
-      |> update_stats(:connection_timeout)
-
-    {:noreply, new_state}
-  end
+  def handle_info(_, state), do: {:noreply, state}
 
   @impl true
-  def terminate(reason, state) do
-    Logger.info("UDS server terminating", reason: inspect(reason))
-
-    # Cleanup
-    if state.listen_socket do
-      :gen_tcp.close(state.listen_socket)
-    end
-
-    Enum.each(state.connections, fn {_ref, connection} ->
-      :gen_tcp.close(connection.socket)
-    end)
-
-    # Remove socket file
+  def terminate(_reason, state) do
+    :gen_tcp.close(state.listener)
+    Enum.each(state.connections, fn {socket, _} -> :gen_tcp.close(socket) end)
     File.rm(state.socket_path)
-
     :ok
   end
 
-  # Private Functions
+  @impl true
+  def format_status(status),
+    do: status |> Map.put(:state, :redacted) |> Map.put(:message, :redacted)
 
-  defp start_listening(state) do
-    # Ensure socket directory exists
-    socket_dir = Path.dirname(state.socket_path)
-    File.mkdir_p!(socket_dir)
+  defp persisted_runtime(nil), do: {nil, 1}
 
-    # Remove existing socket file if it exists
-    File.rm(state.socket_path)
+  defp persisted_runtime(dir) do
+    case IdentityStore.load(dir) do
+      {:ok, material} ->
+        :ok = CertVerifier.configure_trust(material.ca_chain_pem)
+        {material.agent_id, Map.get(material.identity, "minimum_uds_auth_version", 1)}
 
-    # Create Unix Domain Socket
-    # Use :gen_tcp with {local, path} for UDS on Erlang/OTP 21+
-    case :gen_tcp.listen(0, [
-           {:ifaddr, {:local, String.to_charlist(state.socket_path)}},
-           :binary,
-           packet: :line,
-           active: true,
-           reuseaddr: true
-         ]) do
-      {:ok, listen_socket} ->
-        # Set socket permissions (readable/writable by owner and group)
-        File.chmod!(state.socket_path, 0o660)
-
-        # Start accepting connections
-        send(self(), :accept)
-
-        {:ok, %{state | listen_socket: listen_socket}}
-
-      {:error, reason} ->
-        {:error, reason}
+      _ ->
+        {nil, 1}
     end
   end
 
-  defp accept_connection(state) do
-    if state.stats.active_connections >= state.max_connections do
-      {:error, :too_many_connections}
-    else
-      case :gen_tcp.accept(state.listen_socket, 1000) do
-        {:ok, socket} ->
-          # Set socket options
-          :inet.setopts(socket, active: true, packet: :line)
+  defp handle_frame(socket, frame, state) when byte_size(frame) > @frame_limit,
+    do: close_connection(state, socket)
 
-          # Create connection tracking
-          connection = %{
-            socket: socket,
-            connected_at: DateTime.utc_now(),
-            authenticated: false,
-            app_id: nil
-          }
+  defp handle_frame(socket, frame, state) do
+    case Jason.decode(frame) do
+      {:ok, %{"request_id" => id, "action" => action, "params" => params}}
+      when is_binary(id) and is_binary(action) and is_map(params) ->
+        state = count(state, :total_requests)
 
-          ref = make_ref()
-
-          # Set connection timeout
-          Process.send_after(self(), {:timeout, socket}, state.connection_timeout)
-
-          new_state =
-            state
-            |> put_in([:connections, ref], connection)
-            |> update_stats(:connection_accepted)
-
-          Logger.debug("New connection accepted",
-            active_connections: new_state.stats.active_connections
-          )
-
-          {:ok, new_state}
-
-        {:error, :timeout} ->
-          # No connection available, continue accepting
-          {:ok, state}
-
-        {:error, reason} ->
-          {:error, reason}
-      end
-    end
-  end
-
-  defp process_request(socket, data, state) do
-    # Parse JSON request
-    case Jason.decode(data) do
-      {:ok, request} ->
-        handle_request(socket, request, state)
-
-      {:error, reason} ->
-        Logger.warning("Invalid JSON request", reason: inspect(reason))
-        send_error(socket, "invalid_json", "Request must be valid JSON")
-        {:ok, update_stats(state, :failed_request)}
-    end
-  end
-
-  defp handle_request(socket, request, state) do
-    request_id = Map.get(request, "request_id", generate_request_id())
-    action = Map.get(request, "action")
-    params = Map.get(request, "params", %{})
-
-    Logger.debug("Processing request", action: action, request_id: request_id)
-
-    connection = find_connection(state, socket)
-    result = dispatch_action(action, socket, params, state, connection)
-    finalize_request(result, socket, request_id, state)
-  end
-
-  defp dispatch_action("authenticate", socket, params, state, connection) do
-    handle_authenticate(socket, params, state, connection)
-  end
-
-  defp dispatch_action("ping", _socket, _params, _state, _connection) do
-    {:ok, %{message: "pong"}}
-  end
-
-  defp dispatch_action(action, _socket, params, state, connection) do
-    if connection && connection.authenticated do
-      dispatch_authenticated_action(action, params, state, connection)
-    else
-      {:error, "not_authenticated", "Please authenticate first using 'authenticate' action"}
-    end
-  end
-
-  defp dispatch_authenticated_action("get_secret", params, state, connection) do
-    handle_get_secret(params, state, connection)
-  end
-
-  defp dispatch_authenticated_action("list_secrets", params, _state, connection) do
-    handle_list_secrets(params, connection)
-  end
-
-  defp dispatch_authenticated_action(nil, _params, _state, _connection) do
-    {:error, "missing_action", "Request must include 'action' field"}
-  end
-
-  defp dispatch_authenticated_action(unknown, _params, _state, _connection) do
-    {:error, "unknown_action", "Unknown action: #{unknown}"}
-  end
-
-  defp finalize_request({:ok, data}, socket, request_id, state) do
-    send_response(socket, request_id, "ok", data)
-    {:ok, update_stats(state, :successful_request)}
-  end
-
-  defp finalize_request({:ok, data, new_state}, socket, request_id, _state) do
-    send_response(socket, request_id, "ok", data)
-    {:ok, update_stats(new_state, :successful_request)}
-  end
-
-  defp finalize_request({:error, code, message}, socket, request_id, state) do
-    send_error(socket, code, message, request_id)
-    {:ok, update_stats(state, :failed_request)}
-  end
-
-  defp finalize_request({:error, code, message, new_state}, socket, request_id, _state) do
-    send_error(socket, code, message, request_id)
-    {:ok, update_stats(new_state, :failed_request)}
-  end
-
-  defp handle_authenticate(socket, params, state, connection) do
-    cert_pem = Map.get(params, "certificate")
-
-    if cert_pem do
-      # Decode base64 if needed
-      cert_data =
-        case Base.decode64(cert_pem) do
-          {:ok, decoded} -> decoded
-          :error -> cert_pem
+        case state.connections[socket] do
+          nil -> state
+          connection -> dispatch(socket, id, action, params, connection, state)
         end
 
-      # Verify certificate and extract app_id
-      case CertVerifier.verify_app_cert_pem(cert_data) do
-        {:ok, app_id} ->
-          Logger.info("Application authenticated", app_id: app_id, socket: inspect(socket))
-
-          # Update connection state
-          new_state = update_connection_auth(state, socket, connection, app_id)
-
-          {:ok, %{app_id: app_id, authenticated: true}, new_state}
-
-        {:error, reason} ->
-          Logger.warning("Authentication failed",
-            reason: inspect(reason),
-            socket: inspect(socket)
-          )
-
-          {:error, "auth_failed", "Certificate verification failed: #{inspect(reason)}",
-           update_stats(state, :auth_failure)}
-      end
-    else
-      {:error, "missing_parameter", "Parameter 'certificate' is required", state}
+      _ ->
+        close_connection(state, socket)
     end
   end
 
-  defp handle_get_secret(params, state, connection) do
-    path = Map.get(params, "path")
+  defp dispatch(
+         socket,
+         id,
+         "authenticate",
+         params,
+         %{auth_state: :unauthenticated} = connection,
+         state
+       ) do
+    version = params["auth_version"]
 
-    if path do
-      # TODO: Check if app has access to this secret path via policies
-      Logger.debug("Get secret", path: path, app_id: connection.app_id)
+    cond do
+      version not in [nil, 1, 2] or (version != 2 and state.minimum_uds_auth_version == 2) ->
+        fail(state, socket, id, "INCOMPATIBLE_VERSION", true)
 
-      case Cache.get(path) do
-        {:ok, secret_data} ->
-          {:ok, secret_response(secret_data)}
+      is_nil(state.agent_id) ->
+        fail(state, socket, id, "ENROLLMENT_IN_PROGRESS", false)
 
-        {:error, reason} when reason in [:not_found, :expired] ->
-          fetch_secret_from_core(path, state.request_timeout)
-
-        {:error, reason} ->
-          {:error, "internal_error", "Failed to retrieve secret: #{inspect(reason)}"}
-      end
-    else
-      {:error, "missing_parameter", "Parameter 'path' is required"}
+      true ->
+        authenticate(socket, id, params, connection, state, version || 1)
     end
   end
 
-  defp fetch_secret_from_core(path, timeout) do
-    case Process.whereis(Connection) do
-      nil ->
-        {:error, "core_unavailable", "Agent is not connected to Core"}
+  defp dispatch(
+         socket,
+         id,
+         "authenticate_proof",
+         params,
+         %{auth_state: :challenge} = connection,
+         state
+       ) do
+    challenge = connection.challenge
 
-      pid ->
-        do_fetch_secret_from_core(pid, path, timeout)
-    end
-  end
-
-  defp do_fetch_secret_from_core(pid, path, timeout) do
-    case Connection.get_static_secret(pid, path, timeout) do
-      {:ok, response} ->
-        with {:ok, secret_data, version} <- normalize_core_secret_response(response) do
-          Cache.put(path, secret_data, version: version)
-          {:ok, secret_response(secret_data, version)}
-        end
-
-      {:error, :not_connected} ->
-        {:error, "core_unavailable", "Agent is not connected to Core"}
-
-      {:error, reason} ->
-        {:error, "core_error", "Core secret fetch failed: #{inspect(reason)}"}
-    end
-  catch
-    :exit, {:timeout, _} ->
-      {:error, "core_timeout", "Core secret fetch timed out"}
-
-    :exit, {:noproc, _} ->
-      {:error, "core_unavailable", "Agent is not connected to Core"}
-
-    :exit, reason ->
-      {:error, "core_error", "Core secret fetch failed: #{inspect(reason)}"}
-  end
-
-  defp normalize_core_secret_response(%{"data" => data} = response) when is_map(data) do
-    {:ok, data, response_version(response)}
-  end
-
-  defp normalize_core_secret_response(%{data: data} = response) when is_map(data) do
-    {:ok, data, response_version(response)}
-  end
-
-  defp normalize_core_secret_response(%{"value" => value} = response) do
-    {:ok, %{"value" => value}, response_version(response)}
-  end
-
-  defp normalize_core_secret_response(%{value: value} = response) do
-    {:ok, %{"value" => value}, response_version(response)}
-  end
-
-  defp normalize_core_secret_response(other) do
-    {:error, "internal_error", "Unexpected Core secret response: #{inspect(other)}"}
-  end
-
-  defp secret_response(secret_data, version \\ 1)
-
-  defp secret_response(%{"value" => value}, version), do: %{value: value, version: version}
-  defp secret_response(%{value: value}, version), do: %{value: value, version: version}
-
-  defp secret_response(secret_data, version) when is_map(secret_data),
-    do: %{value: secret_data, version: version}
-
-  defp response_version(response) do
-    Map.get(response, "version") || Map.get(response, :version) || 1
-  end
-
-  defp handle_list_secrets(_params, _connection) do
-    # TODO: Implement list secrets with policy filtering
-    {:error, "not_implemented", "List secrets not yet implemented"}
-  end
-
-  defp find_connection(state, socket) do
-    Enum.find_value(state.connections, fn {_ref, conn} ->
-      if conn.socket == socket, do: conn
-    end)
-  end
-
-  defp update_connection_auth(state, socket, connection, app_id) do
-    # Find and update the connection
-    connections =
-      Enum.map(state.connections, fn {ref, conn} ->
-        if conn.socket == socket do
-          {ref, %{connection | authenticated: true, app_id: app_id}}
-        else
-          {ref, conn}
-        end
-      end)
-      |> Map.new()
-
-    state
-    |> Map.put(:connections, connections)
-    |> update_stats(:auth_success)
-  end
-
-  defp send_response(socket, request_id, status, data) do
-    response = %{
-      request_id: request_id,
-      status: status,
-      data: data
-    }
-
-    case Jason.encode(response) do
-      {:ok, json} ->
-        :gen_tcp.send(socket, json <> "\n")
-
-      {:error, reason} ->
-        Logger.error("Failed to encode response", reason: inspect(reason))
-        send_error(socket, "internal_error", "Failed to encode response")
-    end
-  end
-
-  defp send_error(socket, code, message, request_id \\ nil) do
-    error = %{
-      request_id: request_id,
-      status: "error",
-      error: %{
-        code: code,
-        message: message
+    with 2 <- params["auth_version"],
+         true <- params["connection_id"] == challenge.connection_id,
+         true <- params["challenge_id"] == challenge.challenge_id,
+         true <- params["signature_algorithm"] == challenge.signature_algorithm,
+         {:ok, signature} <- decode_base64(params["signature"]),
+         :ok <- UDSAuth.verify_proof(challenge, signature, challenge.principal.public_key) do
+      connection = %{
+        connection
+        | auth_state: :authenticated,
+          auth_version: 2,
+          principal: Map.take(challenge.principal, [:app_id, :canonical_fingerprint]),
+          challenge: nil
       }
-    }
 
-    case Jason.encode(error) do
-      {:ok, json} ->
-        :gen_tcp.send(socket, json <> "\n")
+      Process.cancel_timer(connection.timer)
 
-      {:error, reason} ->
-        Logger.error("Failed to encode error", reason: inspect(reason))
+      reply(socket, id, %{
+        authenticated: true,
+        app_id: connection.principal.app_id,
+        auth_version: 2
+      })
+
+      state |> put_in([:connections, socket], connection) |> count(:auth_successes)
+    else
+      _ -> fail(state, socket, id, "PROOF_FAILED", true)
     end
   end
 
-  defp remove_connection(state, socket) do
-    # Find and remove connection
-    connections =
-      Enum.reject(state.connections, fn {_ref, conn} ->
-        conn.socket == socket
-      end)
-      |> Map.new()
+  defp dispatch(socket, id, action, _params, _connection, state)
+       when action in ["authenticate", "authenticate_proof"],
+       do: fail(state, socket, id, "PROOF_FAILED", true)
 
-    %{state | connections: connections}
+  defp dispatch(socket, id, "ping", _params, _connection, state) do
+    reply(socket, id, %{message: "pong"})
+    state
   end
 
-  defp update_stats(state, event) do
-    stats =
-      case event do
-        :connection_accepted ->
-          state.stats
-          |> Map.update!(:total_connections, &(&1 + 1))
-          |> Map.update!(:active_connections, &(&1 + 1))
+  defp dispatch(
+         socket,
+         id,
+         "get_secret",
+         params,
+         %{auth_state: :authenticated} = connection,
+         state
+       ) do
+    case read_secret(params["path"], connection, state.request_timeout) do
+      {:ok, data} ->
+        reply(socket, id, data)
+        state
 
-        :connection_closed ->
-          Map.update!(state.stats, :active_connections, &max(&1 - 1, 0))
+      {:error, code} ->
+        fail(state, socket, id, code, false)
+    end
+  end
 
-        :connection_error ->
-          Map.update!(state.stats, :active_connections, &max(&1 - 1, 0))
+  defp dispatch(socket, id, _action, _params, %{auth_state: :authenticated}, state),
+    do: fail(state, socket, id, "UNAVAILABLE", false)
 
-        :connection_timeout ->
-          Map.update!(state.stats, :active_connections, &max(&1 - 1, 0))
+  defp dispatch(socket, id, _action, _params, _connection, state),
+    do: fail(state, socket, id, "PROOF_REQUIRED", false)
 
-        :successful_request ->
-          Map.update!(state.stats, :total_requests, &(&1 + 1))
+  defp authenticate(socket, id, params, connection, state, version) do
+    with {:ok, pem} <- decode_base64(params["certificate"]),
+         {:ok, metadata} <- CertVerifier.verify_app_cert_pem(pem) do
+      if version == 2 do
+        {:ok, challenge} =
+          UDSAuth.new_challenge(state.agent_id, connection.connection_id, metadata)
 
-        :failed_request ->
-          state.stats
-          |> Map.update!(:total_requests, &(&1 + 1))
-          |> Map.update!(:failed_requests, &(&1 + 1))
+        reply(socket, id, %{
+          auth_version: 2,
+          agent_id: challenge.agent_id,
+          connection_id: challenge.connection_id,
+          challenge_id: challenge.challenge_id,
+          challenge: Base.encode64(challenge.nonce),
+          certificate_fingerprint: challenge.certificate_fingerprint,
+          signature_algorithm: challenge.signature_algorithm,
+          expires_at: DateTime.to_iso8601(challenge.expires_at)
+        })
 
-        :auth_success ->
-          Map.update!(state.stats, :auth_successes, &(&1 + 1))
+        put_in(state, [:connections, socket], %{
+          connection
+          | auth_state: :challenge,
+            challenge: challenge
+        })
+      else
+        principal = Map.take(metadata, [:app_id, :canonical_fingerprint])
+        reply(socket, id, %{authenticated: true, app_id: principal.app_id, auth_version: 1})
 
-        :auth_failure ->
-          Map.update!(state.stats, :auth_failures, &(&1 + 1))
+        state
+        |> put_in([:connections, socket], %{
+          connection
+          | auth_state: :authenticated,
+            auth_version: 1,
+            principal: principal
+        })
+        |> count(:auth_successes)
+      end
+    else
+      {:error, "CA_UNAVAILABLE"} -> fail_auth(state, socket, id, "CA_UNAVAILABLE")
+      _ -> fail_auth(state, socket, id, "INVALID_CERTIFICATE")
+    end
+  end
+
+  defp read_secret(path, connection, timeout) when is_binary(path) and path != "" do
+    principal = connection.principal
+    key = {principal.app_id, principal.canonical_fingerprint, path}
+    cached = Cache.get_entry(key)
+
+    revision =
+      case cached do
+        {:ok, entry} -> entry.revision
+        _ -> nil
       end
 
-    %{state | stats: stats}
+    claims = %{
+      app_id: principal.app_id,
+      certificate_fingerprint: principal.canonical_fingerprint,
+      local_auth_version: connection.auth_version
+    }
+
+    result = Connection.get_static_secret_for_app(Connection, path, claims, revision, timeout)
+    read_result(result, cached, key)
+  catch
+    :exit, _ -> {:error, "UNAVAILABLE"}
   end
 
-  defp generate_request_id do
-    # Generate a simple random request ID
-    :crypto.strong_rand_bytes(16)
-    |> Base.encode16(case: :lower)
+  defp read_secret(_, _, _), do: {:error, "FORBIDDEN"}
+
+  defp read_result(result, cached, key) do
+    case result do
+      {:ok, %{"not_modified" => true, "revision" => revision}} ->
+        case cached do
+          {:ok, %{revision: ^revision} = entry} ->
+            {:ok, %{value: secret_value(entry.data), version: entry.version, revision: revision}}
+
+          _ ->
+            {:error, "UNAVAILABLE"}
+        end
+
+      {:ok, %{"value" => value, "version" => version, "revision" => revision}}
+      when is_integer(version) and is_integer(revision) ->
+        Cache.put(key, value, version: version, revision: revision)
+        {:ok, %{value: secret_value(value), version: version, revision: revision}}
+
+      {:error, %{"reason" => code}} when is_binary(code) ->
+        Cache.invalidate(key)
+        {:error, public_code(code)}
+
+      _ ->
+        Cache.invalidate(key)
+        {:error, "UNAVAILABLE"}
+    end
+  end
+
+  defp secret_value(%{"value" => value}), do: value
+  defp secret_value(value), do: value
+
+  defp decode_base64(value) when is_binary(value), do: Base.decode64(value)
+  defp decode_base64(_), do: :error
+
+  defp public_code(code)
+       when code in ~w(INCOMPATIBLE_VERSION UNAUTHORIZED FORBIDDEN VAULT_SEALED UNAVAILABLE),
+       do: code
+
+  defp public_code(_), do: "UNAVAILABLE"
+
+  defp fail_auth(state, socket, id, code) do
+    attempts = state.connections[socket].attempts + 1
+    state = put_in(state, [:connections, socket, :attempts], attempts) |> count(:auth_failures)
+    fail(state, socket, id, code, attempts >= 3)
+  end
+
+  defp fail(state, socket, id, code, close?) do
+    :gen_tcp.send(
+      socket,
+      Jason.encode!(%{request_id: id, status: "error", error: %{code: code, message: code}}) <>
+        "\n"
+    )
+
+    state = count(state, :failed_requests)
+    if close?, do: close_connection(state, socket), else: state
+  end
+
+  defp reply(socket, id, data),
+    do: :gen_tcp.send(socket, Jason.encode!(%{request_id: id, status: "ok", data: data}) <> "\n")
+
+  defp count(state, counter), do: update_in(state, [:stats, counter], &(&1 + 1))
+
+  defp close_connection(state, socket) do
+    case Map.pop(state.connections, socket) do
+      {nil, _} ->
+        state
+
+      {connection, connections} ->
+        Process.cancel_timer(connection.timer)
+        :gen_tcp.close(socket)
+
+        %{
+          state
+          | connections: connections,
+            stats: %{state.stats | active_connections: map_size(connections)}
+        }
+    end
   end
 end

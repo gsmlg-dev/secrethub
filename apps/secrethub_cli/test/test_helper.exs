@@ -31,3 +31,5 @@ Application.put_env(:secrethub_cli, :test_mode, true)
 
 # Start ExUnit
 ExUnit.start()
+
+Code.require_file("support/agent_socket_fixture.ex", __DIR__)

@@ -2,6 +2,7 @@ defmodule SecretHub.Agent.Application do
   @moduledoc false
 
   use Application
+  alias SecretHub.Shared.LaunchProfile
 
   @impl true
   def start(_type, _args) do
@@ -70,6 +71,8 @@ defmodule SecretHub.Agent.Application do
 
     children =
       [
+        SecretHub.Agent.CertVerifier,
+
         # Cache for secrets
         SecretHub.Agent.Cache,
 
@@ -115,9 +118,19 @@ defmodule SecretHub.Agent.Application do
                  :socket_path,
                  "/var/run/secrethub/agent.sock"
                ),
+             state_dir: state_dir,
              max_connections: Application.get_env(:secrethub_agent, :max_connections, 100)
            ]}
         ]
+
+    children =
+      Enum.reject(children, fn
+        {SecretHub.Agent.LeaseRenewer, _opts} ->
+          not LaunchProfile.enabled?(:dynamic_secrets, :secrethub_agent)
+
+        _ ->
+          false
+      end)
 
     # :rest_for_one ensures downstream children restart when an upstream
     # dependency crashes (e.g., if RuntimeBootstrapper dies, LeaseRenewer

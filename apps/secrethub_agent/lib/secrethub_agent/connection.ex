@@ -40,6 +40,7 @@ defmodule SecretHub.Agent.Connection do
 
   alias Phoenix.SocketClient
   alias Phoenix.SocketClient.{Channel, Message}
+  alias SecretHub.Agent.{Cache, IdentityStore, UDSServer}
 
   @type state :: %{
           socket: pid() | nil,
@@ -209,6 +210,8 @@ defmodule SecretHub.Agent.Connection do
       channel_ref: nil,
       heartbeat_timer: nil,
       agent_id: agent_id,
+      state_dir: Keyword.get(opts, :state_dir),
+      minimum_uds_auth_version: 1,
       core_url: core_url,
       cert_pem: cert_pem,
       private_key: private_key,
@@ -220,7 +223,7 @@ defmodule SecretHub.Agent.Connection do
       retry_count: 0
     }
 
-    Logger.info("Agent Connection initializing", agent_id: agent_id, core_url: core_url)
+    Logger.info("Agent Connection initializing", agent_id: agent_id)
 
     # The socket client tree is linked, not supervised. Trap exits so a
     # transport crash becomes a clean reconnect instead of cascading through
@@ -231,6 +234,27 @@ defmodule SecretHub.Agent.Connection do
     send(self(), :connect)
 
     {:ok, state}
+  end
+
+  def get_static_secret_for_app(server, path, claims, known_revision, timeout) do
+    GenServer.call(server, {:get_static_secret_for_app, path, claims, known_revision}, timeout)
+  end
+
+  @impl true
+  def handle_call({:get_static_secret_for_app, path, claims, revision}, from, state) do
+    if state.connection_status == :connected do
+      payload = %{
+        "path" => path,
+        "app_id" => claims.app_id,
+        "certificate_fingerprint" => claims.certificate_fingerprint,
+        "local_auth_version" => claims.local_auth_version,
+        "known_revision" => revision
+      }
+
+      send_request(state, from, runtime_event(:get_static_secret), payload)
+    else
+      {:reply, {:error, :not_connected}, state}
+    end
   end
 
   @impl true
@@ -304,7 +328,7 @@ defmodule SecretHub.Agent.Connection do
 
   @impl true
   def handle_info(:connect, state) do
-    Logger.info("Attempting to connect to Core", agent_id: state.agent_id, url: state.core_url)
+    Logger.info("Attempting to connect to Core", agent_id: state.agent_id)
 
     state = stop_socket(state)
 
@@ -317,9 +341,8 @@ defmodule SecretHub.Agent.Connection do
          %{state | socket: socket, connection_status: :connecting, reconnect_timer: nil}}
 
       {:error, reason} ->
-        Logger.error("Failed to connect to Core: #{inspect(reason)}",
-          agent_id: state.agent_id,
-          url: state.core_url
+        Logger.error("Failed to connect to Core: #{safe_reason(reason)}",
+          agent_id: state.agent_id
         )
 
         schedule_reconnect(state)
@@ -344,26 +367,10 @@ defmodule SecretHub.Agent.Connection do
             channel: connection_topic(state)
           )
 
-          next_state =
-            state
-            |> Map.merge(%{
-              channel: channel,
-              channel_ref: Process.monitor(channel),
-              heartbeat_timer: schedule_runtime_heartbeat(),
-              connection_status: :connected,
-              retry_count: 0
-            })
-            |> notify_runtime_accepted(response)
-
-          # Trigger initial PKI trust bundle sync on connect
-          if Process.whereis(SecretHub.Agent.PKI.TrustBundleManager) do
-            SecretHub.Agent.PKI.TrustBundleManager.sync_bundle()
-          end
-
-          {:noreply, next_state}
+          accept_runtime_join(state, response, channel)
 
         {:error, reason} ->
-          Logger.error("Failed to join channel: #{inspect(reason)}",
+          Logger.error("Failed to join channel: #{safe_reason(reason)}",
             agent_id: state.agent_id
           )
 
@@ -377,8 +384,16 @@ defmodule SecretHub.Agent.Connection do
   end
 
   @impl true
-  def handle_info(%Message{event: "connected", payload: payload}, state) do
-    Logger.info("Core connection confirmed", payload: payload)
+  def handle_info(%Message{event: "agent:uds_auth_floor", payload: payload}, state) do
+    case accept_runtime_floor(state, payload) do
+      {:ok, next} -> {:noreply, next}
+      _ -> schedule_reconnect(stop_socket(%{state | connection_status: :disconnected}))
+    end
+  end
+
+  @impl true
+  def handle_info(%Message{event: "connected", payload: _payload}, state) do
+    Logger.info("Core connection confirmed")
     {:noreply, state}
   end
 
@@ -405,32 +420,41 @@ defmodule SecretHub.Agent.Connection do
       new_version: payload["new_version"]
     )
 
-    # TODO: Invalidate cache for this secret
+    if Process.whereis(Cache),
+      do:
+        Cache.invalidate_path(
+          payload["secret_path"] || payload["path"],
+          payload["revision"]
+        )
+
     {:noreply, state}
   end
 
   @impl true
-  def handle_info(%Message{event: "policy:updated", payload: payload}, state) do
-    Logger.info("Policy updated notification", agent_id: state.agent_id, payload: payload)
-    # TODO: Refresh cached policies
+  def handle_info(%Message{event: "policy:updated", payload: _payload}, state) do
+    Logger.info("Policy updated notification", agent_id: state.agent_id)
+    if Process.whereis(Cache), do: Cache.clear()
     {:noreply, state}
   end
 
   @impl true
-  def handle_info(%Message{event: event, payload: payload}, state) do
-    Logger.info("Received push event", event: event, payload: payload)
+  def handle_info(%Message{event: event}, state) do
+    Logger.info("Received push event", event: event)
     {:noreply, state}
   end
 
   @impl true
   def handle_info({:chan_close, _channel, reason}, state) do
-    Logger.warning("WebSocket connection closed: #{inspect(reason)}", agent_id: state.agent_id)
+    Logger.warning("WebSocket connection closed: #{safe_reason(reason)}",
+      agent_id: state.agent_id
+    )
+
     schedule_reconnect(stop_socket(%{state | connection_status: :disconnected}))
   end
 
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{channel_ref: ref} = state) do
-    Logger.warning("Runtime channel terminated: #{inspect(reason)}", agent_id: state.agent_id)
+    Logger.warning("Runtime channel terminated: #{safe_reason(reason)}", agent_id: state.agent_id)
     schedule_reconnect(stop_socket(%{state | connection_status: :disconnected}))
   end
 
@@ -457,7 +481,7 @@ defmodule SecretHub.Agent.Connection do
 
   @impl true
   def handle_info({:EXIT, pid, reason}, %{socket: pid} = state) do
-    Logger.warning("Socket client exited: #{inspect(reason)}", agent_id: state.agent_id)
+    Logger.warning("Socket client exited: #{safe_reason(reason)}", agent_id: state.agent_id)
     schedule_reconnect(stop_socket(%{state | socket: nil, connection_status: :disconnected}))
   end
 
@@ -472,10 +496,9 @@ defmodule SecretHub.Agent.Connection do
     {:noreply, %{state | reconnect_timer: nil}}
   end
 
-  def handle_info(message, state) do
+  def handle_info(_message, state) do
     Logger.debug("Ignoring unexpected connection message",
-      agent_id: state.agent_id,
-      message: inspect(message)
+      agent_id: state.agent_id
     )
 
     {:noreply, state}
@@ -520,7 +543,6 @@ defmodule SecretHub.Agent.Connection do
     socket_opts = build_socket_opts(state)
 
     Logger.debug("Connecting to WebSocket",
-      url: state.core_url,
       agent_id: state.agent_id
     )
 
@@ -624,14 +646,13 @@ defmodule SecretHub.Agent.Connection do
     rescue
       error ->
         Logger.error("Runtime accepted callback failed",
-          error: Exception.message(error),
-          payload: inspect(payload)
+          error: error.__struct__
         )
     catch
-      kind, reason ->
+      kind, _reason ->
         Logger.error(
-          "Runtime accepted callback failed (#{kind}): #{inspect(reason)}",
-          payload: inspect(payload)
+          "Runtime accepted callback failed",
+          error: kind
         )
     end
 
@@ -640,10 +661,63 @@ defmodule SecretHub.Agent.Connection do
 
   def notify_runtime_accepted(state, _payload), do: state
 
+  defp accept_runtime_join(state, response, channel) do
+    case accept_runtime_floor(state, response) do
+      {:ok, floor_state} ->
+        next_state =
+          floor_state
+          |> Map.merge(%{
+            channel: channel,
+            channel_ref: Process.monitor(channel),
+            heartbeat_timer: schedule_runtime_heartbeat(),
+            connection_status: :connected,
+            retry_count: 0
+          })
+          |> notify_runtime_accepted(response)
+
+        if Process.whereis(SecretHub.Agent.PKI.TrustBundleManager) do
+          SecretHub.Agent.PKI.TrustBundleManager.sync_bundle()
+        end
+
+        {:noreply, next_state}
+
+      {:error, _} ->
+        schedule_reconnect(stop_socket(state))
+    end
+  end
+
+  @doc false
+  def accept_runtime_floor(state, payload) do
+    floor =
+      Map.get(payload, "minimum_uds_auth_version", Map.get(payload, :minimum_uds_auth_version))
+
+    with true <- floor in [1, 2],
+         {:ok, persisted} <- persist_auth_floor(state, floor) do
+      if Process.whereis(Cache), do: Cache.clear()
+
+      if Process.whereis(UDSServer),
+        do: UDSServer.configure_runtime(state.agent_id, persisted)
+
+      {:ok, Map.put(state, :minimum_uds_auth_version, persisted)}
+    else
+      _ -> {:error, :trusted_state_unavailable}
+    end
+  end
+
+  defp persist_auth_floor(%{state_dir: dir}, floor) when is_binary(dir),
+    do: IdentityStore.persist_minimum_uds_auth_version(dir, floor)
+
+  defp persist_auth_floor(_state, _floor), do: {:error, :trusted_state_unavailable}
+
+  @impl true
+  def format_status(status),
+    do: status |> Map.put(:state, :redacted) |> Map.put(:message, :redacted)
+
   defp connection_topic(_state), do: runtime_topic()
 
   defp join_payload(state) do
     %{
+      "runtime_capabilities" => ["uds_auth_v2"],
       "agent_id" => state.agent_id,
       "name" => state.agent_id,
       "hostname" => local_hostname(),
@@ -690,7 +764,7 @@ defmodule SecretHub.Agent.Connection do
   end
 
   defp send_request(state, _from, event, payload) do
-    Logger.debug("Sending request", event: event, payload: payload)
+    Logger.debug("Sending request", event: event)
 
     result =
       case Channel.push(state.channel, event, payload) do
@@ -709,6 +783,7 @@ defmodule SecretHub.Agent.Connection do
   end
 
   defp schedule_reconnect(state) do
+    if Process.whereis(Cache), do: Cache.clear()
     retry_count = state.retry_count
     delay = backoff_delay(retry_count)
 
@@ -728,4 +803,8 @@ defmodule SecretHub.Agent.Connection do
          retry_count: retry_count + 1
      }}
   end
+
+  defp safe_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp safe_reason({kind, _}) when is_atom(kind), do: Atom.to_string(kind)
+  defp safe_reason(_), do: "runtime_unavailable"
 end

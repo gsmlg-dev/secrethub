@@ -9,10 +9,12 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   require Logger
 
   alias SecretHub.Agent.{
+    CertVerifier,
     EndpointManager,
     Enrollment,
     IdentityStore,
-    TrustedConnection
+    TrustedConnection,
+    UDSServer
   }
 
   @default_state_dir "~/.local/state/secrethub/agent"
@@ -247,7 +249,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
       ) do
     cancel_timer(finalization.timer)
 
-    case start_runtime_process(finalization.material, finalization.callback) do
+    case start_runtime_process(finalization.material, finalization.callback, state.state_dir) do
       {:ok, pid} ->
         {:noreply,
          %{
@@ -388,7 +390,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     delay_ms = finalize_retry_delay_ms(retry_count)
 
     Logger.warning(
-      "Trusted Agent enrollment failed: #{inspect(reason)}; " <>
+      "Trusted Agent enrollment failed: #{safe_reason(reason)}; " <>
         "retrying in #{delay_ms}ms (attempt #{retry_count})"
     )
 
@@ -399,8 +401,9 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   defp start_runtime(%IdentityStore{} = material, callback, state) do
     Logger.info("Starting trusted Agent runtime connection", agent_id: material.agent_id)
     bind_pki_identity(material.agent_id)
+    configure_app_trust(material)
 
-    case start_runtime_process(material, callback) do
+    case start_runtime_process(material, callback, state.state_dir) do
       {:ok, pid} -> {:noreply, %{state | runtime_pid: pid}}
       {:error, {:already_started, pid}} -> {:noreply, %{state | runtime_pid: pid}}
       {:error, reason} -> {:stop, reason, state}
@@ -410,8 +413,9 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   defp start_enrolled_runtime(material, callback, finalization, state) do
     Logger.info("Starting trusted Agent runtime connection", agent_id: material.agent_id)
     bind_pki_identity(material.agent_id)
+    configure_app_trust(material)
 
-    case start_runtime_process(material, callback) do
+    case start_runtime_process(material, callback, state.state_dir) do
       {:ok, pid} ->
         {:noreply, %{state | runtime_pid: pid, pending_finalization: finalization}}
 
@@ -441,9 +445,29 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
 
   defp bind_pki_identity(_), do: :ok
 
-  defp start_runtime_process(material, callback) do
-    TrustedConnection.start_link(trusted_connection_opts(material, callback))
+  defp start_runtime_process(material, callback, state_dir) do
+    opts = trusted_connection_opts(material, callback) |> Keyword.put(:state_dir, state_dir)
+    TrustedConnection.start_link(opts)
   end
+
+  defp configure_app_trust(material) do
+    if Process.whereis(CertVerifier) do
+      :ok = CertVerifier.configure_trust(material.ca_chain_pem)
+    end
+
+    if Process.whereis(UDSServer) do
+      UDSServer.configure_runtime(
+        material.agent_id,
+        Map.get(material.identity, "minimum_uds_auth_version", 1)
+      )
+    end
+
+    :ok
+  end
+
+  @impl true
+  def format_status(status),
+    do: status |> Map.put(:state, :redacted) |> Map.put(:message, :redacted)
 
   defp ready_runtime_plan(state_dir, material) do
     case load_pending_token(state_dir) do
@@ -483,7 +507,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
       {:error, reason} ->
         Logger.error(
           "Failed to finalize trusted Agent enrollment " <>
-            "#{pending["enrollment_id"]}: #{inspect(reason)}"
+            "#{pending["enrollment_id"]}: #{safe_reason(reason)}"
         )
 
         {:error, reason}
@@ -497,7 +521,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     Logger.warning(
       "Retrying trusted Agent enrollment finalization " <>
         "(enrollment #{finalization.pending["enrollment_id"]}, " <>
-        "attempt #{retry_count}, in #{delay_ms}ms): #{inspect(reason)}"
+        "attempt #{retry_count}, in #{delay_ms}ms): #{safe_reason(reason)}"
     )
 
     %{
@@ -522,7 +546,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     Logger.warning(
       "Retrying trusted Agent runtime start " <>
         "(enrollment #{finalization.pending["enrollment_id"]}, " <>
-        "attempt #{retry_count}, in #{delay_ms}ms): #{inspect(reason)}"
+        "attempt #{retry_count}, in #{delay_ms}ms): #{safe_reason(reason)}"
     )
 
     Map.merge(finalization, %{
@@ -616,4 +640,8 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
         Path.expand(@default_state_dir)
       )
   end
+
+  defp safe_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp safe_reason({kind, _}) when is_atom(kind), do: Atom.to_string(kind)
+  defp safe_reason(_), do: "runtime_unavailable"
 end

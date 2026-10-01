@@ -35,6 +35,47 @@ defmodule SecretHub.Agent.ApplicationTest do
     :ok
   end
 
+  @tag :tmp_dir
+  test "launch profile excludes lease renewal while keeping static delivery and PKI workers", %{
+    tmp_dir: tmp_dir
+  } do
+    state_dir = Path.join(tmp_dir, "state")
+
+    socket_path =
+      Path.join(System.tmp_dir!(), "sh-launch-#{System.unique_integer([:positive])}.sock")
+
+    on_exit(fn -> File.rm(socket_path) end)
+    bundle_dir = Path.join(tmp_dir, "bundle")
+    host_key_path = Path.join(tmp_dir, "host-key")
+    File.mkdir_p!(bundle_dir)
+    File.chmod!(tmp_dir, 0o700)
+
+    {_output, 0} =
+      System.cmd("ssh-keygen", ["-q", "-t", "rsa", "-b", "2048", "-N", "", "-f", host_key_path])
+
+    assert :ok = IdentityStore.write(state_dir, trusted_material())
+
+    for {key, value} <- [
+          enabled: true,
+          core_url: @localhost_core_url,
+          state_dir: state_dir,
+          socket_path: socket_path,
+          launch_profile: :single_operator,
+          enabled_features: [:static_secrets, :client_auth_pki],
+          client_auth_pki_enabled: true,
+          client_auth_bundle_dir: bundle_dir,
+          enrollment_opts: [paths: [rsa: host_key_path]]
+        ] do
+      Application.put_env(:secrethub_agent, key, value)
+    end
+
+    assert {:ok, _supervisor} = SecretHub.Agent.Application.start(:normal, [])
+    refute Process.whereis(SecretHub.Agent.LeaseRenewer)
+    assert Process.whereis(SecretHub.Agent.PKI.TrustBundleManager)
+    assert Process.whereis(RuntimeBootstrapper)
+    assert Process.whereis(UDSServer)
+  end
+
   test "starts the agent from configured core URL" do
     socket_path =
       Path.join(System.tmp_dir!(), "secrethub_agent_#{System.unique_integer([:positive])}.sock")

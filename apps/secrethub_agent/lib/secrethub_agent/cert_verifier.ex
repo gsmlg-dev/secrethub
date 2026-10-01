@@ -1,389 +1,97 @@
 defmodule SecretHub.Agent.CertVerifier do
-  @moduledoc """
-  Certificate verification for application mTLS authentication.
+  @moduledoc "Fail-closed app certificate trust, configured from persisted Core enrollment material."
+  use GenServer
+  alias SecretHub.Agent.UDSAuth
 
-  Verifies client certificates presented by applications connecting to the Agent
-  via Unix Domain Socket. Ensures certificates are:
+  def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def configure_trust(chain), do: GenServer.call(__MODULE__, {:configure_trust, chain})
+  def verify_app_cert_pem(pem), do: GenServer.call(__MODULE__, {:verify, pem})
 
-  1. Valid (not expired, properly signed)
-  2. Issued by the Core CA
-  3. Have the correct certificate type (app_client)
-  4. Contain valid application identity
+  def verify_app_cert(der),
+    do: verify_app_cert_pem(:public_key.pem_encode([{:Certificate, der, :not_encrypted}]))
 
-  ## Certificate Format
-
-  Application certificates must include:
-  - Common Name (CN): Application ID (UUID format)
-  - Organization (O): "SecretHub Applications"
-  - Extended Key Usage: clientAuth
-  - Custom extension: cert_type = "app_client"
-
-  ## Usage
-
-  ```elixir
-  # Load CA certificate
-  CertVerifier.load_ca_cert(ca_cert_pem)
-
-  # Verify client certificate
-  case CertVerifier.verify_app_cert(client_cert_der) do
-    {:ok, app_id} ->
-      # Certificate valid, app_id extracted
-    {:error, reason} ->
-      # Certificate invalid
-  end
-  ```
-  """
-
-  require Logger
-
-  @ca_cert_path "/etc/secrethub/ca.crt"
-  @ets_table :secrethub_ca_certs
-
-  @doc """
-  Initialize the certificate verifier.
-
-  Loads the Core CA certificate and stores it in ETS for fast verification.
-  """
-  def init do
-    # Create ETS table for CA certs
-    :ets.new(@ets_table, [:named_table, :set, :public, read_concurrency: true])
-
-    # Load CA certificate
-    case load_ca_cert() do
-      {:ok, _ca_cert} ->
-        Logger.info("Certificate verifier initialized", ca_cert_path: @ca_cert_path)
-        :ok
-
-      {:error, reason} ->
-        Logger.error("Failed to initialize certificate verifier", reason: inspect(reason))
-        {:error, reason}
-    end
-  end
-
-  @doc """
-  Load the Core CA certificate from disk.
-
-  ## Parameters
-
-    - `path` - Optional path to CA certificate (default: /etc/secrethub/ca.crt)
-
-  ## Returns
-
-    - `{:ok, ca_cert}` - CA certificate loaded successfully
-    - `{:error, reason}` - Failed to load CA certificate
-  """
-  def load_ca_cert(path \\ @ca_cert_path) do
+  def load_ca_cert(path \\ "/etc/secrethub/ca.crt") do
     case File.read(path) do
-      {:ok, pem_data} ->
-        case parse_pem_cert(pem_data) do
-          {:ok, cert} ->
-            # Store in ETS
-            :ets.insert(@ets_table, {:ca_cert, cert})
-            {:ok, cert}
-
-          {:error, reason} ->
-            {:error, "Failed to parse CA certificate: #{inspect(reason)}"}
-        end
-
-      {:error, :enoent} ->
-        Logger.warning("CA certificate not found, using mock mode", path: path)
-        # For development, create a mock CA cert entry
-        :ets.insert(@ets_table, {:ca_cert, :mock})
-        {:ok, :mock}
-
-      {:error, reason} ->
-        {:error, "Failed to read CA certificate: #{inspect(reason)}"}
+      {:ok, pem} -> configure_trust(pem)
+      _ -> configure_trust(nil)
     end
   end
 
-  @doc """
-  Verify an application client certificate.
+  @impl true
+  def init(_opts), do: {:ok, []}
 
-  Validates the certificate and extracts the application ID.
+  @impl true
+  def handle_call({:configure_trust, chain}, _from, _state) do
+    case parse_chain(chain) do
+      {:ok, certificates} -> {:reply, :ok, certificates}
+      _ -> {:reply, {:error, "CA_UNAVAILABLE"}, []}
+    end
+  end
 
-  ## Parameters
+  def handle_call({:verify, _pem}, _from, []), do: {:reply, {:error, "CA_UNAVAILABLE"}, []}
+  def handle_call({:verify, pem}, _from, chain), do: {:reply, verify(pem, chain), chain}
 
-    - `cert_der` - DER-encoded client certificate
+  @impl true
+  def format_status(status),
+    do: status |> Map.put(:state, :redacted) |> Map.put(:message, :redacted)
 
-  ## Returns
+  defp parse_chain(pem) when is_binary(pem) do
+    entries = :public_key.pem_decode(pem)
+    certificates = for {:Certificate, der, :not_encrypted} <- entries, do: der
 
-    - `{:ok, app_id}` - Certificate valid, returns application ID
-    - `{:error, reason}` - Certificate invalid or verification failed
-  """
-  def verify_app_cert(cert_der) when is_binary(cert_der) do
-    with {:ok, cert} <- parse_der_cert(cert_der),
-         :ok <- verify_cert_validity(cert),
-         :ok <- verify_cert_chain(cert),
-         :ok <- verify_cert_type(cert),
-         {:ok, app_id} <- extract_app_id(cert) do
-      Logger.debug("Application certificate verified", app_id: app_id)
-      {:ok, app_id}
+    if certificates != [] and length(certificates) == length(entries) do
+      Enum.each(certificates, &X509.Certificate.from_der!/1)
+      {:ok, certificates}
     else
-      {:error, reason} = error ->
-        Logger.warning("Certificate verification failed", reason: inspect(reason))
-        error
-    end
-  end
-
-  @doc """
-  Verify a PEM-encoded certificate.
-  """
-  def verify_app_cert_pem(cert_pem) when is_binary(cert_pem) do
-    case parse_pem_cert(cert_pem) do
-      {:ok, cert} ->
-        # Convert to DER for verification
-        der = :public_key.der_encode(:Certificate, cert)
-        verify_app_cert(der)
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  @doc """
-  Extract application ID from certificate.
-
-  The app ID is stored in the Common Name (CN) field of the certificate subject.
-  """
-  def extract_app_id(cert) do
-    # Extract subject from certificate
-    subject = extract_subject(cert)
-
-    # Find CN attribute
-    case find_attribute(subject, {2, 5, 4, 3}) do
-      {:ok, cn} ->
-        # CN should be a valid UUID (app_id)
-        cn_str = to_string(cn)
-
-        if valid_uuid?(cn_str) do
-          {:ok, cn_str}
-        else
-          {:error, "Common Name is not a valid UUID: #{cn_str}"}
-        end
-
-      :not_found ->
-        {:error, "Common Name (CN) not found in certificate subject"}
+      {:error, "CA_UNAVAILABLE"}
     end
   rescue
-    e ->
-      {:error, "Failed to extract app ID: #{inspect(e)}"}
+    _ -> {:error, "CA_UNAVAILABLE"}
   end
 
-  ## Private Functions
+  defp parse_chain(_), do: {:error, "CA_UNAVAILABLE"}
 
-  defp parse_pem_cert(pem_data) do
-    case :public_key.pem_decode(pem_data) do
-      [{:Certificate, der, _}] ->
-        parse_der_cert(der)
-
-      [] ->
-        {:error, "No certificate found in PEM data"}
-
-      _ ->
-        {:error, "Invalid PEM format"}
+  defp verify(pem, chain) do
+    with [{:Certificate, der, :not_encrypted}] <- :public_key.pem_decode(pem),
+         {:ok, certificate} <- X509.Certificate.from_der(der),
+         [app_id] <- X509.Certificate.subject(certificate, "CN"),
+         {:ok, ^app_id} <- Ecto.UUID.cast(app_id),
+         ["SecretHub Applications"] <- X509.Certificate.subject(certificate, "O"),
+         [{:uniformResourceIdentifier, uri}] <-
+           extension_values(certificate, :subject_alt_name, :SubjectAltName),
+         true <- to_string(uri) == "urn:secrethub:app:#{app_id}",
+         true <-
+           {1, 3, 6, 1, 5, 5, 7, 3, 2} in extension_values(
+             certificate,
+             :ext_key_usage,
+             :ExtKeyUsageSyntax
+           ),
+         {:ok, _} <-
+           :public_key.pkix_path_validation(
+             List.last(chain),
+             Enum.reverse(Enum.drop(chain, -1)) ++ [der],
+             []
+           ),
+         public_key = X509.Certificate.public_key(certificate),
+         {:ok, _} <- UDSAuth.algorithm(public_key) do
+      {:ok,
+       %{
+         app_id: app_id,
+         canonical_fingerprint: Base.encode16(:crypto.hash(:sha256, der), case: :lower),
+         public_key: public_key
+       }}
+    else
+      _ -> {:error, "INVALID_CERTIFICATE"}
     end
   rescue
-    e ->
-      {:error, "Failed to parse PEM: #{inspect(e)}"}
+    _ -> {:error, "INVALID_CERTIFICATE"}
   end
 
-  defp parse_der_cert(der) do
-    cert = :public_key.der_decode(:Certificate, der)
-    {:ok, cert}
-  rescue
-    e ->
-      {:error, "Failed to parse DER certificate: #{inspect(e)}"}
-  end
-
-  defp verify_cert_validity(cert) do
-    # Extract validity period
-    validity = extract_validity(cert)
-    now = :calendar.universal_time()
-
-    cond do
-      time_before?(now, validity.not_before) ->
-        {:error, "Certificate not yet valid"}
-
-      time_after?(now, validity.not_after) ->
-        {:error, "Certificate expired"}
-
-      true ->
-        :ok
+  defp extension_values(certificate, type, der_type) do
+    case X509.Certificate.extension(certificate, type) do
+      {:Extension, _, _, values} when is_list(values) -> values
+      {:Extension, _, _, der} when is_binary(der) -> :public_key.der_decode(der_type, der)
+      _ -> []
     end
-  rescue
-    e ->
-      {:error, "Failed to verify certificate validity: #{inspect(e)}"}
-  end
-
-  defp verify_cert_chain(cert) do
-    case :ets.lookup(@ets_table, :ca_cert) do
-      [{:ca_cert, :mock}] ->
-        Logger.debug("Certificate chain verification skipped (mock mode)")
-        :ok
-
-      [{:ca_cert, ca_cert}] ->
-        # Build trusted anchor from CA certificate
-        ca_der = :public_key.der_encode(:Certificate, ca_cert)
-
-        # pkix_path_validation/3 validates the certificate chain against a trusted anchor
-        case :public_key.pkix_path_validation(ca_der, [cert], []) do
-          {:ok, _policy_tree} ->
-            Logger.debug("Certificate chain verified successfully")
-            :ok
-
-          {:error, {:bad_cert, reason}} ->
-            {:error, "Certificate chain validation failed: #{inspect(reason)}"}
-
-          {:error, reason} ->
-            {:error, "Certificate chain validation failed: #{inspect(reason)}"}
-        end
-
-      [] ->
-        {:error, "CA certificate not loaded"}
-    end
-  rescue
-    e ->
-      {:error, "Certificate chain verification error: #{inspect(e)}"}
-  end
-
-  defp verify_cert_type(cert) do
-    # Check Extended Key Usage includes clientAuth
-    {:Certificate, tbs, _sig_alg, _sig} = cert
-
-    {:TBSCertificate, _ver, _serial, _sig, _issuer, _validity, _subject, _pubkey, _issuer_uid,
-     _subject_uid, extensions} = tbs
-
-    case extensions do
-      :asn1_NOVALUE ->
-        # No extensions - allow for backwards compatibility
-        :ok
-
-      exts when is_list(exts) ->
-        verify_client_auth_eku(exts)
-    end
-  rescue
-    e ->
-      {:error, "Failed to verify certificate type: #{inspect(e)}"}
-  end
-
-  defp verify_client_auth_eku(exts) do
-    # Check for Extended Key Usage (OID 2.5.29.37)
-    eku_oid = {2, 5, 29, 37}
-    client_auth_oid = {1, 3, 6, 1, 5, 5, 7, 3, 2}
-
-    has_client_auth =
-      Enum.any?(exts, fn
-        {:Extension, ^eku_oid, _critical, value} ->
-          eku_includes_oid?(value, client_auth_oid)
-
-        _ ->
-          false
-      end)
-
-    # If no EKU extension exists at all, allow (EKU is optional per RFC 5280)
-    has_eku = Enum.any?(exts, &match?({:Extension, ^eku_oid, _, _}, &1))
-
-    cond do
-      has_client_auth -> :ok
-      not has_eku -> :ok
-      true -> {:error, "Certificate does not include clientAuth extended key usage"}
-    end
-  end
-
-  defp eku_includes_oid?(value, target_oid) do
-    case :public_key.der_decode(:ExtKeyUsageSyntax, value) do
-      oids when is_list(oids) -> target_oid in oids
-      _ -> false
-    end
-  end
-
-  defp extract_subject(cert) do
-    # Certificate structure: {:Certificate, tbs_cert, sig_alg, signature}
-    {:Certificate, tbs_cert, _sig_alg, _signature} = cert
-
-    # TBS structure: {:TBSCertificate, version, serial, sig_alg, issuer, validity, subject, ...}
-    {:TBSCertificate, _version, _serial, _sig_alg, _issuer, _validity, subject, _pub_key,
-     _issuer_uid, _subject_uid, _extensions} = tbs_cert
-
-    subject
-  end
-
-  defp extract_validity(cert) do
-    {:Certificate, tbs_cert, _sig_alg, _signature} = cert
-
-    {:TBSCertificate, _version, _serial, _sig_alg, _issuer, validity, _subject, _pub_key,
-     _issuer_uid, _subject_uid, _extensions} = tbs_cert
-
-    # Validity: {:Validity, not_before, not_after}
-    {:Validity, not_before, not_after} = validity
-
-    %{
-      not_before: parse_time(not_before),
-      not_after: parse_time(not_after)
-    }
-  end
-
-  defp find_attribute({:rdnSequence, rdn_sequence}, oid) do
-    case X509.RDNSequence.get_attr({:rdnSequence, rdn_sequence}, oid) do
-      [value | _] -> {:ok, value}
-      [] -> :not_found
-    end
-  end
-
-  defp parse_time({:utcTime, time_str}) when is_list(time_str) do
-    # UTCTime format: YYMMDDHHMMSSZ
-    parse_utc_time(to_string(time_str))
-  end
-
-  defp parse_time({:generalTime, time_str}) when is_list(time_str) do
-    # GeneralizedTime format: YYYYMMDDHHMMSSZ
-    parse_generalized_time(to_string(time_str))
-  end
-
-  defp parse_time(_), do: {{1970, 1, 1}, {0, 0, 0}}
-
-  defp parse_utc_time(str) do
-    # YYMMDDhhmmssZ
-    <<yy::binary-size(2), mm::binary-size(2), dd::binary-size(2), hh::binary-size(2),
-      mi::binary-size(2), ss::binary-size(2), _rest::binary>> = str
-
-    year = String.to_integer(yy) + 2000
-    month = String.to_integer(mm)
-    day = String.to_integer(dd)
-    hour = String.to_integer(hh)
-    minute = String.to_integer(mi)
-    second = String.to_integer(ss)
-
-    {{year, month, day}, {hour, minute, second}}
-  end
-
-  defp parse_generalized_time(str) do
-    # YYYYMMDDhhmmssZ
-    <<yyyy::binary-size(4), mm::binary-size(2), dd::binary-size(2), hh::binary-size(2),
-      mi::binary-size(2), ss::binary-size(2), _rest::binary>> = str
-
-    year = String.to_integer(yyyy)
-    month = String.to_integer(mm)
-    day = String.to_integer(dd)
-    hour = String.to_integer(hh)
-    minute = String.to_integer(mi)
-    second = String.to_integer(ss)
-
-    {{year, month, day}, {hour, minute, second}}
-  end
-
-  defp time_before?(time1, time2) do
-    :calendar.datetime_to_gregorian_seconds(time1) <
-      :calendar.datetime_to_gregorian_seconds(time2)
-  end
-
-  defp time_after?(time1, time2) do
-    :calendar.datetime_to_gregorian_seconds(time1) >
-      :calendar.datetime_to_gregorian_seconds(time2)
-  end
-
-  defp valid_uuid?(str) do
-    # UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-    Regex.match?(~r/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, str)
   end
 end

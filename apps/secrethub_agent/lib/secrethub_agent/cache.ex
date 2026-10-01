@@ -1,38 +1,5 @@
 defmodule SecretHub.Agent.Cache do
-  @moduledoc """
-  Local secret caching for SecretHub Agent.
-
-  Provides:
-  - In-memory caching of secrets with TTL
-  - Automatic cache invalidation
-  - Fallback mode when Core is unavailable
-  - Cache warming on startup
-  - Metrics for cache hit/miss rates
-
-  ## Configuration
-
-      config :secrethub_agent, SecretHub.Agent.Cache,
-        enabled: true,
-        ttl_seconds: 300,  # 5 minutes
-        max_size: 1000,    # Max cached secrets
-        fallback_enabled: true  # Use stale cache when Core unavailable
-
-  ## Cache Key Format
-
-  Cache keys are in the format: `"secret:<secret_path>"`
-
-  ## Cache Entry Format
-
-  ```elixir
-  %{
-    secret_path: "prod.db.postgres.password",
-    data: %{"username" => "admin", "password" => "secret123"},
-    fetched_at: ~U[2023-10-20 10:30:00Z],
-    expires_at: ~U[2023-10-20 10:35:00Z],
-    version: 1
-  }
-  ```
-  """
+  @moduledoc "Application-scoped static cache. Every UDS release requires fresh Core authorization of its exact revision."
 
   use GenServer
   require Logger
@@ -47,7 +14,8 @@ defmodule SecretHub.Agent.Cache do
 
   defmodule CacheEntry do
     @moduledoc false
-    defstruct [:secret_path, :data, :fetched_at, :expires_at, :version, :engine_type]
+    @derive {Inspect, except: [:data]}
+    defstruct [:secret_path, :data, :fetched_at, :expires_at, :version, :revision, :engine_type]
 
     @type t :: %__MODULE__{
             secret_path: String.t(),
@@ -117,14 +85,21 @@ defmodule SecretHub.Agent.Cache do
   end
 
   @doc """
-  Check if fallback mode is enabled and get stale secret if available.
-
-  Returns `{:ok, data}` even if expired when fallback is enabled.
+  Legacy fallback entrypoint. Offline release is disabled.
   """
   @spec get_with_fallback(String.t()) :: {:ok, map()} | {:error, :not_found}
   def get_with_fallback(secret_path) do
     GenServer.call(__MODULE__, {:get_with_fallback, secret_path})
   end
+
+  def invalidate_path(path, revision),
+    do: GenServer.cast(__MODULE__, {:invalidate_path, path, revision})
+
+  def get_entry(key), do: GenServer.call(__MODULE__, {:get_entry, key})
+
+  @impl true
+  def format_status(status),
+    do: status |> Map.put(:state, :redacted) |> Map.put(:message, :redacted)
 
   ## GenServer Callbacks
 
@@ -132,7 +107,7 @@ defmodule SecretHub.Agent.Cache do
   def init(opts) do
     ttl_seconds = Keyword.get(opts, :ttl_seconds, @default_ttl_seconds)
     max_size = Keyword.get(opts, :max_size, @default_max_size)
-    fallback_enabled = Keyword.get(opts, :fallback_enabled, true)
+    fallback_enabled = Keyword.get(opts, :fallback_enabled, false)
 
     # Schedule periodic cleanup
     schedule_cleanup()
@@ -145,6 +120,7 @@ defmodule SecretHub.Agent.Cache do
 
     state = %{
       cache: %{},
+      revision_floors: %{},
       ttl_seconds: ttl_seconds,
       max_size: max_size,
       fallback_enabled: fallback_enabled,
@@ -159,6 +135,18 @@ defmodule SecretHub.Agent.Cache do
     )
 
     {:ok, state}
+  end
+
+  @impl true
+  def handle_call({:get_entry, key}, _from, state) do
+    entry = Map.get(state.cache, key)
+
+    result =
+      if entry && not expired?(entry),
+        do: {:ok, Map.take(entry, [:data, :version, :revision])},
+        else: {:error, :not_found}
+
+    {:reply, result, state}
   end
 
   @impl true
@@ -181,14 +169,8 @@ defmodule SecretHub.Agent.Cache do
   end
 
   @impl true
-  def handle_call({:get_with_fallback, secret_path}, _from, state) do
-    case Map.get(state.cache, secret_path) do
-      nil ->
-        {:reply, {:error, :not_found}, state}
-
-      entry ->
-        handle_fallback_entry(entry, secret_path, state)
-    end
+  def handle_call({:get_with_fallback, _secret_path}, _from, state) do
+    {:reply, {:error, :not_found}, state}
   end
 
   @impl true
@@ -206,24 +188,6 @@ defmodule SecretHub.Agent.Cache do
     {:reply, stats, state}
   end
 
-  defp handle_fallback_entry(entry, secret_path, state) do
-    cond do
-      expired?(entry) and not state.fallback_enabled ->
-        {:reply, {:error, :expired}, state}
-
-      expired?(entry) ->
-        Logger.warning("Using stale cached secret (fallback mode)",
-          secret_path: secret_path,
-          expired_at: entry.expires_at
-        )
-
-        {:reply, {:ok, entry.data}, state}
-
-      true ->
-        {:reply, {:ok, entry.data}, state}
-    end
-  end
-
   @impl true
   def handle_cast({:put, secret_path, data, opts}, state) do
     ttl = Keyword.get(opts, :ttl, state.ttl_seconds)
@@ -236,10 +200,16 @@ defmodule SecretHub.Agent.Cache do
       fetched_at: DateTime.utc_now(),
       expires_at: DateTime.add(DateTime.utc_now(), ttl, :second),
       version: version,
+      revision: Keyword.get(opts, :revision),
       engine_type: engine_type
     }
 
-    new_cache = Map.put(state.cache, secret_path, entry)
+    minimum_revision = Map.get(state.revision_floors, cache_path(secret_path), 0)
+
+    new_cache =
+      if is_integer(entry.revision) and entry.revision < minimum_revision,
+        do: state.cache,
+        else: Map.put(state.cache, secret_path, entry)
 
     # Evict oldest entries if cache is full
     new_cache =
@@ -257,6 +227,20 @@ defmodule SecretHub.Agent.Cache do
 
     {:noreply, %{state | cache: new_cache}}
   end
+
+  @impl true
+  def handle_cast({:invalidate_path, path, revision}, state) when is_binary(path) do
+    cache = Map.reject(state.cache, fn {key, _} -> cache_path(key) == path end)
+
+    floors =
+      if is_integer(revision) and revision > 0,
+        do: Map.update(state.revision_floors, path, revision, &max(&1, revision)),
+        else: state.revision_floors
+
+    {:noreply, %{state | cache: cache, revision_floors: floors}}
+  end
+
+  def handle_cast({:invalidate_path, _, _}, state), do: {:noreply, state}
 
   @impl true
   def handle_cast({:invalidate, secret_path}, state) do
@@ -295,8 +279,11 @@ defmodule SecretHub.Agent.Cache do
 
   ## Private Functions
 
+  defp cache_path({_app, _fingerprint, path}), do: path
+  defp cache_path(path), do: path
+
   defp expired?(entry) do
-    DateTime.compare(DateTime.utc_now(), entry.expires_at) == :gt
+    DateTime.compare(DateTime.utc_now(), entry.expires_at) != :lt
   end
 
   defp schedule_cleanup do

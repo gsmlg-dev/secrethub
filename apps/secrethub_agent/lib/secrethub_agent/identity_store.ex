@@ -3,6 +3,7 @@ defmodule SecretHub.Agent.IdentityStore do
   Persists and loads trusted Agent runtime identity material.
   """
 
+  @derive {Inspect, except: [:private_key_pem]}
   defstruct [
     :agent_id,
     :certificate_pem,
@@ -34,14 +35,21 @@ defmodule SecretHub.Agent.IdentityStore do
   """
   @spec write(Path.t(), map()) :: :ok | {:error, term()}
   def write(state_dir, material) when is_map(material) do
-    with {:ok, values} <- trusted_material(material),
+    :global.trans({{__MODULE__, Path.expand(state_dir)}, self()}, fn ->
+      do_write(state_dir, material)
+    end)
+  end
+
+  defp do_write(state_dir, material) do
+    with {:ok, material} <- preserve_auth_floor(state_dir, material),
+         {:ok, values} <- trusted_material(material),
          :ok <- File.mkdir_p(state_dir),
          :ok <- File.chmod(state_dir, 0o700),
          :ok <- write_text(state_dir, :certificate_pem, values.certificate_pem),
          :ok <- write_text(state_dir, :private_key_pem, values.private_key_pem),
          :ok <- write_text(state_dir, :ca_chain_pem, values.ca_chain_pem),
          :ok <- write_text(state_dir, :connect_info, values.encoded_connect_info) do
-      write_text(state_dir, :identity, values.encoded_identity)
+      atomic_identity_write(state_dir, values.encoded_identity)
     end
   end
 
@@ -57,7 +65,8 @@ defmodule SecretHub.Agent.IdentityStore do
          {:ok, ca_chain_pem} <- read_text(state_dir, :ca_chain_pem),
          {:ok, connect_info} <- read_json(state_dir, :connect_info),
          {:ok, identity} <- read_json(state_dir, :identity),
-         {:ok, agent_id} <- fetch_agent_id(identity) do
+         {:ok, agent_id} <- fetch_agent_id(identity),
+         :ok <- validate_auth_floor(identity) do
       {:ok,
        %__MODULE__{
          agent_id: agent_id,
@@ -84,6 +93,89 @@ defmodule SecretHub.Agent.IdentityStore do
         {:error, reason} -> {:halt, {:error, {:delete_failed, path, reason}}}
       end
     end)
+  end
+
+  def persist_minimum_uds_auth_version(state_dir, floor) when floor in [1, 2] do
+    :global.trans({{__MODULE__, Path.expand(state_dir)}, self()}, fn ->
+      with {:ok, material} <- load(state_dir),
+           current = Map.get(material.identity, "minimum_uds_auth_version", 1),
+           next = max(current, floor),
+           {:ok, encoded} <-
+             Jason.encode(Map.put(material.identity, "minimum_uds_auth_version", next)),
+           :ok <- atomic_identity_write(state_dir, encoded) do
+        {:ok, next}
+      end
+    end)
+  end
+
+  def persist_minimum_uds_auth_version(_, _), do: {:error, :invalid_auth_floor}
+
+  defp preserve_auth_floor(state_dir, material) do
+    case read_json(state_dir, :identity) do
+      {:ok, identity} ->
+        with :ok <- validate_auth_floor(identity),
+             {:ok, incoming} <- fetch_map(material, :identity),
+             :ok <- validate_auth_floor(incoming) do
+          merge_auth_floor(material, identity, incoming)
+        end
+
+      {:error, :enoent} ->
+        {:ok, material}
+
+      _ ->
+        {:error, :invalid_trusted_material}
+    end
+  end
+
+  defp merge_auth_floor(material, identity, incoming) do
+    if Map.has_key?(identity, "minimum_uds_auth_version") do
+      floor =
+        max(
+          identity["minimum_uds_auth_version"],
+          Map.get(incoming, "minimum_uds_auth_version", 1)
+        )
+
+      {:ok, Map.put(material, :identity, Map.put(incoming, "minimum_uds_auth_version", floor))}
+    else
+      {:ok, material}
+    end
+  end
+
+  defp validate_auth_floor(identity) when is_map(identity) do
+    if Map.get(identity, "minimum_uds_auth_version", 1) in [1, 2],
+      do: :ok,
+      else: {:error, :invalid_auth_floor}
+  end
+
+  defp validate_auth_floor(_), do: {:error, :invalid_auth_floor}
+
+  defp atomic_identity_write(state_dir, encoded) do
+    path = Path.join(state_dir, "identity.json")
+    temporary = path <> "." <> Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
+
+    try do
+      with {:ok, fd} <- :file.open(to_charlist(temporary), [:write, :binary, :raw, :exclusive]) do
+        result =
+          try do
+            with :ok <- :file.write(fd, encoded), do: :file.sync(fd)
+          after
+            :file.close(fd)
+          end
+
+        with :ok <- result,
+             :ok <- File.chmod(temporary, 0o644),
+             :ok <- File.rename(temporary, path),
+             {:ok, directory} <- :file.open(to_charlist(state_dir), [:read, :raw, :directory]) do
+          try do
+            :file.sync(directory)
+          after
+            :file.close(directory)
+          end
+        end
+      end
+    after
+      File.rm(temporary)
+    end
   end
 
   defp trusted_material(material) do

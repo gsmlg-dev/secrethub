@@ -19,6 +19,7 @@ defmodule SecretHub.Agent.TrustedConnection do
         ca_pem:
           Keyword.get(opts, :ca_pem) || fetch_connect_value(connect_info, "core_ca_cert_pem"),
         expected_server_name: optional_connect_value(connect_info, "expected_core_server_name"),
+        state_dir: Keyword.get(opts, :state_dir),
         on_runtime_accepted: Keyword.get(opts, :on_runtime_accepted)
       )
     end

@@ -94,6 +94,32 @@ defmodule SecretHub.Agent.IdentityStoreTest do
     refute_trusted_files_created(state_dir)
   end
 
+  test "Core auth floor persists monotonically across writes and reload", %{tmp_dir: tmp_dir} do
+    dir = Path.join(tmp_dir, "floor-state")
+    assert :ok = IdentityStore.write(dir, valid_material())
+    assert {:ok, 2} = IdentityStore.persist_minimum_uds_auth_version(dir, 2)
+    assert {:ok, 2} = IdentityStore.persist_minimum_uds_auth_version(dir, 1)
+    assert :ok = IdentityStore.write(dir, valid_material())
+    assert {:ok, material} = IdentityStore.load(dir)
+    assert material.identity["minimum_uds_auth_version"] == 2
+    assert {:error, :invalid_auth_floor} = IdentityStore.persist_minimum_uds_auth_version(dir, 0)
+  end
+
+  test "damaged floor cannot be overwritten into fresh runtime", %{tmp_dir: tmp_dir} do
+    dir = Path.join(tmp_dir, "floor-state")
+    assert :ok = IdentityStore.write(dir, valid_material())
+    identity_path = Path.join(dir, "identity.json")
+
+    File.write!(
+      identity_path,
+      Jason.encode!(%{"agent_id" => "agent-1", "minimum_uds_auth_version" => 0})
+    )
+
+    assert {:error, :invalid_auth_floor} = IdentityStore.load(dir)
+    assert {:error, :invalid_auth_floor} = IdentityStore.persist_minimum_uds_auth_version(dir, 2)
+    assert {:error, :invalid_auth_floor} = IdentityStore.write(dir, valid_material())
+  end
+
   defp valid_material do
     %{
       agent_id: "agent-1",

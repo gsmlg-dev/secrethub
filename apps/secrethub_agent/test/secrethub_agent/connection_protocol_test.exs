@@ -2,6 +2,74 @@ defmodule SecretHub.Agent.ConnectionProtocolTest do
   use ExUnit.Case, async: true
 
   alias SecretHub.Agent.Connection
+  alias SecretHub.Agent.IdentityStore
+
+  @moduletag :tmp_dir
+
+  test "runtime floor is durable before the accepted callback and cannot regress", %{tmp_dir: dir} do
+    material = %{
+      agent_id: "agent-1",
+      certificate_pem: "certificate",
+      private_key_pem: "key",
+      ca_chain_pem: "ca",
+      connect_info: %{},
+      identity: %{"agent_id" => "agent-1"}
+    }
+
+    assert :ok = IdentityStore.write(dir, material)
+    owner = self()
+    callback = fn _ -> send(owner, {:persisted_at_acceptance, IdentityStore.load(dir)}) end
+
+    state = %{
+      agent_id: "agent-1",
+      state_dir: dir,
+      minimum_uds_auth_version: 1,
+      on_runtime_accepted: callback
+    }
+
+    payload = %{"minimum_uds_auth_version" => 2}
+    assert {:ok, next} = Connection.accept_runtime_floor(state, payload)
+    Connection.notify_runtime_accepted(next, payload)
+
+    assert_receive {:persisted_at_acceptance,
+                    {:ok, %{identity: %{"minimum_uds_auth_version" => 2}}}}
+
+    assert {:ok, %{minimum_uds_auth_version: 2}} =
+             Connection.accept_runtime_floor(next, %{"minimum_uds_auth_version" => 1})
+
+    assert :ok = IdentityStore.write(dir, material)
+
+    assert {:ok, %{minimum_uds_auth_version: 2}} =
+             Connection.accept_runtime_floor(state, %{"minimum_uds_auth_version" => 1})
+  end
+
+  test "runtime acceptance fails closed when the Core floor or durable identity is unavailable",
+       %{tmp_dir: dir} do
+    state = %{agent_id: "agent-1", state_dir: dir, minimum_uds_auth_version: 1}
+
+    assert {:error, :trusted_state_unavailable} =
+             Connection.accept_runtime_floor(state, %{"minimum_uds_auth_version" => 2})
+
+    assert :ok =
+             IdentityStore.write(dir, %{
+               agent_id: "agent-1",
+               certificate_pem: "certificate",
+               private_key_pem: "key",
+               ca_chain_pem: "ca",
+               connect_info: %{},
+               identity: %{"agent_id" => "agent-1"}
+             })
+
+    for payload <- [%{}, %{"minimum_uds_auth_version" => 0}, %{"minimum_uds_auth_version" => "2"}] do
+      assert {:error, :trusted_state_unavailable} =
+               Connection.accept_runtime_floor(state, payload)
+    end
+
+    assert {:error, :trusted_state_unavailable} =
+             Connection.accept_runtime_floor(Map.delete(state, :state_dir), %{
+               "minimum_uds_auth_version" => 2
+             })
+  end
 
   test "uses the normalized trusted runtime topic" do
     assert Connection.runtime_topic() == "agent:runtime"
