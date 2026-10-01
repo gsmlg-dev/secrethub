@@ -78,7 +78,7 @@ defmodule SecretHub.Web.ClusterStatusLive do
     case ClusterState.cluster_info() do
       {:ok, cluster_info} ->
         # Get health status for overall cluster
-        health_status = Health.health(details: true)
+        {:ok, health_status} = Health.health(details: true)
 
         socket
         |> assign(:loading, false)

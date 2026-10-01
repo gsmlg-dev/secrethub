@@ -1,6 +1,8 @@
 defmodule SecretHub.Web.ClusterStatusLiveTest do
-  use SecretHub.Web.ConnCase, async: true
+  use SecretHub.Web.ConnCase, async: false
   import Phoenix.LiveViewTest
+
+  alias SecretHub.Core.{ClusterState, Vault.SealState}
 
   setup %{conn: conn} do
     # Set up admin session so tests can access /admin routes
@@ -12,6 +14,21 @@ defmodule SecretHub.Web.ClusterStatusLiveTest do
   end
 
   describe "ClusterStatusLive" do
+    test "renders overall health when cluster data is available", %{conn: conn} do
+      start_supervised!(SealState)
+
+      start_supervised!(%{
+        id: ClusterState,
+        start: {ClusterState, :start_link, [[node_id: "cluster-status-live-test"]]},
+        restart: :temporary
+      })
+
+      {:ok, _view, html} = live(conn, "/admin/cluster")
+
+      assert html =~ "Overall Health"
+      assert html =~ "cluster-status-live-test"
+    end
+
     test "mounts successfully and displays page title", %{conn: conn} do
       {:ok, _view, html} = live(conn, "/admin/cluster")
 
