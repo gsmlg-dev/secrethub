@@ -280,3 +280,84 @@ inspection confirms `entity_bindings` is `character varying(255)[]`. The same
 approval dependency has persisted across goal continuations; provisional source
 and image checks do not authorize bypassing that recovery limit or freezing a
 candidate while the focused Core/channel failures remain.
+
+The matched diagnostic Core build completed successfully as image
+`sha256:1eb1bcc88a874b3eb2cdd00ea42d58fcfe3d0f142f26a4a30418acadc6e2df70`.
+Its source label is `e5e1107dd7530f65e5b72b0f2ff78c6e4579bf64` with
+`secrethub.source.dirty=true`; the authorization implementation is uncommitted.
+Warnings-as-errors compilation, asset digest generation and release assembly
+passed. Runtime consumer qualification on this image remains unexecuted; build
+success does not clear G12/G13 or the pending legacy-query repair approval.
+
+The diagnostic Core swap passed with the original container retained stopped.
+The replacement started sealed, accepted protected manual unseal and observed
+a fresh enrolled Agent heartbeat. Agent certificate/key/CA/floor digests,
+enrollment IDs and its Core certificate association stayed identical. The
+isolated database was preserved. The authorization report had zero findings;
+the typed-runtime gate was verified without activating minimum auth floor 2.
+
+A new disposable application was assigned to the enrolled Agent database UUID,
+issued a canonical proof certificate and independently granted exact-path Agent
+and application policies. The real UID1002 consumer image `ae6125bf3306` then
+authenticated through the actual Agent UDS, atomically applied the private file
+and passed exact fixture readback with version 1 and revision 2. Fixture
+provisioning initially used an invalid query expression and then passed a map
+to the string-only virtual `value` attribute; the fixture now uses the documented
+`secret_data` map API. These fixture errors were corrected without modifying
+application source, and the disposable diagnostic fixtures remain retained.
+G12/G13 are not yet accepted: updates, denials, revocation, restart, outage and
+directly observed cache expiry remain required. Default production/info logging
+and disabled distribution do not expose live cache expiry; separate release
+`eval` cache checks would not supply that evidence.
+
+The same exact Agent image now also has an isolated debug-logging clone, using
+the standard `RELEASE_SYS_CONFIG` template override. The original info-level
+container is retained stopped. Parsed configuration differs only in Logger
+level; provider, formatter and disabled distribution are identical. The template
+comment marker changes from false to true so the release shell copies configuration
+into its writable private runtime directory. Identity/enrollment and a fresh
+heartbeat were verified after the clone started; this does not retroactively
+qualify the original info-level container.
+
+The clone started with zero cache population events. One actual auth-v2 consumer
+read seeded one entry with TTL 300 seconds. Its expiry timestamp was followed
+by exactly one `count=1` expired-entry cleanup 330.649 seconds after population,
+with no additional reads, invalidations, refreshes, cache/process restarts or
+post-seed warning/error events. Captured logs had no fixture plaintext/private-key
+markers; raw logs remain private and the report exports only metadata. The first
+observer incorrectly included a legitimate pre-seed startup clear and failed;
+the second resumed the same live seed without restarting or reseeding anything.
+This is direct live-cache expiry evidence for the debug clone, not a claim about
+a separate release-eval cache. G13 still needs the real outage/reauthorization
+checks and final immutable-candidate qualification.
+
+The real static-consumer acceptance run passed all selected G12 scenarios in
+155.340 seconds on Core `1eb1bcc88a87`, Agent `3b95f124b819` and consumer
+`ae6125bf3306`. Auth-v2 initial readback returned version 1/revision 2; the
+supported fixture update returned version 2/revision 3. A denied path and actual
+application-policy revocation after successful warm-up both rejected delivery
+and preserved the private file's bytes, inode and mode. The sole fixture
+application policy was recreated with its original attributes and binding;
+the separate Agent policy was unchanged. The replacement policy ID is retained
+in the report rather than treating the old ID as still active.
+
+Agent restart preserved certificate/key/CA/floor identity and enrollment, with
+a fresh heartbeat and correct consumer readback. Core restart was observed
+sealed until protected manual unseal, followed by fresh Agent reconnection and
+version-2 readback. Pausing only the owned Core caused a warmed consumer read
+to reject; its previously applied configuration remained unchanged. Core was
+unpaused after 7.731 seconds and correct readback resumed without identity loss.
+Both fixture services are running, unpaused and healthy after the drill.
+
+The static helper owns every evaluation/consumer container and verifies VM
+absence before policy restoration or continuation. Review caught the earlier
+unowned `docker exec` timeout and copied Core node-ID collision; both were
+corrected and independently re-reviewed before this real run. Twelve owned Core
+evaluations used distinct temporary node IDs and preserved serving-node
+incarnation/registration/capabilities within each restart phase. Their incidental
+cluster rows remain retained; no row deletion/backfill occurred. Cleanup was
+confirmed. This source/helper review does not repair or authorize the pending
+legacy policy cast. The static report leaves G13 partial because its own code
+does not run the separately verified debug-clone TTL observer; the independent
+expiry report remains scoped evidence. Full restore with this static consumer,
+upgrade/monitoring qualification and final frozen-artifact G01–G20 remain open.
