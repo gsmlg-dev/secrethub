@@ -1,6 +1,6 @@
 defmodule SecretHub.Web.AgentEndpointManager do
   @moduledoc """
-  Ensures the trusted Agent endpoint is available for local development.
+  Ensures the configured runtime or local-development trusted Agent endpoint is available.
   """
 
   require Logger
@@ -68,8 +68,7 @@ defmodule SecretHub.Web.AgentEndpointManager do
 
   defp configure_endpoint(host, port, paths) do
     config =
-      SecretHub.Web.AgentEndpoint
-      |> Application.get_env(:secrethub_web, [])
+      Application.get_env(:secrethub_web, SecretHub.Web.AgentEndpoint, [])
       |> Keyword.merge(
         adapter: Bandit.PhoenixAdapter,
         server: true,
@@ -138,8 +137,7 @@ defmodule SecretHub.Web.AgentEndpointManager do
   end
 
   defp configured_for_runtime? do
-    SecretHub.Web.AgentEndpoint
-    |> Application.get_env(:secrethub_web, [])
+    Application.get_env(:secrethub_web, SecretHub.Web.AgentEndpoint, [])
     |> Keyword.get(:server, false)
   end
 

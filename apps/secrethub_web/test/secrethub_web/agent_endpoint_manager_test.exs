@@ -47,15 +47,52 @@ defmodule SecretHub.Web.AgentEndpointManagerTest do
   end
 
   test "starts the dev trusted endpoint when a CA exists" do
+    Application.put_env(:secrethub_web, SecretHub.Web.AgentEndpoint,
+      server: false,
+      check_origin: ["https://configured-origin.example.test"]
+    )
+
     assert :ok = AgentEndpointManager.ensure_started()
     assert Process.whereis(SecretHub.Web.AgentEndpoint)
 
     config = Application.fetch_env!(:secrethub_web, SecretHub.Web.AgentEndpoint)
     assert config[:server]
     assert config[:pubsub_server] == SecretHub.Web.PubSub
+    assert config[:check_origin] == ["https://configured-origin.example.test"]
     transport_options = get_in(config, [:https, :thousand_island_options, :transport_options])
     assert transport_options[:verify] == :verify_peer
     assert transport_options[:fail_if_no_peer_cert]
+  end
+
+  test "starts a configured trusted listener outside dev mode" do
+    assert :ok = AgentEndpointManager.ensure_started()
+
+    assert :ok =
+             Supervisor.terminate_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
+
+    assert :ok = Supervisor.delete_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
+    Application.put_env(:secrethub_web, :dev_mode, false)
+
+    assert :ok = AgentEndpointManager.ensure_started()
+    assert Process.whereis(SecretHub.Web.AgentEndpoint)
+    assert {:ok, {_address, port}} = SecretHub.Web.AgentEndpoint.server_info(:https)
+    assert port > 0
+  end
+
+  test "keeps an existing configured trusted listener outside dev mode" do
+    assert :ok = AgentEndpointManager.ensure_started()
+    pid = Process.whereis(SecretHub.Web.AgentEndpoint)
+    Application.put_env(:secrethub_web, :dev_mode, false)
+
+    assert :ok = AgentEndpointManager.ensure_started()
+    assert Process.whereis(SecretHub.Web.AgentEndpoint) == pid
+  end
+
+  test "rejects a disabled trusted listener outside dev mode" do
+    Application.put_env(:secrethub_web, :dev_mode, false)
+
+    assert {:error, :trusted_endpoint_not_started} = AgentEndpointManager.ensure_started()
+    refute Process.whereis(SecretHub.Web.AgentEndpoint)
   end
 
   defp restore_env(key, nil), do: Application.delete_env(:secrethub_web, key)
