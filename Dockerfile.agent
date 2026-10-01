@@ -21,7 +21,7 @@ RUN mkdir -p /app/tmp /var/lib/secrethub /var/run/secrethub && chown secrethub:s
 ENV TMPDIR=/app/tmp
 ENV SECRET_HUB_AGENT_STATE_DIR=/var/lib/secrethub/agent SECRET_HUB_AGENT_SOCKET_PATH=/var/run/secrethub/agent.sock SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR=/var/lib/secrethub/pki/client-auth
 RUN mkdir -p /var/lib/secrethub/agent /var/lib/secrethub/pki/client-auth && chown -R secrethub:secrethub /var/lib/secrethub
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD printf '%s\n' '{"action":"ping"}' | socat -T2 - UNIX-CONNECT:"$SECRET_HUB_AGENT_SOCKET_PATH" | grep -q 'pong' || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD printf '%s\n' '{"request_id":"container-health","action":"ping","params":{}}' | socat -T2 - UNIX-CONNECT:"$SECRET_HUB_AGENT_SOCKET_PATH" | grep -q 'pong' || exit 1
 USER secrethub
 ENTRYPOINT ["/app/bin/secrethub_agent"]
 CMD ["start"]

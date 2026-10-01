@@ -106,3 +106,41 @@ fields now redact inspection and error helpers return bounded strings. Final
 focused evidence is 36 Shared tests plus two Core tests, all passing.
 `go test -mod=readonly ./...` passed for the local Caddy consumer module and its
 new executable entrypoint. Full image-level PKI enforcement remains pending.
+
+## Later provisional artifact checks
+
+The corrected Core assets were verified in image `ab0e6cbc24ae`, which passed
+selected G01–G10 and G20 artifact checks. These results do not transfer to later
+images. A real endpoint-enrollment failure exposed reversed runtime configuration
+lookups in `AgentEndpointManager`; four focused tests passed after the correction
+in `2f36fb9`. The resulting Core image `43715c4edce1` enrolled the fixture Agent
+over its dedicated mTLS runtime listener.
+
+The Agent container probe now uses the required UDS request envelope. Updated
+image `13cc6bd2aa1e` became healthy with its preexisting certificate, key, CA and
+authorization-floor digests preserved. The stronger G11 lifecycle run against
+Core `43715c4edce1` and Agent `13cc6bd2aa1e` passed in 62.215 seconds. Enrollment
+IDs are captured before both restarts and checked after each; fresh heartbeats
+must follow restart completion. A copied damaged identity fails its identity
+preflight check and startup while all other checks pass. Independent review
+cleared the helper and probe. The earlier weaker G11 report is superseded;
+neither report establishes static delivery or full recovery.
+
+Actual Caddy consumer checks passed for valid/missing/unrelated certificates,
+revocation and CRL refresh using the Agent artifact's headless bundle manager.
+Revocation denied a fresh handshake within 11.531 seconds and a request on an
+already-open connection within 11.541 seconds. Caddy disabled session tickets;
+the attempted prior-session reuse used a fresh handshake, so resumed-session
+enforcement is not claimed. Old/corrupt bundle replay preserved monotonic state.
+Enrolled WebSocket delivery, disconnect/lag, consumer corruption and G17 remain
+unaccepted.
+
+A fresh independent PostgreSQL cluster restored the pre-revocation backup in
+3.11 seconds. An isolated Core artifact manually unsealed and verified the old
+static secret, audit chain and both runtime and Client Auth PKI keys in a further
+15.767 seconds. These are partial G16 checks, not full service/consumer RTO.
+The restored authority remains at generation/CRL 1 while retained consumer
+history is newer; reconciliation and identity/consumer recovery remain required.
+
+All these images and reports are provisional, built before a final source
+freeze. Full G01–G20 acceptance against immutable final artifacts remains open.
