@@ -190,3 +190,22 @@ already retained 5. The revoked leaf was denied and the unrevoked control
 allowed, with expiry, CA signatures and revocation membership checked. Restored
 Vault/PKI/audit inventory remained unchanged. G17 stays partial: authoritative
 reconciliation and full service reopen remain unexecuted, with recovery held.
+
+The push-fix Agent image `3b95f124b819` (source label
+`b9580e18eac15017a6576494d0e815908857c5be`, explicitly dirty/provisional)
+replaced only the owned fixture Agent, preserving exact identity and
+nondecreasing trust counters, and became healthy. A new enrolled G14 invocation
+against Core `43715c4edce1` passed issuance, the two-second disconnect/reconnect,
+revocation and forced online CRL refresh. Fresh revoked handshakes were denied
+within 24.217 seconds and an already-open request returned 403 within 24.226
+seconds, inside the selected 120-second fixture bound. The unrevoked control
+remained allowed. Both Agent delivery and consumer use of generation/CRL 7 were
+observed. Caddy issued no session tickets; resumed-session enforcement remains
+unexecuted rather than claimed. Old/corrupt replay preserved monotonic state.
+The earlier failed G14 report is retained. This is provisional image-specific
+evidence; full G01–G20 acceptance against frozen final artifacts remains open.
+
+The strengthened G11 lifecycle check also passed on this push-fix Agent in
+64.032 seconds. Both restarts preserved identity and enrollment inventory, fresh
+heartbeats followed restart completion, Core restarted sealed until manual
+unseal, and a damaged identity copy was rejected without changing live state.
