@@ -149,8 +149,8 @@ defmodule SecretHub.Core.Vault.SealStateTest do
       SealState.unseal(Enum.at(shares, 0))
 
       status = SealState.status()
-      # Progress should only count unique shares
-      assert status.progress == 1
+      # A duplicate rejects and resets the partial attempt.
+      assert status.progress == 0
     end
 
     test "accepts shares after already unsealed", %{shares: shares} do
@@ -511,9 +511,22 @@ defmodule SecretHub.Core.Vault.SealStateTest do
   end
 
   defp start_seal_state do
-    case SealState.start_link([]) do
-      {:ok, pid} -> pid
-      {:error, {:already_started, pid}} -> pid
+    pid =
+      case SealState.start_link([]) do
+        {:ok, pid} -> pid
+        {:error, {:already_started, pid}} -> pid
+      end
+
+    await_loaded(100)
+    pid
+  end
+
+  defp await_loaded(0), do: flunk("Vault did not finish loading")
+
+  defp await_loaded(remaining) do
+    if SealState.status().state == :loading do
+      Process.sleep(5)
+      await_loaded(remaining - 1)
     end
   end
 

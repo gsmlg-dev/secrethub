@@ -13,7 +13,10 @@ defmodule SecretHub.Shared.Schemas.VaultConfig do
   @primary_key {:id, :binary_id, autogenerate: true}
 
   schema "vault_config" do
-    field(:encrypted_master_key, :binary)
+    field(:encrypted_master_key, :binary, redact: true)
+    field(:envelope_version, :integer)
+    field(:share_version, :integer)
+    field(:share_set_id, :binary)
     field(:threshold, :integer)
     field(:total_shares, :integer)
     field(:initialized_at, :utc_datetime)
@@ -23,11 +26,30 @@ defmodule SecretHub.Shared.Schemas.VaultConfig do
 
   def changeset(vault_config, attrs) do
     vault_config
-    |> cast(attrs, [:encrypted_master_key, :threshold, :total_shares, :initialized_at])
-    |> validate_required([:encrypted_master_key, :threshold, :total_shares, :initialized_at])
+    |> cast(attrs, [
+      :encrypted_master_key,
+      :threshold,
+      :total_shares,
+      :initialized_at,
+      :envelope_version,
+      :share_version,
+      :share_set_id
+    ])
+    |> validate_required([
+      :encrypted_master_key,
+      :threshold,
+      :total_shares,
+      :initialized_at,
+      :envelope_version,
+      :share_version,
+      :share_set_id
+    ])
     |> validate_number(:threshold, greater_than: 0)
-    |> validate_number(:total_shares, greater_than: 0)
+    |> validate_number(:total_shares, greater_than: 0, less_than_or_equal_to: 251)
     |> validate_threshold_lte_total()
+    |> unique_constraint(:id, name: :vault_config_singleton)
+    |> check_constraint(:threshold, name: :vault_config_parameters)
+    |> check_constraint(:envelope_version, name: :vault_config_envelope)
   end
 
   defp validate_threshold_lte_total(changeset) do
