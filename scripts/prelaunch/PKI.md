@@ -45,8 +45,21 @@ To observe actual enrolled Agent delivery, also supply:
 The running Agent must match `agent_image_id`; its configured bundle path must
 map to this exact host bind directory. The consumer mounts that directory
 read-only and waits for the published generation and bundle hash. This helper
-does not pause, restart or inject bundles into the running Agent. Delayed runtime
-distribution and disconnection recovery remain unexecuted in this mode.
+never injects bundles into the running Agent. To measure delayed distribution
+and reconnect, set `pki_runtime_disconnect_seconds` to an explicit positive
+interval (at most 30 seconds). This opts in to stopping only that owned fixture
+Agent before revocation, observing the prior consumer behavior, and starting it
+with the same persistent state. Installed publication/hash and all five
+identity-file digests must match after reconnect. Failure cleanup restores the
+Agent's running state. Select an enforcement bound that includes this interval,
+actual Agent startup, transport and consumer polling.
+
+By default the dedicated authority must be absent. An existing disposable
+authority can be explicitly selected with `existing_authority_ca_fingerprint`
+equal to its exact pinned fingerprint. Each invocation creates new unique test
+identities/certificates; it retains all prior certificates, revocations and
+generation history. This never resets or replaces an authority. It cannot be
+combined with `--resume-output`.
 
 Without these two fields, normal delivery uses a separate Agent release `eval`
 process invoking the actual `TrustBundleManager.process_bundle` API. This proves
@@ -86,6 +99,7 @@ monotonic volume. It compares both the watermark hash and current-generation
 symlink before and after rejection, including after manager recreation. It
 never mutates the running Agent. An actual old database restore, consumer file
 corruption and operator-gated damaged-state recovery are separate unexecuted
-cases. G14/G15 remain partial, G17 remains unexecuted, and `complete` is always false. Diagnostic
+cases. G14 remains partial unless enrolled delivery plus the explicit disconnect
+scenario pass; G15 remains partial and G17 unexecuted. `complete` is always false. Diagnostic
 images must use `provisional: true`; their evidence cannot transfer to rebuilt
 or frozen artifacts.

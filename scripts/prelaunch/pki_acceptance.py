@@ -67,6 +67,11 @@ class PKIHarness:
                     and Path(item).is_dir() for item in self.runtime_paths))
         self.artifacts['caddy_runtime_store_paths'] = self.runtime_paths
         self.live_bundle_dir = config.get('agent_bundle_dir')
+        self.runtime_stopped = False
+        self.disconnect_seconds = config.get('pki_runtime_disconnect_seconds', 0)
+        require(isinstance(self.disconnect_seconds, (int, float)) and
+                0 <= self.disconnect_seconds <= 30)
+        require(not self.disconnect_seconds or self.live_bundle_dir)
         if self.live_bundle_dir:
             # The host operator need not traverse Agent-owned mode700 parents.
             # Validate the bind mapping here; read the actual manifest using the
@@ -77,6 +82,7 @@ class PKIHarness:
             agent = json.loads(command(['docker', 'inspect', config['agent_container']]))[0]
             require(agent['Image'] == config['agent_image_id'] and agent['State']['Running'])
             env = dict(item.split('=', 1) for item in agent['Config']['Env'])
+            self.runtime_state_dir = env['SECRET_HUB_AGENT_STATE_DIR']
             bundle_path = Path(env['SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR'])
             matching = [mount for mount in agent['Mounts'] if mount['Type'] == 'bind'
                         and (bundle_path == Path(mount['Destination']) or Path(mount['Destination']) in bundle_path.parents)]
@@ -161,6 +167,14 @@ class PKIHarness:
             check = subprocess.run(['docker', 'inspect', name], capture_output=True, timeout=20)
             require(check.returncode != 0)
         self.active_containers.discard(name)
+
+    def runtime_identity_digest(self):
+        files = ['agent-cert.pem', 'agent-key.pem', 'ca-chain.pem',
+                 'connect-info.json', 'identity.json']
+        raw = self.run_command(['docker', 'exec', self.config['agent_container'],
+                               'sha256sum'] + [self.runtime_state_dir + '/' + name for name in files])
+        require(len(raw.splitlines()) == len(files))
+        return hashlib.sha256(raw).hexdigest()
 
     def generate_material(self):
         for kind in ('server', 'untrusted'):
@@ -275,11 +289,17 @@ class PKIHarness:
     def execute(self):
         self.stage = 'authority_initialization'
         # Never silently reuse an authority; this run expects its dedicated DB.
-        if not self.resume:
+        existing_ca = self.config.get('existing_authority_ca_fingerprint')
+        if existing_ca is not None:
+            require(not self.resume and re.fullmatch(r'[0-9a-f]{64}', existing_ca) is not None)
+            self.api('/authority/status')
+        elif not self.resume:
             code, _, _ = self.client.json('/v1/pki/client-auth/authority/status')
             require(code == 404)
             self.api('/authority/init', {'name': 'Disposable artifact acceptance CA', 'key_algorithm': 'ecdsa_p384'}, 201)
         first = self.api('/bundle')
+        if existing_ca is not None:
+            require(first['ca_fingerprint'] == existing_ca)
         self.artifacts['trust_bundle_schema_version'] = first['schema_version']
         if self.resume:
             # Resume only an unrevoked baseline owned by this previous run.
@@ -343,13 +363,32 @@ class PKIHarness:
                 'baseline_attempt_status': before[0], 'baseline_session_reused': before[1],
                 'policy': 'resumption enabled' if before[1] else 'resumption disabled by exact consumer policy',
                 'successfully_resumed_session_revocation': 'measured below' if before[1] else 'unexecuted; consumer issues no session tickets'}
+            if self.disconnect_seconds:
+                identity_before = self.runtime_identity_digest()
+                self.runtime_stopped = True
+                self.run_command(['docker', 'stop', self.config['agent_container']])
+                stopped = json.loads(command(['docker', 'inspect', self.config['agent_container']]))[0]
+                require(stopped['State']['Running'] is False)
             start = time.monotonic()
             self.api('/certificates/' + issued['cert_id'] + '/revoke', {'reason': 'keyCompromise'})
             publication = self.api('/bundle')
             require(publication['generation'] > first['generation'] and publication['crl_number'] > first['crl_number'])
             if self.live_bundle_dir:
+                if self.disconnect_seconds:
+                    time.sleep(self.disconnect_seconds)
+                    require(self.request(self.valid_context)[0] == 200)
+                    self.run_command(['docker', 'start', self.config['agent_container']])
                 self.wait_live_bundle(publication)
-                self.results['delayed_distribution'] = {'status': 'unexecuted', 'reason': 'owned runtime Agent is not paused by this helper'}
+                if self.disconnect_seconds:
+                    require(self.runtime_identity_digest() == identity_before)
+                    self.runtime_stopped = False
+                    self.results['delayed_distribution'] = {'status': 'passed',
+                        'withheld_seconds': self.disconnect_seconds,
+                        'pre_delivery': 'still_allowed while Agent stopped',
+                        'transport': 'real runtime WebSocket after persistent Agent restart',
+                        'identity_preserved': True}
+                else:
+                    self.results['delayed_distribution'] = {'status': 'unexecuted', 'reason': 'runtime disconnect scenario not selected'}
             else:
                 time.sleep(self.delay)
                 require(self.request(self.valid_context)[0] == 200)
@@ -374,6 +413,7 @@ class PKIHarness:
                 time.sleep(0.1)
                 open_status = self.exchange(existing)
             open_elapsed = time.monotonic() - start
+            require(resumed_elapsed <= self.bound and open_elapsed <= self.bound)
             require(resumed[0] != 200 and open_status != 200)
             require(self.request(self.control_context)[0] == 200)
             self.results['revocation'] = {'status': 'passed', 'publication_to_new_handshake_rejection_upper_bound_seconds': round(elapsed, 3),
@@ -421,6 +461,19 @@ class PKIHarness:
             failed = True
             self.results['execution'] = {'status': 'failed', 'stage': self.stage, 'error_type': type(error).__name__}
         finally:
+            if self.runtime_stopped:
+                try:
+                    agent = json.loads(command(['docker', 'inspect', self.config['agent_container']]))[0]
+                    require(agent['Image'] == self.config['agent_image_id'])
+                    if not agent['State']['Running']:
+                        self.run_command(['docker', 'start', self.config['agent_container']])
+                        time.sleep(2)
+                    agent = json.loads(command(['docker', 'inspect', self.config['agent_container']]))[0]
+                    require(agent['State']['Running'] is True)
+                    self.runtime_stopped = False
+                except Exception:
+                    failed = True
+                    self.results['runtime_recovery'] = {'status': 'failed', 'action': 'restore owned Agent running state'}
             for name in list(self.active_containers):
                 try:
                     self.remove_container(name)
@@ -431,16 +484,18 @@ class PKIHarness:
             'artifacts': self.artifacts, 'provisional': self.provisional, 'complete': False,
             'normal_delivery': 'runtime Agent WebSocket; observed installed bundle' if self.live_bundle_dir else 'explicit harness delivery to artifact release manager',
             'negative_replay_delivery': 'isolated artifact release manager; existing live Agent trust state never mutated',
-            'headless_manager_identity': 'explicit fixture identity; runtime authentication unexecuted',
+            'headless_manager_identity': 'explicit fixture identity for negative replay only; normal delivery uses the selected transport',
             'observed_at': datetime.now(timezone.utc).isoformat(), 'results': self.results,
             'retained_monotonic_fixture_volume': self.volume,
-            'gates': {'G14': {'status': 'failed' if failed else 'partial', 'unexecuted': (['disconnection/reconnect delivery', 'delayed runtime distribution'] if self.live_bundle_dir else ['enrolled Agent WebSocket distribution', 'disconnection/reconnect delivery'])},
+            'gates': {'G14': {'status': 'failed' if failed else ('passed' if self.live_bundle_dir and self.disconnect_seconds else 'partial'), 'unexecuted': ([] if self.live_bundle_dir and self.disconnect_seconds else (['disconnection/reconnect delivery', 'delayed runtime distribution'] if self.live_bundle_dir else ['enrolled Agent WebSocket distribution', 'disconnection/reconnect delivery']))},
                       'G15': {'status': 'partial' if 'old_corrupt_bundle' in self.results else 'unexecuted', 'unexecuted': ['consumer on-disk corruption', 'operator-gated damaged-state recovery']},
                       'G17': {'status': 'unexecuted', 'unexecuted': ['actual older DB restore against newer Agent/consumer watermarks']}},
             'shutdown': 'failed' if self.active_containers else 'all invocation-owned containers stopped',
             'private_material': 'fixture keys and certificates excluded from redacted report; do not export consumer.private',
             'commands': ['management mTLS Client Auth API', 'exact Agent image release eval process_bundle via stdin',
                          'exact Caddy executable TLS verifier and HTTP middleware', 'TLS1.2 new/resumed/keepalive HTTP requests']}
+        if self.disconnect_seconds:
+            report['commands'].append('docker stop/start explicitly owned fixture Agent; preserve persistent identity; observe installed bundle after runtime reconnect')
         private_json(self.output / 'report.json', report)
         print(json.dumps({'complete': False, 'provisional': self.provisional,
                           'selected_checks': 'failed' if failed else 'passed', 'report': str(self.output / 'report.json')}))
