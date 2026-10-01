@@ -143,21 +143,58 @@ matching PostgreSQL major and restored inventory. The restore script never drops
 schemas, kills other clients or overwrites existing data. `database_restored` is
 not full recovery acceptance.
 
-Start the accepted image against the restored database, run preflight and manually
-unseal. Read a pre-backup secret, verify historical audit signatures using the
-preserved keyring, use the existing PKI keys, and reconnect Agents/consumers with
-their original identity and independent watermarks. Measure total elapsed time
-through consumer checks separately from the database import duration. Record the
-snapshot/data-loss window and the configured cadence without claiming an
-unmeasured objective.
+Hold the restored Core isolated with no management, machine or Agent listener
+and no reachable consumer. Start only the Core application in a bounded recovery
+process; immediately terminate its supervised
+`SecretHub.Core.Workers.ClientAuthCRLRefresher` child before manual unseal. Normal
+release eval starts that worker and an unseal event triggers reconciliation.
+Verify the child remains stopped. Do not issue certificates, refresh CRLs or
+publish trust bundles while inspecting the restored snapshot. A sealed startup
+or isolated network alone does not establish this restriction after unseal.
+
+Read a pre-backup secret, verify historical audit signatures using the preserved
+keyring and prove the original PKI private key matches and can sign against its
+CA certificate. Compare Vault/key/share identity and the entire ClientAuth
+certificate/revocation/generation/CRL inventory before and after these checks.
+The [partial artifact helper](../../scripts/prelaunch/RECOVERY.md) automates only
+this restricted scenario. It retains database/state and always reports G16/G17
+partial and `complete: false`; a readable secret and usable key do not prove
+Agent/consumer recovery or permit reopen.
 
 If the database predates a retained Agent/Caddy watermark, activated authorization
-floor or certificate revocation, isolate affected issuance/publication and
-consumers. Preserve the newer history and reconcile against independently held
-authoritative evidence through an explicit operator recovery procedure. Do not
-lower watermarks, wipe floor files, create a replacement CA, bump generation to
-hide missing revocations, or copy old revoked credentials into a running
-consumer. Until reconciliation is proven, affected delivery remains restricted.
+floor or certificate revocation, preserve the newer consumer manifests, watermarks,
+floor files and independently held certificate/revocation evidence. Keep issuance,
+refresh, publication and affected delivery on hold. Record the restored and
+retained counters separately; for example generation/CRL 1 versus consumer 3 is
+a recovery hold, not an instruction to increment the restored counters.
+
+Reopen only through a reviewed operator recovery procedure with all of this proof:
+
+1. Identify the exact original CA certificate, fingerprint/public key and recovered
+   private-key match. Reconcile issued certificate identities/serials and the
+   complete authoritative revoked set, including decisions after the snapshot;
+   record the source, integrity and completeness of that evidence. Missing or
+   conflicting evidence keeps the hold in place.
+2. Reconcile publication generations and CRL numbers with retained Agent/Caddy
+   history under the same CA. Review the proposed signed bundle's exact contents
+   and counters against that history; preserve every authoritative revocation.
+   Do not lower watermarks, wipe identity/floor files, create a replacement CA,
+   or bump a generation to disguise lost revocations.
+3. In an isolated consumer rehearsal retaining the newer watermarks, demonstrate
+   refusal of the older bundle. Then demonstrate that the proposed reconciled
+   bundle denies a known revoked credential and allows an unrevoked control
+   credential against the actual consumer. Check fresh, resumed and already-open
+   connections as applicable; receipts and file writes alone are insufficient.
+4. Preserve the reviewed reconciliation and consumer evidence before explicitly
+   authorizing restoration of the required worker, listeners and publication.
+   Run normal serving preflight/readiness and reconnect original Agents/consumers
+   without losing identity, authorization floor or trust history. Recheck actual
+   static reads and ClientAuth allow/deny behavior before completing G16/G17.
+
+Never copy old revoked credentials into a running consumer. Without every required
+proof, keep the affected service restricted. Measure total elapsed time through
+consumer checks separately from database import time. Record the snapshot/data-loss
+window and configured backup cadence without claiming an unmeasured objective.
 
 ## Incident stop
 

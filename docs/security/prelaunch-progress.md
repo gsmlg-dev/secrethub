@@ -152,3 +152,21 @@ verified and inherited without override. The process failed as intended,
 retained no VM dump, and its captured diagnostics and current Core logs contained
 no known fixture material or private-key/credential-URL markers. The live Core
 was not faulted. This remains artifact-specific provisional evidence.
+
+The reusable restricted recovery helper then passed selected checks in 11.929
+seconds against the retained older restored database and Core image
+`ab0e6cbc24ae`. It stopped the CRL refresher before unseal, verified no serving
+apps/listeners, recovered the static secret, verified historical audit signatures
+and proved the Client Auth key matched its CA. Vault/PKI inventory and historical
+audit rows remained identical. Generation/CRL 1 stayed unchanged, with no
+revocations added or removed. Supplied newer consumer counters remain explicitly
+unverified in this helper; G16/G17 remain partial and the recovery hold stays on.
+
+The enrolled Agent PKI run passed issuance/trust and revocation after a deliberate
+disconnect, preserving its identity. Fresh handshakes denied the revoked fixture
+within 21.485 seconds; an already-open request returned 403 within 21.503 seconds.
+The later forced CRL refresh did not reach the Agent within the selected
+120-second fixture bound (Core generation 5, Agent 4). G14 therefore failed.
+Diagnosis found that the socket library's default channel sends bare payloads
+while Agent Connection expects event envelopes. A public channel adapter fix and
+new-image validation are pending; neither the bound nor trust state was reset.
