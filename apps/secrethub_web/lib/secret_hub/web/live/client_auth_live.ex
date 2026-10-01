@@ -9,16 +9,14 @@ defmodule SecretHub.Web.ClientAuthLive do
   alias SecretHub.Core.PKI.ClientAuth
 
   @impl true
-  def mount(_params, session, socket) do
+  def mount(_params, _session, socket) do
     if connected?(socket) do
       SecretHub.Core.PKI.ClientAuth.Notifier.subscribe()
     end
 
-    current_admin_id = session["admin_id"] || session[:admin_id] || "admin"
-
     socket =
       socket
-      |> assign(:current_admin_id, to_string(current_admin_id))
+      |> assign(:current_admin_id, "operator")
       |> assign(:page_title, "Client Auth PKI")
       |> assign(:active_tab, "overview")
       |> assign(:authority, nil)
@@ -272,8 +270,8 @@ defmodule SecretHub.Web.ClientAuthLive do
 
   defp get_live_actor(socket) do
     %{
-      actor_type: "admin",
-      actor_id: socket.assigns[:current_admin_id] || "admin",
+      actor_type: "operator",
+      actor_id: socket.assigns[:current_admin_id] || "operator",
       source_ip: "127.0.0.1"
     }
   end

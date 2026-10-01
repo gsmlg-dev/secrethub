@@ -61,25 +61,25 @@ defmodule SecretHub.Web.AuthRouteCoverageTest do
   end
 
   describe "P0: PKI routes require auth" do
-    test "POST /v1/pki/ca/root/generate without token returns 401" do
+    test "machine listener cannot route CA generation" do
       conn =
         build_conn()
-        |> post("/v1/pki/ca/root/generate", %{
+        |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/ca/root/generate", %{
           "common_name" => "Test Root CA",
           "ttl" => "87600h"
         })
 
-      assert conn.status == 401
+      assert conn.status == 404
     end
   end
 
   describe "P0: Application management routes require auth" do
-    test "POST /v1/apps without token returns 401" do
+    test "machine listener cannot route application creation" do
       conn =
         build_conn()
-        |> post("/v1/apps", %{"name" => "test-app"})
+        |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/apps", %{"name" => "test-app"})
 
-      assert conn.status == 401
+      assert conn.status == 404
     end
   end
 
@@ -138,12 +138,12 @@ defmodule SecretHub.Web.AuthRouteCoverageTest do
       conn =
         build_conn()
         |> put_req_header("x-vault-token", token)
-        |> post("/v1/pki/ca/root/generate", %{
+        |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/ca/root/generate", %{
           "common_name" => "Test Root CA",
           "ttl" => "87600h"
         })
 
-      assert json_response(conn, 401) == %{"error" => "Admin authentication required"}
+      assert conn.status == 404
     end
   end
 end

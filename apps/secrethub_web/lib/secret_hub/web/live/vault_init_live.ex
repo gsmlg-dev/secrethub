@@ -28,6 +28,11 @@ defmodule SecretHub.Web.VaultInitLive do
   end
 
   @impl true
+  def render(%{vault_status: %{state: state}} = assigns) when state in [:loading, :unavailable],
+    do: render_blocked(assigns)
+
+  def render(%{vault_status: %{recovery_required: true}} = assigns), do: render_blocked(assigns)
+
   def render(assigns) do
     ~H"""
     <div class="min-h-screen bg-surface-container-low py-12 px-4 sm:px-6 lg:px-8">
@@ -135,7 +140,7 @@ defmodule SecretHub.Web.VaultInitLive do
                       name="total_shares"
                       value={@total_shares}
                       min="1"
-                      max="255"
+                      max="251"
                       phx-change="update_total_shares"
                       class="input w-full px-4 py-2 border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
@@ -190,6 +195,20 @@ defmodule SecretHub.Web.VaultInitLive do
           <% end %>
         <% end %>
       </div>
+    </div>
+    """
+  end
+
+  defp render_blocked(assigns) do
+    ~H"""
+    <div role="alert" class="bg-warning/5 border border-warning text-warning px-4 py-3 rounded-lg">
+      <%= if Map.get(@vault_status, :recovery_required, false) do %>
+        <p>
+          Vault recovery is required. Preserve the existing data and shares; follow the explicit legacy recovery procedure.
+        </p>
+      <% else %>
+        <p>Vault storage is unavailable. Restore database access before initializing or unsealing.</p>
+      <% end %>
     </div>
     """
   end

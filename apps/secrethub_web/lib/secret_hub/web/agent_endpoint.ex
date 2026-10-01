@@ -13,4 +13,7 @@ defmodule SecretHub.Web.AgentEndpoint do
 
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :agent_endpoint]
+  plug :not_found
+
+  defp not_found(conn, _opts), do: Plug.Conn.send_resp(conn, 404, "Not Found")
 end

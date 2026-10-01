@@ -11,6 +11,17 @@ defmodule SecretHub.Web.SysController do
   alias SecretHub.Core.{Health, Vault.SealState}
   alias SecretHub.Shared.Crypto.Shamir
 
+  def management_readiness(conn, _params) do
+    case Health.management_readiness() do
+      {:ok, data} -> json(conn, data)
+      {:error, data} -> conn |> put_status(:service_unavailable) |> json(data)
+    end
+  end
+
+  def csrf_token(conn, _params) do
+    json(conn, %{csrf_token: Plug.CSRFProtection.get_csrf_token()})
+  end
+
   @doc """
   POST /v1/sys/init
 
@@ -49,10 +60,10 @@ defmodule SecretHub.Web.SysController do
   end
 
   defp validate_shares_param(total_shares) do
-    if is_integer(total_shares) and total_shares >= 1 and total_shares <= 255 do
+    if is_integer(total_shares) and total_shares >= 1 and total_shares <= 251 do
       :ok
     else
-      {:error, "secret_shares must be between 1 and 255"}
+      {:error, "secret_shares must be between 1 and 251"}
     end
   end
 
@@ -231,7 +242,8 @@ defmodule SecretHub.Web.SysController do
 
   Returns 200 if the service is ready to accept traffic:
   - Database is accessible
-  - Vault is initialized
+  - Vault is initialized with a verified unsealed key
+  - Required Client Auth CRL reconciliation is healthy
 
   Returns 503 if not ready.
   """

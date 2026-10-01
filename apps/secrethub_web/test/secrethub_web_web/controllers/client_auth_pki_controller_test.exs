@@ -6,7 +6,7 @@ defmodule SecretHub.Web.ClientAuthPKIControllerTest do
 
   setup do
     token = vault_token!()
-    admin_conn = init_test_session(build_conn(), %{admin_id: "test-admin"})
+    admin_conn = build_conn()
     {:ok, token: token, admin_conn: admin_conn}
   end
 
@@ -16,33 +16,33 @@ defmodule SecretHub.Web.ClientAuthPKIControllerTest do
   end
 
   describe "Authorization & Protection" do
-    test "rejects ordinary agent / vault token on management endpoints with 401 Unauthorized",
+    test "rejects ordinary agent / vault token on management endpoints outside the trusted private boundary",
          %{conn: conn, token: token} do
-      authed = authed_conn(conn, token)
+      authed = authed_conn(conn, token) |> Map.put(:remote_ip, {203, 0, 113, 12})
 
       # 1. init authority
       resp = post(authed, "/v1/pki/client-auth/authority/init", %{"name" => "Unauthorized Init"})
-      assert response(resp, 401)
+      assert response(resp, 403)
 
       # 2. identities
       resp = post(authed, "/v1/pki/client-auth/identities", %{"name" => "unauthorized-identity"})
-      assert response(resp, 401)
+      assert response(resp, 403)
 
       # 3. issue
       resp = post(authed, "/v1/pki/client-auth/issue", %{"request_id" => Ecto.UUID.generate()})
-      assert response(resp, 401)
+      assert response(resp, 403)
 
       # 4. certificates list
       resp = get(authed, "/v1/pki/client-auth/certificates")
-      assert response(resp, 401)
+      assert response(resp, 403)
 
       # 5. crl refresh
       resp = post(authed, "/v1/pki/client-auth/crl/refresh", %{})
-      assert response(resp, 401)
+      assert response(resp, 403)
 
       # 6. receipts list
       resp = get(authed, "/v1/pki/client-auth/bundle/receipts")
-      assert response(resp, 401)
+      assert response(resp, 403)
     end
   end
 

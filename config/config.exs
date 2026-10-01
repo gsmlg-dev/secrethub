@@ -72,6 +72,13 @@ config :secrethub_web, SecretHub.Web.AgentEndpoint,
   server: false,
   pubsub_server: SecretHub.Web.PubSub
 
+config :secrethub_web, SecretHub.Web.MachineEndpoint,
+  url: [host: "localhost"],
+  adapter: Bandit.PhoenixAdapter,
+  server: false,
+  render_errors: [formats: [json: SecretHub.Web.ErrorJSON], layout: false],
+  pubsub_server: SecretHub.Web.PubSub
+
 config :secrethub_web,
   agent_trusted_endpoint: "wss://localhost:4665/agent/socket/websocket"
 
@@ -125,7 +132,13 @@ config :phoenix, :filter_parameters, [
   "token",
   "api_key",
   "apikey",
-  "key"
+  "key",
+  "share",
+  "shares",
+  "private_key",
+  "private_key_pem",
+  "wrapping_key",
+  "master_key"
 ]
 
 # Configures Elixir's Logger

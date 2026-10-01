@@ -143,9 +143,13 @@ defmodule SecretHub.Web.AppRoleSecurityTest do
 
       conn =
         build_conn()
-        |> get("/v1/auth/approle/role/#{role.role_name}")
+        |> dispatch(
+          SecretHub.Web.MachineEndpoint,
+          :get,
+          "/v1/auth/approle/role/#{role.role_name}"
+        )
 
-      assert conn.status == 401
+      assert conn.status == 404
     end
 
     test "public clients cannot rotate SecretIDs" do
@@ -156,15 +160,18 @@ defmodule SecretHub.Web.AppRoleSecurityTest do
 
       conn =
         build_conn()
-        |> post("/v1/auth/approle/role/#{role.role_name}/secret-id")
+        |> dispatch(
+          SecretHub.Web.MachineEndpoint,
+          :post,
+          "/v1/auth/approle/role/#{role.role_name}/secret-id"
+        )
 
-      assert conn.status == 401
+      assert conn.status == 404
     end
 
-    test "admin web session can access AppRole management endpoints" do
+    test "protected ingress can manage AppRole without a login session" do
       conn =
         build_conn()
-        |> init_test_session(%{admin_id: "dev-admin"})
         |> post(
           "/v1/auth/approle/role/admin-session-role-#{System.unique_integer([:positive])}",
           %{
@@ -274,7 +281,7 @@ defmodule SecretHub.Web.AppRoleSecurityTest do
 
       login_conn =
         build_conn()
-        |> post("/v1/auth/approle/login", %{
+        |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/auth/approle/login", %{
           "role_id" => role.role_id,
           "secret_id" => role.secret_id
         })
@@ -284,9 +291,32 @@ defmodule SecretHub.Web.AppRoleSecurityTest do
       conn =
         build_conn()
         |> put_req_header("x-vault-token", token)
-        |> get("/v1/secret/data/prod/minimax/apikey")
+        |> dispatch(SecretHub.Web.MachineEndpoint, :get, "/v1/secret/data/prod/minimax/apikey")
 
       assert %{"data" => %{"value" => "sk-test"}} = json_response(conn, 200)
+
+      for {method, path} <- [
+            {:get, "/v1/secret/data/other/forbidden"},
+            {:post, "/v1/secret/data/prod/minimax/apikey"},
+            {:delete, "/v1/secret/data/prod/minimax/apikey"}
+          ] do
+        denied =
+          build_conn()
+          |> put_req_header("x-vault-token", token)
+          |> dispatch(SecretHub.Web.MachineEndpoint, method, path, %{
+            "data" => %{"value" => "forged"}
+          })
+
+        assert denied.status == 403
+        assert get_resp_header(denied, "cache-control") == ["no-store"]
+      end
+
+      unchanged =
+        build_conn()
+        |> put_req_header("x-vault-token", token)
+        |> dispatch(SecretHub.Web.MachineEndpoint, :get, "/v1/secret/data/prod/minimax/apikey")
+
+      assert %{"data" => %{"value" => "sk-test"}} = json_response(unchanged, 200)
     end
   end
 

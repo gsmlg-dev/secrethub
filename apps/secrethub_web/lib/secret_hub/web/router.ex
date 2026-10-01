@@ -1,8 +1,6 @@
 defmodule SecretHub.Web.Router do
   use SecretHub.Web, :router
 
-  @admin_auth_controller SecretHub.Web.AdminAuthController
-
   pipeline :browser do
     plug :accepts, ["html"]
     plug :fetch_session
@@ -16,44 +14,22 @@ defmodule SecretHub.Web.Router do
     plug :accepts, ["json"]
   end
 
-  # Admin authentication plug
-  defp require_admin_auth(conn, _opts) do
-    @admin_auth_controller.require_admin_auth(conn, [])
-  end
-
-  defp require_admin_api_auth(conn, _opts) do
-    @admin_auth_controller.require_admin_api_auth(conn, [])
-  end
-
   defp discard_untrusted_forwarded_for(conn, _opts) do
     # Forwarded IP is untrusted until normalized by a trusted-proxy layer.
     Plug.Conn.delete_req_header(conn, "x-forwarded-for")
   end
 
+  # Every route here is reached only through the private management Endpoint.
   pipeline :admin_browser do
     plug :browser
-    plug SecretHub.Web.Plugs.VerifyClientCertificate, required: false
-    plug :require_admin_auth
-  end
-
-  pipeline :admin_login do
-    plug :browser
-    plug SecretHub.Web.Plugs.VerifyClientCertificate, required: false
+    plug SecretHub.Web.Plugs.LaunchFeatures
   end
 
   pipeline :admin_api do
     plug :api
-    plug SecretHub.Web.Plugs.VerifyClientCertificate, required: false
     plug :fetch_session
-    plug :fetch_live_flash
-    plug :require_admin_api_auth
-  end
-
-  # AppRole management pipeline (requires authentication)
-  pipeline :approle_management do
-    plug :api
-    plug :fetch_session
-    plug SecretHub.Web.Plugs.AppRoleAuth
+    plug :protect_from_forgery
+    plug SecretHub.Web.Plugs.LaunchFeatures
   end
 
   # Rate-limited authentication pipeline
@@ -117,21 +93,12 @@ defmodule SecretHub.Web.Router do
     get "/health", SysController, :health
   end
 
-  # Vault management routes (no auth required - needed for initial setup)
+  # Protected management workflows remain available while the Vault is sealed.
   scope "/vault", SecretHub.Web do
-    pipe_through :browser
+    pipe_through :admin_browser
 
     live "/init", VaultInitLive, :index
     live "/unseal", VaultUnsealLive, :index
-  end
-
-  # Admin authentication routes (no auth required)
-  scope "/admin/auth", SecretHub.Web do
-    pipe_through :admin_login
-
-    get "/login", AdminPageController, :login_form
-    post "/login", AdminAuthController, :login
-    get "/health", AdminAuthController, :health_check
   end
 
   # Admin routes with authentication
@@ -139,7 +106,6 @@ defmodule SecretHub.Web.Router do
     pipe_through :admin_browser
 
     get "/", AdminPageController, :index
-    delete "/logout", AdminAuthController, :logout
 
     # All admin LiveViews use the admin layout and hook
     live_session :admin,
@@ -220,14 +186,20 @@ defmodule SecretHub.Web.Router do
     post "/agents/:id/restart", AgentController, :restart
   end
 
-  # System API routes (initialization, unsealing, health)
-  # These do not require authentication as they are needed before the vault is operational
+  # Vault mutations and CSRF state belong exclusively to management ingress.
   scope "/v1/sys", SecretHub.Web do
-    pipe_through :api
+    pipe_through :admin_api
 
+    get "/csrf-token", SysController, :csrf_token
+    get "/health/management", SysController, :management_readiness
     post "/init", SysController, :init
     post "/unseal", SysController, :unseal
     post "/seal", SysController, :seal
+  end
+
+  scope "/v1/sys", SecretHub.Web do
+    pipe_through :api
+
     get "/seal-status", SysController, :status
     get "/health", SysController, :health
     get "/health/ready", SysController, :readiness
@@ -236,7 +208,7 @@ defmodule SecretHub.Web.Router do
 
   # Authentication API routes (AppRole management - PROTECTED)
   scope "/v1/auth/approle", SecretHub.Web do
-    pipe_through :approle_management
+    pipe_through :admin_api
 
     # Role management (requires admin authentication)
     post "/role/:role_name", AuthController, :create_role
@@ -276,6 +248,7 @@ defmodule SecretHub.Web.Router do
   pipeline :vault_token do
     plug :api
     plug SecretHub.Web.Plugs.VaultTokenAuth
+    plug SecretHub.Web.Plugs.LaunchFeatures
   end
 
   # Secret CRUD API (token-authenticated via X-Vault-Token)

@@ -10,6 +10,17 @@ defmodule SecretHub.Web.AdminLayoutHook do
   alias SecretHub.Core.Vault.SealState
 
   def on_mount(:default, _params, _session, socket) do
+    if SecretHub.Web.Plugs.LaunchFeatures.allowed_view?(socket.view) do
+      mount_available(socket)
+    else
+      {:halt,
+       socket
+       |> put_flash(:error, "This workflow is unavailable in the launch profile")
+       |> redirect(to: "/admin/dashboard")}
+    end
+  end
+
+  defp mount_available(socket) do
     # Set default values and attach hook for navigation updates
     socket =
       socket

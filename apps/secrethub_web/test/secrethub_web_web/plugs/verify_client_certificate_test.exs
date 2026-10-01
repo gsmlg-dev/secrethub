@@ -602,38 +602,29 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
                CertificateIdentity.canonical_fingerprint_from_der(client.der)
     end
 
-    test "verified peer certificates authenticate configured production admins", %{
+    test "a verified machine certificate cannot authorize an untrusted management peer", %{
       conn: conn,
       client: client
     } do
-      previous_dev_mode = Application.get_env(:secrethub_web, :dev_mode)
-      previous_fingerprints = Application.get_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS)
-      fingerprint = CertificateIdentity.canonical_fingerprint_from_der(client.der)
-
-      Application.put_env(:secrethub_web, :dev_mode, false)
-      Application.put_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS, [fingerprint])
-
-      on_exit(fn ->
-        restore_app_env(:dev_mode, previous_dev_mode)
-        restore_app_env(:ADMIN_CERT_FINGERPRINTS, previous_fingerprints)
-      end)
+      opts = VerifyClientCertificate.init(required: true, check_revocation: true)
 
       conn =
         conn
         |> init_test_session(%{})
         |> put_peer_cert(client.der)
-        |> post(~p"/admin/auth/login", %{})
+        |> VerifyClientCertificate.call(opts)
+        |> Map.put(:remote_ip, {203, 0, 113, 12})
+        |> get("/admin")
 
-      assert redirected_to(conn, 302) == ~p"/admin/dashboard"
-      assert get_session(conn, :admin_id) =~ "test-agent-01"
+      assert conn.assigns.mtls_authenticated
+      assert conn.status == 403
+      refute get_session(conn, :admin_id)
     end
 
-    test "dedicated HTTPS listener authenticates the allowlisted TLS peer after CA rotation", %{
+    test "private backend does not add a machine certificate allowlist to operator ingress", %{
       ca: ca,
       client: root_signed_client
     } do
-      previous_dev_mode = Application.get_env(:secrethub_web, :dev_mode)
-      previous_fingerprints = Application.get_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS)
       intermediate_tmp = setup_temp_dir()
       old_intermediate = generate_intermediate_ca(intermediate_tmp, ca, "Admin Intermediate CA")
       intermediate = generate_intermediate_ca(intermediate_tmp, ca, "Admin Intermediate CA")
@@ -674,14 +665,8 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
         |> with_certificate_chain([intermediate])
 
       store_client_cert!(admin_client, intermediate.cn)
-      fingerprint = CertificateIdentity.canonical_fingerprint_from_der(admin_client.der)
-
-      Application.put_env(:secrethub_web, :dev_mode, false)
-      Application.put_env(:secrethub_web, :ADMIN_CERT_FINGERPRINTS, [fingerprint])
 
       on_exit(fn ->
-        restore_app_env(:dev_mode, previous_dev_mode)
-        restore_app_env(:ADMIN_CERT_FINGERPRINTS, previous_fingerprints)
         File.rm_rf!(intermediate_tmp)
       end)
 
@@ -714,7 +699,7 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
           {"x-ssl-client-cert", Base.encode64(root_signed_client.der)}
         ])
 
-      assert response =~ "location: /admin/auth/login"
+      assert response =~ "location: /admin/dashboard"
 
       assert :ok = assert_client_certificate_required(port)
     end
@@ -732,9 +717,6 @@ defmodule SecretHub.Web.Plugs.VerifyClientCertificateTest do
       assert conn.assigns[:agent_id] == "test-agent-01"
     end
   end
-
-  defp restore_app_env(key, nil), do: Application.delete_env(:secrethub_web, key)
-  defp restore_app_env(key, value), do: Application.put_env(:secrethub_web, key, value)
 
   describe "connection with expired certificate" do
     setup do

@@ -155,6 +155,11 @@ config :secrethub_web, SecretHub.Web.Endpoint,
   secret_key_base: "2ZOJa2EtaKKkdOjsRG7Ph4JsrwXMy1A1zDkWadar3rKTkRmfTMnO0nSVfIUjaiA7",
   server: false
 
+config :secrethub_web, SecretHub.Web.MachineEndpoint,
+  http: [ip: {127, 0, 0, 1}, port: 4668],
+  secret_key_base: "2ZOJa2EtaKKkdOjsRG7Ph4JsrwXMy1A1zDkWadar3rKTkRmfTMnO0nSVfIUjaiA7",
+  server: false
+
 # In test we don't send emails
 config :secrethub_web, SecretHub.Web.Mailer, adapter: Swoosh.Adapters.Test
 

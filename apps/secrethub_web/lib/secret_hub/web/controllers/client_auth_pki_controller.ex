@@ -302,13 +302,11 @@ defmodule SecretHub.Web.ClientAuthPKIController do
   end
 
   defp get_actor(conn) do
-    admin_id = get_session(conn, :admin_id) || conn.assigns[:current_admin_id] || "admin"
-
     source_ip = :inet.ntoa(conn.remote_ip) |> to_string()
 
     %{
-      actor_type: "admin",
-      actor_id: to_string(admin_id),
+      actor_type: "operator",
+      actor_id: "operator",
       source_ip: source_ip
     }
   end

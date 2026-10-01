@@ -49,6 +49,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     root_response =
       token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/pki/ca/root/generate", %{
         "common_name" => "Forbidden Root #{unique}",
         "organization" => "SecretHub Web Test",
@@ -58,6 +59,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     intermediate_response =
       token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/pki/ca/intermediate/generate", %{
         "common_name" => "Forbidden Intermediate #{unique}",
         "organization" => "SecretHub Web Test",
@@ -80,6 +82,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     response =
       vault_token!()
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/apps", %{
         "name" => "privileged-app-#{unique}",
         "description" => "Agent-created privileged application",
@@ -101,6 +104,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     response =
       vault_token!()
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> delete("/v1/apps/#{fixture.app.id}")
 
     assert_admin_unauthorized(response)
@@ -117,6 +121,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     update_response =
       token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> put("/v1/apps/#{fixture.app.id}", %{
         "description" => "unauthorized update",
         "policies" => ["root"]
@@ -128,6 +133,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     suspend_response =
       token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/apps/#{fixture.app.id}/suspend", %{})
 
     assert_admin_unauthorized(suspend_response)
@@ -139,6 +145,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     activate_response =
       token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/apps/#{fixture.app.id}/activate", %{})
 
     assert_admin_unauthorized(activate_response)
@@ -343,6 +350,7 @@ defmodule SecretHub.Web.PKIControllerTest do
         response =
           vault_token!()
           |> authed_conn()
+          |> Map.put(:remote_ip, {203, 0, 113, 12})
           |> post("/v1/pki/sign-request", %{
             "csr" => csr_pem,
             "ca_id" => fixture.current.cert_record.issuer_id,
@@ -402,7 +410,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     response =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", %{
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
         "token" => "hvs.invalid-bootstrap-token",
         "csr" => csr_pem,
         "request_id" => Ecto.UUID.generate()
@@ -417,7 +425,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     response =
       renewal_conn()
-      |> post("/v1/pki/app/renew", request)
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/renew", request)
       |> json_response(200)
 
     assert response["certificate"] =~ "-----BEGIN CERTIFICATE-----"
@@ -441,7 +449,12 @@ defmodule SecretHub.Web.PKIControllerTest do
     Enum.each(Map.keys(request), fn required_field ->
       response =
         renewal_conn()
-        |> post("/v1/pki/app/renew", Map.delete(request, required_field))
+        |> dispatch(
+          SecretHub.Web.MachineEndpoint,
+          :post,
+          "/v1/pki/app/renew",
+          Map.delete(request, required_field)
+        )
 
       if required_field == "proof" do
         assert json_response(response, 401) == %{"error" => "PROOF_REQUIRED"}
@@ -452,13 +465,23 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     blank_proof_response =
       renewal_conn()
-      |> post("/v1/pki/app/renew", Map.put(request, "proof", ""))
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
+        "/v1/pki/app/renew",
+        Map.put(request, "proof", "")
+      )
 
     assert json_response(blank_proof_response, 401) == %{"error" => "PROOF_REQUIRED"}
 
     extra_response =
       renewal_conn()
-      |> post("/v1/pki/app/renew", Map.put(request, "ttl", 3600))
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
+        "/v1/pki/app/renew",
+        Map.put(request, "ttl", 3600)
+      )
 
     assert json_response(extra_response, 400) == %{"error" => "INVALID_REQUEST"}
 
@@ -467,7 +490,9 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     unpadded_response =
       renewal_conn()
-      |> post(
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
         "/v1/pki/app/renew",
         Map.put(request, "proof", unpadded_proof)
       )
@@ -482,7 +507,9 @@ defmodule SecretHub.Web.PKIControllerTest do
     response =
       vault_token!()
       |> authed_conn()
-      |> post(
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
         "/v1/pki/app/renew",
         fixture
         |> renewal_wire_request()
@@ -498,7 +525,9 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     invalid_certificate =
       renewal_conn()
-      |> post(
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
         "/v1/pki/app/renew",
         invalid_certificate_fixture
         |> renewal_wire_request()
@@ -514,7 +543,12 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     forbidden =
       renewal_conn()
-      |> post("/v1/pki/app/renew", renewal_wire_request(forbidden_fixture))
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
+        "/v1/pki/app/renew",
+        renewal_wire_request(forbidden_fixture)
+      )
 
     assert json_response(forbidden, 403) == %{"error" => "FORBIDDEN"}
 
@@ -526,7 +560,12 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     revoked =
       renewal_conn()
-      |> post("/v1/pki/app/renew", renewal_wire_request(revoked_fixture))
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
+        "/v1/pki/app/renew",
+        renewal_wire_request(revoked_fixture)
+      )
 
     assert json_response(revoked, 401) == %{"error" => "INVALID_CERTIFICATE"}
   end
@@ -536,12 +575,14 @@ defmodule SecretHub.Web.PKIControllerTest do
     request = renewal_wire_request(conflict_fixture)
 
     renewal_conn()
-    |> post("/v1/pki/app/renew", request)
+    |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/renew", request)
     |> json_response(200)
 
     conflict =
       renewal_conn()
-      |> post(
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
         "/v1/pki/app/renew",
         Map.put(request, "proof", Base.encode64("changed-proof"))
       )
@@ -561,7 +602,12 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     unavailable =
       renewal_conn()
-      |> post("/v1/pki/app/renew", renewal_wire_request(unavailable_fixture))
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
+        "/v1/pki/app/renew",
+        renewal_wire_request(unavailable_fixture)
+      )
 
     assert json_response(unavailable, 503) == %{"error" => "UNAVAILABLE"}
   end
@@ -578,7 +624,7 @@ defmodule SecretHub.Web.PKIControllerTest do
         try do
           response =
             renewal_conn()
-            |> post("/v1/pki/app/renew", request)
+            |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/renew", request)
 
           assert json_response(response, 500) == %{"error" => "UNAVAILABLE"}
         after
@@ -609,7 +655,9 @@ defmodule SecretHub.Web.PKIControllerTest do
         direct_ip
         |> renewal_conn()
         |> put_req_header("x-forwarded-for", "198.51.100.#{attempt}")
-        |> post(
+        |> dispatch(
+          SecretHub.Web.MachineEndpoint,
+          :post,
           "/v1/pki/app/renew",
           Map.put(request, "request_id", Ecto.UUID.generate())
         )
@@ -621,7 +669,9 @@ defmodule SecretHub.Web.PKIControllerTest do
       direct_ip
       |> renewal_conn()
       |> put_req_header("x-forwarded-for", "192.0.2.99")
-      |> post(
+      |> dispatch(
+        SecretHub.Web.MachineEndpoint,
+        :post,
         "/v1/pki/app/renew",
         Map.put(request, "request_id", Ecto.UUID.generate())
       )
@@ -635,6 +685,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     response =
       vault_token!()
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/pki/app/revoke", %{
         "app_id" => fixture.app.id,
         "reason" => "operator_revoked"
@@ -650,6 +701,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     response =
       vault_token!()
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/pki/certificates/#{fixture.current.cert_record.id}/revoke", %{
         "reason" => "keyCompromise"
       })
@@ -707,6 +759,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     resp1 =
       agent_token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/pki/certificates/#{client_cert.id}/revoke", %{"reason" => "key_compromise"})
 
     assert_admin_unauthorized(resp1)
@@ -714,6 +767,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     resp2 =
       agent_token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/pki/certificates/#{ca_cert.id}/revoke", %{"reason" => "key_compromise"})
 
     assert_admin_unauthorized(resp2)
@@ -738,6 +792,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     resp3 =
       approle_token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/pki/certificates/#{client_cert.id}/revoke", %{"reason" => "key_compromise"})
 
     assert_admin_unauthorized(resp3)
@@ -745,6 +800,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     resp4 =
       approle_token
       |> authed_conn()
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
       |> post("/v1/pki/certificates/#{ca_cert.id}/revoke", %{"reason" => "key_compromise"})
 
     assert_admin_unauthorized(resp4)
@@ -825,7 +881,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     response =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", %{
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
         "token" => "hvs.invalid-bootstrap-token",
         "csr" => csr_pem,
         "request_id" => "not-a-uuid"
@@ -839,7 +895,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     response =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", %{
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
         "token" => token,
         "csr" => "private-malformed-csr",
         "request_id" => Ecto.UUID.generate()
@@ -855,7 +911,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     response =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", %{
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
         "token" => token,
         "csr" => csr_pem,
         "request_id" => Ecto.UUID.generate()
@@ -870,7 +926,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     response =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", %{
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
         "token" => token,
         "csr" => csr_pem,
         "request_id" => Ecto.UUID.generate()
@@ -884,7 +940,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     response =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", %{
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
         "token" => token,
         "csr" => csr_pem,
         "request_id" => Ecto.UUID.generate()
@@ -904,7 +960,7 @@ defmodule SecretHub.Web.PKIControllerTest do
         try do
           response =
             bootstrap_conn()
-            |> post("/v1/pki/app/issue", %{
+            |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
               "token" => token,
               "csr" => csr_pem,
               "request_id" => Ecto.UUID.generate()
@@ -932,13 +988,23 @@ defmodule SecretHub.Web.PKIControllerTest do
     for required_field <- Map.keys(request) do
       response =
         bootstrap_conn()
-        |> post("/v1/pki/app/issue", Map.delete(request, required_field))
+        |> dispatch(
+          SecretHub.Web.MachineEndpoint,
+          :post,
+          "/v1/pki/app/issue",
+          Map.delete(request, required_field)
+        )
 
       assert json_response(response, 400) == %{"error" => "INVALID_REQUEST"}
 
       blank_response =
         bootstrap_conn()
-        |> post("/v1/pki/app/issue", Map.put(request, required_field, ""))
+        |> dispatch(
+          SecretHub.Web.MachineEndpoint,
+          :post,
+          "/v1/pki/app/issue",
+          Map.put(request, required_field, "")
+        )
 
       assert json_response(blank_response, 400) == %{"error" => "INVALID_REQUEST"}
     end
@@ -953,14 +1019,19 @@ defmodule SecretHub.Web.PKIControllerTest do
         ] do
       response =
         bootstrap_conn()
-        |> post("/v1/pki/app/issue", Map.put(request, unexpected_field, value))
+        |> dispatch(
+          SecretHub.Web.MachineEndpoint,
+          :post,
+          "/v1/pki/app/issue",
+          Map.put(request, unexpected_field, value)
+        )
 
       assert json_response(response, 400) == %{"error" => "INVALID_REQUEST"}
     end
 
     legacy_response =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", %{
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
         "app_id" => Ecto.UUID.generate(),
         "app_token" => "legacy-bootstrap-token",
         "csr" => csr_pem,
@@ -983,7 +1054,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
     issued =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", request)
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", request)
       |> json_response(200)
 
     assert %{
@@ -1008,7 +1079,7 @@ defmodule SecretHub.Web.PKIControllerTest do
     replayed =
       bootstrap_conn()
       |> put_req_header("x-vault-token", "ignored-vault-token")
-      |> post("/v1/pki/app/issue", request)
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", request)
       |> json_response(200)
 
     assert replayed == %{issued | "replayed" => true}
@@ -1027,7 +1098,7 @@ defmodule SecretHub.Web.PKIControllerTest do
       ExUnit.CaptureLog.capture_log(fn ->
         issued =
           bootstrap_conn()
-          |> post("/v1/pki/app/issue", %{
+          |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
             "token" => token,
             "csr" => csr_pem,
             "request_id" => request_id
@@ -1038,7 +1109,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
         invalid_csr_response =
           bootstrap_conn()
-          |> post("/v1/pki/app/issue", %{
+          |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
             "token" => malformed_token,
             "csr" => malformed_csr,
             "request_id" => Ecto.UUID.generate()
@@ -1048,7 +1119,7 @@ defmodule SecretHub.Web.PKIControllerTest do
 
         rejected_private_fields =
           bootstrap_conn()
-          |> post("/v1/pki/app/issue", %{
+          |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
             "token" => "private-unexpected-token",
             "csr" => csr_pem,
             "request_id" => Ecto.UUID.generate(),
@@ -1088,12 +1159,12 @@ defmodule SecretHub.Web.PKIControllerTest do
     }
 
     bootstrap_conn()
-    |> post("/v1/pki/app/issue", issued_request)
+    |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", issued_request)
     |> json_response(200)
 
     conflict_response =
       bootstrap_conn()
-      |> post("/v1/pki/app/issue", %{
+      |> dispatch(SecretHub.Web.MachineEndpoint, :post, "/v1/pki/app/issue", %{
         issued_request
         | "request_id" => Ecto.UUID.generate()
       })
@@ -1132,7 +1203,7 @@ defmodule SecretHub.Web.PKIControllerTest do
   end
 
   defp assert_admin_unauthorized(conn) do
-    assert json_response(conn, 401) == %{"error" => "Admin authentication required"}
+    assert response(conn, 403) == "Forbidden"
   end
 
   defp active_agent!(scope) do

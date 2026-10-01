@@ -1,99 +1,105 @@
 defmodule SecretHub.Web.AdminPageControllerTest do
   use SecretHub.Web.ConnCase, async: false
 
-  alias SecretHub.Web.AdminAuthController
-
   setup do
-    previous_dev_mode = Application.get_env(:secrethub_web, :dev_mode)
-
-    Application.put_env(:secrethub_web, :dev_mode, true)
-
-    on_exit(fn ->
-      Application.put_env(:secrethub_web, :dev_mode, previous_dev_mode)
-    end)
-
+    Ecto.Adapters.SQL.Sandbox.mode(SecretHub.Core.Repo, {:shared, self()})
+    start_supervised!(SecretHub.Core.Vault.SealState)
+    await_loaded(200)
     :ok
   end
 
-  test "development password input uses input styling", %{conn: conn} do
-    html =
-      conn
-      |> get(~p"/admin/auth/login")
-      |> html_response(200)
+  test "protected ingress opens management without a login or authentication session", %{
+    conn: conn
+  } do
+    conn = get(conn, "/admin")
 
-    assert html =~
-             ~r/<input(?=[^>]*id="dev_password")(?=[^>]*type="password")(?=[^>]*class="[^"]*\binput\b)[^>]*>/
+    assert redirected_to(conn) == "/admin/dashboard"
+    refute get_session(conn, :admin_id)
+    refute get_session(conn, :admin_authenticated)
+    assert get_resp_header(conn, "cache-control") == ["no-store"]
   end
 
-  test "protected admin browser routes still redirect to login", %{conn: conn} do
-    conn = get(conn, ~p"/admin/dashboard")
-
-    assert redirected_to(conn, 302) == ~p"/admin/auth/login"
-  end
-
-  test "malformed client certificates are rejected by admin APIs", %{conn: conn} do
+  test "direct untrusted peers cannot access management even with forged identity headers", %{
+    conn: conn
+  } do
     conn =
       conn
-      |> init_test_session(%{})
-      |> put_req_header("x-ssl-client-cert", "not-a-certificate")
-      |> AdminAuthController.require_admin_api_auth([])
+      |> Map.put(:remote_ip, {203, 0, 113, 12})
+      |> init_test_session(%{admin_id: "admin", admin_authenticated: true})
+      |> put_req_header("x-forwarded-for", "127.0.0.1")
+      |> put_req_header("x-ssl-client-verify", "SUCCESS")
+      |> put_req_header("x-ssl-client-cert", "admin")
+      |> Map.put(:host, "localhost")
+      |> get("/admin")
 
+    assert conn.status == 403
     assert conn.halted
-    assert json_response(conn, 401) == %{"error" => "Admin authentication required"}
   end
 
-  test "Bearer headers do not authenticate admin APIs", %{conn: conn} do
-    conn =
-      conn
-      |> init_test_session(%{})
-      |> put_req_header("authorization", "Bearer untrusted")
-      |> AdminAuthController.require_admin_api_auth([])
+  test "untrusted peers cannot reach management APIs, vault or either LiveView transport" do
+    for {method, path} <- [
+          {:get, "/admin/api/dashboard/stats"},
+          {:post, "/v1/sys/init"},
+          {:post, "/v1/sys/unseal"},
+          {:post, "/v1/auth/approle/role/example"},
+          {:post, "/v1/pki/client-auth/authority/init"},
+          {:post, "/v1/pki/ca/root/generate"},
+          {:post, "/v1/apps"},
+          {:get, "/live/websocket"},
+          {:get, "/live/longpoll"}
+        ] do
+      conn =
+        build_conn()
+        |> Map.put(:remote_ip, {203, 0, 113, 12})
+        |> dispatch(SecretHub.Web.Endpoint, method, path, %{})
 
-    assert conn.halted
-    assert json_response(conn, 401) == %{"error" => "Admin authentication required"}
+      assert conn.status == 403, "untrusted peer reached #{path}"
+    end
   end
 
-  test "raw certificate headers do not authenticate admin APIs", %{conn: conn} do
-    conn =
-      conn
-      |> init_test_session(%{})
-      |> put_req_header("x-ssl-client-cert", "untrusted certificate")
-      |> AdminAuthController.require_admin_api_auth([])
+  test "cross-origin management mutations are rejected before controller work" do
+    for path <- ["/v1/sys/init", "/v1/sys/unseal", "/v1/apps", "/admin/api/actions/rotate-leases"] do
+      conn =
+        build_conn()
+        |> put_req_header("origin", "https://attacker.invalid")
+        |> post(path, %{})
 
-    assert conn.halted
-    assert json_response(conn, 401) == %{"error" => "Admin authentication required"}
+      assert conn.status == 403
+    end
   end
 
-  test "raw certificate headers do not enable the certificate login form", %{conn: conn} do
-    html =
-      conn
-      |> put_req_header("x-ssl-client-cert", "untrusted")
-      |> get(~p"/admin/auth/login")
-      |> html_response(200)
-
-    refute html =~ "Client Certificate Detected"
-    refute html =~ "Authenticate with Certificate"
-    assert html =~ "No Client Certificate"
+  test "management API mutations require a CSRF token" do
+    assert_raise Plug.CSRFProtection.InvalidCSRFTokenError, fn ->
+      build_conn()
+      |> put_private(:plug_skip_csrf_protection, false)
+      |> post("/v1/sys/init", %{})
+    end
   end
 
-  test "verified mTLS certificate assigns authenticate admin APIs", %{conn: conn} do
-    conn =
-      conn
-      |> init_test_session(%{})
-      |> assign(:mtls_authenticated, true)
-      |> assign(:client_certificate, %{subject: "admin@example.com"})
-      |> AdminAuthController.require_admin_api_auth([])
+  test "untrusted LiveView origins are rejected on websocket and longpoll" do
+    for path <- ["/live/websocket?vsn=2.0.0", "/live/longpoll?vsn=2.0.0"] do
+      conn =
+        build_conn()
+        |> put_req_header("origin", "https://attacker.invalid")
+        |> get(path)
 
-    refute conn.halted
-    assert get_session(conn, :admin_id) == "admin"
+      assert conn.status == 403
+    end
   end
 
-  test "malformed client certificates preserve browser redirects", %{conn: conn} do
-    conn =
-      conn
-      |> put_req_header("x-ssl-client-cert", "not-a-certificate")
-      |> get(~p"/admin/dashboard")
+  test "management API rejects shares above the v4 public limit" do
+    conn = post(build_conn(), "/v1/sys/init", %{"secret_shares" => 252, "secret_threshold" => 2})
+    assert json_response(conn, 400) == %{"error" => "secret_shares must be between 1 and 251"}
+  end
 
-    assert redirected_to(conn, 302) == ~p"/admin/auth/login"
+  defp await_loaded(0), do: flunk("Vault state did not finish loading")
+
+  defp await_loaded(attempts) do
+    if SecretHub.Core.Vault.SealState.status().state == :loading do
+      Process.sleep(5)
+      await_loaded(attempts - 1)
+    else
+      :ok
+    end
   end
 end

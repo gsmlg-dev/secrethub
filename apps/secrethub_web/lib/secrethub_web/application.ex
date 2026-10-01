@@ -24,7 +24,8 @@ defmodule SecretHub.Web.Application do
         # {SecretHub.Web.Worker, arg},
         {SecretHub.Web.Plugs.RateLimiter, :server},
         # Start to serve requests, typically the last entry
-        SecretHub.Web.Endpoint
+        SecretHub.Web.Endpoint,
+        SecretHub.Web.MachineEndpoint
       ] ++ agent_endpoint_children()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -91,6 +92,7 @@ defmodule SecretHub.Web.Application do
   @impl true
   def config_change(changed, _new, removed) do
     Endpoint.config_change(changed, removed)
+    SecretHub.Web.MachineEndpoint.config_change(changed, removed)
     :ok
   end
 end
