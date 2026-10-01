@@ -5,10 +5,17 @@ They never publish/deploy an image or configure production Caddy. Supply an
 existing-mechanism isolated Caddy mTLS ingress and real PostgreSQL/Core/Agent
 processes. Do not aim them at existing production data or reuse production keys.
 
-`acceptance.py` currently executes the Core Vault/management portion of G01–G20.
-It records the remaining gates as `unexecuted`; a successful selected subset
-never makes its report complete. Full static/PKI/recovery orchestration is still
-pending. The report distinguishes a provisional artifact from a frozen candidate.
+`acceptance.py` executes the Core Vault/management checks G01–G10 and G20,
+and records partial compatibility/log evidence for G18/G19. G18 does not claim
+an older binary upgrade or compatible binary rollback. G19 does not claim
+fault-injected VM crash-dump coverage. Omitted gates stay `unexecuted`; partial
+or provisional results never make a report complete. The other harnesses below
+exercise the static consumer and recovery paths separately.
+
+G08 also requires `rejected_operator_cert` and `rejected_operator_key` pointing
+to a disposable certificate/key pair rejected by the existing ingress trust
+policy. Without them, no-certificate/machine/backend denials are recorded but
+the wrong-certificate case remains partial.
 
 Build and start the candidate outside the checkout under production configuration
 as UID1001/1002, with runtime-only inputs and explicit migrations. For a frozen
@@ -29,7 +36,10 @@ Place fixture configuration in a private JSON file. Required fields:
   "operator_cert": "/private/fixture/operator.crt",
   "operator_key": "/private/fixture/operator.key",
   "machine_backend": "http://127.0.0.1:<fixture-machine-port>",
-  "external_backend": "http://<fixture-host-private-ip>:<management-backend-port>"
+  "external_backend": "http://<fixture-host-private-ip>:<management-backend-port>",
+  "fixture_postgres_container": "secrethub-prelaunch-<unique-postgres-fixture>",
+  "fixture_postgres_socket": "/socket",
+  "fixture_database": "<source-isolated-fixture-database>"
 }
 ```
 
@@ -49,6 +59,37 @@ contains redacted outcomes/timing and explicitly unexecuted gates. Capture
 `recovery-shares.private.json` in the independently held private fixture recovery
 inventory; **never export it with acceptance evidence**. The harness suppresses
 raw HTTP bodies and release diagnostics. Copy only a reviewed redacted report.
+
+Use `--gates G01,G03,G18,G19,G20` to run independent Core checks against an
+already initialized fixture. `--shares-file /private/fixture/shares.json` loads
+existing fixture recovery material for share/restart checks; it does not reset or
+reinitialize the database. G05/G06 require successful G02 or these private shares.
+Do not select G02 against an existing Vault. G05/G10 require a sealed fixture.
+G06 creates the fixed disposable `prelaunch.static` secret and restarts Core;
+run it only on its original fresh fixture, not on a consumer/recovery fixture.
+
+G01 creates a uniquely named database, explicitly migrates it, signs an audit
+entry, and verifies the same persisted entry with both runtime keys. It also
+runs normal startup with missing/known development keys and requires rejection.
+Keys are mounted runtime files, not changed through application configuration.
+G03 probes runtime Repo/Vault in a separate production `eval` for unavailable,
+missing and malformed schema cases. G18 restores a database copy into a new
+isolated database before migration/rollback checks. These checks never modify
+the configured source database. G20 starts a separate Core-only release process,
+observes a healthy CRL worker, stops that child, and observes failing background
+readiness. The serving Core stays running.
+
+New database names appear in the report and remain in the explicitly selected
+disposable PostgreSQL fixture for investigation; the harness never drops them.
+Owned temporary containers are removed on exit. Runtime-key fixture files remain
+under the private output directory and must be excluded from evidence exports,
+along with recovery shares. Exit zero means all **selected** gates passed; a
+partial result exits nonzero and is not a release acceptance claim.
+
+For G19, optional `additional_private_logs` is a list of private diagnostic
+paths retained before a disposable container is replaced. Their contents are
+scanned without being copied into the report. Retain complete stdout/stderr and
+exclude these raw files from evidence exports.
 
 Distribution is disabled. Fixture DB/introspection operations use a separate
 Core-only release `eval`, not live `rpc`. Where a fixture read needs the key,

@@ -14,11 +14,13 @@ import http.client
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import ssl
 import struct
 import subprocess
 import time
+import uuid
 from urllib.parse import urlencode, urlsplit
 
 
@@ -162,12 +164,13 @@ def read_exact(connection, size):
 
 
 class Harness:
-    def __init__(self, config, output):
+    def __init__(self, config, output, selected=None, shares_file=None):
         self.config = config
         self.output = Path(output)
         self.output.mkdir(mode=0o700, parents=True, exist_ok=False)
         require(config['core_container'].startswith('secrethub-prelaunch-'))
         info = json.loads(command(['docker', 'inspect', config['core_container']]))[0]
+        self.container_info = info
         require(info['Image'] == config['core_image_id'])
         artifact = json.loads(command(['docker', 'image', 'inspect', config['core_image_id']]))[0]
         require(artifact['Os'] + '/' + artifact['Architecture'] == config['platform'])
@@ -188,7 +191,79 @@ class Harness:
                 require(time.monotonic() < deadline)
                 time.sleep(0.5)
         self.results = {f'G{i:02}': {'status': 'unexecuted'} for i in range(1, 21)}
-        self.shares = None
+        self.selected = selected or ['G01', 'G02', 'G03', 'G04', 'G05', 'G06', 'G07', 'G08', 'G09', 'G10', 'G18', 'G19', 'G20']
+        self.shares = json.loads(Path(shares_file).read_text()) if shares_file else None
+        if self.shares is not None:
+            require(isinstance(self.shares, list) and len(self.shares) >= 3)
+            require(all(isinstance(share, str) for share in self.shares))
+        self.fixture_logs = []
+        self.fixture_databases = []
+
+    def fixture(self, code, overrides=None, inputs=None, serving=False):
+        """Run the same image with normal runtime inputs in an owned container.
+
+        Captured diagnostics stay in memory for the redaction check. Secrets are
+        mounted files; they never appear in command arguments or the report.
+        """
+        name = 'secrethub-prelaunch-check-' + uuid.uuid4().hex[:12]
+        environment = dict(item.split('=', 1) for item in self.container_info['Config']['Env'])
+        environment.update(overrides or {})
+        args = ['docker', 'run', '--rm', '--name', name, '--network', 'host', '-i']
+        for mount in self.container_info['Mounts']:
+            require(mount['Type'] == 'bind')
+            args += ['--mount', 'type=bind,src=' + mount['Source'] + ',dst=' + mount['Destination'] + ',readonly']
+        if inputs:
+            directory = self.output / name
+            directory.mkdir(mode=0o700)
+            for key, value in inputs.items():
+                environment.pop(key, None)
+                environment.pop(key + '_FILE', None)
+                if value is not None:
+                    target = directory / key
+                    target.write_text(value)
+                    # The containing host output directory stays owner-only;
+                    # the nonroot container can read only this mounted folder.
+                    target.chmod(0o644)
+                    environment[key + '_FILE'] = '/prelaunch-input/' + key
+            directory.chmod(0o755)
+            args += ['--mount', 'type=bind,src=' + str(directory.resolve()) + ',dst=/prelaunch-input,readonly']
+        for key, value in environment.items():
+            args += ['-e', key + '=' + value]
+        args += [self.config['core_image_id']]
+        args += ['start'] if serving else ['eval', code]
+        try:
+            result = subprocess.run(args, capture_output=True, timeout=90)
+        except subprocess.TimeoutExpired:
+            # This name belongs exclusively to this invocation.
+            subprocess.run(['docker', 'rm', '-f', name], capture_output=True, timeout=20)
+            raise CheckFailed()
+        self.fixture_logs.append(result.stdout + result.stderr)
+        return result
+
+    def fixture_value(self, expression, overrides=None, inputs=None, boot=None):
+        if boot is None:
+            boot = 'Application.ensure_all_started(:secrethub_core); Process.sleep(400); '
+        code = 'require Ecto.Query; try do ' + boot + 'IO.puts("PRELAUNCH_RESULT=" <> Jason.encode!(' + expression + ')) rescue _ -> IO.puts("PRELAUNCH_RESULT=false") catch _, _ -> IO.puts("PRELAUNCH_RESULT=false") end'
+        result = self.fixture(code, overrides, inputs)
+        require(result.returncode == 0)
+        values = [line[17:] for line in result.stdout.decode().splitlines() if line.startswith('PRELAUNCH_RESULT=')]
+        require(len(values) == 1)
+        return json.loads(values[0])
+
+    def database(self, copy=False):
+        postgres = self.config['fixture_postgres_container']
+        require(postgres.startswith('secrethub-prelaunch-'))
+        name = 'secrethub_prelaunch_check_' + uuid.uuid4().hex[:12]
+        require(re.fullmatch(r'[a-z0-9_]+', name) is not None)
+        pg_socket = self.config.get('fixture_postgres_socket', '/socket')
+        command(['docker', 'exec', postgres, 'createdb', '-h', pg_socket, '-U', 'secrethub', name])
+        self.fixture_databases.append(name)
+        source = self.config.get('fixture_database')
+        if copy:
+            require(isinstance(source, str) and re.fullmatch(r'[a-z0-9_]+', source) is not None)
+            dump = command(['docker', 'exec', postgres, 'pg_dump', '-h', pg_socket, '-U', 'secrethub', '--no-owner', '--no-acl', source])
+            command(['docker', 'exec', '-i', postgres, 'psql', '-h', pg_socket, '-U', 'secrethub', '-v', 'ON_ERROR_STOP=1', '-d', name], dump.encode())
+        return name, {'DATABASE_URL': 'postgres://secrethub@localhost/' + name + '?socket_dir=/socket'}
 
     def evaluate(self, expression, unseal=False):
         # Distribution is intentionally disabled. Start only Core in a separate
@@ -202,7 +277,11 @@ class Harness:
             boot = boot.replace('for encoded', 'Process.sleep(300); for encoded', 1)
         code = 'require Ecto.Query; try do ' + boot + 'result = (' + expression + '); IO.puts("PRELAUNCH_RESULT=" <> Jason.encode!(result)) rescue _ -> IO.puts("PRELAUNCH_RESULT=false") catch _, _ -> IO.puts("PRELAUNCH_RESULT=false") end'
         payload = json.dumps(self.shares).encode() if unseal else None
-        output = command(['docker', 'exec', '-i', self.config['core_container'], '/app/bin/secrethub_core', 'eval', code], payload)
+        result = subprocess.run(['docker', 'exec', '-i', self.config['core_container'], '/app/bin/secrethub_core', 'eval', code],
+                                input=payload, capture_output=True, timeout=120)
+        self.fixture_logs.append(result.stdout + result.stderr)
+        require(result.returncode == 0)
+        output = result.stdout.decode()
         values = [line[17:] for line in output.splitlines() if line.startswith('PRELAUNCH_RESULT=')]
         require(len(values) == 1)
         return json.loads(values[0])
@@ -210,8 +289,10 @@ class Harness:
     def check(self, gate, details, operation):
         started = time.monotonic()
         try:
-            operation()
-            result = {'status': 'passed', 'evidence': details}
+            evidence = operation()
+            result = {'status': 'partial' if isinstance(evidence, dict) and evidence.get('partial') else 'passed', 'evidence': details}
+            if isinstance(evidence, dict):
+                result['observations'] = evidence
         except Exception as error:
             result = {'status': 'failed', 'error_class': type(error).__name__}
         result['seconds'] = round(time.monotonic() - started, 3)
@@ -222,12 +303,20 @@ class Harness:
 
     def report(self):
         report = {key: self.config[key] for key in ('source_sha', 'core_image_id', 'platform')}
-        report['commands'] = [
-            'python3 -B scripts/prelaunch/acceptance.py --config <private fixture config> --output <private result directory>',
-            'docker exec <isolated Core> /app/bin/secrethub_core eval <bounded fixture checks>',
-            'protected HTTP and connected LiveView through fixture Caddy mTLS',
-            'docker restart <isolated Core>']
+        executed = {gate for gate, result in self.results.items() if result['status'] != 'unexecuted'}
+        report['commands'] = ['python3 -B scripts/prelaunch/acceptance.py --config <private fixture config> --output <private result directory> --gates <selected gates>']
+        if executed & {'G02', 'G04', 'G06', 'G10'}:
+            report['commands'].append('docker exec <isolated Core> /app/bin/secrethub_core eval <bounded fixture checks>')
+        if executed & {'G02', 'G04', 'G05', 'G06', 'G07', 'G08', 'G09', 'G10'}:
+            report['commands'].append('protected HTTP/WebSocket through fixture Caddy mTLS; direct/machine denial probes when selected')
+        if 'G06' in executed:
+            report['commands'].append('docker restart <isolated Core>')
+        if executed & {'G01', 'G03', 'G18', 'G20'}:
+            report['commands'].append('docker run --rm <same exact Core image> eval/start <bounded runtime fixture probes>')
+        if executed & {'G01', 'G03', 'G18'}:
+            report['commands'].append('docker exec <explicit isolated PostgreSQL> createdb/psql/pg_dump <owned disposable databases>')
         report.update(created_at=datetime.now(timezone.utc).isoformat(), gates=self.results,
+                      selected_gates=self.selected, disposable_databases=self.fixture_databases,
                       candidate_status='provisional' if self.provisional else 'pending_acceptance',
                       complete=not self.provisional and all(gate['status'] == 'passed' for gate in self.results.values()))
         target = self.output / 'report.json'
@@ -253,8 +342,11 @@ class Harness:
         require(self.evaluate('SecretHub.Core.Repo.aggregate(SecretHub.Shared.Schemas.VaultConfig, :count) == 1'))
 
     def repeated_init(self):
+        fingerprint = 'SecretHub.Core.Repo.one(SecretHub.Shared.Schemas.VaultConfig) |> :erlang.term_to_binary() |> then(&:crypto.hash(:sha256, &1)) |> Base.encode16()'
+        original = self.evaluate(fingerprint)
         require(self.client.json('/v1/sys/init', 'POST', {'secret_shares': 5, 'secret_threshold': 3})[0] == 400)
         require(self.evaluate('SecretHub.Core.Repo.aggregate(SecretHub.Shared.Schemas.VaultConfig, :count) == 1'))
+        require(self.evaluate(fingerprint) == original)
 
     def malformed(self):
         prefix = 'secrethub-share-'
@@ -310,6 +402,17 @@ class Harness:
         # A caller from another network namespace must not reach private backend.
         result = subprocess.run(['docker', 'run', '--rm', '--network', 'bridge', '--entrypoint', 'curl', self.config['core_image_id'], '--connect-timeout', '3', '-fsS', self.config['external_backend'] + '/vault/init'], capture_output=True, timeout=15)
         require(result.returncode != 0)
+        if not self.config.get('rejected_operator_cert') or not self.config.get('rejected_operator_key'):
+            return {'partial': True, 'no_client_certificate_machine_routes_and_external_backend': 'denied',
+                    'wrong_ingress_certificate': 'unexecuted_requires_rejected_operator_cert_and_key'}
+        context = ssl.create_default_context(cafile=self.config['management_ca'])
+        context.load_cert_chain(self.config['rejected_operator_cert'], self.config['rejected_operator_key'])
+        try:
+            Client(self.config['management_origin'], context).request('/vault/init')
+        except (ssl.SSLError, OSError, http.client.HTTPException):
+            pass
+        else:
+            raise CheckFailed()
 
     def browser_negatives(self):
         status = self.client.json('/v1/sys/init', 'POST', {'secret_shares': 5, 'secret_threshold': 3}, {'origin': 'https://untrusted.invalid'})[0]
@@ -342,27 +445,164 @@ class Harness:
         require(self.evaluate('SecretHub.Core.Repo.one(Ecto.Query.from(v in SecretHub.Shared.Schemas.VaultConfig, select: v.id))') == identity)
         require(self.client.json('/v1/sys/seal', 'POST', {})[2]['sealed'] is False)
 
+    def runtime_keys(self):
+        _, inputs = self.database()
+        keys = [base64.b64encode(os.urandom(32)).decode() for _ in range(2)]
+        overrides = {'AUDIT_HMAC_KEY_ID': 'fixture-runtime-key'}
+        first_inputs = dict(inputs, AUDIT_HMAC_KEY=keys[0])
+        require(self.fixture_value('(SecretHub.Core.Release.migrate(); true)', overrides, first_inputs,
+                                   boot='') is True)
+        event = '%{event_type: "vault_initialized", actor_type: "system", actor_id: "prelaunch-fixture", resource_type: "vault", resource_id: "fixture-runtime-key", event_data: %{fixture: true}}'
+        require(self.fixture_value('(match?({:ok, _}, SecretHub.Core.Audit.log_event(' + event + ')) and SecretHub.Core.Audit.verify_chain() == {:ok, :valid})', overrides, first_inputs) is True)
+        # Verify the very same row under each runtime key. Different event IDs
+        # or timestamps cannot account for this result.
+        verify = 'SecretHub.Core.Audit.verify_chain() == {:ok, :valid}'
+        require(self.fixture_value(verify, overrides, dict(inputs, AUDIT_HMAC_KEY=keys[1])) is False)
+        require(self.fixture_value(verify, overrides, first_inputs) is True)
+        for value in (None, base64.b64encode(b'dev-audit-secret').decode(), base64.b64encode(b'change-me-in-production').decode()):
+            result = self.fixture('', overrides, dict(inputs, AUDIT_HMAC_KEY=value), serving=True)
+            require(result.returncode != 0)
+            require(b'AUDIT_HMAC_KEY' in result.stdout + result.stderr)
+        return {'same_image_runtime_key_reverification': True, 'missing_and_known_development_keys_block_start': True}
+
+    def unavailable(self):
+        _, inputs = self.database()
+        boot = ('Application.ensure_all_started(:ecto_sql); Application.ensure_all_started(:postgrex); '
+                '{:ok, _} = SecretHub.Core.Repo.start_link(); '
+                '{:ok, _} = SecretHub.Core.Vault.SealState.start_link(); Process.sleep(2500); ')
+        check = ('(status = SecretHub.Core.Vault.SealState.status(); '
+                 'status.state == :unavailable and status.sealed and '
+                 'match?({:error, _}, SecretHub.Core.Vault.SealState.initialize(5, 3)))')
+        require(self.fixture_value(check, inputs=inputs, boot=boot) is True)
+        unavailable = {'DATABASE_URL': 'postgres://secrethub@127.0.0.1:1/prelaunch_unavailable'}
+        require(self.fixture_value(check, inputs=unavailable, boot=boot) is True)
+        # No table/row was created by the rejected initialization.
+        name = self.fixture_databases[-1]
+        sql = ['docker', 'exec', self.config['fixture_postgres_container'], 'psql', '-h', self.config.get('fixture_postgres_socket', '/socket'), '-U', 'secrethub', '-At', '-d', name]
+        value = command(sql + [
+                         '-c', "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'"])
+        require(value.strip() == '0')
+        command(sql + ['-v', 'ON_ERROR_STOP=1', '-c', 'CREATE TABLE vault_config(id bigint)'])
+        require(self.fixture_value(check, inputs=inputs, boot=boot) is True)
+        require(command(sql + ['-c', 'SELECT count(*) FROM vault_config']).strip() == '0')
+        return {'unmigrated_and_corrupt_schema_and_unreachable_database': 'unavailable_not_empty', 'destructive_initialization': False,
+                'probe': 'production release eval starts runtime Repo and Vault; serving fixture untouched'}
+
+    def compatibility(self):
+        _, inputs = self.database(copy=True)
+        require(self.fixture_value('(SecretHub.Core.Release.migrate(); true)', inputs=inputs,
+                                   boot='Application.load(:secrethub_core); ') is True)
+        expression = ('(before = SecretHub.Core.Repo.query!("SELECT version FROM schema_migrations ORDER BY version").rows; '
+                      'vault = SecretHub.Core.Repo.all(SecretHub.Shared.Schemas.VaultConfig); '
+                      'audit = SecretHub.Core.Repo.all(SecretHub.Shared.Schemas.AuditLog); '
+                      'ciphertext = SecretHub.Core.Repo.all(SecretHub.Shared.Schemas.Secret); '
+                      'versions = SecretHub.Core.Repo.all(SecretHub.Shared.Schemas.SecretVersion); '
+                      'blocked = try do SecretHub.Core.Release.rollback(SecretHub.Core.Repo, 20261001000001); false rescue _ -> true end; '
+                      'blocked and before == SecretHub.Core.Repo.query!("SELECT version FROM schema_migrations ORDER BY version").rows '
+                      'and vault == SecretHub.Core.Repo.all(SecretHub.Shared.Schemas.VaultConfig) '
+                      'and audit == SecretHub.Core.Repo.all(SecretHub.Shared.Schemas.AuditLog) '
+                      'and ciphertext == SecretHub.Core.Repo.all(SecretHub.Shared.Schemas.Secret) '
+                      'and versions == SecretHub.Core.Repo.all(SecretHub.Shared.Schemas.SecretVersion))')
+        require(self.fixture_value(expression, inputs=inputs) is True)
+        return {'partial': True, 'current_migrations': 'idempotent_on_isolated_database_copy',
+                'incompatible_downgrade': 'refused_data_and_schema_preserved',
+                'older_binary_upgrade_and_compatible_binary_rollback': 'unexecuted_requires_selected_older_artifact'}
+
+    def redaction(self):
+        result = subprocess.run(['docker', 'logs', self.config['core_container']], capture_output=True, timeout=20)
+        require(result.returncode == 0)
+        logs = result.stdout + result.stderr
+        content = b'\n'.join([logs] + self.fixture_logs)
+        for path in self.config.get('additional_private_logs', []):
+            content += b'\n' + Path(path).read_bytes()
+        needles = [b'disposable-prelaunch-v1']
+        if self.shares:
+            needles.extend(share.encode() for share in self.shares)
+        # Inspect only runtime-input mounts, never emit contents or matches.
+        for mount in self.container_info['Mounts']:
+            if mount['Destination'] == '/fixture':
+                for path in Path(mount['Source']).iterdir():
+                    if path.is_file():
+                        value = path.read_bytes().strip()
+                        if len(value) >= 16:
+                            needles.append(value)
+        for directory in self.output.glob('secrethub-prelaunch-check-*'):
+            for path in directory.iterdir():
+                value = path.read_bytes().strip()
+                if len(value) >= 16:
+                    needles.append(value)
+        # Runtime Base64 input and the decoded key's common diagnostic forms
+        # must all stay out of output; checking only the encoded file is weaker.
+        for needle in list(needles):
+            try:
+                decoded = base64.b64decode(needle, validate=True)
+            except ValueError:
+                continue
+            if len(decoded) >= 16:
+                needles += [decoded, decoded.hex().encode(), decoded.hex().upper().encode()]
+        report_path = self.output / 'report.json'
+        if report_path.exists():
+            content += b'\n' + report_path.read_bytes()
+        require(not any(needle in content for needle in needles))
+        require(re.search(rb'-----BEGIN (?:RSA |EC |ENCRYPTED )?PRIVATE KEY-----', content) is None)
+        require(re.search(rb'(?:postgres(?:ql)?|ecto|https?)://[^\s/]*:[^\s/@]+@', content) is None)
+        # This run does not deliberately create a VM crash dump. Say so rather
+        # than transferring source redaction tests to crash-artifact acceptance.
+        return {'partial': True, 'captured_core_and_fixture_logs': 'no_known_fixture_secret_or_private_key_marker',
+                'additional_private_logs_scanned': len(self.config.get('additional_private_logs', [])),
+                'crash_dump_fault_injection': 'unexecuted', 'private_inputs_and_shares': 'excluded_from_export'}
+
+    def worker(self):
+        expression = ('(alias SecretHub.Core.Workers.ClientAuthCRLRefresher; '
+                      'before = SecretHub.Core.Health.check_background_jobs(); '
+                      ':ok = Supervisor.terminate_child(SecretHub.Core.Supervisor, ClientAuthCRLRefresher); '
+                      'stopped = SecretHub.Core.Health.check_background_jobs(); '
+                      'health = SecretHub.Core.Health.readiness(); '
+                      'before == {:ok, %{required: true, retry_attempt: 0}} '
+                      'and stopped == {:error, %{reason: "crl_worker_unavailable"}} '
+                      'and match?({:error, %{checks: %{background_jobs: %{status: "failing"}}}}, health))')
+        require(self.fixture_value(expression) is True)
+        return {'healthy_worker_observed_before_stop': True, 'stopped_required_worker': 'readiness_background_jobs_failing',
+                'probe': 'separate production release eval; serving Core not stopped'}
+
     def run(self):
-        self.check('G07', 'Caddy mTLS HTTP and connected LiveView; no second login', self.protected_admin)
-        self.check('G08', 'missing ingress certificate, separate machine route and external network namespace denied', self.boundary)
-        self.check('G09', 'cross-origin mutation, absent CSRF and cross-origin WebSocket denied', self.browser_negatives)
-        if self.check('G02', 'concurrent protected initialization; one committed configuration; private shares', self.init):
-            self.check('G04', 'concurrent loser and repeated initialize reject without replacing configuration', self.repeated_init)
-            self.check('G05', 'malformed/mixed/duplicate/wrong shares rejected; state process remains responsive', self.malformed)
-            self.check('G10', 'sealed process live, readiness false, management/unseal available, key/signing denied', self.sealed)
-            self.check('G06', 'restart sealed; correct shares recover old static ciphertext under same Vault ID; manual seal no-op', self.restart)
+        checks = [
+            ('G07', 'Caddy mTLS HTTP and connected LiveView; no second login', self.protected_admin),
+            ('G08', 'missing ingress certificate, separate machine route and external network namespace denied', self.boundary),
+            ('G09', 'cross-origin mutation, absent CSRF and cross-origin WebSocket denied', self.browser_negatives),
+            ('G02', 'concurrent protected initialization; one committed configuration; private shares', self.init),
+            ('G04', 'concurrent loser and repeated initialize reject without replacing configuration', self.repeated_init),
+            ('G05', 'malformed/mixed/duplicate/wrong shares rejected; state process remains responsive', self.malformed),
+            ('G10', 'sealed process live, readiness false, management/unseal available, key/signing denied', self.sealed),
+            ('G06', 'restart sealed; correct shares recover old static ciphertext under same Vault ID; manual seal no-op', self.restart),
+            ('G01', 'same production image runtime audit keys; missing/development keys block startup', self.runtime_keys),
+            ('G03', 'unreachable database and unmigrated schema refuse initialization', self.unavailable),
+            ('G18', 'current migration and guarded incompatible downgrade on disposable database copy', self.compatibility),
+            ('G20', 'production health detects stopped required worker', self.worker),
+            ('G19', 'scan captured diagnostics for private fixture inputs and plaintext markers', self.redaction)]
+        for gate, details, operation in checks:
+            if gate in self.selected:
+                if gate in ('G05', 'G06') and self.shares is None:
+                    self.results[gate] = {'status': 'unexecuted', 'reason': 'requires_successful_initialization_or_private_resume_shares'}
+                    continue
+                self.check(gate, details, operation)
         self.report()
-        return 0 if all(self.results[gate]['status'] == 'passed' for gate in ('G02', 'G04', 'G05', 'G06', 'G07', 'G08', 'G09', 'G10')) else 1
+        return 0 if all(self.results[gate]['status'] == 'passed' for gate in self.selected) else 1
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--gates', help='comma-separated selected gates; omitted gates remain unexecuted')
+    parser.add_argument('--shares-file', help='private existing fixture shares; never reinitializes a database')
     args = parser.parse_args()
     try:
         config = json.loads(Path(args.config).read_text())
-        return Harness(config, args.output).run()
+        selected = args.gates.split(',') if args.gates else None
+        if selected:
+            require(len(set(selected)) == len(selected) and all(re.fullmatch(r'G(?:0[1-9]|1[0-9]|20)', gate) for gate in selected))
+        return Harness(config, args.output, selected, args.shares_file).run()
     except Exception as error:
         print('Artifact harness failed: ' + type(error).__name__ + ' (details suppressed)')
         return 1
