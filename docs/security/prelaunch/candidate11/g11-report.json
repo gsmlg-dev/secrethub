@@ -1,0 +1,36 @@
+{
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "agent_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+  "platform": "linux/amd64",
+  "created_at": "2026-10-04T05:14:38.645118+00:00",
+  "provisional": false,
+  "complete": false,
+  "gates": {
+    "G11": {
+      "status": "passed",
+      "observations": {
+        "runtime": "real Core-issued certificate over mTLS WebSocket; finalized enrollment and fresh heartbeats",
+        "agent_restart": "certificate, private-key digest, authority and floor preserved",
+        "core_restart": "sealed until manual unseal; reconnect without new enrollment",
+        "damaged_copy": "startup rejected before enrollment; original identity unchanged",
+        "retained_damaged_fixture_volume": "secrethub-prelaunch-damaged-5a46fdbacc83"
+      },
+      "seconds": 157.779
+    }
+  },
+  "diagnostics_sha256": "ac596755c522f2513670ee3aaeafb8cc69913e4378cacae55b33a82fdd3de886",
+  "execution_exit_code": 0,
+  "commands": [
+    "python3 -B <reviewed private final11 G11 driver; independent shares via stdin>"
+  ],
+  "driver_sha256": "86d9becea7be2e6c6edb81acb006705d0c13379f6e2e1bf1942fe35fd44971ef",
+  "evaluator_lifetime": {
+    "owned_core_evaluators": true,
+    "core_incarnation_preserved_between_intentional_restarts": true,
+    "expected_core_restarts_observed": 1,
+    "cleanup_confirmed": true,
+    "complete": false
+  },
+  "source_private_report_sha256": "b798aecc0611f81fa9edc6094e09ea7cd4c19176c798fa2e18f819550590e101"
+}

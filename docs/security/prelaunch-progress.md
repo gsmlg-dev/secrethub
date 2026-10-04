@@ -15,7 +15,7 @@ verification and provisional artifact checks below are scoped evidence.
 | WP2 | Private transport-peer management boundary before HTTP/socket dispatch, no second login/allowlist, CSRF/exact Origin/no-store and separate machine route set. Combined Web regression suite: 115 tests, zero failures. | Final image and actual deployment-network boundary |
 | WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot provisional OCI builds, locked assets/digest and release assembly passed. | Frozen committed source and exact final image qualification; provisional evidence must be rerun |
 | WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. Approved SQL and both reviewed authorization regressions passed 28 Core, 30 existing policy and 17 channel tests. | Clean committed artifact build and final exact-artifact qualification |
-| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. | Selected nonempty upgrade/compatible rollback and monitoring qualification; final full restore/RTO/RPO evidence |
+| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. Final Core same-schema upgrade and floor-1 isolated recovery rollback passed on one retained nonempty copy. | Serving/floor-2 downgrade and pending schema conversion are unproved; monitoring qualification and final full restore/RTO/RPO evidence remain open |
 | WP6 | Artifact harness underway. Provisional Core/Agent images built, empty candidate explicitly migrated, real nonroot Core started outside checkout. | All G01–G20 tied to a frozen source and exact final image identifiers |
 
 ## Current acceptance audit
@@ -44,6 +44,13 @@ before database creation; its partial staging was retained. The corrected owned,
 network-isolated filesystem copy preserved all input digests and service-readable
 UID/GID/modes before migration and startup. Original fixtures remain preserved.
 
+Separate reviewed exports now record the [G18 restricted compatibility
+rehearsal](prelaunch/candidate11/g18-report.json) and [Core-only G19 VM fault
+check](prelaunch/candidate11/g19-core-report.json) on the final Core image.
+Both retain `complete:false`; the G01–G10 report's unexecuted entries describe
+that invocation only. Final Agent/consumer, remaining recovery gates, full log
+collection and the complete candidate export scan remain outstanding.
+
 | Gate | Inspected evidence | Remaining acceptance |
 | --- | --- | --- |
 | G01 | Runtime audit-key gate passed on final `7dc01a18b500` | Selected final Core scenario passed |
@@ -56,15 +63,15 @@ UID/GID/modes before migration and startup. Original fixtures remain preserved.
 | G08 | Separate ingress-negative invocation passed on final `7dc01a18b500` | Selected final Core scenario passed |
 | G09 | Origin/CSRF negatives passed on final `7dc01a18b500` | Selected final Core scenario passed |
 | G10 | Sealed lifecycle passed on final `7dc01a18b500` | Selected final Core scenario passed |
-| G11 | Real enrollment/restart/reconnect passed on `43715c4edce1` | Final Core/Agent lifecycle and damaged-state rejection |
+| G11 | Final Core `7dc01a18b500` and Agent `744137294f71` passed real enrollment/restart/reconnect and damaged-state rejection in 157.779 seconds | Selected final lifecycle scenario passed; full candidate remains incomplete |
 | G12 | Actual consumer lifecycle passed on `1eb1bcc88a87`/`3b95f124b819` | Final pair read/update/denial/revocation/restart readback |
 | G13 | Actual outage rejection and separately observed live expiry passed; helper report remains partial | One final-pair report joining cache/outage/reauthorization observations and debug-configuration scope |
 | G14 | Real PKI consumer issue/revoke/reconnect report passed | Final pair enforcement measurement with fresh leaves and explicit session semantics |
 | G15 | Copy-only corrupt-state checks passed; report remains partial | Final artifacts' old/corrupt-state behavior, with supported recovery or explicit fail-closed hold |
 | G16 | Restricted integrity, PKI reopen and actual static-consumer reopen passed in separate provisional drills | Full final-artifact restore inventory, consumers and measured recovery/data-loss window |
 | G17 | Actual older-7/newer-9 history refusal and authoritative reconciliation passed provisionally; report remains partial | Final-artifact older-database restriction and safe recovery with retained history |
-| G18 | Current-schema migration and incompatible rollback refusal report remains partial | Selected nonempty older-artifact upgrade and reviewed compatible binary rollback/recovery boundary |
-| G19 | Scoped VM fault/log redaction passed on `43715c4edce1`; later helpers keep raw inputs private | Final image logs/crash reports and complete exported-artifact scan |
+| G18 | Final `7dc01a18b500` same-schema upgrade and same-database recovery rollback to `1eb1bcc88a87` passed at floor 1; explicit migration was a no-op with all 48 versions installed | Only the isolated recovery boundary is qualified; old serving/floor-2 downgrade and pending schema conversion are unsupported |
+| G19 | Final Core `7dc01a18b500` VM fault and captured Core/fixture diagnostic scan passed in 11.994 seconds | Final Agent logs/crash checks, full log collection and complete exported-artifact scan remain open |
 | G20 | Required-worker stop/readiness/restart recovery passed on `1eb1bcc88a87`; report remains partial | Final image replay and selected existing monitoring integration; host alert delivery is unexecuted |
 
 Inspected private report references: `artifact-core-refreshed-1/report.json`,
@@ -538,3 +545,57 @@ plus Caddy adaptation/validation, passed. No service was started. The renewed
 fixture uses separate ports 17667/17669 and preserves every original input digest;
 original fixture identities, backups and all production configuration remain
 preserved. Final management HTTP acceptance remains unexecuted.
+
+## Final candidate 11 restricted upgrade and Core fault evidence
+
+The frozen Linux amd64 Core and Agent images carry exact source
+`c226bf43ba3ed1292db08bcc4506b5435616c22b`, repository/MIT labels and
+`secrethub.source.dirty=false`. Their full immutable IDs are recorded above and
+in the archived reports. The older Core `1eb1bcc88a87` remains a historical dirty
+artifact; its source label is not an exact clean-source claim.
+
+The G18 driver exited zero in 48.924 seconds on one uniquely named new database
+copied from snapshot 10. Old readback, final explicit migration, final readback
+and the same old binary's recovery rollback took 13.726, 10.596, 11.203 and
+11.283 seconds respectively. Independent shares and the expected static value
+travelled privately on stdin. All three readbacks verified that value, the full
+audit chain and an in-memory sign/verify challenge against the original PKI key.
+UID 1001, sealed startup/manual unseal, worker suppression, no serving listeners
+and owned-container absence passed. No original fixture was modified.
+
+All 48 migration versions already existed, and all six October migration files
+matched the old artifact. The explicit migration applied zero pending versions
+and was a no-op. Across 96 user tables, only `cluster_nodes` bookkeeping changed;
+Vault/key/share identity, encrypted secret/version rows, PKI/revocations,
+Agent/application identity, policies, subject versions and path revisions stayed
+unchanged. The original 139 audit rows remained intact, followed by exactly three
+retained `vault_unsealed` rows. Authentication floor 1 stayed unchanged throughout.
+The same copied database was retained after rollback, without re-import or down
+migration. This is a same-schema upgrade and isolated recovery rollback, not a
+safe serving downgrade, floor-2 rollback or pending schema/key conversion. The
+older binary's known legacy-read race excludes serving rollback.
+
+The final Core G19 command exited zero after an actual VM failure holding private
+fixture shares/plaintext. In 11.994 seconds it confirmed crash-dump redirection
+to `/dev/null`, no retained dump file and no known fixture/private-key markers in
+captured Core/fixture diagnostics. Agent execution and additional private log
+collection were outside that invocation. The two archived exports were scanned
+against held shares, expected fixture values, runtime key material, private-key
+markers and credential-bearing URLs; this selected export scan does not qualify
+all candidate exports. Raw keys/configs/logs and the original private execution
+report remain outside the checkout, unchanged. Driver/SQL/report digest references
+and redacted commands are in the G18 export.
+
+Full candidate acceptance remains incomplete. G11–G17 and G20 retain their
+existing remaining checks; final Agent/full-log/export qualification remains
+open. The existing monitoring integration and backup cadence questions have not
+been answered, and no selection or alert-delivery acceptance is inferred.
+
+The [final G11 lifecycle report](prelaunch/candidate11/g11-report.json) passed on
+frozen source `c226bf43ba3ed1292db08bcc4506b5435616c22b` in 157.779 seconds.
+Agent certificate, private-key digest, authority and authentication floor survived
+Agent and Core restarts; Core stayed sealed until manual unseal. A separate
+damaged-state copy refused startup before enrollment. One intentional Core
+restart was recorded; isolated evaluators preserved serving cluster identity
+between restarts and confirmed container cleanup. The report retains
+`complete:false`; remaining consumer, recovery, monitoring and export gates stay open.

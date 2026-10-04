@@ -1,0 +1,101 @@
+{
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "platform": "linux/amd64",
+  "commands": [
+    "python3 -B scripts/prelaunch/acceptance.py --config <private final candidate11 fixture config> --output <private G19 run1 result directory> --gates G19 --shares-file <independently held private fixture shares>",
+    "docker run --network none <same exact Core image> eval <VM fault; private fixture material on stdin>; inspect exit and filesystem diff; remove owned process"
+  ],
+  "created_at": "2026-10-04T04:52:51.039851+00:00",
+  "gates": {
+    "G01": {
+      "status": "unexecuted"
+    },
+    "G02": {
+      "status": "unexecuted"
+    },
+    "G03": {
+      "status": "unexecuted"
+    },
+    "G04": {
+      "status": "unexecuted"
+    },
+    "G05": {
+      "status": "unexecuted"
+    },
+    "G06": {
+      "status": "unexecuted"
+    },
+    "G07": {
+      "status": "unexecuted"
+    },
+    "G08": {
+      "status": "unexecuted"
+    },
+    "G09": {
+      "status": "unexecuted"
+    },
+    "G10": {
+      "status": "unexecuted"
+    },
+    "G11": {
+      "status": "unexecuted"
+    },
+    "G12": {
+      "status": "unexecuted"
+    },
+    "G13": {
+      "status": "unexecuted"
+    },
+    "G14": {
+      "status": "unexecuted"
+    },
+    "G15": {
+      "status": "unexecuted"
+    },
+    "G16": {
+      "status": "unexecuted"
+    },
+    "G17": {
+      "status": "unexecuted"
+    },
+    "G18": {
+      "status": "unexecuted"
+    },
+    "G19": {
+      "status": "passed",
+      "evidence": "scan captured diagnostics for private fixture inputs and plaintext markers",
+      "observations": {
+        "partial": false,
+        "captured_core_and_fixture_logs": "no_known_fixture_secret_or_private_key_marker",
+        "additional_private_logs_scanned": 0,
+        "crash_dump_fault_injection": "actual VM failure holding private fixture shares/plaintext; image disables dump to /dev/null; no dump file retained",
+        "private_inputs_and_shares": "excluded_from_export"
+      },
+      "seconds": 11.994
+    },
+    "G20": {
+      "status": "unexecuted"
+    }
+  },
+  "selected_gates": [
+    "G19"
+  ],
+  "disposable_databases": [],
+  "candidate_status": "pending_acceptance",
+  "complete": false,
+  "archive_scope": "Final Core VM fault and captured Core/fixture diagnostics only",
+  "execution_exit_code": 0,
+  "source_labels": {
+    "revision": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+    "source": "https://github.com/gsmlg-dev/secrethub",
+    "licenses": "MIT",
+    "source_dirty": false
+  },
+  "scope_limitations": [
+    "Agent runtime/crash logs are unexecuted by this invocation.",
+    "The full log collection and complete exported-artifact scan remain open.",
+    "Scanning these reviewed report exports is not a complete candidate export scan."
+  ],
+  "source_private_report_sha256": "7df1c342f72f47cbe2791f5bc46dc559e3e4f68eaef88b1d545f182b14c638d0"
+}

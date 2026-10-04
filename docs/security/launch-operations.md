@@ -130,6 +130,28 @@ do not run older software that ignores an activated floor. When compatibility is
 unproven, stop service and use a reviewed recovery path rather than an older
 binary. Restoring an older database loses later data and security decisions.
 
+Candidate 11's [archived G18 rehearsal](prelaunch/candidate11/g18-report.json)
+used frozen source `c226bf43ba3ed1292db08bcc4506b5435616c22b` and final Core
+`7dc01a18b500`, whose revision/source/MIT labels match that source and whose
+`secrethub.source.dirty` label is false. On one new copied nonempty database,
+older Core `1eb1bcc88a87` read the original static value, final Core ran an
+explicit migration and read it, then the same older binary read the same
+post-final database. All 48 migration versions were already installed: zero
+pending migrations made the explicit migration a no-op. This proves a
+same-schema binary transition, not execution of a pending schema upgrade.
+
+The supported rollback boundary is isolated recovery at authentication floor 1,
+with envelope version 1, share version 4 and audit signature version 2 preserved.
+The old artifact has dirty source provenance and a known legacy-read cutover
+race; it is unsafe for serving rollback. Each recovery eval ran as UID 1001,
+stopped the CRL refresher before manual unseal and exposed no serving application
+or listener. Static readback, the complete audit chain and the original PKI key
+verified; all security/data hashes and the original audit prefix stayed intact.
+Three expected unseal audit rows were retained, with only cluster bookkeeping
+changed. No restore or down migration occurred between binary phases. Serving
+downgrade, floor-2 rollback and pending schema/key conversion remain unsupported
+by this evidence; keep the recovery hold until the separate reopen proof passes.
+
 ## Backup and full restore
 
 Follow [database recovery](../testing/disaster-recovery-procedures.md) using the

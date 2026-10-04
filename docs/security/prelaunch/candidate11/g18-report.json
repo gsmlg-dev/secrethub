@@ -1,0 +1,172 @@
+{
+  "task": "G18-restricted-upgrade-rollback",
+  "status": "passed",
+  "complete": false,
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "platform": "linux/amd64",
+  "old_image_id": "sha256:1eb1bcc88a874b3eb2cdd00ea42d58fcfe3d0f142f26a4a30418acadc6e2df70",
+  "final_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "agent_metadata_only_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+  "historical_old_image_source_dirty": true,
+  "database": "<retained new copied fixture database>",
+  "backup_sha256": "e22d064735b25c2e97f82206638a96f350fcefeb8f378d056605a854677322de",
+  "phases": [
+    {
+      "name": "old-readback",
+      "image_id": "sha256:1eb1bcc88a874b3eb2cdd00ea42d58fcfe3d0f142f26a4a30418acadc6e2df70",
+      "checks": {
+        "core_service_uid": true,
+        "worker_stopped_before_unseal": true,
+        "worker_absent_after_reads": true,
+        "no_web_apps_or_listeners": true,
+        "loaded_sealed": true,
+        "manual_unseal": true,
+        "static_secret_matches": true,
+        "historical_audit_valid": true,
+        "client_auth_key_usable": true
+      },
+      "preservation_passed": true,
+      "floor": 1,
+      "new_audit_rows_retained": 1,
+      "owned_container_absent": true,
+      "seconds": 13.726
+    },
+    {
+      "name": "final-migrate",
+      "image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+      "checks": {
+        "migration_completed": true,
+        "service_uid1001": true,
+        "no_core_or_web_or_agent_application": true,
+        "no_inet_listeners": true,
+        "repository_stopped": true,
+        "pending_migrations": 0,
+        "no_op": true
+      },
+      "preservation_passed": true,
+      "floor": 1,
+      "new_audit_rows_retained": 1,
+      "owned_container_absent": true,
+      "seconds": 10.596
+    },
+    {
+      "name": "final-readback",
+      "image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+      "checks": {
+        "core_service_uid": true,
+        "worker_stopped_before_unseal": true,
+        "worker_absent_after_reads": true,
+        "no_web_apps_or_listeners": true,
+        "loaded_sealed": true,
+        "manual_unseal": true,
+        "static_secret_matches": true,
+        "historical_audit_valid": true,
+        "client_auth_key_usable": true
+      },
+      "preservation_passed": true,
+      "floor": 1,
+      "new_audit_rows_retained": 2,
+      "owned_container_absent": true,
+      "seconds": 11.203
+    },
+    {
+      "name": "old-recovery-rollback",
+      "image_id": "sha256:1eb1bcc88a874b3eb2cdd00ea42d58fcfe3d0f142f26a4a30418acadc6e2df70",
+      "checks": {
+        "core_service_uid": true,
+        "worker_stopped_before_unseal": true,
+        "worker_absent_after_reads": true,
+        "no_web_apps_or_listeners": true,
+        "loaded_sealed": true,
+        "manual_unseal": true,
+        "static_secret_matches": true,
+        "historical_audit_valid": true,
+        "client_auth_key_usable": true
+      },
+      "preservation_passed": true,
+      "floor": 1,
+      "new_audit_rows_retained": 3,
+      "owned_container_absent": true,
+      "seconds": 11.283
+    }
+  ],
+  "serving_rollback_supported": false,
+  "rollback_boundary": "same-schema floor1 isolated recovery only",
+  "floor2_rollback_supported": false,
+  "pending_schema_upgrade_proven": false,
+  "original_services_modified": false,
+  "data_retained": true,
+  "recovery_hold": true,
+  "repair_rounds": 0,
+  "owned_container_cleanup_confirmed": true,
+  "original_audit_cutoff": 139,
+  "g18_boundary_result": "same-schema upgrade and restricted recovery rollback passed",
+  "all_security_data_and_original_audit_prefix_preserved": true,
+  "same_database_all_phases": true,
+  "diagnostics_redacted": true,
+  "diagnostics_sha256": "68e3768a8a3882105a1bfaff155bfbb143a17f8fbad0f4a466fce9152e2f1849",
+  "seconds": 48.924,
+  "archive_scope": "G18 same-schema binary upgrade and floor1 isolated recovery rollback only",
+  "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "execution_exit_code": 0,
+  "source_labels": {
+    "final_core_and_agent_revision": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+    "final_core_and_agent_source": "https://github.com/gsmlg-dev/secrethub",
+    "final_core_and_agent_licenses": "MIT",
+    "final_core_and_agent_source_dirty": false,
+    "historical_old_revision": "e5e1107dd7530f65e5b72b0f2ff78c6e4579bf64",
+    "historical_old_source_dirty": true
+  },
+  "migration_inventory": {
+    "installed_versions_count": 48,
+    "before_and_after_versions_equal": true,
+    "pending_migrations": 0,
+    "explicit_migration_no_op": true,
+    "pending_schema_transformation_executed": false,
+    "all_six_october_migration_files_byte_identical": true
+  },
+  "preservation": {
+    "user_tables_checked": 96,
+    "original_audit_rows": 139,
+    "final_audit_rows": 142,
+    "expected_new_audit_rows": 3,
+    "new_audit_event_types": [
+      "vault_unsealed"
+    ],
+    "only_changed_non_audit_table": "public.cluster_nodes",
+    "security_tables_and_original_audit_prefix_unchanged": true,
+    "floor_all_phases": 1
+  },
+  "commands": [
+    "env PYTHONDONTWRITEBYTECODE=1 python3 -B <private scratch>/upgrade-final11/execute-restricted.private.py",
+    "docker image inspect <pinned old Core, final Core and final Agent IDs>; verify platform, source labels and configured service users",
+    "docker exec -i <owned isolated PostgreSQL> psql -X -q -t -A -v ON_ERROR_STOP=1 -h /socket -U secrethub -d <same new copied database>; read-only baseline and after-phase SQL on stdin",
+    "docker run --rm --network none --user 1001:1001 --read-only --cap-drop ALL --security-opt no-new-privileges --env-file <private copied env> --mount <readonly socket and copied runtime inputs> --entrypoint /app/bin/secrethub_core <pinned old/final Core ID> eval <restricted recovery program>; shares and expected data on stdin",
+    "docker run --rm --network none --user 1001:1001 --read-only --cap-drop ALL --security-opt no-new-privileges --env-file <same private copied env> --mount <same readonly inputs> --entrypoint /app/bin/secrethub_core <pinned final Core ID> eval <guarded SecretHub.Core.Release.migrate()>",
+    "Repeat restricted recovery eval with the SAME pinned old Core on the SAME post-final copied database; no restore, reset or down migration",
+    "docker ps -a --filter name=<unique owned invocation>; confirm absence after each eval/migration"
+  ],
+  "private_evidence_digest_references": [
+    {
+      "reference": "upgrade-final11/execute-restricted.private.py",
+      "sha256": "c0e504e5ac04790cdd35115acd18d7fce2e2dd70d79922988f33b9e9cab6faab",
+      "scope": "actual executed private driver, including generalized read-only preservation SQL"
+    },
+    {
+      "reference": "upgrade-final11/preservation-readonly.sql",
+      "sha256": "0a5a1400bb90b679f34b2e8ded3b762d854d00d063146f2ac378fadfba914d09",
+      "scope": "prepared read-only preservation SQL, validated against source fixture; copied execution uses driver SQL covering all user tables"
+    },
+    {
+      "reference": "upgrade-final11/copy-<retained>/G18-execution.private.json",
+      "sha256": "a9b29a05af634d661ab8e11872f73a9ec5fdd13fb0a8e839b520bf4054220c33",
+      "scope": "original private execution report; retained unchanged"
+    }
+  ],
+  "scope_limitations": [
+    "Historical old image is dirty-source provenance, identified only by its immutable image ID.",
+    "Known legacy-read cutover race makes the old image unsafe for serving rollback.",
+    "No old serving process, floor2 activation/rollback, schema downgrade, pending schema conversion, Agent/consumer reopen or full restore acceptance is proved.",
+    "Overall candidate acceptance remains incomplete."
+  ]
+}
