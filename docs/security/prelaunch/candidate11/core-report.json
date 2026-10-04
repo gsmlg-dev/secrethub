@@ -1,0 +1,123 @@
+{
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "platform": "linux/amd64",
+  "commands": [
+    "python3 -B scripts/prelaunch/acceptance.py --config <private fixture config> --output <private result directory> --gates <selected gates>",
+    "docker exec <isolated Core> /app/bin/secrethub_core eval <bounded fixture checks>",
+    "protected HTTP/WebSocket through fixture Caddy mTLS; direct/machine denial probes when selected",
+    "docker restart <isolated Core>",
+    "docker run --rm <same exact Core image> eval/start <bounded runtime fixture probes>",
+    "docker exec <explicit isolated PostgreSQL> createdb/psql/pg_dump <owned disposable databases>"
+  ],
+  "created_at": "2026-10-04T04:48:26.946702+00:00",
+  "gates": {
+    "G01": {
+      "status": "passed",
+      "evidence": "same production image runtime audit keys; missing/development keys block startup",
+      "observations": {
+        "same_image_runtime_key_reverification": true,
+        "missing_and_known_development_keys_block_start": true
+      },
+      "seconds": 99.922
+    },
+    "G02": {
+      "status": "passed",
+      "evidence": "concurrent protected initialization; one committed configuration; private shares",
+      "seconds": 1.601
+    },
+    "G03": {
+      "status": "passed",
+      "evidence": "unreachable database and unmigrated schema refuse initialization",
+      "observations": {
+        "unmigrated_and_corrupt_schema_and_unreachable_database": "unavailable_not_empty",
+        "destructive_initialization": false,
+        "probe": "production release eval starts runtime Repo and Vault; serving fixture untouched"
+      },
+      "seconds": 29.109
+    },
+    "G04": {
+      "status": "passed",
+      "evidence": "concurrent loser and repeated initialize reject without replacing configuration",
+      "seconds": 4.732
+    },
+    "G05": {
+      "status": "passed",
+      "evidence": "malformed/mixed/duplicate/wrong shares rejected; state process remains responsive",
+      "seconds": 0.129
+    },
+    "G06": {
+      "status": "passed",
+      "evidence": "restart sealed; correct shares recover old static ciphertext under same Vault ID; manual seal no-op",
+      "seconds": 18.225
+    },
+    "G07": {
+      "status": "passed",
+      "evidence": "Caddy mTLS HTTP and connected LiveView; no second login",
+      "seconds": 0.091
+    },
+    "G08": {
+      "status": "passed",
+      "evidence": "missing ingress certificate, separate machine route and external network namespace denied",
+      "seconds": 5.628
+    },
+    "G09": {
+      "status": "passed",
+      "evidence": "cross-origin mutation, absent CSRF and cross-origin WebSocket denied",
+      "seconds": 0.066
+    },
+    "G10": {
+      "status": "passed",
+      "evidence": "sealed process live, readiness false, management/unseal available, key/signing denied",
+      "seconds": 3.283
+    },
+    "G11": {
+      "status": "unexecuted"
+    },
+    "G12": {
+      "status": "unexecuted"
+    },
+    "G13": {
+      "status": "unexecuted"
+    },
+    "G14": {
+      "status": "unexecuted"
+    },
+    "G15": {
+      "status": "unexecuted"
+    },
+    "G16": {
+      "status": "unexecuted"
+    },
+    "G17": {
+      "status": "unexecuted"
+    },
+    "G18": {
+      "status": "unexecuted"
+    },
+    "G19": {
+      "status": "unexecuted"
+    },
+    "G20": {
+      "status": "unexecuted"
+    }
+  },
+  "selected_gates": [
+    "G01",
+    "G02",
+    "G03",
+    "G04",
+    "G05",
+    "G06",
+    "G07",
+    "G08",
+    "G09",
+    "G10"
+  ],
+  "disposable_databases": [
+    "secrethub_prelaunch_check_cfa11d198b4d",
+    "secrethub_prelaunch_check_459fabd78b30"
+  ],
+  "candidate_status": "pending_acceptance",
+  "complete": false
+}

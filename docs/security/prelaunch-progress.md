@@ -20,25 +20,42 @@ verification and provisional artifact checks below are scoped evidence.
 
 ## Current acceptance audit
 
-The report files were inspected again after commits `8c88de3` and `181e0f2`.
-No frozen final candidate is accepted. The current diagnostic Core image
+The provisional report files were inspected again after commits `8c88de3` and
+`181e0f2`. The complete frozen final candidate is not accepted. The diagnostic Core image
 `1eb1bcc88a87` still has source revision `e5e1107` and
 `secrethub.source.dirty=true`; committed harness updates do not change that
 image's source provenance. The early Core gates used `ab0e6cbc24ae`, not this
-diagnostic image. Every gate below requires replay on the frozen final artifacts.
+diagnostic image.
 
-| Gate | Inspected provisional evidence | Remaining acceptance |
+Source `c226bf43ba3ed1292db08bcc4506b5435616c22b` is now committed and
+frozen in a separate clean build worktree. Final Linux amd64 images have explicit
+`secrethub.source.dirty=false` labels and that exact source revision:
+
+- Core: `sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3`.
+- Agent: `sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9`.
+- Consumer: `sha256:c4fc8889b6991f9217308d255f0caf5948c06f32c3878259f879ed931b7b9ab6`.
+
+G01–G10 passed on that exact Core image in a new explicitly migrated database,
+using the renewed disposable management ingress. The selected command exited
+zero; [the reviewed redacted report](prelaunch/candidate11/core-report.json) keeps
+G11–G20 unexecuted and `complete:false`. Agent/consumer and recovery acceptance
+remain outstanding. The first input-copy attempt failed its ownership check
+before database creation; its partial staging was retained. The corrected owned,
+network-isolated filesystem copy preserved all input digests and service-readable
+UID/GID/modes before migration and startup. Original fixtures remain preserved.
+
+| Gate | Inspected evidence | Remaining acceptance |
 | --- | --- | --- |
-| G01 | Runtime audit-key gate passed on `ab0e6cbc24ae` | Final image runtime-key and invalid-input checks |
-| G02 | Empty-database initialization passed on `ab0e6cbc24ae` | Final image durability/share-release checks |
-| G03 | Unavailable/corrupt database rejection passed on `ab0e6cbc24ae` | Final image startup negatives |
-| G04 | Repeated/concurrent initialization passed on `ab0e6cbc24ae` | Final image preservation/concurrency checks |
-| G05 | Invalid-share negatives passed on `ab0e6cbc24ae` | Final image rejection/process-survival checks |
-| G06 | Restart/correct-share ciphertext readback passed on `ab0e6cbc24ae` | Final image identity/old-data checks |
-| G07 | Protected administrative access passed on `ab0e6cbc24ae` | Final image protected workflows |
-| G08 | Separate ingress-negative invocation passed on `ab0e6cbc24ae` | Final image route/network/spoofing negatives |
-| G09 | Origin/CSRF negatives passed on `ab0e6cbc24ae` | Final image browser/connected-transport negatives |
-| G10 | Sealed lifecycle passed on `ab0e6cbc24ae` | Final image liveness, unseal reachability and secret/signing refusal |
+| G01 | Runtime audit-key gate passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G02 | Empty-database initialization passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G03 | Unavailable/corrupt database rejection passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G04 | Repeated/concurrent initialization passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G05 | Invalid-share negatives passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G06 | Restart/correct-share ciphertext readback passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G07 | Protected administrative access passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G08 | Separate ingress-negative invocation passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G09 | Origin/CSRF negatives passed on final `7dc01a18b500` | Selected final Core scenario passed |
+| G10 | Sealed lifecycle passed on final `7dc01a18b500` | Selected final Core scenario passed |
 | G11 | Real enrollment/restart/reconnect passed on `43715c4edce1` | Final Core/Agent lifecycle and damaged-state rejection |
 | G12 | Actual consumer lifecycle passed on `1eb1bcc88a87`/`3b95f124b819` | Final pair read/update/denial/revocation/restart readback |
 | G13 | Actual outage rejection and separately observed live expiry passed; helper report remains partial | One final-pair report joining cache/outage/reauthorization observations and debug-configuration scope |
