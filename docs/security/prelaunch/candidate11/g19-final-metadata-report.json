@@ -2,7 +2,7 @@
   "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
   "status": "passed",
   "complete": false,
-  "scope": "Final metadata exports and updated owned documents after final retained-output scan",
+  "scope": "Final metadata exports and owned documents after retained-output scan and completion audit",
   "same_patterns_as_reviewed_final_scan": true,
   "files": [
     {
@@ -22,7 +22,7 @@
     },
     {
       "file": "acceptance-report.json",
-      "sha256": "b58893ac41524324a4258dfd6a842c33735448686cb82e62e1ded46dc25d1e29",
+      "sha256": "ce485fcf5ce778252cc08d36bcdb59309c3c42d853e3341deedf1330b43bd138",
       "findings": false
     },
     {
@@ -33,6 +33,11 @@
     {
       "file": "launch-operations.md",
       "sha256": "b85c74dfdd0577a1f031e3f494695b36fa31109bbeb05eae3cecdd6fea2aaa4c",
+      "findings": false
+    },
+    {
+      "file": "runtime-contract.md",
+      "sha256": "c318fff328d554ef37a38db861e7c69950585e2711e5c1b6d02e70ece71c5a83",
       "findings": false
     }
   ],

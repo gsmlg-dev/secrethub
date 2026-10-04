@@ -91,11 +91,14 @@ responsiveness, not connection to Core or consumer convergence.
 
 ## Current limitations
 
-Production artifact and consumer acceptance is still pending. Agent proof
-authentication, fresh Core authorization and revision-scoped caching are being
-implemented and require complete scoped and real-consumer verification. Missing
-CA trust and offline authorization must fail closed. No source-only check
-qualifies static delivery or PKI consumer enforcement for launch.
+Agent proof authentication, fresh Core authorization and revision-scoped caching
+are implemented. The [combined candidate report](prelaunch/candidate11/acceptance-report.json)
+records scoped source regressions and actual final-artifact enrollment, static
+consumer, cache and PKI checks. Missing CA trust and offline authorization fail
+closed in the selected checks. Full acceptance remains incomplete pending existing
+host alert delivery, backup destination/cadence and recovery-target acceptance,
+and operator production preflight/cutover. Source checks alone do not qualify
+static delivery or PKI consumer enforcement for launch.
 Historical dynamic leases and rotation jobs need an operator inventory before
 adopting the restricted profile; disabling unfinished features does not revoke
 credentials already issued by older configurations.

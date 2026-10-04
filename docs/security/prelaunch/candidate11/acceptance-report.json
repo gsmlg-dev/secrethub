@@ -162,5 +162,118 @@
     "existing host logging/alert integration and actual alert delivery",
     "existing backup destination and cadence; measured cadence/RPO/RTO acceptance",
     "Operator-owned production preflight/network/cutover acceptance; no deployment authorized or performed"
-  ]
+  ],
+  "executed_command_inventory": {
+    "scope": "Executed selected artifact checks; commands remain redacted and unsupported/unexecuted cases retain their gate status",
+    "report_command_fields": [
+      {
+        "evidence": "core-report.json",
+        "field": "commands"
+      },
+      {
+        "evidence": "g11-report.json",
+        "field": "commands"
+      },
+      {
+        "evidence": "g14-pki-report.json",
+        "field": "execution"
+      },
+      {
+        "evidence": "g15-corruption-report.json",
+        "field": "execution"
+      },
+      {
+        "evidence": "g16-service-restore-report.json",
+        "field": "execution"
+      },
+      {
+        "evidence": "g16-service-restore-diagnostic-report.json",
+        "field": "execution"
+      },
+      {
+        "evidence": "g17-history-reconciliation-report.json",
+        "field": "execution"
+      },
+      {
+        "evidence": "g18-report.json",
+        "field": "commands"
+      },
+      {
+        "evidence": "g19-core-report.json",
+        "field": "commands"
+      },
+      {
+        "evidence": "g19-output-scan-report.json",
+        "field": "execution"
+      },
+      {
+        "evidence": "g20-http-worker-report.json",
+        "field": "execution"
+      }
+    ],
+    "supplemental_executions": [
+      {
+        "gates": [
+          "G12"
+        ],
+        "evidence": "g12-static-report.json",
+        "source_private_report_sha256": "ed36aa12d5938959a967b05fa9ebcefc5e24d6e25337462e8d1c5406dc17b458",
+        "commands": [
+          "python3 -B scripts/prelaunch/static_acceptance.py --config <private-fixture>/final-static11/static-config.private.json --shares-file <private-fixture>/independent-final11/recovery-shares.private.json --output <private-fixture>/final-static11/g12-run1"
+        ],
+        "driver_sha256": {
+          "scripts/prelaunch/static_acceptance.py": "02866bb4f422c499f5d516ce10b835cda31f882030bd7790c2873f8a33192784"
+        },
+        "provenance": "Actual root-session tool invocations verified against retained drivers and report hashes; private paths redacted",
+        "notes": "Working directory: clean frozen codex/prelaunch-final11 checkout"
+      },
+      {
+        "gates": [
+          "G13"
+        ],
+        "evidence": "g13-live-cache-report.json",
+        "source_private_report_sha256": "01a49c97019bd9489d08c104b939e89c60f3d3e04472bf596081fcb2eed27353",
+        "commands": [
+          "python3 -B <private-fixture>/final-static11/cache-driver.private.py --phase swap --execute",
+          "python3 -B <private-fixture>/final-static11/cache-driver.private.py --phase observe --execute",
+          "python3 -B <private-fixture>/final-static11/cache-resume.private.py --execute --prior-observer-stopped"
+        ],
+        "driver_sha256": {
+          "final-static11/cache-driver.private.py": "c09e757f1ac5420976bb55813587376bf7bfc805005880fd7db1c20ebe217e89",
+          "final-static11/cache-resume.private.py": "b5a1b3884d23d030c19c77d0275df0b86193a63d8766582412e49da9ded93ce3"
+        },
+        "provenance": "Actual root-session tool invocations verified against retained drivers and report hashes; private paths redacted",
+        "notes": "Initial observer failed on timestamp parsing and was retained; corrected read-only observer passed on the same population without additional reads"
+      },
+      {
+        "gates": [
+          "G19"
+        ],
+        "evidence": "g19-agent-fault-report.json",
+        "source_private_report_sha256": "216da693cb53de5ac9aecfc463aed4cfa2e0ff83cd5b0fc805866c10544bd31f",
+        "commands": [
+          "python3 -B <private-fixture>/final-g19-11/agent-fault-and-scan.private.py --phase fault --execute"
+        ],
+        "driver_sha256": {
+          "final-g19-11/agent-fault-and-scan.private.py at fault execution (retained before output-name amendment)": "b643b0ff339cecf469fda40e4dd662a9500533ba4a6aa7d229bf865e064701e3"
+        },
+        "provenance": "Actual root-session tool invocations verified against retained drivers and report hashes; private paths redacted"
+      },
+      {
+        "gates": [
+          "G20"
+        ],
+        "evidence": "g20-worker-report.json",
+        "source_private_report_sha256": "573febd1af2103658ba403d256fa6c6abc92ff0ce1c49311d2f3e52bb32f8e6a",
+        "commands": [
+          "python3 -B scripts/prelaunch/worker_health_acceptance.py --config <private-fixture>/final-restore11/monitoring/worker-config.private.json --shares-file <private-fixture>/independent-final11/recovery-shares.private.json --output <private-fixture>/final-restore11/monitoring/worker-report.json"
+        ],
+        "driver_sha256": {
+          "scripts/prelaunch/worker_health_acceptance.py": "ca086aab870aafac2e079fbbcd84d2ccf680974d88c46a9157bba09cb7863ea0"
+        },
+        "provenance": "Actual root-session tool invocation verified against frozen driver and retained report hash; private paths redacted",
+        "notes": "Working directory: clean frozen codex/prelaunch-final11 checkout; protected HTTP and host alerts are separately scoped"
+      }
+    ]
+  }
 }
