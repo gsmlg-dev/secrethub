@@ -1,0 +1,40 @@
+{
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "status": "passed",
+  "complete": false,
+  "scope": "Final metadata exports and updated owned documents after final retained-output scan",
+  "same_patterns_as_reviewed_final_scan": true,
+  "files": [
+    {
+      "file": "g17-history-reconciliation-report.json",
+      "sha256": "fd7acf3ae01a55b6e161ee17b995f6b79e24f45a2d7994d133168984ce86866f",
+      "findings": false
+    },
+    {
+      "file": "release-versions-report.json",
+      "sha256": "5d9559af204e28922f16062d420573484e2a31a6d49c785be354bac631f624e4",
+      "findings": false
+    },
+    {
+      "file": "g19-output-scan-report.json",
+      "sha256": "56ff24b466e2dd375f5a8a2a4944ef5650404042ee170eb23bfcd52bc2ccad2b",
+      "findings": false
+    },
+    {
+      "file": "acceptance-report.json",
+      "sha256": "b58893ac41524324a4258dfd6a842c33735448686cb82e62e1ded46dc25d1e29",
+      "findings": false
+    },
+    {
+      "file": "prelaunch-progress.md",
+      "sha256": "f75f12644276ccbefd3d45dc0ac98720f6ca8134f08d88c3ed0c12149016ccb8",
+      "findings": false
+    },
+    {
+      "file": "launch-operations.md",
+      "sha256": "b85c74dfdd0577a1f031e3f494695b36fa31109bbeb05eae3cecdd6fea2aaa4c",
+      "findings": false
+    }
+  ],
+  "sensitive_values_excluded": true
+}

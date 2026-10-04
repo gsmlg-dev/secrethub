@@ -1,0 +1,113 @@
+{
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "platform": "linux/amd64",
+  "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "agent_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+  "complete": false,
+  "provisional": true,
+  "recovery_hold": true,
+  "selected_checks": "passed",
+  "observed_at": "2026-10-04T05:54:52.745214+00:00",
+  "results": {
+    "checks": {
+      "core_service_uid": true,
+      "no_web_apps_or_listeners": true,
+      "loaded_sealed": true,
+      "manual_unseal": true,
+      "worker_required": true,
+      "persisted_crl_present": true,
+      "worker_restarted_pid": true
+    },
+    "phases": {
+      "stopped": {
+        "running": false,
+        "scheduled": false,
+        "sealed": false,
+        "supervised_running": false,
+        "worker_enabled": false,
+        "checked": false,
+        "last_error_nil": false,
+        "retry_attempt": 0,
+        "background_ok": false,
+        "background_required": true,
+        "background_reason": "crl_worker_unavailable",
+        "readiness_ok": false,
+        "ready": false,
+        "readiness_background_passing": false,
+        "seal_passing": true,
+        "liveness_ok": true,
+        "management_ok": true,
+        "management_ready": true,
+        "health_background_passing": false,
+        "health_status": "degraded"
+      },
+      "healthy": {
+        "running": true,
+        "scheduled": true,
+        "sealed": false,
+        "supervised_running": true,
+        "worker_enabled": true,
+        "checked": true,
+        "last_error_nil": true,
+        "retry_attempt": 0,
+        "background_ok": true,
+        "background_required": true,
+        "background_reason": "none",
+        "readiness_ok": true,
+        "ready": true,
+        "readiness_background_passing": true,
+        "seal_passing": true,
+        "liveness_ok": true,
+        "management_ok": true,
+        "management_ready": true,
+        "health_background_passing": true,
+        "health_status": "healthy"
+      },
+      "recovered": {
+        "running": true,
+        "scheduled": true,
+        "sealed": false,
+        "supervised_running": true,
+        "worker_enabled": true,
+        "checked": true,
+        "last_error_nil": true,
+        "retry_attempt": 0,
+        "background_ok": true,
+        "background_required": true,
+        "background_reason": "none",
+        "readiness_ok": true,
+        "ready": true,
+        "readiness_background_passing": true,
+        "seal_passing": true,
+        "liveness_ok": true,
+        "management_ok": true,
+        "management_ready": true,
+        "health_background_passing": true,
+        "health_status": "healthy"
+      }
+    }
+  },
+  "gates": {
+    "G20": {
+      "status": "partial",
+      "selected_worker_checks": "passed",
+      "alert_delivery": "unexecuted"
+    }
+  },
+  "monitoring": "partial",
+  "management_availability": "internal Health API only; protected HTTP/Caddy unexecuted",
+  "agent_executed": false,
+  "cleanup_confirmed": true,
+  "diagnostics_redacted": true,
+  "diagnostics_sha256": "9f1524aa845c73de1def49a3430501f24f1caff4f00f3b8d5ab5ae2c6be33ba9",
+  "copied_database_mutations": "manual-unseal audit, cluster bookkeeping, normal CRL reconciliation; retained",
+  "original_fixture_modifications": false,
+  "seconds": 12.938,
+  "source_private_report_sha256": "573febd1af2103658ba403d256fa6c6abc92ff0ce1c49311d2f3e52bb32f8e6a",
+  "execution_artifact_binding": {
+    "source_dirty": false,
+    "core_image_revision": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+    "agent_image_metadata_revision": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+    "helper_provisional_field": "hardcoded true by frozen helper; selected Core execution uses qualified exact image; alerts remain unexecuted"
+  }
+}

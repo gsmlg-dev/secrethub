@@ -1,22 +1,24 @@
 # Prelaunch implementation evidence
 
-Date: 2026-10-01. Baseline: `c7cb03083f98a7d461120013bf7b3b5933ffafaa`.
+Plan date: 2026-10-01. Evidence refreshed: 2026-10-04. Baseline: `c7cb03083f98a7d461120013bf7b3b5933ffafaa`.
 Implementation branch: `codex/prelaunch-wp1`, isolated under
 `.trees/codex/prelaunch-wp1`. Original checkout edits remain preserved.
 The operator-provided `secrethub-prelaunch-plan.en.md` is authoritative.
 
 **The complete plan is not accepted.** No production deployment, publication,
 credential rotation, persistent-data reset or live Caddy change occurred. Source
-verification and provisional artifact checks below are scoped evidence.
+verification, historical provisional checks and final artifact checks below are scoped evidence.
+The [combined exact-artifact report](prelaunch/candidate11/acceptance-report.json)
+records the final selected checks and the remaining operator acceptance gates.
 
 | Package | Implemented and verified evidence | Outstanding acceptance |
 | --- | --- | --- |
-| WP1 | v4 GF(256) sharing, uniform coefficients, strict/canonical envelopes, independent vectors: 49 tests passed. Separate wrapping/data keys, authenticated generation-bound envelope, durable singleton creation, conservative loading/recovery, restart sealed and manual seal no-op. Combined Vault/audit checks: 128 tests, zero failures, two pre-existing skips. | Final frozen artifact, compatibility and full restore checks |
-| WP2 | Private transport-peer management boundary before HTTP/socket dispatch, no second login/allowlist, CSRF/exact Origin/no-store and separate machine route set. Combined Web regression suite: 115 tests, zero failures. | Final image and actual deployment-network boundary |
-| WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot provisional OCI builds, locked assets/digest and release assembly passed. | Frozen committed source and exact final image qualification; provisional evidence must be rerun |
-| WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. Approved SQL and both reviewed authorization regressions passed 28 Core, 30 existing policy and 17 channel tests. | Clean committed artifact build and final exact-artifact qualification |
-| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. Final Core same-schema upgrade and floor-1 isolated recovery rollback passed on one retained nonempty copy. | Serving/floor-2 downgrade and pending schema conversion are unproved; monitoring qualification and final full restore/RTO/RPO evidence remain open |
-| WP6 | Artifact harness underway. Provisional Core/Agent images built, empty candidate explicitly migrated, real nonroot Core started outside checkout. | All G01–G20 tied to a frozen source and exact final image identifiers |
+| WP1 | v4 GF(256) sharing, uniform coefficients, strict/canonical envelopes, independent vectors: 49 tests passed. Separate wrapping/data keys, authenticated generation-bound envelope, durable singleton creation, conservative loading/recovery, restart sealed and manual seal no-op. Combined Vault/audit checks: 128 tests, zero failures, two pre-existing skips. | Final Core integrity and fresh-restore checks passed; full candidate remains incomplete |
+| WP2 | Private transport-peer management boundary before HTTP/socket dispatch, no second login/allowlist, CSRF/exact Origin/no-store and separate machine route set. Combined Web regression suite: 115 tests, zero failures. | Final fixture ingress checks passed; production network acceptance remains operator-owned |
+| WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot provisional OCI builds, locked assets/digest and release assembly passed. | Clean frozen final Linux amd64 artifacts built and tested; no production qualification is inferred |
+| WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. Approved SQL and both reviewed authorization regressions passed 28 Core, 30 existing policy and 17 channel tests. | Final static/PKI lifecycle checks passed; damaged same-generation repair is unsupported and held |
+| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. Final Core same-schema upgrade and floor-1 isolated recovery rollback passed on one retained nonempty copy. | Final fresh restore and worker HTTP checks passed; host alerts and backup destination/cadence remain open. Serving/floor-2 downgrade and pending schema conversion are unsupported |
+| WP6 | Artifact harness runs the clean frozen Linux amd64 Core/Agent/consumer outside the checkout under real service UIDs and explicit migrations. Current final gate evidence is recorded below. | Final G01–G14 and G16 selected checks passed; G15 rejection passed with repair held, G17 selected reconciliation passed; G19 retained-output qualification passed and G20 awaits alert delivery |
 
 ## Current acceptance audit
 
@@ -38,8 +40,8 @@ frozen in a separate clean build worktree. Final Linux amd64 images have explici
 G01–G10 passed on that exact Core image in a new explicitly migrated database,
 using the renewed disposable management ingress. The selected command exited
 zero; [the reviewed redacted report](prelaunch/candidate11/core-report.json) keeps
-G11–G20 unexecuted and `complete:false`. Agent/consumer and recovery acceptance
-remain outstanding. The first input-copy attempt failed its ownership check
+G11–G20 unexecuted and `complete:false`. Remaining gate details are in the table below; later reports qualify separate
+Agent/consumer and restore scenarios. The first input-copy attempt failed its ownership check
 before database creation; its partial staging was retained. The corrected owned,
 network-isolated filesystem copy preserved all input digests and service-readable
 UID/GID/modes before migration and startup. Original fixtures remain preserved.
@@ -48,8 +50,8 @@ Separate reviewed exports now record the [G18 restricted compatibility
 rehearsal](prelaunch/candidate11/g18-report.json) and [Core-only G19 VM fault
 check](prelaunch/candidate11/g19-core-report.json) on the final Core image.
 Both retain `complete:false`; the G01–G10 report's unexecuted entries describe
-that invocation only. Final Agent/consumer, remaining recovery gates, full log
-collection and the complete candidate export scan remain outstanding.
+that invocation only. Final static/PKI and fresh restore checks have since passed. Stale-database reconciliation also passed. The refreshed retained-output scan also passed. Existing host alert delivery and
+backup destination/cadence acceptance remain open.
 
 | Gate | Inspected evidence | Remaining acceptance |
 | --- | --- | --- |
@@ -66,13 +68,13 @@ collection and the complete candidate export scan remain outstanding.
 | G11 | Final Core `7dc01a18b500` and Agent `744137294f71` passed real enrollment/restart/reconnect and damaged-state rejection in 157.779 seconds | Selected final lifecycle scenario passed; full candidate remains incomplete |
 | G12 | Final Core/Agent/consumer passed initial/update readback, denial, policy revoke/regrant, restarts and outage in 353.039 seconds | Selected final static lifecycle scenario passed |
 | G13 | Final static outage rejected warmed reads; same-image logger-debug observer proved one population, one warm reuse and count-1 expiry at 301.289 seconds | Selected final bounded-cache checks passed; debug configuration scope is recorded separately from normal logging |
-| G14 | Real PKI consumer issue/revoke/reconnect report passed | Final pair enforcement measurement with fresh leaves and explicit session semantics |
-| G15 | Copy-only corrupt-state checks passed; report remains partial | Final artifacts' old/corrupt-state behavior, with supported recovery or explicit fail-closed hold |
-| G16 | Restricted integrity, PKI reopen and actual static-consumer reopen passed in separate provisional drills | Full final-artifact restore inventory, consumers and measured recovery/data-loss window |
-| G17 | Actual older-7/newer-9 history refusal and authoritative reconciliation passed provisionally; report remains partial | Final-artifact older-database restriction and safe recovery with retained history |
+| G14 | [Final PKI report](prelaunch/candidate11/g14-pki-report.json) passed on the frozen Core/Agent and qualified consumer | Final run2 passed; rejection upper bounds 13.186–13.197 seconds within 30 seconds. Resumption disabled; connection termination untested |
+| G15 | [Final corruption report](prelaunch/candidate11/g15-corruption-report.json) passed required rejection checks; helper remains partial for unsupported repair | Final copy-only rejection checks passed in 308.806 seconds. Same-generation in-place repair unsupported; quarantine and damaged copies retained |
+| G16 | [Full restore report](prelaunch/candidate11/g16-service-restore-report.json) and [diagnostic-complete repeat](prelaunch/candidate11/g16-service-restore-diagnostic-report.json) passed on final artifacts | Final full fresh restore passed: static2/rev3, audit/CA key, actual revoked/control requests, identity/watermark preservation; consumer wall 198.903 seconds, snapshot age 237.185 seconds. Diagnostic-complete serving repeat passed (147.210-second driver); RPO/RTO/cadence unaccepted |
+| G17 | [Final history report](prelaunch/candidate11/g17-history-reconciliation-report.json) passed old-generation rejection, authoritative backup reconciliation and actual denied/allowed requests in 116.403 seconds | Old database remains held. Serving the same complete newer backup is separately qualified by G16; helper partial/hold flags remain explicit |
 | G18 | Final `7dc01a18b500` same-schema upgrade and same-database recovery rollback to `1eb1bcc88a87` passed at floor 1; explicit migration was a no-op with all 48 versions installed | Only the isolated recovery boundary is qualified; old serving/floor-2 downgrade and pending schema conversion are unsupported |
-| G19 | Final Core and Agent isolated VM faults passed with dump suppression and no known sensitive output | Full final Core/Agent/consumer log collection and complete exported-artifact scan remain open |
-| G20 | Required-worker stop/readiness/restart recovery passed on `1eb1bcc88a87`; report remains partial | Final image replay and selected existing monitoring integration; host alert delivery is unexecuted |
+| G19 | Final Core and Agent isolated VM faults passed with dump suppression and no known sensitive output | [Final output scan](prelaunch/candidate11/g19-output-scan-report.json) passed 163 retained files and three exact-bound container logs (166 observations); final metadata/docs use the same held-material checks |
+| G20 | Final internal worker check passed in 12.938 seconds; [protected HTTP report](prelaunch/candidate11/g20-http-worker-report.json) passed actual healthy/stopped/recovered responses | Final actual protected HTTP healthy/stopped/recovered checks passed in 5.969 seconds; existing host alert integration/delivery remain unexecuted |
 
 Inspected private report references: `artifact-core-refreshed-1/report.json`,
 `artifact-core-refreshed-ingress-1/report.json`,
@@ -91,6 +93,10 @@ artifact digests, platform, format/schema versions, commands and measurements;
 this audit table is not that archive or a release acceptance claim.
 
 ## Review repairs
+
+The sections below retain historical checkpoints in execution order. Outstanding
+work, failures and permission questions describe the state at each checkpoint;
+the current acceptance tables above and combined report record the latest status.
 
 Legacy PKI used a known development encryption key in some historical paths.
 Even a decryptable matching certificate/private-key pair cannot prove a legacy
@@ -145,12 +151,12 @@ local database outside the isolated partition contract and failed PostgreSQL
 password authentication. That fixture and service were left untouched; its result
 is not claimed green. Dynamic lifecycle remains outside the enabled scope.
 
-Remaining work is consumer authorization/integration, final-image qualification,
+At this stage, remaining work was consumer authorization/integration, final-image qualification,
 full restore/security-history reconciliation, G01–G20 evidence and runbook
 verification. [Launch operations](launch-operations.md) is the authoritative
 operations procedure; production cutover remains the operator's responsibility.
 
-## Latest consumer and redaction checks
+## Historical consumer and redaction checkpoint
 
 Agent/CLI proof, identity, floor and cache regressions passed for completed
 source slices (59 Agent tests and 38 CLI tests before the final lint-only refresh).
@@ -159,7 +165,7 @@ isolated Core responses: initial/update private atomic file readback succeeded;
 denial and outage preserved the file; stdout excluded values (13 tests, no
 failures in that focused socket suite). These remain source fixtures.
 
-Core authorization now has 25 focused tests with one remaining failure; actual
+At this checkpoint, Core authorization had 25 focused tests with one remaining failure; actual
 independent-connection concurrency, revocation and floor-race cases passed.
 The outstanding query casts `text[]` against a `varchar[]` policy column.
 A one-line matching-type patch is prepared but unapplied. The recovery
@@ -627,4 +633,148 @@ used a named isolated process holding disposable shares, plaintext and private
 key material on stdin. No main service applications or listeners started. The
 frozen image inherited `ERL_CRASH_DUMP=/dev/null`, stopped with a nonzero exit,
 retained no dump, passed known-sensitive-output checks and confirmed owned
-cleanup. Full candidate log/export scanning remains open.
+cleanup. At that stage, full candidate log/export scanning remained open.
+
+The [final selected G20 worker check](prelaunch/candidate11/g20-worker-report.json)
+passed in 12.938 seconds on an independently copied database in the new isolated
+PostgreSQL 16 instance. It required an actual active Client Auth authority and
+persisted current CRL. Stopping the required CRL worker changed readiness from
+true to false; liveness and internal management readiness remained true. Worker
+restart restored readiness with a new PID. UID 1001, no serving listeners, manual
+unseal, private diagnostics and owned cleanup passed; the original Core stayed
+unchanged. The frozen helper hardcodes `provisional:true` in its emitted report;
+the export records the separately verified exact clean artifact binding instead
+of modifying that raw field. At that stage, G20 was partial: protected HTTP under
+this fault and existing host alert delivery were unexecuted, and monitoring choices
+were unanswered. Later evidence qualifies protected HTTP; host alert delivery
+still awaits operator input. Both unsuccessful fresh-PostgreSQL initialization instances/volumes
+were retained; the corrected instance exposes no TCP listener and has separate
+internal and mounted Unix sockets. No original database was reset.
+
+## Final candidate 11 PKI and fresh backup progress
+
+Final G14 passed on frozen source `c226bf43ba3ed1292db08bcc4506b5435616c22b`
+and the exact final Core/Agent images. The continuation reused the owned singleton
+generation-1 authority after the failed first invocation; no authority reset or
+reinitialization occurred. The first report and driver/pins remain retained.
+Canonical mount ordering fixes a reproduced harness false rejection while retaining
+all mount fields, container IDs, configuration and incarnation checks.
+
+Actual Caddy requests accepted the valid client and rejected missing/untrusted
+credentials. With the Agent stopped for two seconds, publication was deliberately
+withheld and the old credential remained accepted. After reconnect, new handshakes
+and existing-connection requests rejected the revoked credential within measured
+upper bounds of 13.186 and 13.197 seconds from before the revocation request, below
+the explicit 30-second fixture bound. An attempted reuse request also rejected
+within 13.194 seconds. Resumption is disabled by the tested consumer policy; no
+resumed-session success or immediate TLS-connection termination is claimed.
+The unrevoked control remained allowed. Refresh reached generation/CRL 3; old and
+corrupt bundles rejected without losing watermarks. Actual Agent and independent
+TLS/HTTP consumer watermarks were retained, alongside a generation-1 pre-revocation
+dump taken before Agent stop and revocation. All owned containers stopped and
+original machine/enrollment identity and Core incarnation remained preserved.
+
+The consistent snapshot completed in 36.673 seconds, including original service
+recovery and manual unseal. Database and Agent/static/PKI identity archives are
+separate; unseal shares remain independently held. A new empty database on the
+isolated PostgreSQL 16 instance restored successfully. Restricted integrity checks
+passed in 10.519 seconds: correct manual unseal, static value, historical audit
+chain and original CA key challenge, with no serving listeners and the required
+worker stopped before unseal. Database inventory and generation/CRL 3 remained
+preserved. Full serving reopen, corruption/history and final export scanning are
+separate gates; neither this snapshot nor the restricted checks accepts backup
+cadence, alert delivery or production cutover.
+
+Final G16 serving reopen passed after the restricted restore. Actual Core/Agent
+processes used UIDs 1001/1002 with copied inputs and persisted identities; protected
+manual unseal preceded fresh restored Agent heartbeat and static version-2/revision-3
+readback. The independent copied consumer denied the retained revoked leaf and
+allowed its unrevoked control, preserving TLS/HTTP watermarks. Vault, authority,
+certificate, revocation and issuance inventory stayed unchanged. All transient
+owned containers were removed, and the original fixture services recovered with
+manual unseal, the same identity and authorized static readback. Restore-start to
+consumer-reopen wall time was 198.903 seconds; snapshot age at reopen was 237.185
+seconds. The reopen driver including original-service recovery took 222.799 seconds.
+These are measured fixture durations and one snapshot age, not accepted RTO/RPO or
+backup cadence. G17 stale-database reconciliation, corruption, logging/export and
+monitoring/alerts remain separate qualifications.
+
+Final G15 selected rejection checks passed in 308.806 seconds. Invalid live CRL
+reload preserved last-known-good trust and rejected the revoked client while
+allowing the control. Damaged bundle restart and independently damaged TLS/HTTP
+watermark restarts failed closed. Manager corruption remained quarantined; ordinary
+applies rejected without removing trust history. An explicit copy-only attempt to
+recover the exact approved signed bundle rejected with `corrupted_existing_generation`:
+in-place same-generation repair is unsupported, and its recovery hold remains.
+All damaged copies and the original trust inventory were preserved, and owned
+cleanup passed. The raw helper keeps G15 partial; the export distinguishes passing
+rejection checks from unsupported repair. No repair implementation or production
+state change is inferred.
+
+Final G20 protected HTTP qualification passed in 5.969 seconds on the independently
+copied monitoring database and exact final Core image, with actual Core/Web apps
+in an owned service-UID process and a separate protected fixture proxy. Protected
+manual unseal preceded the healthy/stopped/restarted sequence. Readiness changed
+200/true → 503/false (`crl_worker_unavailable`) → 200/true. General health remained
+HTTP 200 and changed healthy → degraded → healthy; liveness and protected
+management stayed HTTP 200. The supervised worker restarted under a new PID.
+Original container identity/configuration/incarnation stayed unchanged and owned
+cleanup passed. The same-VM control and actual HTTP responses were retained
+privately for final scanning. G20 remains partial solely for existing host alert
+integration/delivery; no alert provider or monitoring choice was invented.
+
+The diagnostic-complete G16 repeat also passed, including actual static/PKI
+readback, preserved authority/revocations/watermarks and original-service recovery.
+Its owned serving driver took 147.210 seconds and retained helper/Core fixture
+streams plus authoritative-reader diagnostics. The prior executed driver and first
+report remain retained; run1's discarded-output limitation is explicit. Repeat
+consumer wall time of 1144.223 seconds is measured from the original database
+restore and includes intervening tests and review, so it is not a continuous
+recovery performance comparison. Repeated snapshot age was 1182.505 seconds;
+backup cadence and RPO/RTO remain unaccepted.
+
+The first reviewed G19 retained-output scan exited zero over 138 explicit files
+and three exact-bound container logs (141 observations), including original
+Core/info Agent and the stopped same-image debug Agent. Held shares/static values,
+private keys and encoded/decoded runtime-key patterns were supplied privately;
+no known sensitive-value, private-key-header or credential-bearing-URL finding
+was detected. Failure evidence was included. Future G17 retry and final exports
+require an additional reviewed inventory scan; this result retains selected
+inventory scope and does not reconstruct run1's discarded streams.
+
+Final G17 run3 passed selected history/reconciliation checks in 116.403 seconds.
+The old snapshot retained generation/CRL 1 and unrevoked client/control rows,
+while actual manager and TLS/HTTP consumer history remained generation/CRL 3.
+The old bundle rejected; no watermark, identity or directory was deleted.
+Actual revoked-client denial and control acceptance passed before and after
+validating the separately restored complete newer authoritative backup. Audit,
+original CA/private-key match and the complete active revoked set matched the
+retained signed CRL; all eleven publication fields matched exactly. Full retained
+state, including installation-local `applied_at`, stayed unchanged. The old
+database remains held; full serving of the same newer backup is the separate G16
+qualification. Helper partial/recovery-hold flags remain preserved.
+
+Failed run1 and run2 databases/preparation/diagnostics were retained. Run1 used an
+invalid harness fixture-prefix shape; run2 compared the eleven-field Core bundle
+against an Agent manifest with an additional local timestamp. The approved bounded
+comparator amendment validates both exact field sets, every wire value/type and
+a valid timezone-aware local timestamp, then preserves the full retained-state
+equality assertion. The saved failure regression and 68 negative cases passed;
+independent final review found no unexpected failure. No source/artifact change,
+security assertion removal or trust-history lowering occurred.
+
+The refreshed final G19 scan passed all 163 selected retained files and three
+exact-bound Core/info-Agent/stopped-debug-Agent logs (166 observations), including
+failed G17 invocations, the successful retry, comparator evidence, final restore
+streams and staged exports/documents. Zero held-sensitive-material, private-key
+marker or credential-bearing-URL findings were detected. Final metadata exports
+and document additions receive the same checks before commit. Exact Core/Agent
+release metadata was read as the service UIDs from immutable images: both
+`1.0.0-rc10`, ERTS `16.4.0.2`; owned metadata readers were removed.
+
+Implementation and isolated selected acceptance evidence are now reviewable.
+The complete plan and production readiness remain unaccepted: the existing host
+logging/alert system, actual alert delivery, backup destination/cadence and
+cadence/RPO/RTO acceptance are still unspecified/unexecuted. Production network
+preflight and cutover remain operator-owned. No deployment, publication, real
+credential rotation, live Caddy change, persistent-data reset, merge or push occurred.

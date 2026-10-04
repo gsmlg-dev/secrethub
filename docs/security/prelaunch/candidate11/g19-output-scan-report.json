@@ -1,0 +1,1682 @@
+{
+  "status": "passed",
+  "complete": false,
+  "provisional": false,
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "agent_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+  "consumer_image_id": "sha256:c4fc8889b6991f9217308d255f0caf5948c06f32c3878259f879ed931b7b9ab6",
+  "selected_inventory_only": true,
+  "inventory_reviewed_by_parent": true,
+  "observations": [
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-candidate11/caddy.private.log",
+      "sha256": "dd6c570c895ff2513a66960cfbba1d2de9534f94152953c9988ba9a16afbd0de",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-candidate11/execution.private.log",
+      "sha256": "722fb63a7ea6f3042e32cbd7ea653f4d6eae0e8945664aba5655b3c823a7d421",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-candidate11/g01-g10-run1.private.log",
+      "sha256": "c425161bae1cc4b5f1a21bd1b41124624ad7112b2a38ca8e23f5f1db28ff5aa7",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-candidate11/g01-g10-run1/report.json",
+      "sha256": "6c8f0f95d04800cef749fc515feea11c3aa293f27b6a5d5aba151476323bbc62",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-candidate11/g19-run1.private.log",
+      "sha256": "f299a04ad70de030bc7b083f0bc83140d0d74dc97e3d3eda06232c92e88e89f1",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-candidate11/g19-run1/report.json",
+      "sha256": "7df1c342f72f47cbe2791f5bc46dc559e3e4f68eaef88b1d545f182b14c638d0",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-candidate11/schema-key-share-inventory.json",
+      "sha256": "f4d3ef172f91fd976a16a28dc13c0d9b9af82c3e3aa038f95bacfa6f240e3829",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-corruption11/g15-run1/command-diagnostics.private.log",
+      "sha256": "2b10ca29bda8495974e9adf55d39331ae7da4c85f6c436311b1b2d54992beb4c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-corruption11/g15-run1/report.json",
+      "sha256": "9508bec97f6aaa1ec4c28a183100212dee3ecd08d53157565fa487f8bec6ec88",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/acceptance-report.pending-final-scan.json",
+      "sha256": "045c7bae661d09b9e2521d7367c315c63e0336e3d4f52543f77c137af43ba654",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/archived-candidate11/core-report.json",
+      "sha256": "6c8f0f95d04800cef749fc515feea11c3aa293f27b6a5d5aba151476323bbc62",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/archived-candidate11/g11-report.json",
+      "sha256": "4ec80ad52fe30e1a3ccb70fc5b935a821217d738e2f3c05bfd6d347e9b636cbd",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/archived-candidate11/g12-static-report.json",
+      "sha256": "f0a8d8f1a127b3aa88aa1758be64601772401b5e8856ad2d1e39c3235ec08cb3",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/archived-candidate11/g13-live-cache-report.json",
+      "sha256": "a3fe7d1ac076445bcf11d478456317389919a19eeb45e6d6387a02d408d0408b",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/archived-candidate11/g18-report.json",
+      "sha256": "d4dca7bf874209bd8db0becd862e12bede62e259764306597388e0d6079f80fb",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/archived-candidate11/g19-agent-fault-report.json",
+      "sha256": "041e6adfd6e6659f7f3e534f964aeb52303be786700e9e7a95e07d1bb8cf6557",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/archived-candidate11/g19-core-report.json",
+      "sha256": "eeec3a46ca7d57f8d6a9ca03ffe091d2225f7226ddb48ce5e2918450f8464e95",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/archived-candidate11/g20-worker-report.json",
+      "sha256": "d79f80c31fa0c9dff8baf65122cf3664d4dfec8a1771b0cb8f77f885dd3e1a80",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/documentation-launch-operations.md",
+      "sha256": "4b8105035a54071ec0e1f56b79fbd802d24cd56110f95502546e06bc10e69e7c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/documentation-prelaunch-progress.md",
+      "sha256": "4fcf0d94b68fd82be0fc1af895ed66fc5482b29c1cbf1f13aecbe646fbe1c8ca",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/g14-pki-report.json",
+      "sha256": "b3b97fcc4f91a211594fdccfb49ed797a36e286debb7e1a4fa50338c6d3fdbc1",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/g15-corruption-report.json",
+      "sha256": "78f6aec882234fa620a6a5c6eb5f3b78783e4f86546b997d0c01fff4a3b9a075",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/g16-service-restore-diagnostic-report.json",
+      "sha256": "7e9ba3523bfe908637e4954083e9bc54363a3e791b942526ea914f0a9ca84564",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/g16-service-restore-report.json",
+      "sha256": "de9451dd514f0e370cd6242a94f2118cf95998e5df3fd3d8e0919a763263de68",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/g17-history-reconciliation-report.json",
+      "sha256": "fd7acf3ae01a55b6e161ee17b995f6b79e24f45a2d7994d133168984ce86866f",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/g20-http-worker-report.json",
+      "sha256": "94e6b32add9f8dbe9b3efe5c768b2ec0f5e702408c944bcdd892b5ea9e3e8fd9",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-exports11/release-versions-report.json",
+      "sha256": "5d9559af204e28922f16062d420573484e2a31a6d49c785be354bac631f624e4",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-g19-11/agent-fault-run1/fault-diagnostics.private.log",
+      "sha256": "f0402c8818ce4ad02a42d8fa19163d182b154c0bb4febcb27a14394a23eb1769",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-g19-11/agent-fault-run1/filesystem-diff.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-g19-11/agent-fault-run1/report.json",
+      "sha256": "216da693cb53de5ac9aecfc463aed4cfa2e0ff83cd5b0fc805866c10544bd31f",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-g19-11/output-scan-run1/report.json",
+      "sha256": "c64a00474abc4b2f33da6dfa394de418e1210f94d21a148352d3b58897745c4b",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/comparator-regression.private/comparator-amendment.private.patch",
+      "sha256": "4fb3ffc8840adfdeae45e9cb9be7cadc7e62b570cd9713e466e412692e14dd41",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/comparator-regression.private/default-cli-report.private.json",
+      "sha256": "84699fcdfd2465073ddcf7068a78753cd70eb2d0dea3137849ddbb8916bf01e4",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/comparator-regression.private/evidence-manifest.private.json",
+      "sha256": "205a410a623439dba4a5f006f3dc94b07405a8779bd453457c3eef2a990f38d9",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/comparator-regression.private/green-report-parent.private.json",
+      "sha256": "940b9c7128734cc998f4cab21ec436c7bdc17118e81eb1c849ace14bedf602f0",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/comparator-regression.private/green-report.private.json",
+      "sha256": "940b9c7128734cc998f4cab21ec436c7bdc17118e81eb1c849ace14bedf602f0",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/comparator-regression.private/handoff.private.md",
+      "sha256": "f69ab0c4d837842ea57fae1773523ace26d28600896f3f56e36568ed249fe0d2",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/comparator-regression.private/red-report.private.json",
+      "sha256": "5dc749e27d3061b3cc7ec91faf2aeee4235cda1665d14bc65674123b58d3f6f0",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/comparator-regression.private/validation-report.private.json",
+      "sha256": "33ca1d192f53a82a867993956440e0fcdaa28d314959959a4ae07867fc6a7d70",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run1-preparation.private/config-validation-diagnosis.private.json",
+      "sha256": "193c58778f567610196fcdfd8b7876a34f6a74663b6b2a54613d20fd37f8ae40",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run1-preparation.private/read-only-db-diagnosis.private/database-exists.private.log",
+      "sha256": "fe8edeeb98cc6d3b93cf2d57000254b84bd9eba34b4df7ce4b87db8b937b7703",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run1-preparation.private/read-only-db-diagnosis.private/postgres-after.private.log",
+      "sha256": "cd5794f8a9b2a8b1104d781e40cd6c61f819d10e0062369d5d7da66b4bb0dd7c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run1-preparation.private/read-only-db-diagnosis.private/postgres-before.private.log",
+      "sha256": "3393a1f0a6a28332f7be5fd6d8c33bf60a617fa4e34ca5591b5ca4153e4c0fbd",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run1-preparation.private/read-only-db-diagnosis.private/restored-summary.private.log",
+      "sha256": "b1cd0b32b4e12f4a8e3df71a01d7eda7a9d8cf9fd64b064fe74022e924ee0aff",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run1-preparation.private/read-only-db-diagnosis.private/sanitized-report.private.json",
+      "sha256": "144bc822fd62e6459da8e8e0d911760957e65a6ab19c1de633427d8ea94180cb",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2-preparation.private/old-restore-diagnostics.private/command-1.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2-preparation.private/old-restore-diagnostics.private/command-2.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2-preparation.private/old-restore-diagnostics.private/command-3.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2-preparation.private/old-restore-diagnostics.private/preparation-report.private.json",
+      "sha256": "01c24e6b435bb86190d0431f3d551753796558c0da977d26110e36abf552e66d",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2/authoritative-core-diagnostics.private.log",
+      "sha256": "1e1663668becc1057f9afbaaa90c9e4148a9176bad73c8958dc4f3d5a79ed008",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2/bundle-shape-diagnosis.private/sanitized-diagnosis.private.json",
+      "sha256": "4c22f7f94d1cee4d5cb14c30288b5350876b2fb34c8829be9211af67c2dfd6cc",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2/command-diagnostics.private.log",
+      "sha256": "c99d12de93184bc1a251b4943d2727872034e0b0ad1919d8543b39ba2f3d66af",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2/old-core-diagnostics.private.log",
+      "sha256": "07e074f8dca21022bcc72e7d9737711c6131897108b9331c6c72c6807bf195bb",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2/reconciliation-report.json",
+      "sha256": "5c4de91e790967d3d335254d3a996d8d2a80bd814d12502c8ef91c517e210cd4",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run2/report.json",
+      "sha256": "cd2698b4e3f314cf40132f6c3aa38624ea1efededf9ad65ae61846b3a86b591b",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3-preparation.private/old-restore-diagnostics.private/command-1.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3-preparation.private/old-restore-diagnostics.private/command-2.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3-preparation.private/old-restore-diagnostics.private/command-3.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3-preparation.private/old-restore-diagnostics.private/preparation-report.private.json",
+      "sha256": "01c24e6b435bb86190d0431f3d551753796558c0da977d26110e36abf552e66d",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3/authoritative-core-diagnostics.private.log",
+      "sha256": "14df786ca93177d373216e94841477e7a5bd2f4516afdd2cc02f60c72f3fd4b2",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3/command-diagnostics.private.log",
+      "sha256": "598be2e470f4f51ffe2f3c5f20ab7a45e047f432af1d787bbb0fd00f7fee09ff",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3/old-core-diagnostics.private.log",
+      "sha256": "fdca8d7cccd5ae634875e73399f38c114bcb451105b3e32c219e0d17a6a96cad",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3/reconciliation-report.json",
+      "sha256": "9e7197fb139989eae86f4cdc53f9aa3e69fa35e2ad9e68c8f83ba7e0141aec08",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/g17-run3/report.json",
+      "sha256": "fb1ed02975a24819a7dba513020ac08ca7a03c1278cd714abf90fe5d65e1e7d8",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-history11/source-pins.private.json",
+      "sha256": "57c4ac55cd839688aa90f4f5dc7e1530696886b87ca21f34a3ce3087cf7d4153",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-management-tls11/original-input-digests.json",
+      "sha256": "2f4a8e194e8617f32482f9bbb5a04b4b0a11d5242c9a682967992ce685f38166",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-management-tls11/preparation-private.log",
+      "sha256": "5899e336b0b8c9f24f797985b66a497388b370bc01f0c6cca69e5665c63b437c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-management-tls11/preparation-report.json",
+      "sha256": "5a89a0cd6cd883876b6540e050b26b7473935923a58be9010cc2c862ebc8073a",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/diagnosis-run1.private/core-logs.private.log",
+      "sha256": "eefdad5824e6c1d2668669b5163f00cd94766b3f94057dbfb8c725ef820b0d24",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/diagnosis-run1.private/full-material-repro.private/full-material-commands.private.log",
+      "sha256": "3fea4b2af0feb57b448375b22e4bc6903e8603122f6d1bc6ef76919b16bc71c3",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/diagnosis-run1.private/openssl-readonly-probe.private.log",
+      "sha256": "f847e5ca6297b06e9a0f9450c3c63611c89f9c588caac4446973f93edbc8558b",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/diagnosis-run1.private/openssl-repro.private/stderr.private.log",
+      "sha256": "50e2cb454a35e1d26a53ee4740618b66034bbf5ddba7becfcca75129348ebc9d",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/diagnosis-run1.private/openssl-repro.private/stdout.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run1/report.json",
+      "sha256": "5011d8f927c529cc84d79f6a990d75a0a75e12efc355ca0a1650b76c06070937",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0001-command.private.json",
+      "sha256": "9a448c79b07eef49aa52176276185dafba7c9d25ab5481801657ce17f6063457",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0002-api.private.json",
+      "sha256": "abb9df2fb7f7752c797a90f6052eb27cdc76520ae52ccd855f89241f686642df",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0003-api.private.json",
+      "sha256": "240e01c57cd86c119cee21b8bba1255e0423a30c532380bc1311de0234400a8a",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0004-command.private.json",
+      "sha256": "61a0c84784169b9ea9d3e493a59960ecb5d630f35345edb77a9e6575fa503540",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0005-command.private.json",
+      "sha256": "a220add9351f223f818c5a6373951c6bf53e5c2a0e56e91eef32241c844b6c87",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0006-command.private.json",
+      "sha256": "6f0cf2745a7c43b9c29c66dbea57b8bb056b69f368d09e8fb4863b6d64414e8c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0007-api.private.json",
+      "sha256": "6d01c4d06586a9ef469a3f0f4b08a66711a1488dd68a547f848d40bad2cbb46d",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0008-api.private.json",
+      "sha256": "a8ee1b5b8e6ffd67d9bd3598ac4002e2f46097dc02ea21fe205fa29c40d6473c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0009-api.private.json",
+      "sha256": "f81998fe4bb5ea4ee148d06b83f78ef7ed7301a183b8a8eead7273cf22228f21",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0010-api.private.json",
+      "sha256": "029d587a123225872d8bd15e7f85c3b96176a6e3db3392c425c238abd86ea663",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0011-command.private.json",
+      "sha256": "8d2e2931757a52812018da0f68acd6f8e915f51a8da91e5158f157bccc93904e",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0012-command.private.json",
+      "sha256": "8c95d244728d3acedb74f6876c80e10cb35115e53037860cb8b85a7fbd6294b1",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0013-command.private.json",
+      "sha256": "117b63ef38ce7a37dec1c840803044e7d04881c6a5023505a5b424c963179e8c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0014-command.private.json",
+      "sha256": "f66e4f166a3cb4a770daa0c5a172be4723c974d857c410046f90c83c3ea0d7b7",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0015-command.private.json",
+      "sha256": "09b7f5983414691766689ca6df8721759f249c2581c515bb245fcd36b4cfc87c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0016-api.private.json",
+      "sha256": "15f4ec8cb2ecb540a13efcac1a00723156796de63108d7fbaf558b7dd33961fe",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0017-command.private.json",
+      "sha256": "607a0923153f9b1c280b97232dfc611fed1832b40542bb83f58622384013e48d",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0018-api.private.json",
+      "sha256": "a4bc87e98e651928a14ea9e1038d95ff59f8dacf0501a5f45c477392a91cdefb",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0019-command.private.json",
+      "sha256": "56d5328b7c6ddc769ec4d6dfbf26a808f360a18e32f0c2ec7256f0091b7fb651",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0020-api.private.json",
+      "sha256": "fc0f55aae6746d9a2220555c0257f8dd7e9091cc4b1606a192057c19d06095ff",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0021-api.private.json",
+      "sha256": "abea22dbac5f5b07bf0a77a36c1ad132dfedcd1ef37c4d7f37e3bc6a5d88b1c5",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0022-command.private.json",
+      "sha256": "6723fdfb5610c4782fefcdb06244222f45600863a81606ddbf29d2983d7fc8b3",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0023-command.private.json",
+      "sha256": "09b7f5983414691766689ca6df8721759f249c2581c515bb245fcd36b4cfc87c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0024-command.private.json",
+      "sha256": "efb39c395cc40850b57a41fd68a055d10c4aaa4d30a1b766df570719603915d7",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0025-api.private.json",
+      "sha256": "7525fa961eb3e0a4d9e769b1fc30f2d890069853ed29854a2fcb1f262e98a685",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0026-api.private.json",
+      "sha256": "7274d8f624fbfb718fb03e19a073ce745d57afa1d1c14162789597574e331ffc",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0027-command.private.json",
+      "sha256": "671840ca0b4cac784bde41ab36282318e4e642d4d963ad8117b7e70348d10d65",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0028-command.private.json",
+      "sha256": "009d0b98553b5224f7aa032c2848d121392c68e68ee41e46caf78ce5984a7ad7",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0029-command.private.json",
+      "sha256": "f4a897e0ad6efde1ce44b80ed8aa6296471fe347945caae9b26f75b14cb529cd",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0030-command.private.json",
+      "sha256": "f23b6cb5f7659bbd1a8ae4451a395cfe5f3aaf1112360cb69a3ed7b5a95a48e3",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0031-command.private.json",
+      "sha256": "f4560873b8428aa1cad131a3270a9bbf1d3627c3ab5d612a9cb66c329e48cf38",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0032-command.private.json",
+      "sha256": "dd9ce157c3d1ef95fdf3675b098483ae133530325724536ee87a0635d0f43e04",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0033-command.private.json",
+      "sha256": "d315db5d47e422d15013c20349c7920eecad33ae22efde612edbc600bbee164f",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0034-command.private.json",
+      "sha256": "d3ee6ab49771d83f198ea9402af35d39e3c6a39c37fb203b7069013a7816dfea",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0035-command.private.json",
+      "sha256": "57f2607d08ae85b0e1cbf6800927552f02b550bb0767a6d0197a996f332ea6eb",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0036-command.private.json",
+      "sha256": "57f2607d08ae85b0e1cbf6800927552f02b550bb0767a6d0197a996f332ea6eb",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0037-api.private.json",
+      "sha256": "ad128e216cc7e4032b9c2312b61008ebb53c35d595d19c2024edec746640f0f0",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/diagnostics.private/0038-command.private.json",
+      "sha256": "141e9fe8d1cb63015e0aeb44d693b9c8de85ab990f9d424f9d19531a2e27bdc9",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-pki11/g14-run2/report.json",
+      "sha256": "194b31361e5cedccd6acbedc26dccdcd7929276858bc0a91f84479d9c2aac666",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-recovery11/backup-fixture-diagnostics.private.log",
+      "sha256": "25201f1a1f0926c55438789bc84a7318d764c1ef600db28b7d1a9f9688cb4f45",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-recovery11/consistent-backup-report.json",
+      "sha256": "a906d8ea8d2539c39ca8e972b5249d90a254e27061f5f28e22a4dd2b99a2365d",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-recovery11/database-backup.private.log",
+      "sha256": "d03b3d9b4416cf5893398c7ebc8174a21d604f0dd41de570c8efb41ea7a188ab",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/authoritative-integrity-report.json",
+      "sha256": "9581b7c044079fba504290fb54c57f89f7b4a6bfedf666853b595820736a845e",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/database-restore.private.log",
+      "sha256": "dbf77f6b63dc0c85f535f45d8b3614a0aaf68a4dc968bbea1c299dedc63faf32",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/initialization-diagnostic.private.log",
+      "sha256": "1628e7496cfce1dc716b963d5ba3ab3d4db7f15b6103cfac25743d2af3ccb171",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/integrity-diagnostics.private.log",
+      "sha256": "013f55e75c7aec8ca202e4532d396008ef3e1bbc41b7e30314755791edd9fcb2",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/monitoring/database-restore.private.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/monitoring/http-worker-run1/diagnostics.private.log",
+      "sha256": "4db7bf7387a6339329ade1a28bd7bcc2f1f25caaddfcdd7fef77440c7ed60dde",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/monitoring/http-worker-run1/report.json",
+      "sha256": "32b50aa2d09317f15d2331c4d73cc679123e9c3b9d5a0f0afb5b87c9ed868739",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/monitoring/preparation-report.json",
+      "sha256": "57d60115e740509364d7cf612c6af46d8ddff47e20675f77043853ee778e3011",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/monitoring/worker-report.json",
+      "sha256": "573febd1af2103658ba403d256fa6c6abc92ff0ce1c49311d2f3e52bb32f8e6a",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/postgres-preparation-report.json",
+      "sha256": "e8fbe8b33ab192ea1410ec25db603beb568a83ba6f35ca2ae8fcb6779c5069a5",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/serving-reopen-run1/diagnostics.private.log",
+      "sha256": "725acc87212d1716508910893c6df63237ad11984b5d87f4158cfd91a8303a13",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/serving-reopen-run1/service-restore-report.json",
+      "sha256": "4a14445d3bd378756460ee75f8ec60eaa3cf96c985f19055a76d8c965a4028a4",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/serving-reopen-run1/static-readback/static-restore-report.json",
+      "sha256": "81b7703111d73d18168bdbb3d9dfee71316a6da82f718f0eea78b148ad0b6f1f",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/serving-reopen-run2/diagnostics.private.log",
+      "sha256": "5f853cdc8f9488f8a09e6940215ca74fe566b3acee6320ba2d3215fa906f639f",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/serving-reopen-run2/service-restore-report.json",
+      "sha256": "f5dcbfe3d526016e2623472e9c67e0ac789685ccf4c69ead1e5f860d6ea55c9d",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/serving-reopen-run2/static-readback/static-restore-report.json",
+      "sha256": "e292317adf11ccf55ffd2e721db9439ea3f6c7c77393aecb87cbcd5bc7c20b84",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/startup-attempt2.private.log",
+      "sha256": "648caccbeee68d649a8d954d73b1515dc0a95d8071a51b5683f4c2c62d75ec81",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-restore11/startup.private.log",
+      "sha256": "698605031122ec3357eb1cfb78129127edd1517472e162f348bd9c6e72226759",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-runtime11/execution.private.log",
+      "sha256": "543e5b42a962af54a9748e273540df3df76863394f888135e380265f29e04d15",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-runtime11/g11-run1.private.log",
+      "sha256": "b77af3422bad0db23b91cd95330c7fba6dcb168aed1326cc4af52f8b07f13aaa",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-runtime11/g11-run1/evaluator-lifetime-report.json",
+      "sha256": "fa719bde4d61a2198c0fc00a06ac340a07880624462d70463132de23fafc8a22",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-runtime11/g11-run1/runtime-report.json",
+      "sha256": "b798aecc0611f81fa9edc6094e09ea7cd4c19176c798fa2e18f819550590e101",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-runtime11/runtime-preparation-report.json",
+      "sha256": "b8081426a552df97cc38701326c42660c4558a47ceec171c90b9e2fcab889b8b",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-expiry-format-snapshot.private.log",
+      "sha256": "5121bec5b13bcdf124cccaed2b49d5d8720ba5217a85b41435d0c43fb8b7d687",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-swap-run1/commands.private.log",
+      "sha256": "4cb08797f75dd62b201a434192f2ee64eb203883444d3450fe3fdb949da6f698",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-swap-run1/report.json",
+      "sha256": "3b4b4d232332bac9f8ec784fab9264df2ff49fda79fe2e0adfe5564de49c7ebf",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-ttl-resume-run1/cache-events.private.log",
+      "sha256": "f9f408340040852c1a9ba9fdd56e2b9da9da522910b5eb0d9d7ad3ebaa7c9405",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-ttl-resume-run1/report.json",
+      "sha256": "01a49c97019bd9489d08c104b939e89c60f3d3e04472bf596081fcb2eed27353",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-ttl-run1/commands.private.log",
+      "sha256": "10becbca13fd1ae303b04534356116d55d27ec475fb3985a7cf5d3f255f94da3",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-ttl-run1/failure.private.log",
+      "sha256": "d5661c7edc7169166136797ac38861398e569e8ba8aa3493fd7e8bd8bbff874f",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-ttl-run1/report.json",
+      "sha256": "19a8b1231beb95c779fa8210cf5563c78e8bf129536cbf2655d3d7aff41f741f",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/cache-ttl-run1/seed-and-warm-report.json",
+      "sha256": "f19d561fc9fb91d390584e81f8d8dadd388b2f03c7f46e7207549154e402eaa5",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/g12-run1/static-report.json",
+      "sha256": "ed36aa12d5938959a967b05fa9ebcefc5e24d6e25337462e8d1c5406dc17b458",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/preparation.private.log",
+      "sha256": "11c14476205a8424e9fc49767a7b3ebd583a52deda8fccf23dfc56b7bcee0ddc",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/provision-command.private.log",
+      "sha256": "558e8571d13a946dc664a5543fa9512b75f6bcd5aa45a688a1b80d3413575085",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/provision-diagnostics.private.log",
+      "sha256": "925c00e71452c19f23c924995972e99e050735173b1ebd60f66a42b9a282084d",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/provision-report.json",
+      "sha256": "427ef8b88ba49c74b6661e30572d2b8aabfd66190be66d55953ffedfe44bc130",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/return-info-run1/commands.private.log",
+      "sha256": "27d54637a951105944375a1db493d3ae8bb14a64df8ac115ec82e235a2be01c6",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/return-info-run1/debug-agent-before-stop.private.log",
+      "sha256": "67c1dceed6bdd8293ee320f2c63624ff66ef9c6da8d57fc0d2503beb0a3400c0",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/return-info-run1/report.json",
+      "sha256": "c03f3e12ccedc45dcfb5395bc302183c2cc57bb5d9293b94a5572614b0e172cc",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final-static11/script-generation-error.private.log",
+      "sha256": "e9c360fbea649aa376124b6d0c62c90006dd711796c6e9d8cf4e3bac9c6f5f6e",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final11-agent-build.private.log",
+      "sha256": "4761a27c54a1c67296ece058f9200f0b65bf1d3cfd542938701486daeae523c2",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final11-artifacts.json",
+      "sha256": "68c97bca79dc60ad3971a3de07ea1c50efd9ad6e9c2ff3247b4c7528cd08dc91",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final11-build-source.json",
+      "sha256": "bca766ba22671b5c634378ff13943cca55474f8dcc9ae98b0f5cdca447658b42",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final11-consumer-build.private.log",
+      "sha256": "8d31de673de7ab7a6e7421cf99cd7330a66eb949715d687423b5d5170e469564",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/final11-core-build.private.log",
+      "sha256": "7b1a5ae7348a481beb79c18f29d9bb44d16ab6cbc9b55937a6fc230c689e09fa",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "file",
+      "path": "<private-fixture>/monitoring11/preparation-report.json",
+      "sha256": "65250ee153a36a1ecf621c11b274e909a2a6609c099ec8cb1f6d2e3b33aad153",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "container_logs",
+      "name": "secrethub-prelaunch-core-final11",
+      "sha256": "bcabc28de313b548243a674c0d39dda8130f25e65235dfec89302b91335a221c",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "container_logs",
+      "name": "secrethub-prelaunch-agent-final11",
+      "sha256": "9c8578b136ac063b892ba9c2e2dedb7c580c61efb2d315abc437e56761108337",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    },
+    {
+      "scope": "container_logs",
+      "name": "secrethub-prelaunch-agent-final11-retained-after-final11-cache-debug",
+      "sha256": "26e6fc4734223371d752a7d4b3d37f4eb7eb3de2b326e0c28b714ffb5c06dd8f",
+      "findings": {
+        "fixture_sensitive_material": false,
+        "private_key_header": false,
+        "credential_bearing_url": false
+      }
+    }
+  ],
+  "private_sensitive_material_excluded": true,
+  "private_raw_report_sha256": "1e1306d44e3133284662e2c3582691883d5b16464b5ca66e7f6c78e69d2a095d",
+  "inventory_sha256": "62c5417d82c27ad883d77ccaaa5a1f70cffa6ff23d8770f2c8371efe391c0f81",
+  "scope": "Explicit retained output set and current exact-bound Core/Agent/stopped-debug logs; prior discarded streams are not reconstructed",
+  "execution": {
+    "command": "python3 -B <private-fixture>/final-g19-11/agent-fault-and-scan.private.py --phase scan --scan-config <reviewed-final-inventory> --output-name output-scan-run2 --execute",
+    "exit_code": 0,
+    "driver_sha256": "901154d3e14c13109effb34a3eb2314492352447469dcbcf52284a5ec59c6ac7"
+  }
+}

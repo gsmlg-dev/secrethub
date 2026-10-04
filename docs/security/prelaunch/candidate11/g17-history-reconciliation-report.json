@@ -1,0 +1,119 @@
+{
+  "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "agent_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "platform": "linux/amd64",
+  "complete": false,
+  "recovery_hold": true,
+  "created_at": "2026-10-04T06:48:15.021030+00:00",
+  "provisional": false,
+  "selected_checks_passed": true,
+  "caddy_sha256": "1493b785115bed919610e924962d65488459fa7d77ae5d4e8140772c643b2afd",
+  "caddy_carrier_image_id": "sha256:3ce79a779d23ce1c87202af4710c77b1ca882d4964ac680e4184956f2f945ca1",
+  "counter_provenance": "artifact process reads of retained manager and independent TLS/HTTP consumer files",
+  "gates": {
+    "G17": {
+      "status": "partial",
+      "authoritative_reconciliation": "passed",
+      "full_service_reopen": "unexecuted"
+    }
+  },
+  "observations": {
+    "restored_generation": 1,
+    "restored_crl_number": 1,
+    "retained_manager": {
+      "highest_seen_generation": 3,
+      "highest_seen_crl_number": 3,
+      "pinned_ca_fingerprint": "2601c9df855fc44eb38a656c8d00bbd3ffbd8eaa7d6955dd41c387e2e0f48346",
+      "last_bundle_sha256": "1396e0f8874fe580feb1ca1c0997ec4e8e3ede9b85defaf54dadca3a890b4b72"
+    },
+    "consumer_before": {
+      "http": {
+        "highest_seen_generation": 3,
+        "highest_seen_crl_number": 3,
+        "pinned_ca_fingerprint": "2601c9df855fc44eb38a656c8d00bbd3ffbd8eaa7d6955dd41c387e2e0f48346",
+        "last_bundle_sha256": "1396e0f8874fe580feb1ca1c0997ec4e8e3ede9b85defaf54dadca3a890b4b72"
+      },
+      "tls": {
+        "highest_seen_generation": 3,
+        "highest_seen_crl_number": 3,
+        "pinned_ca_fingerprint": "2601c9df855fc44eb38a656c8d00bbd3ffbd8eaa7d6955dd41c387e2e0f48346",
+        "last_bundle_sha256": "1396e0f8874fe580feb1ca1c0997ec4e8e3ede9b85defaf54dadca3a890b4b72"
+      }
+    },
+    "consumer_after": {
+      "http": {
+        "highest_seen_generation": 3,
+        "highest_seen_crl_number": 3,
+        "pinned_ca_fingerprint": "2601c9df855fc44eb38a656c8d00bbd3ffbd8eaa7d6955dd41c387e2e0f48346",
+        "last_bundle_sha256": "1396e0f8874fe580feb1ca1c0997ec4e8e3ede9b85defaf54dadca3a890b4b72"
+      },
+      "tls": {
+        "highest_seen_generation": 3,
+        "highest_seen_crl_number": 3,
+        "pinned_ca_fingerprint": "2601c9df855fc44eb38a656c8d00bbd3ffbd8eaa7d6955dd41c387e2e0f48346",
+        "last_bundle_sha256": "1396e0f8874fe580feb1ca1c0997ec4e8e3ede9b85defaf54dadca3a890b4b72"
+      }
+    },
+    "old_bundle_sha256": "9188b26dbbf6abd35f163908296c2bcc91c4c82685880e660389cdba94f43aaf",
+    "retained_bundle_sha256": "1396e0f8874fe580feb1ca1c0997ec4e8e3ede9b85defaf54dadca3a890b4b72",
+    "old_bundle_rejected": true,
+    "manager_watermark_and_current_preserved": true,
+    "restored_vault_pki_audit_unchanged": true,
+    "revoked_denied": true,
+    "unrevoked_control_allowed": true,
+    "leaf_expiry_and_signed_crl_membership_checked": true,
+    "old_database_client_and_control_unrevoked": true,
+    "authoritative_reconciliation": {
+      "status": "passed",
+      "method": "complete newer authoritative backup restored separately; old database retained",
+      "same_original_ca_key_verified": true,
+      "complete_active_revocations_equal_retained_signed_crl": true,
+      "publication_equals_actual_retained_bundle": true,
+      "all_trust_watermarks_preserved": true,
+      "bundle_comparator_check": {
+        "wire_field_count": 11,
+        "wire_fields": [
+          "authority",
+          "bundle_sha256",
+          "ca_bundle_pem",
+          "ca_fingerprint",
+          "crl_der_sha256",
+          "crl_number",
+          "crl_pem",
+          "generation",
+          "next_update",
+          "schema_version",
+          "this_update"
+        ],
+        "retained_local_fields": [
+          "applied_at"
+        ],
+        "wire_values_exactly_equal": true,
+        "local_applied_at_valid_timezone_aware": true
+      },
+      "full_retained_state_unchanged": true,
+      "actual_consumer_revoked_denied_control_allowed": true,
+      "full_service_reopen": "unexecuted",
+      "provenance": {
+        "authoritative_backup_sha256": "e66839d4f1cdef76ca889aed18760499b1b7e94b2dd0be2b7005fb7dd9cb9aae",
+        "old_baseline_dump_sha256": "c939157376ed6fe2993813f1ae04098dbd0bea41e3fbd20b62ffe439287408f5",
+        "authoritative_database": "secrethub_prelaunch_final11_restore_12f74e",
+        "old_restored_database": "secrethub_prelaunch_history11_619f3068c57b",
+        "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+        "complete": false
+      }
+    }
+  },
+  "cleanup_confirmed": true,
+  "diagnostics_sha256": "f087fcf3f0b287858cb963fdd9e14c5fe73343d724adc3a36cd62479f87a3959",
+  "diagnostics_redacted": true,
+  "seconds": 116.403,
+  "private_raw_report_sha256": "9e7197fb139989eae86f4cdc53f9aa3e69fa35e2ad9e68c8f83ba7e0141aec08",
+  "execution": {
+    "command": "python3 -B <private-fixture>/final-history11/run-g17.private.py --execute --g14-report <passed-final-G14> --output g17-run3",
+    "exit_code": 0,
+    "driver_sha256": "2febced43b2a83e71ff20d885b190a11833b9cf559f66fb91231660c84a8c3ef"
+  },
+  "composition": "Old database remains held; serving the same complete newer backup was separately qualified by G16."
+}

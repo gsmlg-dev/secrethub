@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-10-04T06:55:12.104930+00:00",
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "source_dirty": false,
+  "platform": "linux/amd64",
+  "artifacts": {
+    "core": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+    "agent": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+    "consumer": "sha256:c4fc8889b6991f9217308d255f0caf5948c06f32c3878259f879ed931b7b9ab6"
+  },
+  "release_versions": {
+    "core": {
+      "erts_version": "16.4.0.2",
+      "release_version": "1.0.0-rc10"
+    },
+    "agent": {
+      "erts_version": "16.4.0.2",
+      "release_version": "1.0.0-rc10"
+    }
+  },
+  "format_inventory": {
+    "share_version": 4,
+    "vault_envelope_version": 1,
+    "migration_count": 48,
+    "migration_versions_sha256": "325c3d9b3ecf94322288c7b59414d01dd0b8785f0a813ead23b0581520166e5a",
+    "observed_minimum_uds_auth_version": 1
+  },
+  "complete": false,
+  "production_ready": false,
+  "candidate_status": "incomplete_operator_acceptance",
+  "gates": {
+    "G01": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G02": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G03": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G04": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G05": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G06": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G07": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G08": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G09": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G10": {
+      "status": "passed_selected_checks",
+      "evidence": "core-report.json"
+    },
+    "G11": {
+      "status": "passed_selected_checks",
+      "evidence": "g11-report.json"
+    },
+    "G12": {
+      "status": "passed_selected_checks",
+      "evidence": "g12-static-report.json"
+    },
+    "G13": {
+      "status": "passed_selected_checks",
+      "evidence": "g13-live-cache-report.json"
+    },
+    "G14": {
+      "status": "passed_selected_checks",
+      "evidence": "g14-pki-report.json"
+    },
+    "G15": {
+      "status": "passed_required_rejection_checks",
+      "evidence": "g15-corruption-report.json",
+      "helper_status": "partial",
+      "same_generation_in_place_repair": "unsupported; damaged copies stay quarantined"
+    },
+    "G16": {
+      "status": "passed_selected_checks",
+      "evidence": "g16-service-restore-diagnostic-report.json"
+    },
+    "G17": {
+      "status": "passed_selected_checks",
+      "evidence": "g17-history-reconciliation-report.json",
+      "helper_status": "partial",
+      "old_database": "retained on recovery hold",
+      "authoritative_reconciliation": "passed",
+      "full_service_reopen": "separately qualified by G16 on the same complete newer backup"
+    },
+    "G18": {
+      "status": "passed_restricted_recovery",
+      "evidence": "g18-report.json",
+      "serving_rollback_supported": false,
+      "floor2_rollback_supported": false,
+      "pending_schema_conversion_proven": false
+    },
+    "G19": {
+      "status": "passed_selected_retained_inventory",
+      "evidence": "g19-output-scan-report.json",
+      "first_retained_inventory_scan": "passed:138 files+3 container logs",
+      "final_refreshed_scan": "passed:163 files+3 exact-bound container logs",
+      "final_scan_raw_report_sha256": "1e1306d44e3133284662e2c3582691883d5b16464b5ca66e7f6c78e69d2a095d",
+      "post_scan_metadata_check": "passed with the same held-sensitive-material/private-key/credential-URL checks",
+      "metadata_export_evidence": "g19-final-metadata-report.json"
+    },
+    "G20": {
+      "status": "partial",
+      "evidence": "g20-http-worker-report.json",
+      "protected_worker_http": "passed",
+      "existing_host_alert_delivery": "unexecuted"
+    }
+  },
+  "measurements": {
+    "revocation_new_handshake_upper_bound_seconds": 13.186,
+    "revocation_existing_request_upper_bound_seconds": 13.197,
+    "revocation_fixture_bound_seconds": 30,
+    "first_restore_to_consumers_wall_seconds": 198.903,
+    "first_snapshot_age_at_reopen_seconds": 237.185,
+    "diagnostic_complete_serving_repeat_seconds": 147.21,
+    "history_reconciliation_seconds": 116.403,
+    "protected_worker_http_seconds": 5.969
+  },
+  "operator_inputs_pending": [
+    "existing host logging/alert integration and actual alert delivery",
+    "existing backup destination and cadence; measured cadence/RPO/RTO acceptance"
+  ],
+  "production_actions": {
+    "deploy": false,
+    "publish": false,
+    "real_credential_rotation": false,
+    "live_caddy_change": false,
+    "persistent_data_reset": false,
+    "merge": false,
+    "push": false
+  },
+  "limits": [
+    "Prepared isolated same-host Linux amd64 fixture; provisioning and backup retrieval time unmeasured",
+    "TLS resumption disabled; immediate existing-connection termination untested",
+    "Damaged same-generation in-place repair unsupported; preserve quarantine and use reviewed authoritative backup recovery",
+    "Historical dirty artifact supports only held floor1 same-schema recovery, never serving downgrade",
+    "Initial restore discarded some diagnostics; behavior passed and diagnostic-complete serving repeat retained all streams",
+    "Raw helper partial/hold flags describe individual invocation boundaries; no complete launch acceptance is inferred"
+  ],
+  "remaining_work": [
+    "existing host logging/alert integration and actual alert delivery",
+    "existing backup destination and cadence; measured cadence/RPO/RTO acceptance",
+    "Operator-owned production preflight/network/cutover acceptance; no deployment authorized or performed"
+  ]
+}

@@ -5,6 +5,9 @@ profile: one Core, PostgreSQL 16, existing Caddy management mTLS, Client Auth PK
 and one static-secret consumer. Production cutover is operator-owned. Follow
 this runbook only after the exact-candidate G01–G20 report passes; provisional
 images and source tests are insufficient. Current acceptance is incomplete.
+See the [combined candidate report](prelaunch/candidate11/acceptance-report.json):
+isolated selected checks passed; existing host alerts and backup destination/cadence
+still require qualification. Production cutover remains operator-owned.
 
 ## Required inventory
 
@@ -93,6 +96,12 @@ with a new handshake, session resumption and an already-open connection. Use the
 measured enforcement interval in the accepted report. Never promise that a CRL
 refresh automatically terminates an existing TLS session.
 
+Candidate 11's [final PKI fixture](prelaunch/candidate11/g14-pki-report.json) measured revoked-client rejection upper bounds
+of 13.186 seconds for a new handshake and 13.197 seconds for a request on an
+already-open connection, within its explicit 30-second bound. The exact consumer
+policy disables session resumption; connection termination was not tested. These
+measurements qualify that isolated configuration, not the operator's deployment.
+
 ## Required monitoring and responses
 
 Use the existing host logging/alert system with these actionable inputs. Do not
@@ -107,7 +116,7 @@ export raw secret-bearing logs or create a new notification provider.
 | Agent disconnected | Core Agent monitoring and local runtime connection state | Restore transport/identity validity; do not remove persisted identity |
 | Bundle lag/application failed | Publication versus applied receipts, local manifest/watermarks and actual consumer requests | Investigate failed validation/application; retain monotonic history |
 | Certificate/CRL expiry approaching | Persisted certificate validity and current CRL `next_update` | Renew/refresh through established paths before expiry; verify publication/convergence |
-| Required CRL worker failed/stopped | Readiness worker heartbeat/next timer/result | Repair the required worker; readiness must remain false while unhealthy |
+| Required CRL worker failed/stopped | `/v1/sys/health/ready` returns 503 with `crl_worker_unavailable`; general `/health` stays 200 with degraded body | Repair the required worker; alert on readiness/body, and keep liveness/management available |
 | Audit append/verification failed | Bounded audit failure logs and protected audit verification | Restrict sensitive operations and preserve evidence; check runtime keys/storage |
 
 Select explicit alert thresholds in the existing deployment configuration: backup
@@ -212,6 +221,23 @@ Reopen only through a reviewed operator recovery procedure with all of this proo
    Run normal serving preflight/readiness and reconnect original Agents/consumers
    without losing identity, authorization floor or trust history. Recheck actual
    static reads and ClientAuth allow/deny behavior before completing G16/G17.
+
+Candidate 11's [copy-only corruption rehearsal](prelaunch/candidate11/g15-corruption-report.json) found that the existing recovery
+API rejects a damaged retained same-generation directory with
+`corrupted_existing_generation`. It remains quarantined; retrying the same bundle
+is insufficient. Preserve the damaged directory and its watermarks. Use a
+separately restored, complete known-good backup and the reconciliation proof above
+before reopening affected delivery. Do not delete the directory or counters to
+force acceptance. Invalid live reloads retain the last valid trust state; damaged
+bundle or TLS/HTTP watermark files fail closed on consumer restart.
+
+The [final stale-database rehearsal](prelaunch/candidate11/g17-history-reconciliation-report.json)
+qualified recovery using a separately restored complete newer authoritative backup,
+while retaining the older database under a hold. Its original CA and complete
+revoked set matched the newer retained publication and consumer history. Actual
+revoked/control requests passed without changing watermarks. The [full fresh
+restore](prelaunch/candidate11/g16-service-restore-report.json) separately qualified
+serving that newer backup. Recovery from incomplete evidence stays unsupported.
 
 Never copy old revoked credentials into a running consumer. Without every required
 proof, keep the affected service restricted. Measure total elapsed time through

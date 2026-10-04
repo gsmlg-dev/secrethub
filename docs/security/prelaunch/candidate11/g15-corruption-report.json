@@ -1,0 +1,128 @@
+{
+  "complete": false,
+  "provisional": false,
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "platform": "linux/amd64",
+  "artifacts": {
+    "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+    "agent_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+    "caddy_sha256": "1493b785115bed919610e924962d65488459fa7d77ae5d4e8140772c643b2afd",
+    "caddy_carrier_image_id": "sha256:3ce79a779d23ce1c87202af4710c77b1ca882d4964ac680e4184956f2f945ca1",
+    "caddy_runtime_store_paths": [
+      "/nix/store/m07h00fl6538s4gavrp66a20ka4hg7fy-glibc-2.42-67"
+    ]
+  },
+  "results": {
+    "damage": {
+      "damaged_files": 1,
+      "no_files_removed": true
+    },
+    "live_consumer": {
+      "status": "passed",
+      "policy": "last-known-good retained after failed reload",
+      "revoked": "denied",
+      "control": "allowed",
+      "reload_failure_observed": true,
+      "exact_error": "calculated transcript hash does not match bundle_sha256",
+      "trust_watermarks_and_identity_preserved": true
+    },
+    "damaged_restart": {
+      "status": "passed",
+      "policy": "startup fails closed",
+      "control": "denied",
+      "exact_error": "calculated transcript hash does not match bundle_sha256"
+    },
+    "manager_damage": {
+      "damaged_files": 3,
+      "no_files_removed": true
+    },
+    "manager": {
+      "initial": {
+        "status": "recovery_required",
+        "recovery_mode": "quarantined",
+        "trust_recovery_restriction": "damaged_state_recovery_required",
+        "last_error_code": "damaged_state_recovery_required",
+        "needs_repair": true,
+        "lkg_generation": 0,
+        "lkg_crl_number": 0
+      },
+      "rejected": [
+        {
+          "error": "damaged_state_recovery_required",
+          "ok": false
+        },
+        {
+          "error": "damaged_state_recovery_required",
+          "ok": false
+        }
+      ],
+      "final": {
+        "status": "failed",
+        "recovery_mode": "quarantined",
+        "trust_recovery_restriction": "damaged_state_recovery_required",
+        "last_error_code": "corrupted_existing_generation",
+        "needs_repair": true,
+        "lkg_generation": 0,
+        "lkg_crl_number": 0
+      },
+      "restricted": {
+        "status": "recovery_required",
+        "recovery_mode": "quarantined",
+        "trust_recovery_restriction": "damaged_state_recovery_required",
+        "last_error_code": "damaged_state_recovery_required",
+        "needs_repair": true,
+        "lkg_generation": 0,
+        "lkg_crl_number": 0
+      },
+      "rejected_trust_unchanged": true,
+      "operator_recovery": {
+        "error": "corrupted_existing_generation",
+        "ok": false
+      }
+    },
+    "operator_recovery": {
+      "status": "unsupported",
+      "error": "corrupted_existing_generation",
+      "decision": "existing operator API cannot repair retained damaged same-generation directory"
+    },
+    "consumer_watermark_corruption": {
+      "tls": {
+        "status": "passed",
+        "startup": "failed closed",
+        "control_request": "denied",
+        "no_watermark_or_identity_removed": true
+      },
+      "http": {
+        "status": "passed",
+        "startup": "failed closed",
+        "control_request": "denied",
+        "no_watermark_or_identity_removed": true
+      }
+    }
+  },
+  "recovery_hold": true,
+  "gates": {
+    "G15": {
+      "status": "partial"
+    }
+  },
+  "observed_at": "2026-10-04T06:16:51.086115+00:00",
+  "status": "SELECTED_CHECKS_PASSED",
+  "cleanup_confirmed": true,
+  "source_inventory_unchanged": true,
+  "seconds": 308.806,
+  "diagnostics_sha256": "2b10ca29bda8495974e9adf55d39331ae7da4c85f6c436311b1b2d54992beb4c",
+  "verified_high_water": {
+    "highest_seen_generation": 3,
+    "highest_seen_crl_number": 3,
+    "pinned_ca_fingerprint": "2601c9df855fc44eb38a656c8d00bbd3ffbd8eaa7d6955dd41c387e2e0f48346",
+    "last_bundle_sha256": "1396e0f8874fe580feb1ca1c0997ec4e8e3ede9b85defaf54dadca3a890b4b72"
+  },
+  "required_rejection_cases": "passed; damaged same-generation in-place recovery remains unsupported",
+  "private_raw_report_sha256": "9508bec97f6aaa1ec4c28a183100212dee3ecd08d53157565fa487f8bec6ec88",
+  "execution": {
+    "command": "python3 -B <private-fixture>/final-corruption11/run-g15.private.py --execute --attempt-operator-recovery --g14-report <passed-final-G14> --output g15-run1",
+    "exit_code": 0,
+    "driver_sha256": "d71e8bbc852ce940b9c86b551ded698ba2910b3732871b37934d963f3897cdb0"
+  }
+}

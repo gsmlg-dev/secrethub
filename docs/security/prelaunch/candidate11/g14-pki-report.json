@@ -1,0 +1,120 @@
+{
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "platform": "linux/amd64",
+  "complete": false,
+  "provisional": false,
+  "observed_at": "2026-10-04T06:05:56.701099+00:00",
+  "artifacts": {
+    "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+    "agent_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+    "caddy_sha256": "1493b785115bed919610e924962d65488459fa7d77ae5d4e8140772c643b2afd",
+    "caddy_carrier_image_id": "sha256:3ce79a779d23ce1c87202af4710c77b1ca882d4964ac680e4184956f2f945ca1",
+    "caddy_runtime_store_paths": [
+      "/nix/store/m07h00fl6538s4gavrp66a20ka4hg7fy-glibc-2.42-67"
+    ],
+    "trust_bundle_schema_version": 1
+  },
+  "gates": {
+    "G14": {
+      "status": "passed",
+      "unexecuted": []
+    },
+    "G15": {
+      "status": "partial",
+      "unexecuted": [
+        "consumer on-disk corruption",
+        "operator-gated damaged-state recovery"
+      ]
+    },
+    "G17": {
+      "status": "unexecuted",
+      "unexecuted": [
+        "actual older DB restore against newer Agent/consumer watermarks"
+      ]
+    }
+  },
+  "results": {
+    "issuance_trust": {
+      "status": "passed",
+      "valid": "allowed",
+      "untrusted": "rejected",
+      "missing": "rejected"
+    },
+    "tls_session_behavior": {
+      "status": "passed",
+      "baseline_has_ticket": false,
+      "baseline_attempt_status": 200,
+      "baseline_session_reused": false,
+      "policy": "resumption disabled by exact consumer policy",
+      "successfully_resumed_session_revocation": "unexecuted; consumer issues no session tickets"
+    },
+    "pre_revocation_snapshot": {
+      "status": "passed",
+      "generation": 1,
+      "crl_number": 1,
+      "dump_sha256": "c939157376ed6fe2993813f1ae04098dbd0bea41e3fbd20b62ffe439287408f5",
+      "fixture_database_mutation": false
+    },
+    "delayed_distribution": {
+      "status": "passed",
+      "withheld_seconds": 2,
+      "pre_delivery": "still_allowed while Agent stopped",
+      "transport": "real runtime WebSocket after persistent Agent restart",
+      "identity_preserved": true
+    },
+    "revocation": {
+      "status": "passed",
+      "publication_to_new_handshake_rejection_upper_bound_seconds": 13.186,
+      "acceptable_bound_seconds": 30,
+      "new_handshake": "rejected",
+      "resumption_before_revocation_verified": false,
+      "resumed_after_revocation": false,
+      "attempted_session_reuse_request": "tls_or_transport_rejected",
+      "existing_connection_request": 403,
+      "publication_to_session_reuse_attempt_rejection_upper_bound_seconds": 13.194,
+      "publication_to_existing_request_rejection_upper_bound_seconds": 13.197,
+      "timing_origin": "before revocation request; includes Core transaction and transport latency",
+      "unrevoked_control_request": "allowed",
+      "existing_connection_termination": "unexecuted; per-request middleware enforcement measured"
+    },
+    "crl_refresh": {
+      "status": "passed",
+      "generation": 3,
+      "crl_number": 3
+    },
+    "old_corrupt_bundle": {
+      "status": "passed",
+      "old_error": "generation_downgrade_rejected",
+      "corrupt_error": "transcript_hash_mismatch",
+      "watermark_preserved": true,
+      "applied_generation_preserved": true
+    },
+    "agent_process_restart": {
+      "status": "passed",
+      "probe": "artifact release manager recreated for every apply; persisted watermark retained"
+    },
+    "retained_actual_consumer_state": {
+      "status": "passed",
+      "generation": 3,
+      "crl_number": 3,
+      "actual_live_agent_and_tls_http_watermarks_captured": true,
+      "fixture_keys_and_original_volume_retained": true
+    },
+    "frozen_runtime_identity": {
+      "status": "passed",
+      "core_incarnation_preserved": true,
+      "agent_container_identity_preserved": true,
+      "enrollment_certificate_and_persistent_identity_preserved": true,
+      "owned_evaluator_cleanup_confirmed": true
+    }
+  },
+  "shutdown": "all invocation-owned containers stopped",
+  "private_raw_report_sha256": "194b31361e5cedccd6acbedc26dccdcd7929276858bc0a91f84479d9c2aac666",
+  "execution": {
+    "command": "python3 -B <private-fixture>/final-pki11/continue-owned-gen1.private.py --execute --output g14-run2",
+    "exit_code": 0,
+    "continuation": "existing owned singleton gen1 authority reused; failed run1 retained; no authority initialization/reset",
+    "driver_sha256": "db3afdec22707fe674cf88c991baf4a13e468c4d51e63e8d10a015d0a1ebfa81",
+    "total_duration_seconds": "unrecorded"
+  }
+}
