@@ -64,14 +64,14 @@ collection and the complete candidate export scan remain outstanding.
 | G09 | Origin/CSRF negatives passed on final `7dc01a18b500` | Selected final Core scenario passed |
 | G10 | Sealed lifecycle passed on final `7dc01a18b500` | Selected final Core scenario passed |
 | G11 | Final Core `7dc01a18b500` and Agent `744137294f71` passed real enrollment/restart/reconnect and damaged-state rejection in 157.779 seconds | Selected final lifecycle scenario passed; full candidate remains incomplete |
-| G12 | Actual consumer lifecycle passed on `1eb1bcc88a87`/`3b95f124b819` | Final pair read/update/denial/revocation/restart readback |
-| G13 | Actual outage rejection and separately observed live expiry passed; helper report remains partial | One final-pair report joining cache/outage/reauthorization observations and debug-configuration scope |
+| G12 | Final Core/Agent/consumer passed initial/update readback, denial, policy revoke/regrant, restarts and outage in 353.039 seconds | Selected final static lifecycle scenario passed |
+| G13 | Final static outage rejected warmed reads; same-image logger-debug observer proved one population, one warm reuse and count-1 expiry at 301.289 seconds | Selected final bounded-cache checks passed; debug configuration scope is recorded separately from normal logging |
 | G14 | Real PKI consumer issue/revoke/reconnect report passed | Final pair enforcement measurement with fresh leaves and explicit session semantics |
 | G15 | Copy-only corrupt-state checks passed; report remains partial | Final artifacts' old/corrupt-state behavior, with supported recovery or explicit fail-closed hold |
 | G16 | Restricted integrity, PKI reopen and actual static-consumer reopen passed in separate provisional drills | Full final-artifact restore inventory, consumers and measured recovery/data-loss window |
 | G17 | Actual older-7/newer-9 history refusal and authoritative reconciliation passed provisionally; report remains partial | Final-artifact older-database restriction and safe recovery with retained history |
 | G18 | Final `7dc01a18b500` same-schema upgrade and same-database recovery rollback to `1eb1bcc88a87` passed at floor 1; explicit migration was a no-op with all 48 versions installed | Only the isolated recovery boundary is qualified; old serving/floor-2 downgrade and pending schema conversion are unsupported |
-| G19 | Final Core `7dc01a18b500` VM fault and captured Core/fixture diagnostic scan passed in 11.994 seconds | Final Agent logs/crash checks, full log collection and complete exported-artifact scan remain open |
+| G19 | Final Core and Agent isolated VM faults passed with dump suppression and no known sensitive output | Full final Core/Agent/consumer log collection and complete exported-artifact scan remain open |
 | G20 | Required-worker stop/readiness/restart recovery passed on `1eb1bcc88a87`; report remains partial | Final image replay and selected existing monitoring integration; host alert delivery is unexecuted |
 
 Inspected private report references: `artifact-core-refreshed-1/report.json`,
@@ -599,3 +599,32 @@ damaged-state copy refused startup before enrollment. One intentional Core
 restart was recorded; isolated evaluators preserved serving cluster identity
 between restarts and confirmed container cleanup. The report retains
 `complete:false`; remaining consumer, recovery, monitoring and export gates stay open.
+
+Final [G12 static lifecycle](prelaunch/candidate11/g12-static-report.json) passed
+on the clean frozen source and all three final images in 353.039 seconds. The
+actual auth-v2 consumer read version 1/revision 2 and then version 2/revision 3.
+Denied paths and application policy revocation after warm-up preserved the
+applied file. Regrant retained original policy attributes under its recorded
+replacement ID; the separate Agent policy was unchanged. Agent/Core restarts
+preserved identity/enrollment; Core required manual unseal. During a 19.915-second
+owned Core pause the warmed read rejected with `REQUEST_DENIED`, preserved the
+applied file and recovered afterward. All twelve owned Core evaluators preserved
+serving cluster identity within restart phases, and cleanup passed.
+
+The [live G13 observer](prelaunch/candidate11/g13-live-cache-report.json) used
+only a logger-level override on the same final Agent image. One seed and one
+warm same-revision read produced one population with unchanged expiry. The entry
+expired after 301.289 seconds with a count-1 cleanup; PID/start/restart count
+stayed unchanged and no invalidation, repopulation or further read occurred.
+The initial observer misparsed the log's date/time separator and failed; its
+report/logs were retained. The corrected observer resumed read-only against the
+same population and verified a timezone-aware 299.999401-second expiry delta.
+This records the debug-configuration scope explicitly; it does not substitute
+a separate VM cache for the live Agent cache.
+
+The [final Agent G19 fault](prelaunch/candidate11/g19-agent-fault-report.json)
+used a named isolated process holding disposable shares, plaintext and private
+key material on stdin. No main service applications or listeners started. The
+frozen image inherited `ERL_CRASH_DUMP=/dev/null`, stopped with a nonzero exit,
+retained no dump, passed known-sensitive-output checks and confirmed owned
+cleanup. Full candidate log/export scanning remains open.

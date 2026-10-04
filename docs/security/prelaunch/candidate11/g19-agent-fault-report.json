@@ -1,0 +1,30 @@
+{
+  "status": "passed",
+  "process_stopped": true,
+  "exit_code": 1,
+  "main_agent_core_web_human_apps_not_started": true,
+  "no_listeners": true,
+  "network": "none",
+  "no_live_state_mounts": true,
+  "inherited_erl_crash_dump": "/dev/null",
+  "no_retained_crashdump": true,
+  "memory_fixture_shares": true,
+  "memory_fixture_plaintext": true,
+  "memory_fixture_private_key": true,
+  "diagnostics_sha256": "f0402c8818ce4ad02a42d8fa19163d182b154c0bb4febcb27a14394a23eb1769",
+  "filesystem_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sensitive_material_findings": {
+    "fixture_sensitive_material": false,
+    "private_key_header": false,
+    "credential_bearing_url": false
+  },
+  "cleanup_confirmed": true,
+  "complete": false,
+  "provisional": false,
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "agent_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+  "consumer_image_id": "sha256:c4fc8889b6991f9217308d255f0caf5948c06f32c3878259f879ed931b7b9ab6",
+  "raw_diagnostics": "private; excluded from exports",
+  "observed_at": "2026-10-04T05:38:35.357071+00:00",
+  "source_private_report_sha256": "216da693cb53de5ac9aecfc463aed4cfa2e0ff83cd5b0fc805866c10544bd31f"
+}

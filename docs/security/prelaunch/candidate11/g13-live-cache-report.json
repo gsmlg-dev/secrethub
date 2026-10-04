@@ -1,0 +1,47 @@
+{
+  "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
+  "core_image_id": "sha256:7dc01a18b500e5897f853da33a0c9574d018c0d2a09d9959f03a729ac64e1ed3",
+  "agent_image_id": "sha256:744137294f71a778084590d82e632158e2d9b72098e3c823bf27f51b55af20d9",
+  "consumer_image_id": "sha256:c4fc8889b6991f9217308d255f0caf5948c06f32c3878259f879ed931b7b9ab6",
+  "platform": "linux/amd64",
+  "status": "passed",
+  "complete": false,
+  "provisional": false,
+  "scope": "same live cache population; debug logging via RELEASE_SYS_CONFIG; read-only resumed observer",
+  "seed_populations": 1,
+  "warm_reads": 1,
+  "additional_reads": 0,
+  "cache_ttl_seconds": 300,
+  "expiry_timezone_aware": true,
+  "expiry_delta_seconds": 299.999401,
+  "expires_at": "2026-10-04T05:38:44.302454+00:00",
+  "expired_cleanup_count": 1,
+  "population_to_cleanup_seconds": 301.289,
+  "process_identity_preserved": true,
+  "process_identity": {
+    "id": "5c046292d71f540d0efead3d4cf137083e8797b5b4f0c98f49664da9bea969a6",
+    "StartedAt": "2026-10-04T05:31:42.912776151Z",
+    "Pid": 318081,
+    "RestartCount": 0
+  },
+  "post_seed_restarts_invalidations_repopulations": 0,
+  "pre_seed_clear_count_zero_excluded": true,
+  "consumer_seed": {
+    "applied": true,
+    "readback": true,
+    "version": 2,
+    "revision": 3
+  },
+  "consumer_warm": {
+    "applied": true,
+    "readback": true,
+    "version": 2,
+    "revision": 3
+  },
+  "prior_observer": "retained; expiry parser truncated at date/time space; no cache changes",
+  "direct_cache_reuse_evidence": "same revision warm read; single population and unchanged expiry; frozen get_entry/not_modified contract",
+  "observer_seconds": 0.098,
+  "logs_sha256": "f9f408340040852c1a9ba9fdd56e2b9da9da522910b5eb0d9d7ad3ebaa7c9405",
+  "raw_diagnostics": "private; excluded from exports",
+  "source_private_report_sha256": "01a49c97019bd9489d08c104b939e89c60f3d3e04472bf596081fcb2eed27353"
+}
