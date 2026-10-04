@@ -144,7 +144,10 @@ defmodule SecretHub.Core.PKI.AppCertificates do
       {:ok, request} ->
         result =
           try do
-            Repo.transaction(fn -> renew_locked(request) end)
+            Repo.transaction(fn ->
+              SecretHub.Core.AuthorizationVersions.lock_global()
+              renew_locked(request)
+            end)
           rescue
             _error -> {:error, :renewal_failed}
           catch
@@ -312,7 +315,10 @@ defmodule SecretHub.Core.PKI.AppCertificates do
   defp transact_revocation(operation) do
     result =
       try do
-        Repo.transaction(operation)
+        Repo.transaction(fn ->
+          SecretHub.Core.AuthorizationVersions.lock_global()
+          operation.()
+        end)
       rescue
         _error -> {:error, :revocation_failed}
       catch
@@ -831,6 +837,8 @@ defmodule SecretHub.Core.PKI.AppCertificates do
     result =
       try do
         Repo.transaction(fn ->
+          SecretHub.Core.AuthorizationVersions.lock_global()
+
           case lock_issuance_rows(token) do
             {:ok, locked_token, app, agent} ->
               issue_locked(locked_token, app, agent, csr_pem, request_id)

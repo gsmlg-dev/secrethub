@@ -85,6 +85,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Issuer do
     csr_sha256 = :crypto.hash(:sha256, csr_pem)
 
     Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
       # Serialize concurrent requests with the same request_id
       Repo.query!(
         "SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))",

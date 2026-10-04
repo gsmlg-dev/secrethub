@@ -36,6 +36,8 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
       })
 
     Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+
       with {:ok, identity} <- Repo.insert(changeset),
            :ok <- record_identity_created_audit(identity, actor) do
         identity
@@ -126,6 +128,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Identity do
     actor = Keyword.get(opts, :actor, %{})
 
     Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
       authority = lock_authority()
 
       case Repo.one(

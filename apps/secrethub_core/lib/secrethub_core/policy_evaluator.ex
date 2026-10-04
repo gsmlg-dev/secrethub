@@ -11,6 +11,181 @@ defmodule SecretHub.Core.PolicyEvaluator do
   require Logger
   import Bitwise
 
+  @doc "Validates the single dot-delimited runtime resource namespace."
+  def normalize_runtime_path(path) when is_binary(path) and byte_size(path) <= 512 do
+    if Regex.match?(~r/\A[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\z/, path),
+      do: {:ok, path},
+      else: {:error, :invalid_path}
+  end
+
+  def normalize_runtime_path(_), do: {:error, :invalid_path}
+
+  @doc "Evaluates stable runtime operations and every condition fail closed."
+  def evaluate_runtime(policy, context) when is_map(context) do
+    doc = policy.policy_document
+
+    with {:ok, _} <- normalize_runtime_path(context[:secret_path]),
+         true <- context[:operation] in ~w(read generate renew revoke),
+         :ok <- validate_runtime_document(doc),
+         patterns when is_list(patterns) <- doc["allowed_secrets"],
+         true <- Enum.all?(patterns, &valid_runtime_pattern?/1),
+         true <- Enum.any?(patterns, &path_matches?(context[:secret_path], &1)),
+         operations when is_list(operations) <- doc["allowed_operations"],
+         true <- context[:operation] in operations,
+         :ok <- validate_runtime_conditions(Map.get(doc, "conditions", %{}), context),
+         conditions = Map.get(doc, "conditions", %{}),
+         true <- Enum.all?(conditions, &runtime_condition?(&1, context)),
+         :ok <- validate_runtime_ttl(policy.max_ttl_seconds, context),
+         true <- runtime_max_ttl?(policy.max_ttl_seconds, context) do
+      if policy.deny_policy, do: {:deny, :explicit_deny}, else: {:allow, :policy_match}
+    else
+      {:error, :malformed_policy} -> {:deny, :malformed_policy}
+      _ -> {:deny, :policy_denied}
+    end
+  rescue
+    _ -> {:deny, :malformed_policy}
+  end
+
+  def evaluate_runtime(_, _), do: {:deny, :invalid_context}
+
+  defp validate_runtime_document(doc) when is_map(doc) do
+    patterns = doc["allowed_secrets"]
+    operations = doc["allowed_operations"]
+
+    if is_list(patterns) and Enum.all?(patterns, &valid_runtime_pattern?/1) and
+         is_list(operations) and Enum.all?(operations, &(&1 in ~w(read generate renew revoke))),
+       do: :ok,
+       else: {:error, :malformed_policy}
+  end
+
+  defp validate_runtime_document(_), do: {:error, :malformed_policy}
+
+  defp valid_runtime_pattern?(pattern) when is_binary(pattern) do
+    Regex.match?(~r/\A(?:[a-zA-Z0-9_-]+|\*{1,2})(?:\.(?:[a-zA-Z0-9_-]+|\*{1,2}))*\z/, pattern)
+  end
+
+  defp valid_runtime_pattern?(_), do: false
+
+  defp validate_runtime_conditions(conditions, context) when is_map(conditions) do
+    if Enum.all?(conditions, &valid_runtime_condition?(&1, context)),
+      do: :ok,
+      else: {:error, :malformed_policy}
+  end
+
+  defp validate_runtime_conditions(_, _), do: {:error, :malformed_policy}
+
+  defp valid_runtime_condition?({"ip_ranges", ranges}, %{ip_address: ip})
+       when is_list(ranges) and is_binary(ip) do
+    match?({:ok, _}, parse_ip(ip)) and
+      Enum.all?(ranges, fn range ->
+        case is_binary(range) && parse_cidr(range) do
+          {:ok, address, prefix} ->
+            prefix >= 0 and prefix <= if(tuple_size(address) == 4, do: 32, else: 128)
+
+          _ ->
+            false
+        end
+      end)
+  end
+
+  defp valid_runtime_condition?({"time_of_day", range}, %{timestamp: %DateTime{}})
+       when is_binary(range) do
+    case String.split(range, "-") do
+      [first, last] ->
+        match?({:ok, _}, Time.from_iso8601(first <> ":00")) and
+          match?({:ok, _}, Time.from_iso8601(last <> ":00"))
+
+      _ ->
+        false
+    end
+  end
+
+  defp valid_runtime_condition?({"date_range", range}, %{timestamp: %DateTime{}})
+       when is_binary(range) do
+    case String.split(range, ",") do
+      [first, last] ->
+        match?({:ok, _}, Date.from_iso8601(first)) and match?({:ok, _}, Date.from_iso8601(last))
+
+      _ ->
+        false
+    end
+  end
+
+  defp valid_runtime_condition?({"days_of_week", days}, %{timestamp: %DateTime{}})
+       when is_list(days),
+       do: Enum.all?(days, &(&1 in ~w(monday tuesday wednesday thursday friday saturday sunday)))
+
+  defp valid_runtime_condition?({"max_ttl", ttl}, context) when is_binary(ttl) do
+    case Integer.parse(ttl) do
+      {limit, ""} -> valid_runtime_condition?({"max_ttl_seconds", limit}, context)
+      _ -> false
+    end
+  end
+
+  defp valid_runtime_condition?({"max_ttl_seconds", limit}, %{requested_ttl: requested}),
+    do: is_integer(limit) and limit > 0 and is_integer(requested) and requested > 0
+
+  defp valid_runtime_condition?(_, _), do: false
+
+  defp runtime_condition?({"ip_ranges", ranges}, %{ip_address: ip})
+       when is_list(ranges) and is_binary(ip) do
+    ip_in_ranges?(ip, ranges)
+  end
+
+  defp runtime_condition?({"time_of_day", range}, %{timestamp: %DateTime{} = timestamp})
+       when is_binary(range) do
+    case String.split(range, "-") do
+      [first, last] ->
+        with {:ok, start_time} <- Time.from_iso8601(first <> ":00"),
+             {:ok, end_time} <- Time.from_iso8601(last <> ":00") do
+          time = DateTime.to_time(timestamp)
+          Time.compare(time, start_time) != :lt and Time.compare(time, end_time) != :gt
+        else
+          _ -> false
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp runtime_condition?({"days_of_week", days}, %{timestamp: %DateTime{} = timestamp})
+       when is_list(days) do
+    Enum.all?(days, &(&1 in ~w(monday tuesday wednesday thursday friday saturday sunday))) and
+      day_of_week_to_name(Date.day_of_week(DateTime.to_date(timestamp))) in days
+  end
+
+  defp runtime_condition?({"date_range", range}, %{timestamp: %DateTime{} = timestamp})
+       when is_binary(range) do
+    match?({:ok, _}, check_date_range(timestamp, range))
+  end
+
+  defp runtime_condition?({"max_ttl", ttl}, context) when is_binary(ttl) do
+    case Integer.parse(ttl) do
+      {limit, ""} -> runtime_max_ttl?(limit, context)
+      _ -> false
+    end
+  end
+
+  defp runtime_condition?({"max_ttl_seconds", ttl}, context), do: runtime_max_ttl?(ttl, context)
+  defp runtime_condition?(_, _), do: false
+
+  defp validate_runtime_ttl(nil, _), do: :ok
+
+  defp validate_runtime_ttl(limit, context) do
+    if valid_runtime_condition?({"max_ttl_seconds", limit}, context),
+      do: :ok,
+      else: {:error, :malformed_policy}
+  end
+
+  defp runtime_max_ttl?(nil, _), do: true
+
+  defp runtime_max_ttl?(limit, %{requested_ttl: requested})
+       when is_integer(limit) and limit > 0 and is_integer(requested) and requested > 0,
+       do: requested <= limit
+
+  defp runtime_max_ttl?(_, _), do: false
+
   @doc """
   Evaluates if a policy allows access given a context.
 
@@ -199,11 +374,13 @@ defmodule SecretHub.Core.PolicyEvaluator do
     # Convert glob pattern to regex
     # Supports: * (any segment), ** (any segments), exact match
     regex_pattern =
-      pattern
-      |> String.replace(".", "\\.")
-      |> String.replace("**", "___DOUBLE_STAR___")
-      |> String.replace("*", "[^.]+")
-      |> String.replace("___DOUBLE_STAR___", ".*")
+      ~r/(\*\*|\*)/
+      |> Regex.split(pattern, include_captures: true)
+      |> Enum.map_join(fn
+        "**" -> ".*"
+        "*" -> "[^.]+"
+        literal -> Regex.escape(literal)
+      end)
       |> then(&"^#{&1}$")
 
     Regex.match?(Regex.compile!(regex_pattern), secret_path)

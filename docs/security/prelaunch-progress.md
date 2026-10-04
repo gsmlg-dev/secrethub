@@ -14,7 +14,7 @@ verification and provisional artifact checks below are scoped evidence.
 | WP1 | v4 GF(256) sharing, uniform coefficients, strict/canonical envelopes, independent vectors: 49 tests passed. Separate wrapping/data keys, authenticated generation-bound envelope, durable singleton creation, conservative loading/recovery, restart sealed and manual seal no-op. Combined Vault/audit checks: 128 tests, zero failures, two pre-existing skips. | Final frozen artifact, compatibility and full restore checks |
 | WP2 | Private transport-peer management boundary before HTTP/socket dispatch, no second login/allowlist, CSRF/exact Origin/no-store and separate machine route set. Combined Web regression suite: 115 tests, zero failures. | Final image and actual deployment-network boundary |
 | WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot provisional OCI builds, locked assets/digest and release assembly passed. | Frozen committed source and exact final image qualification; provisional evidence must be rerun |
-| WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. | One legacy SQL failure each in scoped Core/channel suites; extra repair round approval pending. Final exact-artifact qualification |
+| WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. Approved SQL and both reviewed authorization regressions passed 28 Core, 30 existing policy and 17 channel tests. | Clean committed artifact build and final exact-artifact qualification |
 | WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. | Selected nonempty upgrade/compatible rollback and monitoring qualification; final full restore/RTO/RPO evidence |
 | WP6 | Artifact harness underway. Provisional Core/Agent images built, empty candidate explicitly migrated, real nonroot Core started outside checkout. | All G01–G20 tied to a frozen source and exact final image identifiers |
 
@@ -478,3 +478,46 @@ retained copy. Original Core/Agent are still healthy. G20/monitoring remain
 partial because this network-free drill does not test protected HTTP/Caddy or
 existing host alert routing/delivery. Final immutable-artifact replay, selected
 upgrade/rollback and the pending legacy-query repair authorization remain open.
+
+On October 4 the operator approved the prepared additional focused SQL repair
+round. The policy overlap query now casts its bindings to `varchar[]`, matching
+the read-only verified `character varying(255)[]` column. Only necessary wrapping
+of that query was added for the formatter. Core authorization checks passed
+25 tests with zero failures; channel checks passed 16 tests with zero failures.
+No assertions were changed, unknown database reset performed or serving fixture
+modified. The approved extra round completed successfully; its former approval
+block no longer applies.
+
+Before source freeze, read-only review found two separate authorization bugs:
+the literal pattern segment `___DOUBLE_STAR___` became a wildcard, and the
+dual-accept legacy channel branch checked the minimum authentication floor
+outside its authorization transaction. The current single-operator profile
+disables that legacy branch, but compatibility cutover still requires atomic
+floor enforcement. The exact-pattern regression reproduced the unintended grant
+and then passed five focused tests after wildcard tokens and literals were
+separated; independent source review found no blocker in that correction. The
+floor-race regression reproduced release after activation with an independently
+blocked PostgreSQL connection. The legacy read now holds the shared epoch lock
+through floor recheck, identity authorization, read and transaction commit;
+independent source review found no blocker. A first channel run passed the new
+regression but timed out at an existing typed-read test's unchanged 100 ms
+assertion. That test passed in isolation, then the complete channel suite passed
+17 tests with zero failures using the original failing seed 458707. The initial
+timeout's cause remains unconfirmed; no assertion or timeout was changed.
+
+Final focused Core authorization checks passed 28 tests with zero failures,
+and existing policy checks passed 30 tests with zero failures. Formatter checks
+on all 31 owned Elixir files, compilation with warnings as errors, and scoped
+diff checks passed. These results qualify source changes, not a new artifact or
+the complete launch plan. Final candidate construction remains outstanding.
+
+Fixture freshness checks at October 4 04:12 UTC found the disposable management
+CA, server and operator certificates expired on October 3. Runtime Core, runtime
+CA, Agent and static-consumer certificates remain valid. Management HTTPS was
+not tested with verification disabled. Separate disposable management test
+certificates were prepared separately using the same fixture CA public key and
+copied existing Caddy mechanism. Chain, SAN, EKU and negative certificate checks,
+plus Caddy adaptation/validation, passed. No service was started. The renewed
+fixture uses separate ports 17667/17669 and preserves every original input digest;
+original fixture identities, backups and all production configuration remain
+preserved. Final management HTTP acceptance remains unexecuted.

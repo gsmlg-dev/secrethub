@@ -130,6 +130,7 @@ defmodule SecretHub.Core.PKI.ClientAuth.Authority do
 
     with :ok <- validate_ca_validity_params(key_algo, ca_validity_days, default_ttl, max_ttl) do
       Repo.transaction(fn ->
+        SecretHub.Core.AuthorizationVersions.lock_global()
         # Check if authority already exists
         existing =
           Repo.one(

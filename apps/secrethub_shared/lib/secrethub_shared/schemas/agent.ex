@@ -67,6 +67,9 @@ defmodule SecretHub.Shared.Schemas.Agent do
     field(:ssh_host_public_key, :string)
     field(:user_agent, :string)
 
+    field(:runtime_capabilities, {:array, :string}, default: [])
+    field(:runtime_capabilities_seen_at, :utc_datetime)
+
     # Certificate binding
     belongs_to(:certificate, SecretHub.Shared.Schemas.Certificate)
 

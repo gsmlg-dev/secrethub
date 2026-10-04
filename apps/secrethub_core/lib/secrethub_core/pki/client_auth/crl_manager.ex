@@ -169,6 +169,8 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
 
     with :ok <- check_unsealed() do
       Repo.transaction(fn ->
+        SecretHub.Core.AuthorizationVersions.lock_global()
+
         case lock_authority() do
           nil ->
             Repo.rollback(:authority_not_initialized)
@@ -228,6 +230,8 @@ defmodule SecretHub.Core.PKI.ClientAuth.CRLManager do
     now = Keyword.get(opts, :now, DateTime.utc_now() |> DateTime.truncate(:second))
 
     Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+
       with %ClientAuthAuthority{} = authority <- lock_authority(),
            %Certificate{} = cert <- lock_certificate(cert_id),
            :ok <- validate_revocable_cert(cert, authority),

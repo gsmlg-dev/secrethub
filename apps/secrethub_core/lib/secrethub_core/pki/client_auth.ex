@@ -260,6 +260,8 @@ defmodule SecretHub.Core.PKI.ClientAuth do
 
       res =
         Repo.transaction(fn ->
+          SecretHub.Core.AuthorizationVersions.lock_global()
+
           existing =
             Repo.one(
               from(r in ClientAuthBundleReceipt,

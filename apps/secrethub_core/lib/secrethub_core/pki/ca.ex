@@ -258,6 +258,7 @@ defmodule SecretHub.Core.PKI.CA do
           {:ok, %{certificate: binary(), ca_chain: [binary()], issuer: Certificate.t()}}
           | {:error, :ca_unavailable | :issuance_failed}
   def issue_canonical_app_certificate(public_key, app_id) do
+    SecretHub.Core.AuthorizationVersions.lock_global()
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     with {:ok, ca, ca_chain, chain_valid_until} <- lock_validated_issuance_chain(now),

@@ -55,6 +55,175 @@ defmodule SecretHub.Core.UpgradeGates do
           | String.t()
   @type capability :: {String.t() | atom(), pos_integer()} | String.t() | atom()
 
+  @doc "Returns the durable Core-owned minimum local application authentication version."
+  def minimum_uds_auth_version do
+    Repo.get!(SecretHub.Shared.Schemas.AuthorizationEpoch, 1).minimum_uds_auth_version
+  end
+
+  @doc "Records capabilities only for the current authenticated socket Agent."
+  def record_agent_runtime_capabilities(identity, capabilities)
+      when is_map(identity) and is_list(capabilities) do
+    if Enum.all?(capabilities, &is_binary/1) and length(capabilities) <= 32 do
+      normalized =
+        capabilities |> Enum.filter(&(&1 == "uds_auth_v2")) |> Enum.uniq() |> Enum.sort()
+
+      Repo.transaction(fn ->
+        SecretHub.Core.AuthorizationVersions.lock_global()
+
+        case SecretHub.Core.Agents.authorize_runtime(
+               identity[:agent_id],
+               identity[:certificate_id]
+             ) do
+          :ok -> :ok
+          _ -> Repo.rollback(:invalid_agent)
+        end
+
+        if minimum_uds_auth_version() == 2 and "uds_auth_v2" not in normalized,
+          do: Repo.rollback(:incompatible_version)
+
+        agent = Repo.get_by!(SecretHub.Shared.Schemas.Agent, agent_id: identity[:agent_id])
+
+        Repo.update!(
+          Ecto.Changeset.change(agent,
+            runtime_capabilities: normalized,
+            runtime_capabilities_seen_at: DateTime.utc_now() |> DateTime.truncate(:second)
+          )
+        )
+
+        :ok
+      end)
+      |> case do
+        {:ok, :ok} -> :ok
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      {:error, :invalid_capabilities}
+    end
+  end
+
+  def record_agent_runtime_capabilities(_, _), do: {:error, :invalid_capabilities}
+
+  def verify_typed_runtime_authorization(opts) do
+    verify(:typed_runtime_authorization, &SecretHub.Core.AuthorizationVersions.report/0, opts)
+  end
+
+  @doc "Activates the irreversible auth-v2 floor under authorization and capability locks."
+  def activate_app_certificate_v2(opts) do
+    with {:ok, actor} <- normalize_actor(opts) do
+      result =
+        Repo.transaction(fn ->
+          SecretHub.Core.AuthorizationVersions.lock_global()
+
+          if minimum_uds_auth_version() == 2 do
+            Repo.get_by!(UpgradeGate, name: "app_certificate_v2")
+          else
+            if is_nil(Repo.get_by(UpgradeGate, name: "typed_runtime_authorization")),
+              do: Repo.rollback(:typed_authorization_not_verified)
+
+            if SecretHub.Core.AuthorizationVersions.report().findings != [],
+              do: Repo.rollback(:typed_authorization_not_verified)
+
+            report = SecretHub.Core.PKI.AppCertificatePreflight.report()
+            if report.findings != [], do: Repo.rollback(:nonzero_findings)
+            cutoff = DateTime.add(DateTime.utc_now(), -300, :second)
+
+            agents =
+              Repo.all(
+                from(a in SecretHub.Shared.Schemas.Agent,
+                  where:
+                    a.status in ^[
+                      :active,
+                      :trusted_connected,
+                      :disconnected,
+                      :suspended,
+                      :revoked
+                    ] or not is_nil(a.runtime_capabilities_seen_at),
+                  order_by: a.id,
+                  lock: "FOR UPDATE"
+                )
+              )
+
+            {fresh, stale} =
+              Enum.split_with(agents, fn a ->
+                a.status in [:active, :trusted_connected] and
+                  not is_nil(a.runtime_capabilities_seen_at) and
+                  DateTime.compare(a.runtime_capabilities_seen_at, cutoff) != :lt
+              end)
+
+            if fresh == [], do: Repo.rollback(:no_fresh_active_agents)
+            incompatible = Enum.reject(fresh, &("uds_auth_v2" in &1.runtime_capabilities))
+
+            if incompatible != [],
+              do: Repo.rollback({:incompatible_agents, Enum.map(incompatible, & &1.agent_id)})
+
+            snapshots = Enum.map(stale, &agent_capability_snapshot/1)
+            acknowledgements = Keyword.get(opts, :stale_agent_acknowledgements, [])
+
+            if not valid_agent_acknowledgements?(snapshots, acknowledgements),
+              do: Repo.rollback({:stale_agents, snapshots})
+
+            gate = verify_locked("app_certificate_v2", report, opts, actor, "uds_auth_v2@2")
+            # Snapshot acknowledgements are durable evidence bound to this generation.
+            Enum.each(acknowledgements, fn ack ->
+              Repo.query!(
+                "INSERT INTO upgrade_gate_stale_agent_acknowledgements(upgrade_gate_id, verification_generation, agent_id, snapshot_hash, reason, acknowledged_by) VALUES ($1,$2,$3,$4,$5,$6)",
+                [
+                  Ecto.UUID.dump!(gate.id),
+                  gate.verification_generation,
+                  ack.agent_id,
+                  canonical_hash(Map.delete(ack, :reason)),
+                  ack.reason,
+                  actor
+                ]
+              )
+            end)
+
+            Repo.update_all(SecretHub.Shared.Schemas.AuthorizationEpoch,
+              set: [minimum_uds_auth_version: 2]
+            )
+
+            gate
+          end
+        end)
+
+      if match?({:ok, _}, result), do: broadcast_uds_floor()
+      result
+    end
+  end
+
+  defp agent_capability_snapshot(agent) do
+    %{
+      agent_id: agent.agent_id,
+      observed_status: to_string(agent.status),
+      observed_seen_at: agent.runtime_capabilities_seen_at,
+      capabilities_hash: canonical_hash(agent.runtime_capabilities)
+    }
+  end
+
+  defp valid_agent_acknowledgements?(snapshots, acknowledgements)
+       when is_list(acknowledgements) do
+    length(snapshots) == length(acknowledgements) and
+      Enum.all?(acknowledgements, fn ack ->
+        is_map(ack) and public_string?(ack[:reason], 1024) and
+          Map.delete(ack, :reason) in snapshots
+      end) and
+      Enum.uniq_by(acknowledgements, &Map.delete(&1, :reason)) == acknowledgements
+  end
+
+  defp valid_agent_acknowledgements?(_, _), do: false
+
+  defp broadcast_uds_floor do
+    if Process.whereis(SecretHub.Web.PubSub),
+      do:
+        Phoenix.PubSub.broadcast(
+          SecretHub.Web.PubSub,
+          "authorization:uds_auth_floor",
+          {:uds_auth_floor_changed, %{minimum_uds_auth_version: 2}}
+        )
+
+    :ok
+  end
+
   @doc """
   Returns the fixed gate allowlist.
   """
@@ -106,6 +275,7 @@ defmodule SecretHub.Core.UpgradeGates do
          {:ok, actor_id} <- normalize_actor(opts),
          {:ok, capability} <- normalize_audit_capability(opts) do
       Repo.transaction(fn ->
+        SecretHub.Core.AuthorizationVersions.lock_global()
         verify_locked(gate_name, report, opts, actor_id, capability)
       end)
     end
@@ -205,6 +375,10 @@ defmodule SecretHub.Core.UpgradeGates do
   end
 
   defp verify_locked(gate_name, report, opts, actor_id, capability) do
+    if gate_name == "typed_runtime_authorization" and
+         SecretHub.Core.AuthorizationVersions.report().findings != [],
+       do: Repo.rollback(:nonzero_findings)
+
     acquire_gate_lock!(gate_name)
     current_gate = lock_current_gate(gate_name)
     generation = next_generation(current_gate)

@@ -282,19 +282,31 @@ defmodule SecretHub.Core.Agents do
   Assign policies to an agent.
   """
   def assign_policies(agent_id, policy_ids) when is_list(policy_ids) do
-    case Repo.get_by(Agent, agent_id: agent_id) do
-      %Agent{} = agent ->
-        policies = Repo.all(from(p in Policy, where: p.id in ^policy_ids))
+    Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+      agent = Repo.get_by(Agent, agent_id: agent_id) || Repo.rollback("Agent not found")
+      selected = Repo.all(from(p in Policy, where: p.id in ^policy_ids))
+      subject = "agent:" <> agent.id
+      current = SecretHub.Core.Policies.get_entity_policies(subject)
 
-        agent
-        |> Repo.preload(:policies)
-        |> Ecto.Changeset.change()
-        |> Ecto.Changeset.put_assoc(:policies, policies)
-        |> Repo.update()
+      Enum.each(current, fn policy ->
+        if policy.id not in policy_ids,
+          do: SecretHub.Core.Policies.unbind_policy_from_entity(policy.id, subject)
+      end)
 
-      nil ->
-        {:error, "Agent not found"}
-    end
+      Enum.each(selected, fn policy ->
+        case SecretHub.Core.Policies.bind_policy_to_entity(policy.id, subject) do
+          {:ok, _} -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
+      agent
+      |> Repo.preload(:policies)
+      |> Ecto.Changeset.change()
+      |> Ecto.Changeset.put_assoc(:policies, selected)
+      |> Repo.update!()
+    end)
   end
 
   @doc """
@@ -375,6 +387,17 @@ defmodule SecretHub.Core.Agents do
     - `:metadata` - Additional metadata map
   """
   def register_agent(attrs) do
+    Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+
+      case register_agent_locked(attrs) do
+        {:ok, agent} -> agent
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp register_agent_locked(attrs) do
     agent_attrs = %{
       agent_id: attrs[:agent_id],
       name: attrs[:name],
@@ -391,13 +414,7 @@ defmodule SecretHub.Core.Agents do
       {:ok, agent} ->
         # Assign policies if provided
         if policy_ids = attrs[:policy_ids] do
-          policies = Repo.all(from(p in Policy, where: p.id in ^policy_ids))
-
-          agent
-          |> Repo.preload(:policies)
-          |> Ecto.Changeset.change()
-          |> Ecto.Changeset.put_assoc(:policies, policies)
-          |> Repo.update()
+          assign_policies(agent.agent_id, policy_ids)
         else
           {:ok, Repo.preload(agent, [:policies, :certificate])}
         end

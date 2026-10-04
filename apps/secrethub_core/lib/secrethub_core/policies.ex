@@ -44,29 +44,63 @@ defmodule SecretHub.Core.Policies do
   alias SecretHub.Core.{Audit, Repo}
   alias SecretHub.Shared.Schemas.Policy
 
-  @doc """
-  Create a new policy.
+  # Keep mutation snapshots behind the epoch lock; database triggers provide
+  # the same ordering for direct SQL writers and atomically bump versions.
+  def create_policy(attrs),
+    do: authorization_write(fn -> create_policy_locked(normalize_binding_attrs(attrs)) end)
 
-  ## Parameters
+  def update_policy(id, attrs),
+    do: authorization_write(fn -> update_policy_locked(id, normalize_binding_attrs(attrs)) end)
 
-  - `attrs` - Map containing policy attributes
+  def delete_policy(id), do: authorization_write(fn -> delete_policy_locked(id) end)
 
-  ## Examples
+  def bind_policy_to_entity(id, entity),
+    do: authorization_write(fn -> bind_policy_to_entity_locked(id, normalize_binding(entity)) end)
 
-      iex> create_policy(%{
-        name: "database-readonly",
-        description: "Read-only access to database secrets",
-        policy_document: %{
-          "version" => "1.0",
-          "allowed_secrets" => ["prod.db.*"],
-          "allowed_operations" => ["read"]
-        },
-        entity_bindings: ["agent-001", "agent-002"]
-      })
-      {:ok, %Policy{}}
-  """
+  def unbind_policy_from_entity(id, entity),
+    do:
+      authorization_write(fn ->
+        unbind_policy_from_entity_locked(id, normalize_binding(entity))
+      end)
+
+  defp authorization_write(operation) do
+    Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+
+      case operation.() do
+        {:ok, result} -> result
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp normalize_binding_attrs(attrs) do
+    case Map.get(attrs, :entity_bindings) || Map.get(attrs, "entity_bindings") do
+      bindings when is_list(bindings) ->
+        key =
+          if Map.has_key?(attrs, :entity_bindings), do: :entity_bindings, else: "entity_bindings"
+
+        Map.put(attrs, key, Enum.map(bindings, &normalize_binding/1) |> Enum.uniq())
+
+      _ ->
+        attrs
+    end
+  end
+
+  defp normalize_binding(binding) do
+    case SecretHub.Core.AuthorizationVersions.resolve_binding(binding) do
+      {:ok, subject} ->
+        subject
+
+      {:error, reason} ->
+        if Repo.get_by(SecretHub.Shared.Schemas.UpgradeGate, name: "typed_runtime_authorization"),
+          do: Repo.rollback(reason),
+          else: binding
+    end
+  end
+
   @spec create_policy(map()) :: {:ok, Policy.t()} | {:error, Ecto.Changeset.t()}
-  def create_policy(attrs) do
+  defp create_policy_locked(attrs) do
     %Policy{}
     |> Policy.changeset(attrs)
     |> Repo.insert()
@@ -95,11 +129,8 @@ defmodule SecretHub.Core.Policies do
     end
   end
 
-  @doc """
-  Update an existing policy.
-  """
   @spec update_policy(binary(), map()) :: {:ok, Policy.t()} | {:error, term()}
-  def update_policy(policy_id, attrs) do
+  defp update_policy_locked(policy_id, attrs) do
     case Repo.get(Policy, policy_id) do
       nil ->
         {:error, "Policy not found"}
@@ -119,11 +150,8 @@ defmodule SecretHub.Core.Policies do
     end
   end
 
-  @doc """
-  Delete a policy.
-  """
   @spec delete_policy(binary()) :: {:ok, Policy.t()} | {:error, term()}
-  def delete_policy(policy_id) do
+  defp delete_policy_locked(policy_id) do
     case Repo.get(Policy, policy_id) do
       nil ->
         {:error, "Policy not found"}
@@ -198,16 +226,8 @@ defmodule SecretHub.Core.Policies do
     Repo.all(query)
   end
 
-  @doc """
-  Bind a policy to an entity (agent, app, etc.).
-
-  ## Examples
-
-      iex> bind_policy_to_entity("policy-uuid", "agent-001")
-      {:ok, %Policy{}}
-  """
   @spec bind_policy_to_entity(binary(), String.t()) :: {:ok, Policy.t()} | {:error, term()}
-  def bind_policy_to_entity(policy_id, entity_id) do
+  defp bind_policy_to_entity_locked(policy_id, entity_id) do
     case Repo.get(Policy, policy_id) do
       nil ->
         {:error, "Policy not found"}
@@ -227,11 +247,8 @@ defmodule SecretHub.Core.Policies do
     end
   end
 
-  @doc """
-  Unbind a policy from an entity.
-  """
   @spec unbind_policy_from_entity(binary(), String.t()) :: {:ok, Policy.t()} | {:error, term()}
-  def unbind_policy_from_entity(policy_id, entity_id) do
+  defp unbind_policy_from_entity_locked(policy_id, entity_id) do
     case Repo.get(Policy, policy_id) do
       nil ->
         {:error, "Policy not found"}
@@ -273,7 +290,17 @@ defmodule SecretHub.Core.Policies do
           {:ok, Policy.t()} | {:error, String.t()}
   def evaluate_access(entity_id, secret_path, operation, context \\ %{}) do
     # Get all policies bound to this entity
-    policies = list_policies(%{entity_binding: entity_id})
+    bindings =
+      case SecretHub.Core.AuthorizationVersions.resolve_binding(entity_id) do
+        {:ok, typed} -> Enum.uniq([entity_id, typed])
+        {:error, :ambiguous_subject} -> []
+        {:error, _} -> [entity_id]
+      end
+
+    policies =
+      Repo.all(
+        from(p in Policy, where: fragment("? && ?::varchar[]", p.entity_bindings, ^bindings))
+      )
 
     Logger.debug("Evaluating access",
       entity_id: entity_id,

@@ -46,6 +46,13 @@ defmodule SecretHub.Core.Apps do
 
       case Repo.insert(app_changeset) do
         {:ok, app} ->
+          if app.policies != [] do
+            case update_app_policies(app.id, app.policies) do
+              {:ok, _} -> :ok
+              {:error, reason} -> Repo.rollback(reason)
+            end
+          end
+
           # Generate bootstrap token
           {:ok, token, token_record} = generate_bootstrap_token(app.id)
 
@@ -134,6 +141,28 @@ defmodule SecretHub.Core.Apps do
   Update application metadata or policies.
   """
   def update_app(id, attrs) do
+    Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+      result = update_app_locked(id, attrs)
+
+      case result do
+        {:ok, app} ->
+          if Map.has_key?(attrs, :policies) or Map.has_key?(attrs, "policies") do
+            case update_app_policies(id, app.policies) do
+              {:ok, updated} -> updated
+              {:error, reason} -> Repo.rollback(reason)
+            end
+          else
+            app
+          end
+
+        {:error, reason} ->
+          Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp update_app_locked(id, attrs) do
     case get_app(id) do
       {:ok, app} ->
         changeset = Application.changeset(app, attrs)
@@ -386,7 +415,7 @@ defmodule SecretHub.Core.Apps do
 
     # Verify app exists
     with {:ok, _app} <- get_app(app_id),
-         {:ok, policy} <- Policies.bind_policy_to_entity(policy_id, app_id) do
+         {:ok, policy} <- Policies.bind_policy_to_entity(policy_id, "application:" <> app_id) do
       Logger.info("Policy bound to application", app_id: app_id, policy_id: policy_id)
       {:ok, policy}
     else
@@ -409,7 +438,7 @@ defmodule SecretHub.Core.Apps do
     alias SecretHub.Core.Policies
 
     with {:ok, _app} <- get_app(app_id),
-         {:ok, policy} <- Policies.unbind_policy_from_entity(policy_id, app_id) do
+         {:ok, policy} <- Policies.unbind_policy_from_entity(policy_id, "application:" <> app_id) do
       Logger.info("Policy unbound from application", app_id: app_id, policy_id: policy_id)
       {:ok, policy}
     else
@@ -437,7 +466,7 @@ defmodule SecretHub.Core.Apps do
 
     case get_app(app_id) do
       {:ok, _app} ->
-        policies = Policies.get_entity_policies(app_id)
+        policies = Policies.get_entity_policies("application:" <> app_id)
         {:ok, policies}
 
       {:error, reason} ->
@@ -471,7 +500,7 @@ defmodule SecretHub.Core.Apps do
 
     case get_app(app_id) do
       {:ok, _app} ->
-        Policies.evaluate_access(app_id, secret_path, operation, context)
+        Policies.evaluate_access("application:" <> app_id, secret_path, operation, context)
 
       {:error, :not_found} ->
         {:error, "Application not found"}
@@ -497,20 +526,60 @@ defmodule SecretHub.Core.Apps do
       {:ok, %Application{policies: ["db-read", "api-access"]}}
   """
   def update_app_policies(app_id, policy_names) when is_list(policy_names) do
-    with {:ok, app} <- get_app(app_id),
-         changeset <- Application.changeset(app, %{policies: policy_names}),
-         {:ok, updated_app} <- Repo.update(changeset) do
-      Logger.info("Application policies updated",
-        app_id: app_id,
-        policies: policy_names
-      )
+    Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
 
-      {:ok, updated_app}
-    else
-      {:error, reason} ->
-        Logger.error("Failed to update app policies", app_id: app_id, reason: inspect(reason))
-        {:error, reason}
-    end
+      app =
+        case get_app(app_id) do
+          {:ok, app} -> app
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
+      subject = "application:" <> app.id
+      current = SecretHub.Core.Policies.get_entity_policies(subject)
+
+      selected =
+        Enum.map(policy_names, fn name ->
+          case SecretHub.Core.Policies.get_policy_by_name(name) do
+            {:ok, policy} ->
+              policy
+
+            _ ->
+              if Repo.get_by(SecretHub.Shared.Schemas.UpgradeGate,
+                   name: "typed_runtime_authorization"
+                 ),
+                 do: Repo.rollback(:invalid_policy)
+
+              nil
+          end
+        end)
+        |> Enum.reject(&is_nil/1)
+
+      Enum.each(current, fn policy ->
+        if policy.name not in policy_names do
+          case SecretHub.Core.Policies.unbind_policy_from_entity(policy.id, subject) do
+            {:ok, _} -> :ok
+            {:error, reason} -> Repo.rollback(reason)
+          end
+        end
+      end)
+
+      Enum.each(selected, fn policy ->
+        case SecretHub.Core.Policies.bind_policy_to_entity(policy.id, subject) do
+          {:ok, _} -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end)
+
+      case Repo.update(
+             Application.changeset(Repo.get!(Application, app.id), %{
+               policies: Enum.uniq(policy_names)
+             })
+           ) do
+        {:ok, updated} -> updated
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
   end
 
   ## Private Helpers

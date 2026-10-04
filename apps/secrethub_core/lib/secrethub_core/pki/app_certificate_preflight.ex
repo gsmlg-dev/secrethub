@@ -541,6 +541,8 @@ defmodule SecretHub.Core.PKI.AppCertificatePreflight do
 
   defp backfill_batch(batch_size) do
     Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+
       certificates =
         from(certificate in Certificate,
           where: is_nil(certificate.canonical_fingerprint),

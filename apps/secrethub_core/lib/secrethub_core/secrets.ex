@@ -229,6 +229,17 @@ defmodule SecretHub.Core.Secrets do
       {:ok, %Secret{version: 2}}
   """
   def update_secret(secret_id, attrs, opts \\ []) do
+    Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+
+      case update_secret_locked(secret_id, attrs, opts) do
+        {:ok, result} -> result
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp update_secret_locked(secret_id, attrs, opts) do
     created_by = Keyword.get(opts, :created_by, "system")
     change_description = Keyword.get(opts, :change_description, "Secret updated")
     attrs = normalize_secret_attrs(attrs, :update)
@@ -299,6 +310,17 @@ defmodule SecretHub.Core.Secrets do
   Delete a secret.
   """
   def delete_secret(secret_id) do
+    Repo.transaction(fn ->
+      SecretHub.Core.AuthorizationVersions.lock_global()
+
+      case delete_secret_locked(secret_id) do
+        {:ok, result} -> result
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end)
+  end
+
+  defp delete_secret_locked(secret_id) do
     case Repo.get(Secret, secret_id) do
       nil ->
         {:error, "Secret not found"}
