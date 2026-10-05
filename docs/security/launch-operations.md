@@ -6,8 +6,10 @@ and one static-secret consumer. Production cutover is operator-owned. Follow
 this runbook only after the exact-candidate G01–G20 report passes; provisional
 images and source tests are insufficient. Current acceptance is incomplete.
 See the [combined candidate report](prelaunch/candidate11/acceptance-report.json):
-isolated selected checks passed; existing host alerts and backup destination/cadence
-still require qualification. Production cutover remains operator-owned.
+isolated selected checks passed; backup destination/cadence still require
+qualification. Console logging is the selected application boundary; Docker
+forwards it to the existing remote logging system. Production cutover remains
+operator-owned.
 
 ## Required inventory
 
@@ -104,8 +106,11 @@ measurements qualify that isolated configuration, not the operator's deployment.
 
 ## Required monitoring and responses
 
-Use the existing host logging/alert system with these actionable inputs. Do not
-export raw secret-bearing logs or create a new notification provider.
+SecretHub logs to the console. Docker forwards stdout/stderr to the existing
+remote logging system; forwarding, alert routing and delivery are managed outside
+this repository. The operator confirmed this boundary on 2026-10-05. Use the
+actionable health signals below with that existing system, keeping shares,
+plaintext values and private keys out of console output.
 
 | Signal | Observe | Operator action |
 | --- | --- | --- |
@@ -119,7 +124,7 @@ export raw secret-bearing logs or create a new notification provider.
 | Required CRL worker failed/stopped | `/v1/sys/health/ready` returns 503 with `crl_worker_unavailable`; general `/health` stays 200 with degraded body | Repair the required worker; alert on readiness/body, and keep liveness/management available |
 | Audit append/verification failed | Bounded audit failure logs and protected audit verification | Restrict sensitive operations and preserve evidence; check runtime keys/storage |
 
-Select explicit alert thresholds in the existing deployment configuration: backup
+The external logging/alert configuration owns alert thresholds: backup
 staleness from the chosen cadence; certificate/CRL warning before expiry; bundle
 lag from the measured configured enforcement bound. No RPO/RTO or revocation bound
 is accepted until the candidate report measures it. An Agent ping establishes

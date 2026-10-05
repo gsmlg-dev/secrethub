@@ -1,6 +1,6 @@
 # Prelaunch implementation evidence
 
-Plan date: 2026-10-01. Evidence refreshed: 2026-10-04. Baseline: `c7cb03083f98a7d461120013bf7b3b5933ffafaa`.
+Plan date: 2026-10-01. Evidence refreshed: 2026-10-05. Baseline: `c7cb03083f98a7d461120013bf7b3b5933ffafaa`.
 Implementation branch: `codex/prelaunch-wp1`, isolated under
 `.trees/codex/prelaunch-wp1`. Original checkout edits remain preserved.
 The operator-provided `secrethub-prelaunch-plan.en.md` is authoritative.
@@ -17,8 +17,8 @@ records the final selected checks and the remaining operator acceptance gates.
 | WP2 | Private transport-peer management boundary before HTTP/socket dispatch, no second login/allowlist, CSRF/exact Origin/no-store and separate machine route set. Combined Web regression suite: 115 tests, zero failures. | Final fixture ingress checks passed; production network acceptance remains operator-owned |
 | WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot provisional OCI builds, locked assets/digest and release assembly passed. | Clean frozen final Linux amd64 artifacts built and tested; no production qualification is inferred |
 | WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. Approved SQL and both reviewed authorization regressions passed 28 Core, 30 existing policy and 17 channel tests. | Final static/PKI lifecycle checks passed; damaged same-generation repair is unsupported and held |
-| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. Final Core same-schema upgrade and floor-1 isolated recovery rollback passed on one retained nonempty copy. | Final fresh restore and worker HTTP checks passed; host alerts and backup destination/cadence remain open. Serving/floor-2 downgrade and pending schema conversion are unsupported |
-| WP6 | Artifact harness runs the clean frozen Linux amd64 Core/Agent/consumer outside the checkout under real service UIDs and explicit migrations. Current final gate evidence is recorded below. | Final G01–G14 and G16 selected checks passed; G15 rejection passed with repair held, G17 selected reconciliation passed; G19 retained-output qualification passed and G20 awaits alert delivery |
+| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. Final Core same-schema upgrade and floor-1 isolated recovery rollback passed on one retained nonempty copy. | Final fresh restore and worker HTTP checks passed; console logging accepted by the operator; backup destination/cadence remain open. Serving/floor-2 downgrade and pending schema conversion are unsupported |
+| WP6 | Artifact harness runs the clean frozen Linux amd64 Core/Agent/consumer outside the checkout under real service UIDs and explicit migrations. Current final gate evidence is recorded below. | Final G01–G14 and G16 selected checks passed; G15 rejection passed with repair held, G17 selected reconciliation passed; G19 retained-output qualification passed; G20 health checks passed with console logging accepted and external forwarding operator-owned |
 
 ## Current acceptance audit
 
@@ -50,8 +50,8 @@ Separate reviewed exports now record the [G18 restricted compatibility
 rehearsal](prelaunch/candidate11/g18-report.json) and [Core-only G19 VM fault
 check](prelaunch/candidate11/g19-core-report.json) on the final Core image.
 Both retain `complete:false`; the G01–G10 report's unexecuted entries describe
-that invocation only. Final static/PKI and fresh restore checks have since passed. Stale-database reconciliation also passed. The refreshed retained-output scan also passed. Existing host alert delivery and
-backup destination/cadence acceptance remain open.
+that invocation only. Final static/PKI and fresh restore checks have since passed. Stale-database reconciliation also passed. The refreshed retained-output scan also passed. Console logging is accepted as the application boundary; Docker remote forwarding
+is externally managed. Backup destination/cadence acceptance remains open.
 
 | Gate | Inspected evidence | Remaining acceptance |
 | --- | --- | --- |
@@ -74,7 +74,7 @@ backup destination/cadence acceptance remain open.
 | G17 | [Final history report](prelaunch/candidate11/g17-history-reconciliation-report.json) passed old-generation rejection, authoritative backup reconciliation and actual denied/allowed requests in 116.403 seconds | Old database remains held. Serving the same complete newer backup is separately qualified by G16; helper partial/hold flags remain explicit |
 | G18 | Final `7dc01a18b500` same-schema upgrade and same-database recovery rollback to `1eb1bcc88a87` passed at floor 1; explicit migration was a no-op with all 48 versions installed | Only the isolated recovery boundary is qualified; old serving/floor-2 downgrade and pending schema conversion are unsupported |
 | G19 | Final Core and Agent isolated VM faults passed with dump suppression and no known sensitive output | [Final output scan](prelaunch/candidate11/g19-output-scan-report.json) passed 163 retained files and three exact-bound container logs (166 observations); final metadata/docs use the same held-material checks |
-| G20 | Final internal worker check passed in 12.938 seconds; [protected HTTP report](prelaunch/candidate11/g20-http-worker-report.json) passed actual healthy/stopped/recovered responses | Final actual protected HTTP healthy/stopped/recovered checks passed in 5.969 seconds; existing host alert integration/delivery remain unexecuted |
+| G20 | Final internal worker check passed in 12.938 seconds; [protected HTTP report](prelaunch/candidate11/g20-http-worker-report.json) passed actual healthy/stopped/recovered responses | Final actual protected HTTP healthy/stopped/recovered checks passed in 5.969 seconds; console logging accepted on 2026-10-05; Docker remote forwarding externally managed, without repository alert setup |
 
 Inspected private report references: `artifact-core-refreshed-1/report.json`,
 `artifact-core-refreshed-ingress-1/report.json`,
@@ -646,8 +646,8 @@ unchanged. The frozen helper hardcodes `provisional:true` in its emitted report;
 the export records the separately verified exact clean artifact binding instead
 of modifying that raw field. At that stage, G20 was partial: protected HTTP under
 this fault and existing host alert delivery were unexecuted, and monitoring choices
-were unanswered. Later evidence qualifies protected HTTP; host alert delivery
-still awaits operator input. Both unsuccessful fresh-PostgreSQL initialization instances/volumes
+were unanswered. Later evidence qualifies protected HTTP; the operator subsequently selected
+console logging with external Docker forwarding. Both unsuccessful fresh-PostgreSQL initialization instances/volumes
 were retained; the corrected instance exposes no TCP listener and has separate
 internal and mounted Unix sockets. No original database was reset.
 
@@ -720,8 +720,9 @@ HTTP 200 and changed healthy → degraded → healthy; liveness and protected
 management stayed HTTP 200. The supervised worker restarted under a new PID.
 Original container identity/configuration/incarnation stayed unchanged and owned
 cleanup passed. The same-VM control and actual HTTP responses were retained
-privately for final scanning. G20 remains partial solely for existing host alert
-integration/delivery; no alert provider or monitoring choice was invented.
+privately for final scanning. At that stage, G20 remained partial solely for
+existing host alert integration/delivery. The later operator decision below
+selects console logging with externally managed Docker forwarding.
 
 The diagnostic-complete G16 repeat also passed, including actual static/PKI
 readback, preserved authority/revocations/watermarks and original-service recovery.
@@ -773,8 +774,17 @@ release metadata was read as the service UIDs from immutable images: both
 `1.0.0-rc10`, ERTS `16.4.0.2`; owned metadata readers were removed.
 
 Implementation and isolated selected acceptance evidence are now reviewable.
-The complete plan and production readiness remain unaccepted: the existing host
-logging/alert system, actual alert delivery, backup destination/cadence and
-cadence/RPO/RTO acceptance are still unspecified/unexecuted. Production network
-preflight and cutover remain operator-owned. No deployment, publication, real
+The complete plan and production readiness remain unaccepted: backup
+destination/cadence and cadence/RPO/RTO acceptance are still unspecified/unexecuted.
+Production network preflight and cutover remain operator-owned. No deployment, publication, real
 credential rotation, live Caddy change, persistent-data reset, merge or push occurred.
+
+## Operator logging boundary — 2026-10-05
+
+The operator confirmed that console logging is sufficient: Docker forwards logs
+to the existing remote logging system, and no logging/alert integration setup is
+required in this repository. G20's actual healthy/stopped/recovered worker health
+checks passed; its historical reports retain `alert_delivery: unexecuted`. The
+combined report records the amended application scope without claiming remote
+alert delivery was tested. Console confidentiality remains covered by G19.
+Backup destination, cadence and recovery-target acceptance remain open.

@@ -121,10 +121,12 @@
       "metadata_export_evidence": "g19-final-metadata-report.json"
     },
     "G20": {
-      "status": "partial",
+      "status": "passed_selected_checks",
       "evidence": "g20-http-worker-report.json",
       "protected_worker_http": "passed",
-      "existing_host_alert_delivery": "unexecuted"
+      "existing_host_alert_delivery": "unexecuted",
+      "logging_boundary": "console output; Docker forwards to externally managed remote logging",
+      "scope_amendment": "Operator confirmed console logging is sufficient on 2026-10-05; repository alert integration/delivery is not required"
     }
   },
   "measurements": {
@@ -138,7 +140,6 @@
     "protected_worker_http_seconds": 5.969
   },
   "operator_inputs_pending": [
-    "existing host logging/alert integration and actual alert delivery",
     "existing backup destination and cadence; measured cadence/RPO/RTO acceptance"
   ],
   "production_actions": {
@@ -159,7 +160,6 @@
     "Raw helper partial/hold flags describe individual invocation boundaries; no complete launch acceptance is inferred"
   ],
   "remaining_work": [
-    "existing host logging/alert integration and actual alert delivery",
     "existing backup destination and cadence; measured cadence/RPO/RTO acceptance",
     "Operator-owned production preflight/network/cutover acceptance; no deployment authorized or performed"
   ],
@@ -275,5 +275,23 @@
         "notes": "Working directory: clean frozen codex/prelaunch-final11 checkout; protected HTTP and host alerts are separately scoped"
       }
     ]
+  },
+  "logging_boundary": {
+    "operator_confirmed_at": "2026-10-05",
+    "application_output": "console",
+    "forwarding": "Docker logs to the existing remote logging system",
+    "remote_logging_configuration": "externally managed; no repository setup required",
+    "remote_alert_delivery": "unexecuted and outside the amended implementation scope",
+    "console_confidentiality_evidence": "g19-output-scan-report.json",
+    "console_evidence": {
+      "source_configuration": [
+        "config/prod.exs:49 (Logger :info)",
+        "config/config.exs:144 (default console formatter)",
+        "Dockerfile.core:32 (foreground release start)"
+      ],
+      "runtime_evidence": "g20-http-worker-report.json",
+      "observation": "Retained exact-image HTTP diagnostics contain info-level output and the stopped-worker readiness response Sent 503; crl_worker_unavailable is verified in the HTTP body",
+      "autonomous_worker_stopped_alert_log": "unclaimed"
+    }
   }
 }

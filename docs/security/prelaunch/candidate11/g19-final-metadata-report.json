@@ -2,7 +2,7 @@
   "source_sha": "c226bf43ba3ed1292db08bcc4506b5435616c22b",
   "status": "passed",
   "complete": false,
-  "scope": "Final metadata exports and owned documents after retained-output scan and completion audit",
+  "scope": "Final metadata exports and owned documents after operator console-logging clarification",
   "same_patterns_as_reviewed_final_scan": true,
   "files": [
     {
@@ -22,22 +22,22 @@
     },
     {
       "file": "acceptance-report.json",
-      "sha256": "ce485fcf5ce778252cc08d36bcdb59309c3c42d853e3341deedf1330b43bd138",
+      "sha256": "3a81e5c393d434370f9a74236276b775329389ee718b66218612ad9165d6529e",
       "findings": false
     },
     {
       "file": "prelaunch-progress.md",
-      "sha256": "f75f12644276ccbefd3d45dc0ac98720f6ca8134f08d88c3ed0c12149016ccb8",
+      "sha256": "240a6d769991db946778cefd629d53949e764516c103a491ac000ffb2c65c056",
       "findings": false
     },
     {
       "file": "launch-operations.md",
-      "sha256": "b85c74dfdd0577a1f031e3f494695b36fa31109bbeb05eae3cecdd6fea2aaa4c",
+      "sha256": "95fc8dc562d37e0c6e25dec036675deb54a59c0953b9c5ea0b2e83a551edd208",
       "findings": false
     },
     {
       "file": "runtime-contract.md",
-      "sha256": "c318fff328d554ef37a38db861e7c69950585e2711e5c1b6d02e70ece71c5a83",
+      "sha256": "5e1092f9855b68e29ae1626e16a73fc85174e040fbb26f9d5b4872cf4a6a68ff",
       "findings": false
     }
   ],
