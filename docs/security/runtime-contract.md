@@ -95,10 +95,10 @@ Agent proof authentication, fresh Core authorization and revision-scoped caching
 are implemented. The [combined candidate report](prelaunch/candidate11/acceptance-report.json)
 records scoped source regressions and actual final-artifact enrollment, static
 consumer, cache and PKI checks. Missing CA trust and offline authorization fail
-closed in the selected checks. Full acceptance remains incomplete pending the
-backup destination/cadence and recovery-target acceptance, and operator production
-preflight/cutover. Console output is forwarded by Docker to the existing remote
-logging system; its forwarding and alert configuration are externally managed.
+closed in the selected checks. Implementation and isolated qualification are
+complete. Production preflight/cutover remain operator-owned; the existing
+backup system owns PostgreSQL backup delivery and requires no agent verification.
+Console output is forwarded by Docker to the existing remote logging system; its forwarding and alert configuration are externally managed.
 Source checks alone do not qualify static delivery or PKI consumer enforcement for launch.
 Historical dynamic leases and rotation jobs need an operator inventory before
 adopting the restricted profile; disabling unfinished features does not revoke

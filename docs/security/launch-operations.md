@@ -3,13 +3,14 @@
 This is the authoritative operations runbook for the Linux amd64 OCI launch
 profile: one Core, PostgreSQL 16, existing Caddy management mTLS, Client Auth PKI
 and one static-secret consumer. Production cutover is operator-owned. Follow
-this runbook only after the exact-candidate G01–G20 report passes; provisional
-images and source tests are insufficient. Current acceptance is incomplete.
+this runbook with the exact qualified candidate and its documented limits;
+provisional images and source tests alone are insufficient. The implementation
+work and isolated qualification are complete.
 See the [combined candidate report](prelaunch/candidate11/acceptance-report.json):
-isolated selected checks passed; backup destination/cadence still require
-qualification. Console logging is the selected application boundary; Docker
-forwards it to the existing remote logging system. Production cutover remains
-operator-owned.
+isolated enabled-scope checks passed. The existing backup system manages
+PostgreSQL backups; its destination, cadence and recovery targets are external
+and require no implementation-agent verification. Console logging is the selected
+application boundary; Docker forwards it to the existing remote logging system.
 
 ## Required inventory
 
@@ -168,10 +169,13 @@ by this evidence; keep the recovery hold until the separate reopen proof passes.
 
 ## Backup and full restore
 
-Follow [database recovery](../testing/disaster-recovery-procedures.md) using the
-existing destination and pinned PostgreSQL 16 tools. Configure nonsecret artifact,
-deployment and independent-inventory references. Recurring backup execution never
-changes bucket lifecycle, retention or notification policy.
+The existing backup system backs up PostgreSQL data. The operator confirmed on
+2026-10-05 that its configuration and verification are outside this task.
+Destination, scheduling, retention and recovery targets remain owned by that
+system. The [database recovery procedures](../testing/disaster-recovery-procedures.md)
+and isolated restore evidence document SecretHub recovery; the included tools
+remain available for rehearsals. Preserve independent configuration/key/share
+and Agent/consumer inventory references. No backup infrastructure change is required.
 
 Restore only into an explicitly selected empty, isolated database with no other
 clients. Validate the manifest and dump checksum, required role/extensions,

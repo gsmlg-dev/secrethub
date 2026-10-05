@@ -1,5 +1,10 @@
 # Database backup and recovery rehearsal
 
+The operator confirmed on 2026-10-05 that PostgreSQL data is backed up by the
+existing backup system; its destination, schedule and verification require no
+implementation-agent work. The procedures below document available isolated
+recovery/rehearsal tooling and SecretHub's independent recovery inventory.
+
 This document defines the supported backup tooling and its isolated database
 checks. The launch operations runbook and exact-artifact harness own service and
 consumer acceptance. A database restore alone does not establish application

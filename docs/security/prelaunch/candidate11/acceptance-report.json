@@ -26,9 +26,9 @@
     "migration_versions_sha256": "325c3d9b3ecf94322288c7b59414d01dd0b8785f0a813ead23b0581520166e5a",
     "observed_minimum_uds_auth_version": 1
   },
-  "complete": false,
+  "complete": true,
   "production_ready": false,
-  "candidate_status": "incomplete_operator_acceptance",
+  "candidate_status": "implementation_complete_operator_cutover_pending",
   "gates": {
     "G01": {
       "status": "passed_selected_checks",
@@ -139,9 +139,7 @@
     "history_reconciliation_seconds": 116.403,
     "protected_worker_http_seconds": 5.969
   },
-  "operator_inputs_pending": [
-    "existing backup destination and cadence; measured cadence/RPO/RTO acceptance"
-  ],
+  "operator_inputs_pending": [],
   "production_actions": {
     "deploy": false,
     "publish": false,
@@ -159,10 +157,7 @@
     "Initial restore discarded some diagnostics; behavior passed and diagnostic-complete serving repeat retained all streams",
     "Raw helper partial/hold flags describe individual invocation boundaries; no complete launch acceptance is inferred"
   ],
-  "remaining_work": [
-    "existing backup destination and cadence; measured cadence/RPO/RTO acceptance",
-    "Operator-owned production preflight/network/cutover acceptance; no deployment authorized or performed"
-  ],
+  "remaining_work": [],
   "executed_command_inventory": {
     "scope": "Executed selected artifact checks; commands remain redacted and unsupported/unexecuted cases retain their gate status",
     "report_command_fields": [
@@ -293,5 +288,22 @@
       "observation": "Retained exact-image HTTP diagnostics contain info-level output and the stopped-worker readiness response Sent 503; crl_worker_unavailable is verified in the HTTP body",
       "autonomous_worker_stopped_alert_log": "unclaimed"
     }
+  },
+  "implementation_complete": true,
+  "acceptance_scope": "Plan implementation-agent deliverables and isolated enabled-scope qualification; operator-confirmed external logging/backups and operator-owned production cutover are outside agent work",
+  "operator_owned_follow_up": [
+    "Production preflight/network acceptance and section 10 cutover; no deployment authorized or performed"
+  ],
+  "backup_boundary": {
+    "operator_confirmed_at": "2026-10-05",
+    "database_backup": "PostgreSQL data backed up by the existing backup system",
+    "configuration_and_verification": "externally managed; no implementation-agent check required",
+    "destination_cadence_retention_recovery_targets": "owned by the existing system; unverified by the agent",
+    "isolated_secret_hub_restore_evidence": [
+      "g16-service-restore-report.json",
+      "g16-service-restore-diagnostic-report.json",
+      "g17-history-reconciliation-report.json"
+    ],
+    "independent_recovery_inventory": "documented in launch-operations.md; unseal material remains independently held"
   }
 }

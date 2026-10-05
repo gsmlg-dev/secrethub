@@ -5,25 +5,27 @@ Implementation branch: `codex/prelaunch-wp1`, isolated under
 `.trees/codex/prelaunch-wp1`. Original checkout edits remain preserved.
 The operator-provided `secrethub-prelaunch-plan.en.md` is authoritative.
 
-**The complete plan is not accepted.** No production deployment, publication,
+**The implementation-agent work is complete under the operator-confirmed scope.** No production deployment, publication,
 credential rotation, persistent-data reset or live Caddy change occurred. Source
 verification, historical provisional checks and final artifact checks below are scoped evidence.
 The [combined exact-artifact report](prelaunch/candidate11/acceptance-report.json)
-records the final selected checks and the remaining operator acceptance gates.
+records the final enabled-scope checks, externally managed logging/backups and
+operator-owned production cutover.
 
-| Package | Implemented and verified evidence | Outstanding acceptance |
+| Package | Implemented and verified evidence | Qualification and supported limits |
 | --- | --- | --- |
-| WP1 | v4 GF(256) sharing, uniform coefficients, strict/canonical envelopes, independent vectors: 49 tests passed. Separate wrapping/data keys, authenticated generation-bound envelope, durable singleton creation, conservative loading/recovery, restart sealed and manual seal no-op. Combined Vault/audit checks: 128 tests, zero failures, two pre-existing skips. | Final Core integrity and fresh-restore checks passed; full candidate remains incomplete |
+| WP1 | v4 GF(256) sharing, uniform coefficients, strict/canonical envelopes, independent vectors: 49 tests passed. Separate wrapping/data keys, authenticated generation-bound envelope, durable singleton creation, conservative loading/recovery, restart sealed and manual seal no-op. Combined Vault/audit checks: 128 tests, zero failures, two pre-existing skips. | Final Core integrity and fresh-restore checks passed |
 | WP2 | Private transport-peer management boundary before HTTP/socket dispatch, no second login/allowlist, CSRF/exact Origin/no-store and separate machine route set. Combined Web regression suite: 115 tests, zero failures. | Final fixture ingress checks passed; production network acceptance remains operator-owned |
 | WP3 | Separate runtime-only Core/Agent inputs, historical audit keyring, disabled distribution, redacted preflight, accurate readiness/required CRL worker and restricted features. Runtime/preflight focused tests passed. Pinned/nonroot provisional OCI builds, locked assets/digest and release assembly passed. | Clean frozen final Linux amd64 artifacts built and tested; no production qualification is inferred |
 | WP4 | Actual static-consumer update/denial/revocation/restarts/outage passed; direct live-cache expiry observed on the exact-image debug clone. Enrolled PKI consumer issuance/revocation/reconnect and retained-history refusal passed. Approved SQL and both reviewed authorization regressions passed 28 Core, 30 existing policy and 17 channel tests. | Final static/PKI lifecycle checks passed; damaged same-generation repair is unsupported and held |
-| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. Final Core same-schema upgrade and floor-1 isolated recovery rollback passed on one retained nonempty copy. | Final fresh restore and worker HTTP checks passed; console logging accepted by the operator; backup destination/cadence remain open. Serving/floor-2 downgrade and pending schema conversion are unsupported |
+| WP5 | Manifest/checksum backups and transactional empty-target PG16 restores passed. Separate Agent/consumer identity snapshots, restricted static/audit/PKI checks, retained-history reconciliation, controlled PKI and static-consumer reopen, and required-worker stop/readiness/recovery passed provisionally. Final Core same-schema upgrade and floor-1 isolated recovery rollback passed on one retained nonempty copy. | Final fresh restore and worker HTTP checks passed; console logging and externally managed PostgreSQL backups accepted by the operator. Serving/floor-2 downgrade and pending schema conversion are unsupported |
 | WP6 | Artifact harness runs the clean frozen Linux amd64 Core/Agent/consumer outside the checkout under real service UIDs and explicit migrations. Current final gate evidence is recorded below. | Final G01–G14 and G16 selected checks passed; G15 rejection passed with repair held, G17 selected reconciliation passed; G19 retained-output qualification passed; G20 health checks passed with console logging accepted and external forwarding operator-owned |
 
 ## Current acceptance audit
 
 The provisional report files were inspected again after commits `8c88de3` and
-`181e0f2`. The complete frozen final candidate is not accepted. The diagnostic Core image
+`181e0f2`. The frozen candidate is qualified for the documented isolated implementation scope;
+production deployment is operator-owned. The diagnostic Core image
 `1eb1bcc88a87` still has source revision `e5e1107` and
 `secrethub.source.dirty=true`; committed harness updates do not change that
 image's source provenance. The early Core gates used `ab0e6cbc24ae`, not this
@@ -51,9 +53,10 @@ rehearsal](prelaunch/candidate11/g18-report.json) and [Core-only G19 VM fault
 check](prelaunch/candidate11/g19-core-report.json) on the final Core image.
 Both retain `complete:false`; the G01–G10 report's unexecuted entries describe
 that invocation only. Final static/PKI and fresh restore checks have since passed. Stale-database reconciliation also passed. The refreshed retained-output scan also passed. Console logging is accepted as the application boundary; Docker remote forwarding
-is externally managed. Backup destination/cadence acceptance remains open.
+is externally managed. The operator also confirmed PostgreSQL backups are
+managed by the existing backup system and need no implementation-agent check.
 
-| Gate | Inspected evidence | Remaining acceptance |
+| Gate | Inspected evidence | Qualification and supported limits |
 | --- | --- | --- |
 | G01 | Runtime audit-key gate passed on final `7dc01a18b500` | Selected final Core scenario passed |
 | G02 | Empty-database initialization passed on final `7dc01a18b500` | Selected final Core scenario passed |
@@ -65,12 +68,12 @@ is externally managed. Backup destination/cadence acceptance remains open.
 | G08 | Separate ingress-negative invocation passed on final `7dc01a18b500` | Selected final Core scenario passed |
 | G09 | Origin/CSRF negatives passed on final `7dc01a18b500` | Selected final Core scenario passed |
 | G10 | Sealed lifecycle passed on final `7dc01a18b500` | Selected final Core scenario passed |
-| G11 | Final Core `7dc01a18b500` and Agent `744137294f71` passed real enrollment/restart/reconnect and damaged-state rejection in 157.779 seconds | Selected final lifecycle scenario passed; full candidate remains incomplete |
+| G11 | Final Core `7dc01a18b500` and Agent `744137294f71` passed real enrollment/restart/reconnect and damaged-state rejection in 157.779 seconds | Selected final lifecycle scenario passed |
 | G12 | Final Core/Agent/consumer passed initial/update readback, denial, policy revoke/regrant, restarts and outage in 353.039 seconds | Selected final static lifecycle scenario passed |
 | G13 | Final static outage rejected warmed reads; same-image logger-debug observer proved one population, one warm reuse and count-1 expiry at 301.289 seconds | Selected final bounded-cache checks passed; debug configuration scope is recorded separately from normal logging |
 | G14 | [Final PKI report](prelaunch/candidate11/g14-pki-report.json) passed on the frozen Core/Agent and qualified consumer | Final run2 passed; rejection upper bounds 13.186–13.197 seconds within 30 seconds. Resumption disabled; connection termination untested |
 | G15 | [Final corruption report](prelaunch/candidate11/g15-corruption-report.json) passed required rejection checks; helper remains partial for unsupported repair | Final copy-only rejection checks passed in 308.806 seconds. Same-generation in-place repair unsupported; quarantine and damaged copies retained |
-| G16 | [Full restore report](prelaunch/candidate11/g16-service-restore-report.json) and [diagnostic-complete repeat](prelaunch/candidate11/g16-service-restore-diagnostic-report.json) passed on final artifacts | Final full fresh restore passed: static2/rev3, audit/CA key, actual revoked/control requests, identity/watermark preservation; consumer wall 198.903 seconds, snapshot age 237.185 seconds. Diagnostic-complete serving repeat passed (147.210-second driver); RPO/RTO/cadence unaccepted |
+| G16 | [Full restore report](prelaunch/candidate11/g16-service-restore-report.json) and [diagnostic-complete repeat](prelaunch/candidate11/g16-service-restore-diagnostic-report.json) passed on final artifacts | Final full fresh restore passed: static2/rev3, audit/CA key, actual revoked/control requests, identity/watermark preservation; consumer wall 198.903 seconds, snapshot age 237.185 seconds. Diagnostic-complete serving repeat passed (147.210-second driver); production RPO/RTO/cadence externally managed and untested |
 | G17 | [Final history report](prelaunch/candidate11/g17-history-reconciliation-report.json) passed old-generation rejection, authoritative backup reconciliation and actual denied/allowed requests in 116.403 seconds | Old database remains held. Serving the same complete newer backup is separately qualified by G16; helper partial/hold flags remain explicit |
 | G18 | Final `7dc01a18b500` same-schema upgrade and same-database recovery rollback to `1eb1bcc88a87` passed at floor 1; explicit migration was a no-op with all 48 versions installed | Only the isolated recovery boundary is qualified; old serving/floor-2 downgrade and pending schema conversion are unsupported |
 | G19 | Final Core and Agent isolated VM faults passed with dump suppression and no known sensitive output | [Final output scan](prelaunch/candidate11/g19-output-scan-report.json) passed 163 retained files and three exact-bound container logs (166 observations); final metadata/docs use the same held-material checks |
@@ -774,9 +777,9 @@ release metadata was read as the service UIDs from immutable images: both
 `1.0.0-rc10`, ERTS `16.4.0.2`; owned metadata readers were removed.
 
 Implementation and isolated selected acceptance evidence are now reviewable.
-The complete plan and production readiness remain unaccepted: backup
-destination/cadence and cadence/RPO/RTO acceptance are still unspecified/unexecuted.
-Production network preflight and cutover remain operator-owned. No deployment, publication, real
+Implementation deliverables and isolated enabled-scope qualification are complete.
+Production readiness is not asserted: network preflight and cutover remain
+operator-owned, and external logging/backup systems are outside this task. No deployment, publication, real
 credential rotation, live Caddy change, persistent-data reset, merge or push occurred.
 
 ## Operator logging boundary — 2026-10-05
@@ -787,4 +790,23 @@ required in this repository. G20's actual healthy/stopped/recovered worker healt
 checks passed; its historical reports retain `alert_delivery: unexecuted`. The
 combined report records the amended application scope without claiming remote
 alert delivery was tested. Console confidentiality remains covered by G19.
-Backup destination, cadence and recovery-target acceptance remain open.
+The subsequent backup-system decision below closes the remaining external-system
+question for this implementation task.
+
+## Operator backup boundary and implementation completion — 2026-10-05
+
+The operator confirmed that the existing backup system backs up PostgreSQL data
+and requires no configuration or verification by the implementation agent. This
+decision removes destination, cadence and recovery-target acceptance from the
+agent's work. The completed isolated restore drills and their measured durations
+remain evidence; no production backup-system or RPO/RTO result is inferred.
+Independent unseal/key/configuration and Agent/consumer recovery inventory remain
+documented in the runbook.
+
+WP1–WP6 implementation deliverables are complete within the plan's fixed
+constraints and these operator decisions. Final G01–G20 enabled-scope evidence,
+executed commands, immutable artifacts, source regressions, runtime/preflight
+contract and the authoritative runbook are archived. Historical partial/helper
+reports and unsupported repair/downgrade holds remain explicit. Section 10's
+production deployment and user-visible cutover are operator-owned; they were
+not performed. No required implementation-agent work remains.
