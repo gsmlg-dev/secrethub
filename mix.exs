@@ -4,7 +4,7 @@ defmodule SecretHub.MixProject do
   def project do
     [
       apps_path: "apps",
-      version: "1.0.0-rc10",
+      version: "1.0.0-rc11",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),
