@@ -3,28 +3,31 @@ defmodule SecretHub.Core.ClusterIdentityReleaseSurfaceTest do
 
   @repo_root Path.expand("../../../..", __DIR__)
 
-  test "Core Dockerfiles provide build identities without defaulting production runtime identities" do
-    core = read!("Dockerfile.core")
-    standalone = read!("Dockerfile.core-standalone")
-
-    assert core =~ "ENV SECRET_HUB_CLUSTER_NODE_ID=build-only-"
-    refute runtime_stage(core) =~ "ENV SECRET_HUB_CLUSTER_NODE_ID="
-
-    assert standalone =~ "ENV SECRET_HUB_CLUSTER_NODE_ID=build-only-"
-    refute runtime_stage(standalone) =~ "ENV SECRET_HUB_CLUSTER_NODE_ID="
+  test "Core Dockerfiles leave runtime identities to the operator" do
+    for path <- ["Dockerfile.core", "Dockerfile.core-standalone"] do
+      dockerfile = read!(path)
+      refute dockerfile =~ "ENV SECRET_HUB_CLUSTER_NODE_ID="
+      assert runtime_stage(dockerfile) =~ "RELEASE_DISTRIBUTION=none"
+    end
   end
 
-  test "release workflow wires build identity and generated runtime examples" do
+  test "release workflow documents required runtime identity without build defaults" do
     workflow = read!(".github/workflows/release.yml")
 
-    assert workflow =~ "BUILD_CLUSTER_NODE_ID: 'build-only-"
+    refute workflow =~ "BUILD_CLUSTER_NODE_ID"
+    refute workflow =~ "SECRET_HUB_CLUSTER_NODE_ID:"
 
-    assert count(workflow, "SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}") >=
-             3
+    for input <- [
+          "SECRET_HUB_CLUSTER_NODE_ID",
+          "AUDIT_HMAC_KEY",
+          "AUDIT_HMAC_KEY_ID",
+          "SECRET_HUB_MANAGEMENT_ORIGIN",
+          "RELEASE_DISTRIBUTION=none"
+        ] do
+      assert workflow =~ input
+    end
 
-    assert workflow =~ "-e SECRET_HUB_CLUSTER_NODE_ID=core-replica-a"
-    assert workflow =~ "-e SECRET_HUB_CLUSTER_NODE_ID=secrethub-core-standalone"
-    assert workflow =~ "export SECRET_HUB_CLUSTER_NODE_ID=core-replica-a"
+    assert workflow =~ "docs/security/runtime-contract.md"
   end
 
   test "active Core deployment examples pass a stable runtime identity" do
@@ -59,13 +62,6 @@ defmodule SecretHub.Core.ClusterIdentityReleaseSurfaceTest do
   defp runtime_stage(dockerfile) do
     [_builder, runtime] = String.split(dockerfile, " AS runtime", parts: 2)
     runtime
-  end
-
-  defp count(contents, needle) do
-    contents
-    |> String.split(needle)
-    |> length()
-    |> Kernel.-(1)
   end
 
   defp executable_core_blocks(markdown) do
