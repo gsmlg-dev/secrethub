@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-SecretHub is an enterprise-grade Machine-to-Machine secrets management platform built with Elixir. It provides centralized secrets storage, dynamic credential generation, automatic rotation, and mTLS-based secure communication between core services and agents.
+SecretHub is a Machine-to-Machine secrets management platform built with Elixir for the owner's own systems. It provides centralized secrets storage, dynamic credential generation, automatic rotation, and mTLS-based secure communication between core services and agents.
+
+### Design Principles
+
+- **Personal system use:** SecretHub serves the owner's own infrastructure. It does not require an application user system; do not introduce user accounts, registration, password login, or user management.
+- **Management UI authentication:** The management/admin UI runs behind Caddy with mandatory mTLS client certificate verification. Caddy provides the authentication boundary; do not add application-level admin login, session authentication, or another authentication layer. The UI must remain accessible only through this protected proxy.
+- **Machine security:** These UI principles do not remove Core-Agent mTLS, agent enrollment, machine identity, secret access policies, or API authentication requirements.
 
 **Architecture:** Two-tier system
 - **SecretHub Core**: Central Phoenix-based service managing PKI, policies, secret engines, and audit logging
@@ -113,6 +119,7 @@ apps/
   - Phoenix component → `duskmoon-dev/phoenix-duskmoon-ui`
 
 ### Authentication & Security
+- Management/admin UI authentication is enforced by Caddy mTLS; no additional application-level admin authentication is required (see Design Principles).
 - mTLS between Core and Agents; PKI engine manages internal CA
 - Applications connect to local Agent via Unix Domain Sockets
 
@@ -145,7 +152,7 @@ Located in `apps/secrethub_core/lib/secrethub_core/engines/`:
 - `/v1/sys/leases/*` - Lease management
 - `/v1/pki/*` - PKI and certificate operations
 - `/v1/apps/*` - Application registration and management
-- `/admin/*` - LiveView admin dashboard (session-based auth)
+- `/admin/*` - LiveView admin dashboard (protected by Caddy mTLS; no additional application-level authentication)
 - `/dev/dashboard` - Phoenix LiveDashboard (dev only)
 - `/dev/mailbox` - Swoosh email preview (dev only)
 

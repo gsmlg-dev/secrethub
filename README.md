@@ -10,6 +10,14 @@
 
 SecretHub is a secure, reliable, and highly automated secrets management platform designed specifically for Machine-to-Machine (M2M) communication. Built in Elixir with a HashiCorp Vault-like architecture, it eliminates hardcoded credentials through centralized management, dynamic generation, and automatic rotation.
 
+### Design Principles
+
+These principles define the intended application and deployment design:
+
+- **Own systems only:** SecretHub serves the owner's own systems. It does not require an application user system, human user accounts, registration, or user management.
+- **Caddy protects management access:** The management/admin UI runs behind Caddy with mandatory client-certificate authentication (mTLS). Caddy owns this access boundary; the admin UI does not require an additional application login or authentication layer. Keep the backend reachable only through this protected proxy.
+- **Machine security remains required:** Agent certificate identity, enrollment approval, API authentication, and secret-access policies remain part of the machine security model.
+
 ### Core Features
 
 | Feature | Description |
@@ -313,6 +321,8 @@ secrethub/                              # Elixir Umbrella Application
 
 ## 🖥️ Admin Dashboard
 
+The intended access model for `/admin` is Caddy mTLS, with no additional in-app admin authentication or human user system.
+
 The LiveView-based admin dashboard (`/admin`) provides:
 
 ### Core Management
@@ -431,7 +441,7 @@ docker run -d \
   ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc9
 ```
 
-For production, run migrations before starting Core, expose the trusted Agent mTLS endpoint, and persist Agent state. See [docs/deploy.md](docs/deploy.md).
+For production, run migrations before starting Core, serve the management/admin UI through Caddy with mandatory mTLS, expose the trusted Agent mTLS endpoint, and persist Agent state. The Core web backend must not be publicly accessible around Caddy. See [docs/deploy.md](docs/deploy.md).
 
 ### Required Runtime Environment
 
@@ -439,8 +449,10 @@ For production, run migrations before starting Core, expose the trusted Agent mT
 |---------|----------|
 | Core | `PHX_SERVER=true`, `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST`, `SECRET_HUB_CLUSTER_NODE_ID` |
 | Core trusted Agent endpoint | `SECRET_HUB_AGENT_ENDPOINT_SERVER=true`, endpoint cert/key/CA paths |
-| Core admin mTLS endpoint | `SECRET_HUB_ADMIN_ENDPOINT_SERVER=true`, endpoint cert/key/client-CA paths, canonical admin certificate fingerprints |
+| Caddy management proxy | Mandatory mTLS client-certificate verification; private connectivity to the Core web backend |
 | Agent | `SECRET_HUB_AGENT_CORE_URL` |
+
+The Caddy boundary is the intended management deployment design. Existing Core admin endpoint and certificate-fingerprint configuration must be reconciled with this design; see [docs/deploy.md](docs/deploy.md) for the current deployment configuration.
 
 `SECRET_HUB_CLUSTER_NODE_ID` must be stable across restarts and unique to each
 concurrently running Core replica.
