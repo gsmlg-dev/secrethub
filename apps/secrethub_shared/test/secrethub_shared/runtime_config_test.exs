@@ -53,4 +53,27 @@ defmodule SecretHub.Shared.RuntimeConfigTest do
       RuntimeConfig.verification_keys!(~s({"old":"private"}))
     end
   end
+
+  test "management origins require exact HTTPS origins without wildcard hosts or URL extras" do
+    assert URI.to_string(RuntimeConfig.https_origin!("ORIGIN", "https://admin.example:8443/")) ==
+             "https://admin.example:8443"
+
+    for value <- [
+          "http://admin.example",
+          "//admin.example",
+          "https://*.example",
+          "https://admin.example/path",
+          "https://user:private@admin.example",
+          "https://admin.example?token=private",
+          "https://admin.example#private",
+          "https://admin.example:0",
+          "https://admin.example:65536",
+          "",
+          "*"
+        ] do
+      assert_raise ArgumentError, "ORIGIN: invalid_origin", fn ->
+        RuntimeConfig.https_origin!("ORIGIN", value)
+      end
+    end
+  end
 end

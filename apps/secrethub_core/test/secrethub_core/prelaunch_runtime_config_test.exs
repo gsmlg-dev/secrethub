@@ -5,8 +5,12 @@ defmodule SecretHub.Core.PrelaunchRuntimeConfigTest do
   @keys ~w(RELEASE_DISTRIBUTION SECRETHUB_ROLE PHX_SERVER SECRET_HUB_CLUSTER_NODE_ID DATABASE_URL DATABASE_URL_FILE SECRET_KEY_BASE SECRET_KEY_BASE_FILE AUDIT_HMAC_KEY AUDIT_HMAC_KEY_FILE AUDIT_HMAC_KEY_ID AUDIT_HMAC_VERIFICATION_KEYS AUDIT_HMAC_VERIFICATION_KEYS_FILE SECRET_HUB_MANAGEMENT_ORIGIN SECRET_HUB_MANAGEMENT_BIND_IP SECRET_HUB_TRUSTED_PROXY_IP SECRET_HUB_MACHINE_ENDPOINT_SERVER SECRET_HUB_MACHINE_BIND_IP SECRET_HUB_MACHINE_PORT SECRET_HUB_ADMIN_ENDPOINT_SERVER SECRET_HUB_AGENT_ENDPOINT_SERVER SECRET_HUB_AGENT_ENDPOINT_PORT SECRET_HUB_AGENT_CORE_URL SECRET_HUB_AGENT_HOST_KEY_PATH SECRET_HUB_AGENT_ENROLLMENT_CA_PATH SECRET_HUB_AGENT_STATE_DIR SECRET_HUB_AGENT_SOCKET_PATH SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR PORT)
 
   setup do
-    saved = Map.new(@keys, &{&1, System.get_env(&1)})
-    for key <- @keys, do: System.delete_env(key)
+    keys =
+      @keys ++
+        ~w(SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS_FILE)
+
+    saved = Map.new(keys, &{&1, System.get_env(&1)})
+    for key <- keys, do: System.delete_env(key)
 
     on_exit(fn ->
       for {key, value} <- saved do
@@ -47,6 +51,34 @@ defmodule SecretHub.Core.PrelaunchRuntimeConfigTest do
     assert endpoint[:https] == nil
     assert config[:secrethub_human][:enabled] == false
     assert config[:secrethub_web][SecretHub.Web.MachineEndpoint][:server]
+  end
+
+  test "additional public origins are explicit, normalized and deduplicated" do
+    System.put_env(
+      "SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS",
+      "https://core.example.test, https://admin.example.test/, https://core.example.test"
+    )
+
+    endpoint = read("core")[:secrethub_web][SecretHub.Web.Endpoint]
+    assert endpoint[:url][:host] == "admin.example.test"
+    assert endpoint[:check_origin] == ["https://admin.example.test", "https://core.example.test"]
+  end
+
+  test "unsafe additional public origins fail closed without echoing input" do
+    for origin <- [
+          "*",
+          "https://*.example.test",
+          "http://core.example.test",
+          "https://core.example.test/path",
+          "https://user:private@core.example.test",
+          "https://core.example.test,"
+        ] do
+      System.put_env("SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS", origin)
+
+      assert_raise ArgumentError, "SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS: invalid_origin", fn ->
+        read("core")
+      end
+    end
   end
 
   @tag :tmp_dir

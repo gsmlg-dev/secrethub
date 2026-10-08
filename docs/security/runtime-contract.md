@@ -53,6 +53,35 @@ public Origin. `SECRET_HUB_MANAGEMENT_BIND_IP` and `SECRET_HUB_TRUSTED_PROXY_IP`
 may select an explicit private IPv4 address. Wildcard/public management binding
 is rejected. Never expose a loopback proxy tunnel to untrusted callers.
 
+### HTTPS termination and LiveView origins
+
+Set `SECRET_HUB_MANAGEMENT_ORIGIN` to the public HTTPS origin, including a port
+when it differs from 443. The backend remains HTTP; `PHX_HOST`, its private port,
+and forwarded headers do not define the allowed browser origins. For example:
+
+```sh
+SECRET_HUB_MANAGEMENT_ORIGIN=https://secrethub.example.com
+SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS=https://admin.example.com
+SECRET_HUB_MANAGEMENT_BIND_IP=127.0.0.1
+SECRET_HUB_TRUSTED_PROXY_IP=127.0.0.1
+PORT=4664
+```
+
+`SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS[_FILE]` is an optional comma-separated list
+of additional exact HTTPS origins. The canonical origin is always included.
+Both the private ingress check and Phoenix's WebSocket/longpoll origin checks
+use this list before socket dispatch. Wildcard hosts, HTTP, credentials, paths,
+queries, fragments and invalid ports are rejected at startup. Without the
+optional list, only the canonical origin is accepted. Origin checking stays
+enabled even when Caddy terminates HTTPS.
+
+Caddy must require client certificates on **every** configured public hostname
+and proxy only to the private backend. For host-networked Core, the existing
+`reverse_proxy 127.0.0.1:4664` can serve both hostnames. Only the configured proxy
+transport peer may reach management routes; forwarding headers cannot authorize
+another peer or allow an unrelated browser origin. This setting does not add an
+application login or a native admin TLS listener.
+
 Machine enrollment/token HTTP uses a separate route set, enabled with
 `SECRET_HUB_MACHINE_ENDPOINT_SERVER=true`, default `127.0.0.1:4668`.
 `SECRET_HUB_MACHINE_BIND_IP`, `SECRET_HUB_MACHINE_HOST`, and

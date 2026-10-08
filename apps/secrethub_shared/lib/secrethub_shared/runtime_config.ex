@@ -49,6 +49,19 @@ defmodule SecretHub.Shared.RuntimeConfig do
     end
   end
 
+  def https_origin!(name, value) do
+    uri = https_url!(name, value)
+
+    if uri.path in [nil, "", "/"] and uri.port in 1..65_535 and
+         not Regex.match?(~r/[\s*\\]/, uri.host) do
+      %{uri | path: nil}
+    else
+      raise ArgumentError
+    end
+  rescue
+    _ -> raise ArgumentError, "#{name}: invalid_origin"
+  end
+
   def verification_keys!(nil), do: %{}
 
   def verification_keys!(encoded) do

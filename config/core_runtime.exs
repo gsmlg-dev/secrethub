@@ -141,13 +141,27 @@ if config_env() == :prod do
 
   # The public origin is independent of the private transport address and Host headers.
   origin =
-    RuntimeConfig.https_url!(
+    RuntimeConfig.https_origin!(
       "SECRET_HUB_MANAGEMENT_ORIGIN",
       RuntimeSecrets.read!("SECRET_HUB_MANAGEMENT_ORIGIN")
     )
 
-  if origin.path not in [nil, "", "/"],
-    do: raise(ArgumentError, "SECRET_HUB_MANAGEMENT_ORIGIN: invalid_origin")
+  additional_origins =
+    case RuntimeSecrets.read!("SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS", required: false) do
+      nil ->
+        []
+
+      value ->
+        value
+        |> String.split(",")
+        |> Enum.map(fn value ->
+          "SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS"
+          |> RuntimeConfig.https_origin!(String.trim(value))
+          |> URI.to_string()
+        end)
+    end
+
+  allowed_origins = Enum.uniq([URI.to_string(origin) | additional_origins])
 
   port = RuntimeConfig.port!("PORT", 4664)
   management_ip = RuntimeConfig.private_ip!("SECRET_HUB_MANAGEMENT_BIND_IP", "127.0.0.1")
@@ -165,7 +179,7 @@ if config_env() == :prod do
     https: nil,
     trusted_proxy_ips: [proxy_ip],
     secret_key_base: secret_key_base,
-    check_origin: [URI.to_string(%{origin | path: nil})]
+    check_origin: allowed_origins
 
   # Machine enrollment and application-token APIs use an explicit separate route set.
   config :secrethub_web, SecretHub.Web.MachineEndpoint,

@@ -36,9 +36,17 @@ defmodule SecretHub.Web.Plugs.ManagementIngress do
 
   defp allowed_origin?(conn, endpoint) do
     case get_req_header(conn, "origin") do
-      [] -> true
-      [origin] -> origin == endpoint.url()
-      _ -> false
+      [] ->
+        true
+
+      [origin] ->
+        case endpoint.config(:check_origin) do
+          origins when is_list(origins) -> origin in origins
+          _ -> origin == endpoint.url()
+        end
+
+      _ ->
+        false
     end
   end
 end
