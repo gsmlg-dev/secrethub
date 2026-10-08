@@ -1,67 +1,27 @@
-# Multi-stage Dockerfile for SecretHub Core Standalone
-# Includes PostgreSQL 16 for single-container deployment
-# Persists data to /data volume
-
-# =====================================
-# Build Stage
-# =====================================
-FROM elixir:1.18-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache \
-    build-base \
-    git \
-    nodejs \
-    npm
-
-# Set working directory
+FROM oven/bun:1.3.13-alpine@sha256:4de475389889577f346c636f956b42a5c31501b654664e9ae5726f94d7bb5349 AS bun
+FROM elixir:1.18.4-otp-28-alpine@sha256:d8313656ddc1e96c0ee90e680e430c861abd00082ad16ea4a532163dc1031f21 AS builder
+RUN apk add --no-cache build-base git
 WORKDIR /app
-
-# Set build ENV
 ENV MIX_ENV=prod
-ENV SECRET_HUB_CLUSTER_NODE_ID=build-only-docker-core-standalone
-
-# Install Elixir & Erlang tooling
-RUN mix local.hex --force && \
-    mix local.rebar --force
-
-# Copy entire umbrella project
+RUN mix local.hex --force && mix local.rebar --force
 COPY mix.exs mix.lock ./
 COPY config ./config
 COPY apps ./apps
+COPY rel ./rel
+RUN mix deps.get --only prod && mix deps.compile
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --ignore-scripts
+RUN cd apps/secrethub_web && bun ./node_modules/@tailwindcss/cli/dist/index.mjs --input=assets/css/app.css --output=priv/static/assets/css/app.css --minify && bun build assets/js/app.js --outdir=priv/static/assets/js --external '/fonts/*' --external '/images/*' --minify
+RUN mix compile --warnings-as-errors
+RUN mix phx.digest --no-compile
+RUN mix release secrethub_core
 
-# Install dependencies
-RUN mix deps.get --only prod
-
-# Compile dependencies
-RUN mix deps.compile
-
-# Install frontend node_modules (Tailwind CSS v4 uses @duskmoon-dev/core npm package)
-RUN cd apps/secrethub_web && npm install --prefer-offline
-
-# Build assets using bun and tailwind
-# Dummy DATABASE_URL, SECRET_KEY_BASE, and the builder-only cluster identity are
-# needed because Mix tasks evaluate config/runtime.exs in prod mode.
-# Real values are provided at container runtime via environment variables.
-RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
-    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
-    mix assets.setup && \
-    DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
-    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
-    mix assets.deploy
-
-# Compile application
-RUN mix compile
-
-# Build OTP release for core
-RUN DATABASE_URL="postgresql://dummy:dummy@localhost/dummy" \
-    SECRET_KEY_BASE="build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!" \
-    mix release secrethub_core
 
 # =====================================
 # Runtime Stage
 # =====================================
-FROM alpine:3.22 AS runtime
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8 AS runtime
 
 # Install runtime dependencies including PostgreSQL 16
 RUN apk add --no-cache \
@@ -177,7 +137,7 @@ export DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@127.0.0.1:5432/$PGDATABASE
 
 # Run migrations
 echo "==> Running database migrations..."
-/app/bin/secrethub_core eval "SecretHub.Core.Release.migrate()"
+su-exec secrethub /app/bin/secrethub_core eval "SecretHub.Core.Release.migrate()"
 
 echo "==> Starting SecretHub Core..."
 
@@ -193,7 +153,9 @@ ENV HOME=/app
 ENV PORT=4737
 ENV MIX_ENV=prod
 ENV PHX_SERVER=true
-ENV RELEASE_COOKIE=change-me-in-production
+ENV RELEASE_DISTRIBUTION=none
+ENV ERL_CRASH_DUMP=/dev/null
+ENV TMPDIR=/app/tmp
 
 # Create necessary directories
 RUN mkdir -p /app/var/log /app/tmp && \
@@ -207,7 +169,7 @@ VOLUME ["/data"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:4737/health || exit 1
+    CMD curl -f http://127.0.0.1:4737/v1/sys/health/live || exit 1
 
 # Entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

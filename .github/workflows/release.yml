@@ -24,9 +24,6 @@ env:
   ELIXIR_VERSION: '1.18'
   OTP_VERSION: '28'
   MIX_ENV: 'prod'
-  BUILD_DATABASE_URL: 'postgresql://dummy:dummy@localhost/dummy'
-  BUILD_SECRET_KEY_BASE: 'build-only-placeholder-key-base-must-be-64-chars-long-at-minimum-for-phoenix!!'
-  BUILD_CLUSTER_NODE_ID: 'build-only-release-artifact'
 
 jobs:
   prepare-release:
@@ -208,7 +205,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.3
+          bun-version: 1.3.13
 
       - name: Cache dependencies
         uses: actions/cache@v4
@@ -227,28 +224,22 @@ jobs:
           mix local.hex --force
           mix local.rebar --force
           mix deps.get --only prod
-          cd apps/secrethub_web
-          bun install
+          bun install --frozen-lockfile --ignore-scripts
 
       - name: Compile application
-        env:
-          DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
-          SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
-          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
-        run: mix compile
+        run: mix compile --warnings-as-errors
 
       - name: Build frontend assets
-        env:
-          DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
-          SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
-          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
-        run: mix assets.deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/secrethub_web
+          bun ./node_modules/@tailwindcss/cli/dist/index.mjs --input=assets/css/app.css --output=priv/static/assets/css/app.css --minify
+          bun build assets/js/app.js --outdir=priv/static/assets/js --external '/fonts/*' --external '/images/*' --minify
+          cd ../..
+          mix phx.digest --no-compile
 
       - name: Build Core release
-        env:
-          DATABASE_URL: ${{ env.BUILD_DATABASE_URL }}
-          SECRET_KEY_BASE: ${{ env.BUILD_SECRET_KEY_BASE }}
-          SECRET_HUB_CLUSTER_NODE_ID: ${{ env.BUILD_CLUSTER_NODE_ID }}
         run: mix release secrethub_core
 
       - name: Package Core release
@@ -518,6 +509,16 @@ jobs:
           cat > release_notes.md <<EOF
           # SecretHub ${RELEASE_TAG}
 
+          ## LiveView behind HTTPS proxies
+
+          Fixes [#11](https://github.com/${REPOSITORY}/issues/11): WebSocket and
+          longpoll accept explicitly configured public HTTPS origins over the
+          private HTTP backend. Set \`SECRET_HUB_MANAGEMENT_ORIGIN\` to the
+          canonical public origin and optionally set
+          \`SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS\` to a comma-separated list of
+          additional exact HTTPS origins. Caddy must enforce mTLS on every listed
+          hostname. Unrelated origins remain rejected; origin checking is enabled.
+
           ## Artifacts
 
           ### Core releases
@@ -537,62 +538,43 @@ jobs:
           - \`ghcr.io/${REPOSITORY}/core-standalone:${RELEASE_TAG}\`
           - \`ghcr.io/${REPOSITORY}/agent:${RELEASE_TAG}\`
 
-          ## Deploy SecretHub Core
+          ## Upgrade and deployment requirements
 
-          ### Docker with external PostgreSQL
+          This release adopts the restricted single-operator profile. Read the
+          [runtime contract](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/runtime-contract.md)
+          and [operations guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/launch-operations.md)
+          before upgrading; the rc10 deployment environment is insufficient.
 
-          \`\`\`bash
-          docker run -d --name secrethub-core \\
-            -p 4664:4664 \\
-            -e PHX_HOST=secrethub.example.com \\
-            -e SECRET_KEY_BASE="\$(openssl rand -base64 48)" \\
-            -e DATABASE_URL="postgresql://secrethub:password@postgres/secrethub_prod" \\
-            -e SECRET_HUB_CLUSTER_NODE_ID=core-replica-a \\
-            ghcr.io/${REPOSITORY}/core:${RELEASE_TAG}
-          \`\`\`
+          Core now requires runtime-only \`DATABASE_URL\`, \`SECRET_KEY_BASE\`,
+          \`SECRET_HUB_CLUSTER_NODE_ID\`, \`AUDIT_HMAC_KEY\`, \`AUDIT_HMAC_KEY_ID\`,
+          and \`SECRET_HUB_MANAGEMENT_ORIGIN\`. Preserve historical audit signing
+          keys in \`AUDIT_HMAC_VERIFICATION_KEYS\` where required. Core and Agent
+          require \`RELEASE_DISTRIBUTION=none\`. Supply secrets through the documented
+          environment/file inputs; do not embed them in build arguments or images.
 
-          ### Docker standalone
+          Management binds a private HTTP backend behind the existing Caddy mTLS
+          boundary, with an explicit canonical HTTPS origin. Machine enrollment
+          and Agent runtime use separate configured listeners. A published Docker
+          port alone does not make the loopback management backend reachable;
+          choose networking consistent with the runtime contract.
 
-          \`\`\`bash
-          docker run -d --name secrethub-core \\
-            -p 4737:4737 \\
-            -v secrethub-data:/data \\
-            -e PHX_HOST=localhost \\
-            -e SECRET_KEY_BASE="\$(openssl rand -base64 48)" \\
-            -e SECRET_HUB_CLUSTER_NODE_ID=secrethub-core-standalone \\
-            ghcr.io/${REPOSITORY}/core-standalone:${RELEASE_TAG}
-          \`\`\`
+          Agent requires its HTTPS Core URL, existing host-key path, persistent
+          state directory, Unix socket path, and Client Auth PKI bundle directory.
+          Mount these paths for the service UID and preserve identity across upgrades.
 
-          ### Linux release tarball
+          Legacy Vault shares (formats 1-3) require explicit authenticated recovery;
+          ordinary unseal accepts v4 shares. Back up and preserve existing data and
+          shares; do not reset or reinitialize an existing Vault. Read the
+          [share format](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/shamir-v4.md)
+          and [Vault recovery guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/vault-key-integrity.md).
+          Inventory existing dynamic leases and rotation jobs before adopting the
+          restricted profile, which disables dynamic engines, rotation, and Human.
 
-          \`\`\`bash
-          tar -xzf secrethub_core-${RELEASE_TAG}-linux-amd64.tar.gz -C /opt/secrethub-core
-          cd /opt/secrethub-core
-          export PHX_HOST=secrethub.example.com
-          export SECRET_KEY_BASE="\$(openssl rand -base64 48)"
-          export DATABASE_URL="postgresql://secrethub:password@postgres/secrethub_prod"
-          export SECRET_HUB_CLUSTER_NODE_ID=core-replica-a
-          bin/secrethub_core start
-          \`\`\`
-
-          ## Deploy SecretHub Agent
-
-          Download the artifact matching the agent host OS and architecture, then configure it with the Core URL. The agent stores enrollment material under its default state directory.
-
-          \`\`\`bash
-          tar -xzf secrethub_agent-${RELEASE_TAG}-linux-amd64.tar.gz -C /opt/secrethub-agent
-          cd /opt/secrethub-agent
-          export SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com
-          bin/secrethub_agent start
-          \`\`\`
-
-          For Windows:
-
-          \`\`\`powershell
-          Expand-Archive .\secrethub_agent-${RELEASE_TAG}-windows-amd64.zip -DestinationPath C:\SecretHubAgent
-          \$env:SECRET_HUB_AGENT_CORE_URL = "https://secrethub.example.com"
-          C:\SecretHubAgent\bin\secrethub_agent.bat start
-          \`\`\`
+          Migrate the existing database explicitly and run release preflight as
+          the service UID before cutover. A successful build does not establish
+          production acceptance. The standalone embedded-PostgreSQL image and
+          platforms beyond Linux amd64 remain outside the documented qualification;
+          standalone still runs database migrations during startup.
 
           ## Install SecretHub CLI
 
