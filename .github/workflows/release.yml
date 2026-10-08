@@ -540,7 +540,7 @@ jobs:
 
           ## Upgrade and deployment requirements
 
-          This release adopts the restricted single-operator profile. Read the
+          This release defaults to the restricted single-operator profile. Read the
           [runtime contract](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/runtime-contract.md)
           and [operations guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/launch-operations.md)
           before upgrading; the rc10 deployment environment is insufficient.
@@ -568,7 +568,10 @@ jobs:
           [share format](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/shamir-v4.md)
           and [Vault recovery guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/vault-key-integrity.md).
           Inventory existing dynamic leases and rotation jobs before adopting the
-          restricted profile, which disables dynamic engines, rotation, and Human.
+          default restricted profile, which disables dynamic engines, rotation, and
+          Human. The Human Vault subsystem has a separate explicit opt-in and
+          runtime requirements; see the
+          [Human Vault guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/subsystem/human-vault.md).
 
           Migrate the existing database explicitly and run release preflight as
           the service UID before cutover. A successful build does not establish
