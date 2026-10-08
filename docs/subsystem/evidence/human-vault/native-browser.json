@@ -1,0 +1,25 @@
+{
+  "client": "SecretHub native Human UI / Chromium",
+  "tests": [
+    {
+      "name": "client-derived authentication, memory-only session, cleared password field",
+      "result": "pass"
+    },
+    {
+      "name": "authorized issuance, one-time reveal, lease rendered, explicit clear",
+      "result": "pass"
+    },
+    {
+      "name": "renewal and revocation through the public Core boundary",
+      "result": "pass"
+    },
+    {
+      "name": "pending approval, policy-approved issuance and short-lived reveal",
+      "result": "pass"
+    },
+    {
+      "name": "sign-out revokes session and clears rendered credential",
+      "result": "pass"
+    }
+  ]
+}

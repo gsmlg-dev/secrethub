@@ -143,6 +143,8 @@ human_db_config =
 
 config :secrethub_human, SecretHub.Human.Repo, human_db_config
 
+config :secrethub_human, Oban, testing: :manual, queues: false, plugins: false
+
 config :secrethub_human, SecretHub.HumanWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4667],
   secret_key_base: "b4XuH5agpw/45VP/t2/eD6YEUuHGuSHTTWTj3ZWIt7/Dmnrk5MQE2GtEJa+kyUtX",

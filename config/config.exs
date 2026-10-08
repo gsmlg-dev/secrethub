@@ -27,11 +27,27 @@ config :secrethub_human,
   enabled: true,
   ecto_repos: [SecretHub.Human.Repo]
 
+# Database query arguments contain vault envelopes and credential verifiers.
+config :secrethub_human, SecretHub.Human.Repo, log: false
+
 config :secrethub_human, SecretHub.HumanWeb.Endpoint,
   url: [host: "localhost"],
   adapter: Bandit.PhoenixAdapter,
   render_errors: [formats: [json: SecretHub.HumanWeb.ErrorJSON], layout: false],
   pubsub_server: SecretHub.Human.PubSub
+
+config :secrethub_human, Oban,
+  name: SecretHub.Human.Oban,
+  repo: SecretHub.Human.Repo,
+  queues: [human_audit: 5],
+  plugins: [
+    {Oban.Plugins.Pruner, max_age: 604_800},
+    {Oban.Plugins.Cron,
+     crontab: [
+       {"* * * * *", SecretHub.Human.LeaseMonitor},
+       {"0 * * * *", SecretHub.Human.Attachments.Cleanup}
+     ]}
+  ]
 
 config :secrethub_web,
   namespace: SecretHub.Web,
@@ -138,7 +154,13 @@ config :phoenix, :filter_parameters, [
   "private_key",
   "private_key_pem",
   "wrapping_key",
-  "master_key"
+  "master_key",
+  "access_token",
+  "refresh_token",
+  "masterPasswordHash",
+  "encrypted_key",
+  "encryptedPrivateKey",
+  "ciphertext"
 ]
 
 # Configures Elixir's Logger

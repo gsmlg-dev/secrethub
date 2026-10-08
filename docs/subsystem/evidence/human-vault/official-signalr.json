@@ -1,0 +1,13 @@
+{
+  "client": "@microsoft/signalr-protocol-msgpack",
+  "tests": [
+    {
+      "name": "official decoder parses user-scoped vault invalidation over TLS websocket",
+      "result": "pass"
+    },
+    {
+      "name": "revoked session closes on heartbeat while other user remains connected",
+      "result": "pass"
+    }
+  ]
+}

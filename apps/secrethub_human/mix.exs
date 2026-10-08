@@ -33,7 +33,9 @@ defmodule SecretHub.Human.MixProject do
       {:ecto_sql, "~> 3.13"},
       {:postgrex, "~> 0.19"},
       {:bandit, "~> 1.5"},
+      {:websock_adapter, "~> 0.5"},
       {:jason, "~> 1.4"},
+      {:oban, "~> 2.18"},
       {:secrethub_core, in_umbrella: true},
       {:secrethub_web, in_umbrella: true, only: :test, runtime: false}
     ]

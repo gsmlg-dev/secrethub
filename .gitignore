@@ -101,3 +101,10 @@ priv/cert/*.key
 *.key
 *.p12
 *.jks
+
+# Human native UI source assets are maintained directly.
+!/apps/secrethub_human/priv/static/
+/apps/secrethub_human/priv/static/*
+!/apps/secrethub_human/priv/static/human.html
+!/apps/secrethub_human/priv/static/human.js
+!/apps/secrethub_human/priv/static/human.css

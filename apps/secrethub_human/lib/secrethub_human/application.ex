@@ -13,6 +13,14 @@ defmodule SecretHub.Human.Application do
     if Keyword.get(opts, :enabled, Application.get_env(:secrethub_human, :enabled, true)) do
       [
         SecretHub.Human.Repo,
+        SecretHub.Human.RateLimiter,
+        Supervisor.child_spec(
+          {SecretHub.Human.RateLimiter,
+           name: SecretHub.Human.RefreshRateLimiter, max_attempts: 30},
+          id: SecretHub.Human.RefreshRateLimiter
+        ),
+        SecretHub.Human.RevealStore,
+        {Oban, Application.fetch_env!(:secrethub_human, Oban)},
         {Phoenix.PubSub, name: SecretHub.Human.PubSub},
         SecretHub.HumanWeb.Endpoint
       ]

@@ -1,0 +1,46 @@
+{
+  "client": "@bitwarden/cli",
+  "version": "2026.9.1",
+  "tests": [
+    {
+      "name": "configure self-hosted origin",
+      "result": "pass"
+    },
+    {
+      "name": "login and unlock",
+      "result": "pass"
+    },
+    {
+      "name": "initial sync",
+      "result": "pass"
+    },
+    {
+      "name": "create encrypted folder",
+      "result": "pass"
+    },
+    {
+      "name": "create encrypted login item",
+      "result": "pass"
+    },
+    {
+      "name": "update and sync login item",
+      "result": "pass"
+    },
+    {
+      "name": "folder update synchronizes",
+      "result": "pass"
+    },
+    {
+      "name": "item deletion synchronizes",
+      "result": "pass"
+    },
+    {
+      "name": "folder deletion synchronizes",
+      "result": "pass"
+    },
+    {
+      "name": "logout and device relogin",
+      "result": "pass"
+    }
+  ]
+}

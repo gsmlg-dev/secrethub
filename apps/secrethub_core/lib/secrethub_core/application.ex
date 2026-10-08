@@ -27,7 +27,10 @@ defmodule SecretHub.Core.Application do
 
   # Start Cache system early (doesn't depend on DB)
   defp cache_children do
-    [SecretHub.Core.Cache]
+    [
+      SecretHub.Core.Cache,
+      {Task.Supervisor, name: SecretHub.Core.HumanAccess.BackendSupervisor, max_children: 40}
+    ]
   end
 
   @doc false

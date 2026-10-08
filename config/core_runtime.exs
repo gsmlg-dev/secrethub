@@ -80,7 +80,10 @@ end
 if config_env() == :prod do
   alias SecretHub.Shared.{RuntimeConfig, RuntimeSecrets}
 
-  if secrethub_role != :core or human_enabled do
+  human_opt_in = SecretHub.Human.RuntimeConfig.enabled?()
+
+  if (not human_opt_in and (secrethub_role != :core or human_enabled)) or
+       (human_opt_in and secrethub_role != :all) do
     raise ArgumentError, "SECRETHUB_ROLE: single_operator_requires_core"
   end
 
@@ -107,13 +110,29 @@ if config_env() == :prod do
 
   config :secrethub_core,
     cluster_node_id: cluster_node_id,
-    launch_profile: :single_operator,
+    launch_profile: if(human_opt_in, do: :human_operator, else: :single_operator),
     enabled_features: [:static_secrets, :client_auth_pki],
     audit_hmac_secret: audit_key,
     audit_hmac_key_id: audit_key_id,
     audit_hmac_verification_keys: verification_keys
 
-  config :secrethub_human, enabled: false
+  config :secrethub_human, enabled: human_opt_in
+
+  human_dynamic_enabled =
+    human_opt_in and SecretHub.Human.RuntimeConfig.boolean!("HUMAN_DYNAMIC_ENABLED", false)
+
+  human_mounts =
+    if human_dynamic_enabled do
+      RuntimeSecrets.read!("HUMAN_DYNAMIC_MOUNTS_FILE")
+      |> SecretHub.Core.HumanAccess.MountConfig.load!()
+    else
+      %{}
+    end
+
+  config :secrethub_core,
+    human_dynamic_enabled: human_dynamic_enabled,
+    human_mounts: human_mounts,
+    human_identity_adapter: if(human_opt_in, do: SecretHub.Human.CoreIdentity, else: nil)
 
   config :secrethub_core, SecretHub.Core.Repo,
     url: database_url,
@@ -158,4 +177,54 @@ if config_env() == :prod do
     ],
     secret_key_base: secret_key_base,
     check_origin: false
+
+  if human_opt_in do
+    alias SecretHub.Human.RuntimeConfig, as: HumanConfig
+
+    human_database =
+      HumanConfig.database!(RuntimeSecrets.read!("HUMAN_DATABASE_URL"), database_url)
+
+    human_key = HumanConfig.key!(RuntimeSecrets.read!("HUMAN_SECRET_KEY_BASE"), secret_key_base)
+
+    human_origin =
+      RuntimeConfig.https_url!(
+        "HUMAN_ENDPOINT_ORIGIN",
+        RuntimeSecrets.read!("HUMAN_ENDPOINT_ORIGIN")
+      )
+
+    if human_origin.path not in [nil, "", "/"] or human_origin.host == origin.host,
+      do: raise(ArgumentError, "HUMAN_ENDPOINT_ORIGIN: independent_origin_required")
+
+    human_port = RuntimeConfig.port!("HUMAN_ENDPOINT_PORT", 4666)
+
+    if human_port in [port, machine_port, agent_port],
+      do: raise(ArgumentError, "listeners: conflicting_ports")
+
+    if System.get_env("HUMAN_ENCRYPTION_CONFIG") not in [nil, "client-type2-v1"],
+      do: raise(ArgumentError, "HUMAN_ENCRYPTION_CONFIG: unsupported_encryption")
+
+    config :secrethub_human,
+      signup_enabled: HumanConfig.boolean!("HUMAN_SIGNUPS_ENABLED", false),
+      session_ttl: HumanConfig.bounded!("HUMAN_SESSION_TTL", 900, 60..3600),
+      reveal_ttl: HumanConfig.bounded!("HUMAN_REVEAL_TTL", 30, 30..60),
+      attachment_directory: RuntimeSecrets.read!("HUMAN_ATTACHMENT_DIRECTORY"),
+      attachment_max_bytes:
+        HumanConfig.bounded!("HUMAN_ATTACHMENT_MAX_BYTES", 10_485_760, 1024..104_857_600),
+      attachment_quota_bytes:
+        HumanConfig.bounded!("HUMAN_ATTACHMENT_QUOTA_BYTES", 104_857_600, 1024..1_073_741_824)
+
+    config :secrethub_human, SecretHub.Human.Repo,
+      url: human_database,
+      pool_size: HumanConfig.bounded!("HUMAN_DB_POOL_SIZE", 20, 1..100)
+
+    config :secrethub_human, SecretHub.HumanWeb.Endpoint,
+      server: System.get_env("PHX_SERVER") in ~w(true 1),
+      url: [scheme: "https", host: human_origin.host, port: human_origin.port],
+      http: [
+        ip: RuntimeConfig.private_ip!("HUMAN_ENDPOINT_BIND_IP", "127.0.0.1"),
+        port: human_port
+      ],
+      secret_key_base: human_key,
+      check_origin: [URI.to_string(%{human_origin | path: nil})]
+  end
 end

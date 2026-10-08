@@ -13,6 +13,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
   """
 
   use Ecto.Schema
+  alias SecretHub.Shared.HumanAuditEvidence
   import Ecto.Changeset
 
   @primary_key {:id, :id, autogenerate: true}
@@ -332,6 +333,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     |> validate_inclusion(:signature_version, [1, 2])
     |> validate_signature_key_id()
     |> validate_hash_version_event_type()
+    |> validate_human_evidence()
     |> validate_upgrade_gate_evidence()
     |> validate_client_auth_pki_evidence()
     |> validate_app_certificate_issuance_evidence()
@@ -408,7 +410,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "vault_legacy_recovered",
       "vault_sealed",
       "vault_auto_sealed"
-    ]
+    ] ++ HumanAuditEvidence.events()
   end
 
   @client_auth_evidence_error "must contain exactly the sanitized client auth PKI evidence"
@@ -429,13 +431,12 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     event_type = get_field(changeset, :event_type)
     hash_version = get_field(changeset, :hash_version)
 
-    v2_supported_event_types = @upgrade_event_types ++ @client_auth_pki_event_types
+    v2_supported_event_types =
+      @upgrade_event_types ++
+        @client_auth_pki_event_types ++ HumanAuditEvidence.events()
 
     cond do
-      event_type in @upgrade_event_types and hash_version != 2 ->
-        add_error(changeset, :hash_version, "must use hash version 2")
-
-      event_type in @client_auth_pki_event_types and hash_version != 2 ->
+      event_type in v2_supported_event_types and hash_version != 2 ->
         add_error(changeset, :hash_version, "must use hash version 2")
 
       hash_version == 2 and event_type not in v2_supported_event_types ->
@@ -443,6 +444,19 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
 
       true ->
         changeset
+    end
+  end
+
+  defp validate_human_evidence(changeset) do
+    event = get_field(changeset, :event_type)
+
+    if event in HumanAuditEvidence.events() do
+      case HumanAuditEvidence.validate(event, get_field(changeset, :event_data)) do
+        {:ok, data} -> put_change(changeset, :event_data, data)
+        {:error, _} -> add_error(changeset, :event_data, "must contain sanitized Human evidence")
+      end
+    else
+      changeset
     end
   end
 

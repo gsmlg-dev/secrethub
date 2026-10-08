@@ -8,7 +8,9 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
   @result_prefix "SECRET_HUB_RUNTIME_CONFIG="
 
   @base_env [
-    {"DATABASE_URL", "ecto://core:core@localhost/secrethub_runtime_config"},
+    {"AUDIT_HMAC_KEY", Base.encode64(String.duplicate("a", 32))},
+    {"AUDIT_HMAC_KEY_ID", "runtime-config-test"},
+    {"DATABASE_URL", "postgresql://core:core@localhost/secrethub_runtime_config"},
     {"ECTO_IPV6", nil},
     {"HUMAN_DATABASE_URL", nil},
     {"HUMAN_DB_POOL_SIZE", nil},
@@ -19,20 +21,26 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
     {"PHX_HOST", nil},
     {"PHX_SERVER", nil},
     {"PORT", nil},
+    {"RELEASE_DISTRIBUTION", "none"},
     {"SECRET_HUB_AGENT_ENDPOINT_SERVER", nil},
     {"SECRET_HUB_CLUSTER_NODE_ID", "runtime-config-test"},
+    {"SECRET_HUB_MANAGEMENT_ORIGIN", "https://management.example.test"},
     {"SECRET_KEY_BASE", String.duplicate("c", 64)},
     {"SECRETHUB_ROLE", nil}
   ]
 
   @probe """
+  Application.put_env(:secrethub_core, :human_mounts, %{"stale-in-memory-mount" => %{}})
   config = Config.Reader.read!(#{inspect(@runtime_config)}, env: :prod)
   core_config = Keyword.fetch!(config, :secrethub_core)
   human_config = Keyword.fetch!(config, :secrethub_human)
   web_config = Keyword.fetch!(config, :secrethub_web)
   core_repo_config = Keyword.get(core_config, SecretHub.Core.Repo, [])
-  repo_config = Keyword.get(human_config, SecretHub.Human.Repo, [])
   endpoint_config = Keyword.get(human_config, SecretHub.HumanWeb.Endpoint, [])
+  mounts = Keyword.get(core_config, :human_mounts, %{})
+  Application.put_env(:secrethub_core, :human_mounts, %{})
+  second_config = Config.Reader.read!(#{inspect(@runtime_config)}, env: :prod)
+  second_mounts = second_config |> Keyword.fetch!(:secrethub_core) |> Keyword.get(:human_mounts, %{})
 
   started_apps =
     Application.started_applications()
@@ -40,29 +48,27 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
     |> Enum.filter(&(&1 in [:secrethub_core, :secrethub_web, :secrethub_human]))
 
   payload = %{
-    check_origin: endpoint_config[:check_origin],
     core_pool_size: core_repo_config[:pool_size],
     dns_cluster_query: Keyword.get(web_config, :dns_cluster_query),
     enabled: Keyword.fetch!(human_config, :enabled),
+    launch_profile: Keyword.fetch!(core_config, :launch_profile),
     endpoint_configured?:
       Keyword.has_key?(human_config, SecretHub.HumanWeb.Endpoint),
-    endpoint_http_port: endpoint_config |> Keyword.get(:http, []) |> Keyword.get(:port),
-    endpoint_url_port: endpoint_config |> Keyword.get(:url, []) |> Keyword.get(:port),
-    pool_size: repo_config[:pool_size],
     repo_configured?: Keyword.has_key?(human_config, SecretHub.Human.Repo),
-    repo_url_configured?: is_binary(repo_config[:url]),
-    secret_key_base_configured?: is_binary(endpoint_config[:secret_key_base]),
     server: endpoint_config[:server],
-    started_apps: started_apps
+    started_apps: started_apps,
+    mount_names: Enum.sort(Map.keys(mounts)),
+    catalog_restored: mounts == second_mounts
   }
 
   IO.puts(#{inspect(@result_prefix)} <> Base.encode64(:erlang.term_to_binary(payload)))
   """
 
-  test "production defaults to the disabled Core role without Human variables" do
+  test "production defaults to single-operator Core with Human disabled" do
     assert %{
              enabled: false,
              endpoint_configured?: false,
+             launch_profile: :single_operator,
              repo_configured?: false,
              server: nil,
              started_apps: []
@@ -82,36 +88,61 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
              ])
   end
 
-  test "production all role applies independent Human runtime configuration" do
-    assert %{
-             check_origin: :conn,
-             enabled: true,
-             endpoint_configured?: true,
-             endpoint_http_port: 4666,
-             endpoint_url_port: 4666,
-             pool_size: 17,
-             repo_configured?: true,
-             repo_url_configured?: true,
-             secret_key_base_configured?: true,
-             server: nil,
-             started_apps: []
-           } = read_runtime_config(human_env())
-  end
-
-  test "Human endpoint server starts only when PHX_SERVER is present" do
-    assert %{server: nil} = read_runtime_config(human_env())
-    assert %{server: true} = read_runtime_config([{"PHX_SERVER", "true"} | human_env()])
-  end
-
-  test "production all role explicitly requires HUMAN_DATABASE_URL" do
-    {output, status} =
-      run_runtime_config([
-        {"HUMAN_SECRET_KEY_BASE", String.duplicate("h", 64)},
-        {"SECRETHUB_ROLE", "all"}
-      ])
+  test "single-operator production rejects all even with complete Human variables" do
+    {output, status} = run_runtime_config(human_env())
 
     assert status != 0
-    assert output =~ "environment variable HUMAN_DATABASE_URL is missing"
+    assert output =~ "SECRETHUB_ROLE: single_operator_requires_core"
+  end
+
+  test "PHX_SERVER cannot enable Human under the single-operator Core profile" do
+    assert %{enabled: false, endpoint_configured?: false, server: nil} =
+             read_runtime_config([{"PHX_SERVER", "true"}, {"SECRETHUB_ROLE", "core"}])
+  end
+
+  test "single-operator production rejects Human before reading Human secrets" do
+    {output, status} = run_runtime_config([{"SECRETHUB_ROLE", "human"}])
+
+    assert status != 0
+    assert output =~ "SECRETHUB_ROLE: single_operator_requires_core"
+  end
+
+  test "explicit co-hosted opt-in configures independent Human runtime" do
+    env =
+      human_env() ++
+        [
+          {"HUMAN_ENABLED", "true"},
+          {"HUMAN_ENDPOINT_ORIGIN", "https://vault.example.test"},
+          {"HUMAN_ATTACHMENT_DIRECTORY", "/tmp/human-runtime-attachments"}
+        ]
+
+    assert %{
+             enabled: true,
+             launch_profile: :human_operator,
+             repo_configured?: true,
+             endpoint_configured?: true,
+             started_apps: []
+           } = read_runtime_config(env)
+  end
+
+  test "co-hosted opt-in rejects reused keys, public bind and out-of-range TTL" do
+    env =
+      human_env() ++
+        [
+          {"HUMAN_ENABLED", "true"},
+          {"HUMAN_ENDPOINT_ORIGIN", "https://vault.example.test"},
+          {"HUMAN_ATTACHMENT_DIRECTORY", "/tmp/human-runtime-attachments"}
+        ]
+
+    for override <- [
+          [{"HUMAN_SECRET_KEY_BASE", String.duplicate("c", 64)}],
+          [{"HUMAN_ENDPOINT_BIND_IP", "0.0.0.0"}],
+          [{"HUMAN_REVEAL_TTL", "61"}],
+          [{"HUMAN_DATABASE_URL", "postgresql://core:core@localhost/secrethub_human"}]
+        ] do
+      {_output, status} = run_runtime_config(env ++ override)
+      assert status != 0
+    end
   end
 
   test "invalid roles fail explicitly" do
@@ -122,9 +153,59 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
     assert output =~ "expected all, core, human, or agent"
   end
 
+  @tag :tmp_dir
+  test "dynamic production boot reloads validated mounts independently of VM memory", %{
+    tmp_dir: dir
+  } do
+    path = Path.join(dir, "mounts.json")
+
+    input = %{
+      "postgres-runtime" => %{
+        "engine" => "postgresql",
+        "connection" => %{
+          "database" => "runtime_database",
+          "username" => "runtime_operator",
+          "hostname" => "database.example.test",
+          "ssl" => true
+        },
+        "roles" => %{"reader" => %{"schema" => "public", "privileges" => ["select"]}}
+      }
+    }
+
+    File.write!(path, Jason.encode!(input))
+
+    assert %{mount_names: ["postgres-runtime"], catalog_restored: true, started_apps: []} =
+             read_runtime_config(dynamic_env() ++ [{"HUMAN_DYNAMIC_MOUNTS_FILE", path}])
+  end
+
+  @tag :tmp_dir
+  test "enabled dynamic production rejects missing and malformed mount files without leaking contents",
+       %{tmp_dir: dir} do
+    {output, status} = run_runtime_config(dynamic_env())
+    assert status != 0
+    assert output =~ "HUMAN_DYNAMIC_MOUNTS_FILE: missing"
+    canary = "MOUNT-CONFIG-SECRET-CANARY"
+    path = Path.join(dir, canary <> ".json")
+    File.write!(path, "{\"password\":\"#{canary}\"")
+    {output, status} = run_runtime_config(dynamic_env() ++ [{"HUMAN_DYNAMIC_MOUNTS_FILE", path}])
+    assert status != 0
+    assert output =~ "HUMAN_DYNAMIC_MOUNTS_FILE: invalid_mount_config"
+    refute output =~ canary
+  end
+
+  defp dynamic_env do
+    human_env() ++
+      [
+        {"HUMAN_ENABLED", "true"},
+        {"HUMAN_DYNAMIC_ENABLED", "true"},
+        {"HUMAN_ENDPOINT_ORIGIN", "https://vault.example.test"},
+        {"HUMAN_ATTACHMENT_DIRECTORY", "/tmp/human-runtime-attachments"}
+      ]
+  end
+
   defp human_env do
     [
-      {"HUMAN_DATABASE_URL", "ecto://human:human@localhost/secrethub_human_runtime_config"},
+      {"HUMAN_DATABASE_URL", "postgresql://human:human@localhost/secrethub_human_runtime_config"},
       {"HUMAN_DB_POOL_SIZE", "17"},
       {"HUMAN_SECRET_KEY_BASE", String.duplicate("h", 64)},
       {"SECRETHUB_ROLE", "all"}
@@ -142,8 +223,22 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
   end
 
   defp run_runtime_config(overrides, caller_env \\ []) do
-    Code.ensure_loaded!(RuntimeRole)
-    runtime_role_ebin = RuntimeRole |> :code.which() |> List.to_string() |> Path.dirname()
+    runtime_paths =
+      [
+        RuntimeRole,
+        SecretHub.Human.RuntimeConfig,
+        SecretHub.Shared.RuntimeConfig,
+        SecretHub.Core.HumanAccess.PostgreSQLBackend,
+        Jason,
+        Ecto.Repo.Supervisor
+      ]
+      |> Enum.map(fn module ->
+        Code.ensure_loaded!(module)
+        module |> :code.which() |> List.to_string() |> Path.dirname()
+      end)
+      |> Enum.uniq()
+      |> Enum.flat_map(&["-pa", &1])
+
     elixir = System.find_executable("elixir")
     env = System.find_executable("env")
 
@@ -157,7 +252,7 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
 
     System.cmd(
       env,
-      ["-i" | runtime_env] ++ [elixir, "--erl", "+S 2:2", "-pa", runtime_role_ebin, "-e", @probe],
+      ["-i" | runtime_env] ++ [elixir, "--erl", "+S 2:2"] ++ runtime_paths ++ ["-e", @probe],
       cd: @project_root,
       env: caller_env,
       stderr_to_stdout: true

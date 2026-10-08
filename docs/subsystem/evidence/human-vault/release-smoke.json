@@ -1,0 +1,84 @@
+{
+  "task": "human-vault-packaged-release-smoke",
+  "started_at": "2026-10-07T19:18:38.244659+00:00",
+  "release_archive": "secrethub_core-1.0.0-rc10.tar.gz",
+  "release_archive_sha256": "5c9be1e91a8a5ebc2cb2469ce3f6bf1bd3b8c9079fea9291589354164cc88b2e",
+  "baseline": "f8f79eaf708093e198c8877d8c8a7e183c9a2e58",
+  "source_state": "uncommitted Human Vault implementation including access token lifetime repair",
+  "checks": [
+    {
+      "name": "release extracted from archive and contains packaged executable",
+      "result": "pass"
+    },
+    {
+      "name": "isolated PostgreSQL cluster with distinct Core and Human databases and usernames",
+      "result": "pass"
+    },
+    {
+      "name": "Core migrations through packaged bin eval",
+      "result": "pass"
+    },
+    {
+      "name": "Human migrations through packaged bin eval",
+      "result": "pass"
+    },
+    {
+      "name": "packaged runtime configuration enables Human and preserves dynamic opt-in false",
+      "result": "pass"
+    },
+    {
+      "name": "combined packaged release starts independent Human readiness",
+      "result": "pass",
+      "http_status": 200,
+      "readiness": {
+        "status": "ready",
+        "checks": {
+          "core": true,
+          "repo": true,
+          "reveal_store": true,
+          "notifications": true
+        }
+      }
+    },
+    {
+      "name": "independent Human liveness endpoint",
+      "result": "pass",
+      "http_status": 200
+    },
+    {
+      "name": "Core health endpoint runs concurrently on separate listener",
+      "result": "pass",
+      "http_status": 200,
+      "health_status": "degraded"
+    },
+    {
+      "name": "native Human UI is included in packaged release",
+      "result": "pass",
+      "http_status": 200
+    },
+    {
+      "name": "packaged native asset human.js",
+      "result": "pass",
+      "http_status": 200
+    },
+    {
+      "name": "packaged native asset human.css",
+      "result": "pass",
+      "http_status": 200
+    }
+  ],
+  "limitations": [
+    "Single co-hosted Human node with dynamic issuance disabled",
+    "HTTP listener checks on private loopback; production proxy TLS and client certificates not exercised",
+    "Core Vault remains uninitialized and sealed; this is startup and listener smoke, not production readiness",
+    "No publication or deployment performed"
+  ],
+  "passed": true,
+  "shutdown": {
+    "release_process_stopped": true,
+    "postgres_stopped": true,
+    "owned_listeners_closed": true,
+    "private_fixture_removed": true
+  },
+  "finished_at": "2026-10-07T19:19:02.834348+00:00"
+}

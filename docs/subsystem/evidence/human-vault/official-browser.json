@@ -1,0 +1,14 @@
+{
+  "client": "Bitwarden Chrome extension",
+  "version": "2026.9.3",
+  "tests": [
+    {
+      "name": "authenticate with self-hosted HTTPS origin and client-derived verifier",
+      "result": "pass"
+    },
+    {
+      "name": "initial encrypted personal-vault sync renders unlocked vault",
+      "result": "pass"
+    }
+  ]
+}

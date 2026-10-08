@@ -17,6 +17,14 @@ defmodule SecretHub.Human.ApplicationTest do
   test "starts the Human supervision tree when enabled" do
     assert HumanApplication.children(enabled: true) == [
              SecretHub.Human.Repo,
+             SecretHub.Human.RateLimiter,
+             Supervisor.child_spec(
+               {SecretHub.Human.RateLimiter,
+                name: SecretHub.Human.RefreshRateLimiter, max_attempts: 30},
+               id: SecretHub.Human.RefreshRateLimiter
+             ),
+             SecretHub.Human.RevealStore,
+             {Oban, Application.fetch_env!(:secrethub_human, Oban)},
              {Phoenix.PubSub, name: SecretHub.Human.PubSub},
              SecretHub.HumanWeb.Endpoint
            ]
@@ -37,6 +45,14 @@ defmodule SecretHub.Human.ApplicationTest do
 
     assert HumanApplication.children() == [
              SecretHub.Human.Repo,
+             SecretHub.Human.RateLimiter,
+             Supervisor.child_spec(
+               {SecretHub.Human.RateLimiter,
+                name: SecretHub.Human.RefreshRateLimiter, max_attempts: 30},
+               id: SecretHub.Human.RefreshRateLimiter
+             ),
+             SecretHub.Human.RevealStore,
+             {Oban, Application.fetch_env!(:secrethub_human, Oban)},
              {Phoenix.PubSub, name: SecretHub.Human.PubSub},
              SecretHub.HumanWeb.Endpoint
            ]
