@@ -104,7 +104,7 @@ defmodule SecretHub.Core.Health do
   end
 
   def check_seal_status do
-    case GenServer.call(SealState, :get_master_key, @timeout) do
+    case SealState.get_master_key(@timeout) do
       {:ok, key} when is_binary(key) and byte_size(key) == 32 -> {:ok, %{sealed: false}}
       _ -> {:error, %{sealed: true, reason: "vault_sealed_or_key_unverified"}}
     end

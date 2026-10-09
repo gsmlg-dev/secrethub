@@ -16,10 +16,12 @@ defmodule SecretHub.Core.Vault.SealState do
     @derive {Inspect, except: [:master_key, :unseal_shares]}
     defstruct status: :loading,
               master_key: nil,
+              unseal_epoch: nil,
               config: nil,
               unseal_shares: [],
               unseal_progress: 0,
               repo: Repo,
+              dynamic_repo: nil,
               retry_interval: 1_000,
               load_timeout: 1_000,
               load_task: nil,
@@ -31,12 +33,28 @@ defmodule SecretHub.Core.Vault.SealState do
   def initialize(total_shares, threshold),
     do: GenServer.call(__MODULE__, {:initialize, total_shares, threshold})
 
-  def unseal(share), do: GenServer.call(__MODULE__, {:unseal, share})
+  def unseal(share) do
+    deadline = System.monotonic_time(:millisecond) + 5_000
+
+    case GenServer.call(__MODULE__, {:unseal, share}) do
+      {:validate_unsealed, snapshot} -> validate_unsealed(snapshot, :unseal, deadline)
+      reply -> reply
+    end
+  end
+
   def seal, do: GenServer.call(__MODULE__, :seal)
   def status, do: GenServer.call(__MODULE__, :status)
   def initialized?, do: status().initialized
   def sealed?, do: status().sealed
-  def get_master_key, do: GenServer.call(__MODULE__, :get_master_key)
+
+  def get_master_key(timeout \\ 5_000) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+
+    case GenServer.call(__MODULE__, :prepare_key_validation, timeout) do
+      {:validate_unsealed, snapshot} -> validate_unsealed(snapshot, :key, deadline)
+      reply -> reply
+    end
+  end
 
   @doc "Explicit legacy recovery; verifies against preexisting database ciphertext before replacing only the legacy envelope."
   def recover_legacy(encoded_shares, total_shares, threshold),
@@ -50,10 +68,12 @@ defmodule SecretHub.Core.Vault.SealState do
   @impl true
   def init(opts) do
     {:ok, supervisor} = Task.Supervisor.start_link()
+    repo = Keyword.get(opts, :repo, Repo)
 
     {:ok,
      %State{
-       repo: Keyword.get(opts, :repo, Repo),
+       repo: repo,
+       dynamic_repo: dynamic_repo(repo),
        retry_interval: Keyword.get(opts, :retry_interval, 1_000),
        load_timeout: Keyword.get(opts, :load_timeout, 1_000),
        task_supervisor: supervisor
@@ -106,18 +126,32 @@ defmodule SecretHub.Core.Vault.SealState do
      }, state}
   end
 
-  def handle_call(:get_master_key, _from, %{status: :unsealed} = state) do
-    if durable_config_matches?(state) do
-      {:reply, {:ok, state.master_key}, state}
-    else
-      {:reply, {:error, :unavailable}, unavailable(state)}
+  def handle_call(:prepare_key_validation, _from, %{status: :unsealed} = state),
+    do: {:reply, {:validate_unsealed, validation_snapshot(state)}, state}
+
+  def handle_call(:prepare_key_validation, _from, %{status: :loading} = state),
+    do: {:reply, {:error, :unavailable}, state}
+
+  def handle_call(:prepare_key_validation, _from, state),
+    do: {:reply, {:error, state.status}, state}
+
+  def handle_call({:finish_key_validation, snapshot, durable, operation, deadline}, _from, state) do
+    cond do
+      state.status != :unsealed or state.unseal_epoch != snapshot.unseal_epoch or
+          state.config != snapshot.config ->
+        {:reply, validation_error(operation), state}
+
+      remaining(deadline) == 0 or durable != {:ok, state.config} ->
+        {:reply, validation_error(operation), unavailable(state)}
+
+      operation == :key ->
+        {:reply, {:ok, state.master_key}, state}
+
+      operation == :unseal ->
+        {:reply, {:ok, result(state, false, state.config.threshold)}, state}
     end
   end
 
-  def handle_call(:get_master_key, _from, %{status: :loading} = state),
-    do: {:reply, {:error, :unavailable}, state}
-
-  def handle_call(:get_master_key, _from, state), do: {:reply, {:error, state.status}, state}
   def handle_call(:seal, _from, state), do: {:reply, :ok, state}
 
   def handle_call({:initialize, total, threshold}, _from, %{status: :not_initialized} = state) do
@@ -144,11 +178,8 @@ defmodule SecretHub.Core.Vault.SealState do
   def handle_call({:initialize, _, _}, _from, state),
     do: {:reply, {:error, "Vault already initialized"}, state}
 
-  def handle_call({:unseal, _}, _from, %{status: :unsealed} = state) do
-    if durable_config_matches?(state),
-      do: {:reply, {:ok, result(state, false, state.config.threshold)}, state},
-      else: {:reply, {:error, "Vault durable state unavailable"}, unavailable(state)}
-  end
+  def handle_call({:unseal, _}, _from, %{status: :unsealed} = state),
+    do: {:reply, {:validate_unsealed, validation_snapshot(state)}, state}
 
   def handle_call({:unseal, share}, _from, %{status: :sealed} = state) do
     cond do
@@ -287,7 +318,14 @@ defmodule SecretHub.Core.Vault.SealState do
         :telemetry.execute([:secrethub, :vault, :unsealed], %{}, %{})
 
         {:reply, {:ok, result(state, false, state.config.threshold)},
-         %{state | status: :unsealed, master_key: data_key, unseal_shares: [], unseal_progress: 0}}
+         %{
+           state
+           | status: :unsealed,
+             master_key: data_key,
+             unseal_epoch: make_ref(),
+             unseal_shares: [],
+             unseal_progress: 0
+         }}
       else
         {:error, :audit_unavailable} -> invalid_attempt(state, "Vault audit unavailable")
         _ -> invalid_attempt(state, "Unseal key authentication failed")
@@ -344,7 +382,9 @@ defmodule SecretHub.Core.Vault.SealState do
   end
 
   defp fetch(repo, timeout) do
-    case repo.all(VaultConfig, timeout: timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+
+    case repo.all(VaultConfig, timeout: timeout, pool_timeout: timeout, deadline: deadline) do
       [] -> {:ok, nil}
       [config] -> if valid_config?(config), do: {:ok, config}, else: {:error, :invalid_config}
       _ -> {:error, :invalid_config}
@@ -355,7 +395,8 @@ defmodule SecretHub.Core.Vault.SealState do
     :exit, _ -> {:error, :durable_failure}
   end
 
-  defp apply_load(%{config: nil} = state, {:ok, nil}), do: %{state | status: :not_initialized}
+  defp apply_load(%{config: nil} = state, {:ok, nil}),
+    do: %{state | status: :not_initialized, master_key: nil, unseal_epoch: nil}
 
   defp apply_load(state, {:ok, config}) when not is_nil(config) do
     if is_nil(state.config) or state.config == config,
@@ -364,6 +405,7 @@ defmodule SecretHub.Core.Vault.SealState do
         | status: :sealed,
           config: config,
           master_key: nil,
+          unseal_epoch: nil,
           unseal_shares: [],
           unseal_progress: 0
       },
@@ -375,6 +417,94 @@ defmodule SecretHub.Core.Vault.SealState do
   defp durable_config_matches?(state) do
     fetch(state.repo, state.load_timeout) == {:ok, state.config}
   end
+
+  defp validation_snapshot(state),
+    do: Map.take(state, [:config, :repo, :dynamic_repo, :load_timeout, :unseal_epoch])
+
+  # Durable reads use the caller's checked-out connection. The server releases
+  # its key only after rechecking this exact authenticated unseal session.
+  defp validate_unsealed(snapshot, operation, deadline) do
+    read_deadline = min(deadline, System.monotonic_time(:millisecond) + snapshot.load_timeout)
+    durable = fetch_on_caller(snapshot, read_deadline)
+    durable = if remaining(deadline) > 0, do: durable, else: {:error, :durable_failure}
+
+    GenServer.call(
+      __MODULE__,
+      {:finish_key_validation, snapshot, durable, operation, deadline},
+      max(remaining(deadline), 1)
+    )
+  end
+
+  defp fetch_on_caller(snapshot, deadline) do
+    previous_core_repo = Repo.get_dynamic_repo()
+    previous_repo = dynamic_repo(snapshot.repo)
+
+    try do
+      if snapshot.dynamic_repo, do: snapshot.repo.put_dynamic_repo(snapshot.dynamic_repo)
+      durable_match(snapshot.repo, snapshot.config, deadline)
+    after
+      if previous_repo, do: snapshot.repo.put_dynamic_repo(previous_repo)
+      # Configured adapters may route through Core.Repo themselves.
+      Repo.put_dynamic_repo(previous_core_repo)
+    end
+  end
+
+  defp durable_match(repo, config, deadline) do
+    expected =
+      config
+      |> Map.from_struct()
+      |> Map.take(VaultConfig.__schema__(:fields))
+      |> Map.new(fn
+        {field, value}
+        when field in [:encrypted_master_key, :share_set_id] and is_binary(value) ->
+          {field, "\\x" <> Base.encode16(value, case: :lower)}
+
+        entry ->
+          entry
+      end)
+      |> Jason.encode!()
+      |> Base.encode64()
+
+    # Base64 has no SQL quote characters. PostgreSQL compares the complete
+    # persisted row, decoding bytea and timestamps using its existing row type.
+    sql = """
+    SELECT count(*) = 1 AND COALESCE(bool_and(v IS NOT DISTINCT FROM
+      jsonb_populate_record(NULL::vault_config,
+        convert_from(decode('#{expected}', 'base64'), 'UTF8')::jsonb)), false)
+    FROM vault_config AS v
+    """
+
+    timeout = remaining(deadline)
+
+    # The text protocol passes this receive timeout to Postgrex even when the
+    # caller already owns a transaction connection. Extended queries inherit
+    # that transaction's longer checkout timer instead.
+    if timeout > 0 do
+      case repo.query(sql, [],
+             query_type: :text,
+             timeout: timeout,
+             deadline: deadline,
+             log: false
+           ) do
+        {:ok, %{rows: [["t"]]}} -> {:ok, config}
+        _ -> {:error, :durable_failure}
+      end
+    else
+      {:error, :durable_failure}
+    end
+  rescue
+    _ -> {:error, :durable_failure}
+  catch
+    :exit, _ -> {:error, :durable_failure}
+  end
+
+  defp dynamic_repo(repo) do
+    if function_exported?(repo, :get_dynamic_repo, 0), do: repo.get_dynamic_repo(), else: nil
+  end
+
+  defp remaining(deadline), do: max(deadline - System.monotonic_time(:millisecond), 0)
+  defp validation_error(:key), do: {:error, :unavailable}
+  defp validation_error(:unseal), do: {:error, "Vault durable state unavailable"}
 
   defp valid_config?(config) do
     is_integer(config.threshold) and is_integer(config.total_shares) and
@@ -398,7 +528,15 @@ defmodule SecretHub.Core.Vault.SealState do
 
   defp unavailable(state) do
     Process.send_after(self(), :retry_load, state.retry_interval)
-    %{state | status: :unavailable, master_key: nil, unseal_shares: [], unseal_progress: 0}
+
+    %{
+      state
+      | status: :unavailable,
+        master_key: nil,
+        unseal_epoch: nil,
+        unseal_shares: [],
+        unseal_progress: 0
+    }
   end
 
   defp audit_event(type, metadata) do

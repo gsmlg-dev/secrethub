@@ -1,7 +1,9 @@
 defmodule SecretHub.Core.SecretsTest do
-  use SecretHub.Core.DataCase, async: false
+  use ExUnit.Case, async: false
 
-  alias SecretHub.Core.{Policies, Secrets}
+  import SecretHub.Core.VaultTestHelpers
+
+  alias SecretHub.Core.{Policies, Repo, RuntimeDatabaseFixture, Secrets}
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Schemas.{Secret, SecretRotator}
 
@@ -13,8 +15,13 @@ defmodule SecretHub.Core.SecretsTest do
     :ok
   end
 
-  setup do
+  setup_all do
+    RuntimeDatabaseFixture.prepare_template()
+  end
+
+  setup tags do
     stop_seal_state()
+    RuntimeDatabaseFixture.setup(tags)
 
     start_seal_state()
     :ok
@@ -244,7 +251,7 @@ defmodule SecretHub.Core.SecretsTest do
         })
 
       stop_seal_state()
-      start_seal_state()
+      start_seal_state(:sealed)
 
       assert {:error, :sealed} =
                Secrets.update_secret(secret.id, %{
@@ -503,29 +510,20 @@ defmodule SecretHub.Core.SecretsTest do
   end
 
   defp stop_seal_state do
-    case Process.whereis(SealState) do
-      nil ->
+    case stop_supervised(SealState) do
+      :ok ->
         :ok
 
-      pid ->
-        GenServer.stop(pid, :normal)
-        wait_until_unregistered(SealState)
+      {:error, :not_found} ->
+        if pid = Process.whereis(SealState), do: GenServer.stop(pid, :normal)
     end
+  catch
+    :exit, {:noproc, _} -> :ok
   end
 
-  defp start_seal_state do
-    case SealState.start_link([]) do
-      {:ok, pid} -> pid
-      {:error, {:already_started, pid}} -> pid
-    end
-  end
+  defp start_seal_state(expected_state \\ :not_initialized) do
+    start_supervised!({SealState, repo: RuntimeDatabaseFixture.VaultRepo}, restart: :temporary)
 
-  defp wait_until_unregistered(name) do
-    if Process.whereis(name) do
-      Process.sleep(10)
-      wait_until_unregistered(name)
-    else
-      :ok
-    end
+    await_vault_state(expected_state)
   end
 end

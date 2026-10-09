@@ -9,7 +9,7 @@ defmodule SecretHub.Core.RuntimeDatabaseFixture do
   defmodule VaultRepo do
     alias SecretHub.Core.Repo
 
-    for {name, arity} <- [all: 1, all: 2, transaction: 1, insert: 1, rollback: 1] do
+    for {name, arity} <- [all: 1, all: 2, query: 3, transaction: 1, insert: 1, rollback: 1] do
       args = Macro.generate_arguments(arity, __MODULE__)
 
       def unquote(name)(unquote_splicing(args)) do
@@ -38,7 +38,7 @@ defmodule SecretHub.Core.RuntimeDatabaseFixture do
     %{runtime_database_template: database}
   end
 
-  def setup(tags \\ %{}) do
+  def setup(tags \\ %{}, opts \\ []) do
     database = database_name()
     template = tags[:runtime_database_template]
 
@@ -46,18 +46,43 @@ defmodule SecretHub.Core.RuntimeDatabaseFixture do
       "CREATE DATABASE " <> database <> if(template, do: " TEMPLATE " <> template, else: "")
     )
 
-    {:ok, fixture} = start_repo(database, :runtime_authorization_fixture)
-    original = Repo.put_dynamic_repo(:runtime_authorization_fixture)
+    default_repo? = Keyword.get(opts, :default_repo, false)
+    original_config = Repo.config()
+    repo_name = if default_repo?, do: Repo, else: :runtime_authorization_fixture
+
+    if default_repo?, do: Supervisor.stop(Process.whereis(Repo), :normal, 5_000)
+    {:ok, fixture} = start_repo(database, repo_name)
+    original = Repo.put_dynamic_repo(repo_name)
 
     on_exit(fn ->
-      if pid = Process.whereis(SealState), do: GenServer.stop(pid)
-      Supervisor.stop(fixture)
-      Repo.put_dynamic_repo(original)
-      admin_query!("DROP DATABASE " <> database)
+      try do
+        stop_process(Process.whereis(SealState))
+      after
+        stop_process(fixture)
+        Repo.put_dynamic_repo(original)
+
+        if default_repo? do
+          {:ok, restored} = Repo.start_link(original_config)
+          Process.unlink(restored)
+          Ecto.Adapters.SQL.Sandbox.mode(Repo, :manual)
+        end
+
+        admin_query!("DROP DATABASE " <> database)
+      end
     end)
 
     unless template, do: migrate()
     :ok
+  end
+
+  defp stop_process(nil), do: :ok
+
+  defp stop_process(pid) do
+    GenServer.stop(pid, :normal, 5_000)
+  catch
+    # Test-linked Vault processes may exit between whereis and stop. A process
+    # already gone has completed shutdown; teardown must still close its pool.
+    :exit, {:noproc, _} -> :ok
   end
 
   defp migrate do
@@ -86,6 +111,7 @@ defmodule SecretHub.Core.RuntimeDatabaseFixture do
     do: "secrethub_runtime_" <> Base.encode16(:crypto.strong_rand_bytes(8), case: :lower)
 
   defp admin_query!(sql) do
-    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn -> Repo.query!(sql) end)
+    # Database cloning and removal can wait for a checkpoint and disk work.
+    Ecto.Adapters.SQL.Sandbox.unboxed_run(Repo, fn -> Repo.query!(sql, [], timeout: 45_000) end)
   end
 end

@@ -1203,7 +1203,9 @@ defmodule SecretHub.Core.PKI.AppCertificatesTest do
              AppCertificates.issue_from_bootstrap(token, csr_pem, Ecto.UUID.generate())
   end
 
-  test "locks application, assigned Agent, and token rows in fixed order", %{token: token} do
+  test "locks authorization epoch, application, assigned Agent, and token rows in fixed order", %{
+    token: token
+  } do
     handler_id = {__MODULE__, make_ref()}
 
     :ok =
@@ -1231,7 +1233,8 @@ defmodule SecretHub.Core.PKI.AppCertificatesTest do
       |> collect_issuance_sql()
       |> Enum.filter(&String.contains?(&1, "FOR UPDATE"))
 
-    assert [app_query, agent_query, token_query | _rest] = lock_queries
+    assert [epoch_query, app_query, agent_query, token_query | _rest] = lock_queries
+    assert epoch_query =~ ~s(FROM "authorization_epochs")
     assert app_query =~ ~s(FROM "applications")
     assert agent_query =~ ~s(FROM "agents")
     assert token_query =~ ~s(FROM "app_bootstrap_tokens")

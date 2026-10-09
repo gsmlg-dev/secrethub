@@ -1,6 +1,8 @@
 defmodule SecretHub.Core.PKI.CASealedVaultTest do
   use SecretHub.Core.DataCase, async: false
 
+  import SecretHub.Core.VaultTestHelpers
+
   alias SecretHub.Core.PKI.CA
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Schemas.{Certificate, VaultConfig}
@@ -20,6 +22,7 @@ defmodule SecretHub.Core.PKI.CASealedVaultTest do
     Repo.delete_all(VaultConfig)
 
     start_supervised!(SealState)
+    await_vault_state(:not_initialized)
     {:ok, _shares} = SealState.initialize(3, 2)
 
     on_exit(fn ->

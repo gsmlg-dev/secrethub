@@ -13,6 +13,14 @@ defmodule SecretHub.Core.Vault.IntegrityTest do
     end
 
     def transaction(fun), do: SecretHub.Core.Repo.transaction(fun)
+
+    def query(sql, params, opts) do
+      if Agent.get(__MODULE__, & &1) == :down,
+        do: raise(DBConnection.ConnectionError, message: "unavailable")
+
+      SecretHub.Core.Repo.query(sql, params, opts)
+    end
+
     def insert(changeset), do: SecretHub.Core.Repo.insert(changeset)
     def rollback(reason), do: SecretHub.Core.Repo.rollback(reason)
   end

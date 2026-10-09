@@ -35,14 +35,15 @@ defmodule SecretHub.Core.ApplicationTest do
     for env <- [:dev, :prod] do
       Elixir.Application.put_env(:secrethub_core, :env, env)
 
-      assert Enum.map(Application.children(), &child_id/1) == [Cache | @runtime_children]
+      assert Enum.map(Application.children(), &child_id/1) ==
+               [Cache, Task.Supervisor | @runtime_children]
     end
   end
 
   test "excludes database-backed children in test runtime" do
     Elixir.Application.put_env(:secrethub_core, :env, :test)
 
-    assert Enum.map(Application.children(), &child_id/1) == [Cache]
+    assert Enum.map(Application.children(), &child_id/1) == [Cache, Task.Supervisor]
   end
 
   test "nil bootstrap environment excludes database-backed children" do
@@ -50,7 +51,7 @@ defmodule SecretHub.Core.ApplicationTest do
 
     child_ids = Enum.map(Application.children(), &child_id/1)
 
-    assert child_ids == [Cache]
+    assert child_ids == [Cache, Task.Supervisor]
     Enum.each(@runtime_children, &refute(&1 in child_ids))
   end
 
