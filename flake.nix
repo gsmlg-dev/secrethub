@@ -19,7 +19,7 @@
           lib = pkgs.lib;
           beamPackages = pkgs.beam.packages.erlang_28;
 
-          version = "1.0.0-rc11";
+          version = builtins.head (builtins.match ".*version: \"([^\"]+)\".*" (builtins.readFile ./mix.exs));
 
           src = lib.cleanSourceWith {
             src = self;
@@ -45,9 +45,40 @@
           mixDeps = beamPackages.fetchMixDeps {
             pname = "secrethub-mix-deps";
             inherit version src;
-            sha256 = "sha256-wPCpuFbMqDFEKKJkVtDVA71DXz4kOII8kCNB/BQHp1U=";
+            sha256 = "sha256-bbCp6CshIbd5TfL6115grJJInu/z+PhukmEUSF8Qdyk=";
             mixEnv = "prod";
           };
+
+          # RustlerPrecompiled supports an offline cache for the published MDEx
+          # NIF. Hashes are from mdex_native 0.2.11's checksum manifest.
+          mdexTarget = {
+            x86_64-linux = {
+              target = "x86_64-unknown-linux-gnu";
+              sha256 = "92d39f336119bce948468a1dfc7f02052e38e16323408d1ac92c0ac7261423a8";
+            };
+            aarch64-linux = {
+              target = "aarch64-unknown-linux-gnu";
+              sha256 = "fad246782bcb277ce9d18aff2c2ad652c6fedcc00fdcce50cf2843e00d025b8e";
+            };
+            x86_64-darwin = {
+              target = "x86_64-apple-darwin";
+              sha256 = "ffad284452ccec7e0a94137386f2e910188d4024e8b2a3101c2603dd02a28106";
+            };
+            aarch64-darwin = {
+              target = "aarch64-apple-darwin";
+              sha256 = "be04155aec6c43d9a90d9e082c8d39983cf6ee497ce623e25bd41df4058c6a80";
+            };
+          }.${system};
+          mdexArtifactName = "libmdex_native_nif-v0.2.11-nif-2.15-${mdexTarget.target}.so.tar.gz";
+          mdexArtifact = pkgs.fetchurl {
+            url = "https://github.com/leandrocp/mdex_native/releases/download/v0.2.11/${mdexArtifactName}";
+            inherit (mdexTarget) sha256;
+          };
+          prepareNifs = ''
+            export RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH="$TMPDIR/precompiled-nifs"
+            mkdir -p "$RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH"
+            cp ${mdexArtifact} "$RUSTLER_PRECOMPILED_GLOBAL_CACHE_PATH/${mdexArtifactName}"
+          '';
 
           # Pre-fetched Bun/npm dependencies for asset pipeline
           bunDeps = pkgs.stdenvNoCC.mkDerivation {
@@ -62,7 +93,7 @@
             # FOD: network access allowed, output pinned by hash
             outputHashMode = "recursive";
             outputHashAlgo = "sha256";
-            outputHash = "sha256-zs6e9HqaAjQ0NXiZuAgF4ec4ObjM9y+bvZCPZ52ADsM=";
+            outputHash = "sha256-oCijd2KO4GUHnaEhrjcIIdrzdw2Hda3k9QkEu0GplP4=";
             impureEnvVars = lib.fetchers.proxyImpureEnvVars;
 
             # Prevent patchShebangs from embedding store paths in the output
@@ -79,13 +110,22 @@
               cp ${./bunfig.toml} bunfig.toml
               cp ${./apps/secrethub_web/package.json} apps/secrethub_web/package.json
 
-              # Create stub package.json for file: deps referenced in bun.lock
+              # Use the locked Mix package sources for Bun's file dependencies.
               for dep in phoenix phoenix_html phoenix_live_view phoenix_duskmoon; do
-                mkdir -p deps/$dep
-                echo '{"name":"'$dep'","version":"0.0.0"}' > deps/$dep/package.json
+                mkdir -p deps
+                cp -r ${mixDeps}/$dep deps/$dep
               done
+              chmod -R u+w deps
 
-              HOME=$TMPDIR bun install --frozen-lockfile || HOME=$TMPDIR bun install
+              export BUN_INSTALL_CACHE_DIR="$TMPDIR/bun-cache"
+              # Keep the shared FOD identical across the four supported systems.
+              bun install --frozen-lockfile --ignore-scripts --os '*' --cpu '*'
+
+              # Bun's generated command shims vary with install scheduling.
+              # Asset tools use explicit package entry paths, so discard them.
+              find node_modules apps/secrethub_web/node_modules \
+                -type d \( -path 'node_modules/.bin' -o -path '*/node_modules/.bin' \) \
+                -prune -exec rm -rf {} +
 
               runHook postBuild
             '';
@@ -111,12 +151,11 @@
               mixEnv = "prod";
               mixFodDeps = mixDeps;
               mixReleaseName = "secrethub_core";
-              SECRET_HUB_CLUSTER_NODE_ID = "build-only-nix-core-package";
+              preConfigure = prepareNifs;
 
-              nativeBuildInputs = [ pkgs.bun pkgs.tailwindcss_4 ];
+              nativeBuildInputs = [ pkgs.bun ];
 
               MIX_BUN_PATH = "${pkgs.bun}/bin/bun";
-              MIX_TAILWIND_PATH = "${pkgs.tailwindcss_4}/bin/tailwindcss";
 
               postBuild = ''
                 # Install pre-fetched node_modules for asset pipeline
@@ -137,23 +176,16 @@
                   fi
                 done
 
-                # Fix heroicons git dep lock check: fetchMixDeps strips .git metadata
-                # which causes Mix to detect a lock mismatch. Re-init a stub .git dir.
-                if [ -d "deps/heroicons" ] && [ ! -d "deps/heroicons/.git" ]; then
-                  mkdir -p deps/heroicons/.git
-                  echo "ref: refs/heads/main" > deps/heroicons/.git/HEAD
-                fi
-
                 # Build assets using tools directly (avoids mix task overhead)
                 mkdir -p apps/secrethub_web/priv/static/assets/css
                 mkdir -p apps/secrethub_web/priv/static/assets/js
 
-                $MIX_TAILWIND_PATH \
-                  --input=apps/secrethub_web/assets/css/app.css \
-                  --output=apps/secrethub_web/priv/static/assets/css/app.css \
+                cd apps/secrethub_web
+                $MIX_BUN_PATH ./node_modules/@tailwindcss/cli/dist/index.mjs \
+                  --input=assets/css/app.css \
+                  --output=priv/static/assets/css/app.css \
                   --minify
 
-                cd apps/secrethub_web
                 export NODE_PATH="$(pwd)/../../deps''${NODE_PATH:+:$NODE_PATH}"
                 $MIX_BUN_PATH build assets/js/app.js \
                   --outdir=priv/static/assets/js \
@@ -161,15 +193,10 @@
                   --minify
                 cd ../..
 
-                # Generate digest - use mix run with --no-deps-check in web app context
-                # Set dummy env vars required by runtime.exs (only digest runs, no DB connection)
+                # fetchMixDeps strips Git metadata. Load the pinned, compiled
+                # dependencies explicitly before digest, without runtime config.
                 cd apps/secrethub_web
-                DATABASE_URL="postgresql://x:x@localhost/x" \
-                SECRET_KEY_BASE="dummy-secret-key-base-for-nix-build-only-not-used-at-runtime-min-64-chars" \
-                SECRET_HUB_CLUSTER_NODE_ID="build-only-nix-core-package" \
-                mix run --no-deps-check --no-start -e '
-                  Mix.Tasks.Phx.Digest.run([])
-                '
+                mix do deps.loadpaths --no-deps-check, phx.digest --no-compile
                 cd ../..
               '';
             };
@@ -181,6 +208,7 @@
               mixEnv = "prod";
               mixFodDeps = mixDeps;
               mixReleaseName = "secrethub_agent";
+              preConfigure = prepareNifs;
             };
 
             # SecretHub CLI: escript command-line tool
@@ -189,6 +217,7 @@
               inherit version src;
               mixEnv = "prod";
               mixFodDeps = mixDeps;
+              preConfigure = prepareNifs;
 
               # Build escript from the CLI app subdirectory
               postBuild = ''

@@ -47,11 +47,10 @@ defmodule SecretHub.Core.ClusterIdentityReleaseSurfaceTest do
              "| Core | `PHX_SERVER=true`, `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST`, `SECRET_HUB_CLUSTER_NODE_ID` |"
   end
 
-  test "Nix build and service module wire build and stable runtime identities" do
+  test "Nix service requires a stable runtime identity without build defaults" do
     flake = read!("flake.nix")
 
-    assert flake =~
-             ~s(SECRET_HUB_CLUSTER_NODE_ID="build-only-nix-core-package")
+    refute flake =~ "build-only-nix-core-package"
 
     assert flake =~ "nodeId = lib.mkOption"
     assert flake =~ "SECRET_HUB_CLUSTER_NODE_ID = cfg.nodeId"
