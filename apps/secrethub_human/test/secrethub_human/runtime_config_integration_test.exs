@@ -234,7 +234,18 @@ defmodule SecretHub.Human.RuntimeConfigIntegrationTest do
       ]
       |> Enum.map(fn module ->
         Code.ensure_loaded!(module)
-        module |> :code.which() |> List.to_string() |> Path.dirname()
+
+        path =
+          case :code.which(module) do
+            :cover_compiled ->
+              {:file, beam_path} = :cover.is_compiled(module)
+              beam_path
+
+            beam_path ->
+              beam_path
+          end
+
+        path |> List.to_string() |> Path.dirname()
       end)
       |> Enum.uniq()
       |> Enum.flat_map(&["-pa", &1])
