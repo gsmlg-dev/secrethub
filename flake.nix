@@ -45,7 +45,7 @@
           mixDeps = beamPackages.fetchMixDeps {
             pname = "secrethub-mix-deps";
             inherit version src;
-            sha256 = "sha256-bbCp6CshIbd5TfL6115grJJInu/z+PhukmEUSF8Qdyk=";
+            sha256 = "sha256-3zAL1syAb1Umwfc8zLJAyfcpOqlR4fzUy4yrgZaHlQU=";
             mixEnv = "prod";
           };
 
