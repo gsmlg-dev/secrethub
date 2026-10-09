@@ -7,11 +7,10 @@ defmodule SecretHub.Core.SecretRedactionTest do
 
   setup do
     if pid = Process.whereis(SealState), do: GenServer.stop(pid)
-    {:ok, _} = SealState.start_link()
+    start_supervised!({SealState, []}, restart: :temporary)
     await_empty(100)
     {:ok, shares} = SealState.initialize(3, 2)
     Enum.each(Enum.take(shares, 2), &SealState.unseal/1)
-    on_exit(fn -> if pid = Process.whereis(SealState), do: GenServer.stop(pid) end)
     :ok
   end
 

@@ -16,16 +16,20 @@ defmodule SecretHub.Core.AuditHashVersionMigrationTest do
              """)
 
     assert default =~ "1"
-
-    assert %Postgrex.Result{rows: [[0]]} =
-             Repo.query!("""
-             SELECT COUNT(*)
-             FROM audit_logs
-             WHERE hash_version IS DISTINCT FROM 1
-             """)
   end
 
-  test "the default and non-null constraint propagate to an actual audit partition" do
+  test "the partition keeps its v1 default and non-null constraint alongside v2 events" do
+    # Runtime events can legitimately use v2 after the migration has run.
+    assert %Postgrex.Result{rows: [[2]]} =
+             Repo.query!(
+               """
+               INSERT INTO audit_logs (event_id, sequence_number, timestamp, event_type, hash_version)
+               VALUES ($1, 9000000001, NOW(), 'system.upgrade_gate_verified', 2)
+               RETURNING hash_version
+               """,
+               [Ecto.UUID.dump!(Ecto.UUID.generate())]
+             )
+
     event_id = Ecto.UUID.generate()
 
     assert %Postgrex.Result{rows: [[1, partition_name]]} =
