@@ -29,6 +29,7 @@ Welcome to the SecretHub documentation. This guide provides comprehensive inform
 - [Deployment Guide](./deploy.md) - Current release artifacts, Docker, tarball, Agent, and CLI deployment
 - [MVP Deployment Guide](./deployment/mvp-deployment-guide.md) - Docker Compose and Kubernetes deployment
 - [Agent Deployment Guide](./deployment/agent-deployment-guide.md) - Agent configuration and deployment
+- [NixOS Agent Deployment](./deployment/nixos-agent.md) - Flake module, host identity, and Core enrollment
 - [PostgreSQL HA Setup](./deployment/postgresql-ha-setup.md) - Database high availability
 - [Production Runbook](./deployment/production-runbook.md) - Step-by-step production deployment
 - [Production Launch Checklist](./deployment/production-launch-checklist.md) - Pre-launch verification

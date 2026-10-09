@@ -21,6 +21,8 @@ SecretHub Agents are lightweight daemons that run alongside your applications to
 
 ## Deployment Options
 
+For native NixOS deployment, use the [NixOS flake Agent guide](nixos-agent.md).
+
 ### Option 1: Docker Container (Recommended)
 
 ```bash

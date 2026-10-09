@@ -19,7 +19,7 @@
           lib = pkgs.lib;
           beamPackages = pkgs.beam.packages.erlang_28;
 
-          version = "1.0.0-rc4";
+          version = "1.0.0-rc11";
 
           src = lib.cleanSourceWith {
             src = self;
@@ -33,6 +33,7 @@
               && !(lib.hasPrefix "deps" relPath)
               && !(lib.hasPrefix ".devenv" relPath)
               && !(lib.hasPrefix ".direnv" relPath)
+              && !(lib.hasPrefix ".trees" relPath)
               && !(lib.hasPrefix "node_modules" relPath)
               && !(lib.hasPrefix "result" relPath)
               && !(lib.hasPrefix "cover" relPath)
@@ -44,7 +45,7 @@
           mixDeps = beamPackages.fetchMixDeps {
             pname = "secrethub-mix-deps";
             inherit version src;
-            sha256 = "sha256-HhdD0HTVlMLU81hKnelZ0/qvhOE+WjBt7yNTPfISuAg=";
+            sha256 = "sha256-wPCpuFbMqDFEKKJkVtDVA71DXz4kOII8kCNB/BQHp1U=";
             mixEnv = "prod";
           };
 
@@ -246,6 +247,13 @@
             };
           };
 
+          checks = lib.optionalAttrs pkgs.stdenv.isLinux {
+            agent-module = import ./nix/tests/agent-module.nix {
+              inherit nixpkgs pkgs;
+              agentModule = self.nixosModules.agent;
+            };
+          };
+
           # Dev shell (standalone alternative to devenv)
           devShells.default = pkgs.mkShell {
             packages = [
@@ -382,26 +390,80 @@
 
             coreUrl = lib.mkOption {
               type = lib.types.str;
-              description = "URL of the SecretHub Core service.";
-              example = "https://secrethub.example.com";
+              description = ''
+                HTTPS URL of Core's machine enrollment API. Core supplies the
+                separate mTLS WebSocket endpoint during enrollment.
+              '';
+              example = "https://enroll.secrethub.example.com";
+            };
+
+            hostKeyPath = lib.mkOption {
+              type = lib.types.str;
+              default = "/etc/ssh/ssh_host_rsa_key";
+              description = ''
+                Absolute runtime path to an existing RSA or ECDSA SSH private
+                host key. systemd passes a private credential copy to the Agent.
+                Use a quoted string; never put the private key in the Nix store.
+                Ed25519 keys are not supported for enrollment.
+              '';
+            };
+
+            enrollmentCaPath = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              example = "/etc/secrethub/enrollment-ca.pem";
+              description = ''
+                Optional absolute path to a PEM CA bundle for the enrollment
+                HTTPS server. Null uses the normal CA trust store. The runtime
+                mTLS CA chain is supplied separately by Core during enrollment.
+              '';
             };
 
             agentId = lib.mkOption {
-              type = lib.types.str;
-              description = "Agent identifier.";
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Deprecated and ignored; Core assigns the Agent identity during enrollment.";
             };
           };
 
           config = lib.mkIf cfg.enable {
+            assertions = [
+              {
+                assertion = builtins.match "https://[^/?#@[:space:]]+(/[^?#[:space:]]*)?" cfg.coreUrl != null;
+                message = "services.secrethub-agent.coreUrl must be an HTTPS enrollment URL without credentials, query or fragment.";
+              }
+              {
+                assertion = lib.hasPrefix "/" cfg.hostKeyPath && !(lib.hasPrefix "/nix/store/" cfg.hostKeyPath);
+                message = "services.secrethub-agent.hostKeyPath must be an absolute runtime path outside the Nix store.";
+              }
+              {
+                assertion = cfg.enrollmentCaPath == null || lib.hasPrefix "/" cfg.enrollmentCaPath;
+                message = "services.secrethub-agent.enrollmentCaPath must be an absolute path.";
+              }
+            ];
+
+            warnings = lib.optional (cfg.agentId != null)
+              "services.secrethub-agent.agentId is ignored; remove it because Core assigns the Agent identity.";
+
             systemd.services.secrethub-agent = {
               description = "SecretHub Agent Service";
-              after = [ "network.target" ];
+              after = [ "network-online.target" "sshd-keygen.service" ];
+              wants = [ "network-online.target" ]
+                ++ lib.optional config.services.openssh.enable "sshd-keygen.service";
               wantedBy = [ "multi-user.target" ];
 
               environment = {
-                CORE_URL = cfg.coreUrl;
-                AGENT_ID = cfg.agentId;
+                SECRET_HUB_AGENT_CORE_URL = cfg.coreUrl;
+                SECRET_HUB_AGENT_HOST_KEY_PATH = "%d/ssh-host-key";
+                SECRET_HUB_AGENT_STATE_DIR = "/var/lib/secrethub-agent";
+                SECRET_HUB_AGENT_SOCKET_PATH = "/run/secrethub-agent/agent.sock";
+                SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR = "/var/lib/secrethub-agent/client-auth";
+                RELEASE_DISTRIBUTION = "none";
+                RELEASE_TMP = "/run/secrethub-agent";
+                ERL_CRASH_DUMP = "/dev/null";
                 LANG = "C.UTF-8";
+              } // lib.optionalAttrs (cfg.enrollmentCaPath != null) {
+                SECRET_HUB_AGENT_ENROLLMENT_CA_PATH = "%d/enrollment-ca";
               };
 
               serviceConfig = {
@@ -410,10 +472,23 @@
                 RestartSec = 5;
                 DynamicUser = true;
                 StateDirectory = "secrethub-agent";
+                StateDirectoryMode = "0700";
                 RuntimeDirectory = "secrethub-agent";
+                RuntimeDirectoryMode = "0700";
+                WorkingDirectory = "/var/lib/secrethub-agent";
+                UMask = "0077";
+                LoadCredential = [ "ssh-host-key:${cfg.hostKeyPath}" ]
+                  ++ lib.optional (cfg.enrollmentCaPath != null) "enrollment-ca:${cfg.enrollmentCaPath}";
               };
 
+              preStart = ''
+                install -d -m 0700 "$SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR"
+              '';
+
               script = ''
+                # mixRelease removes its build-time cookie. Distribution is off,
+                # so a fresh process-local cookie needs no persistent secret.
+                export RELEASE_COOKIE="$(head -c 32 /dev/urandom | base64)"
                 exec ${cfg.package}/bin/secrethub_agent start
               '';
             };
