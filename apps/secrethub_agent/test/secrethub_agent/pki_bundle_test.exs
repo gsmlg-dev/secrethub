@@ -1882,6 +1882,9 @@ defmodule SecretHub.Agent.PKIBundleTest do
                 GenServer.reply(from, {:ok, %{"status" => "recorded"}})
                 loop.(loop)
 
+              :stop ->
+                :ok
+
               _other ->
                 loop.(loop)
             end
@@ -1891,6 +1894,12 @@ defmodule SecretHub.Agent.PKIBundleTest do
         end)
 
       Process.register(mock_conn, :test_mock_conn_pki)
+
+      on_exit(fn ->
+        ref = Process.monitor(mock_conn)
+        send(mock_conn, :stop)
+        assert_receive {:DOWN, ^ref, :process, ^mock_conn, _}, 2000
+      end)
 
       {:ok, manager} =
         TrustBundleManager.start_link(
@@ -1909,8 +1918,8 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert_receive {:submitted_receipt, submitted1}, 2000
       assert submitted1["observation_sequence"] == 1
 
-      # Give outbox loop a moment to acknowledge
-      Process.sleep(50)
+      # Status queues behind the drain handler that persists the receipt ACK.
+      assert %{observation_sequence: 1} = TrustBundleManager.status(manager)
       assert {:ok, %{highest_sequence: 1, outbox: []}} = AtomicStore.read_outbox(bundle_dir)
 
       GenServer.stop(manager)
@@ -2013,8 +2022,8 @@ defmodule SecretHub.Agent.PKIBundleTest do
       # Wait for backoff retry to submit and successfully persist ACK
       assert_receive {:submitted_receipt, 1, 2}, 2000
 
-      # Wait briefly for async ACK write to finish
-      Process.sleep(50)
+      # Status queues behind the drain handler that persists the receipt ACK.
+      TrustBundleManager.status(manager)
       assert {:ok, %{outbox: []}} = AtomicStore.read_outbox(bundle_dir)
 
       GenServer.stop(manager)
@@ -2051,6 +2060,9 @@ defmodule SecretHub.Agent.PKIBundleTest do
                 GenServer.reply(from, {:ok, %{"status" => "recorded"}})
                 loop.(loop)
 
+              :stop ->
+                :ok
+
               _other ->
                 loop.(loop)
             end
@@ -2060,6 +2072,12 @@ defmodule SecretHub.Agent.PKIBundleTest do
         end)
 
       Process.register(mock_conn, :test_mock_conflict_conn)
+
+      on_exit(fn ->
+        ref = Process.monitor(mock_conn)
+        send(mock_conn, :stop)
+        assert_receive {:DOWN, ^ref, :process, ^mock_conn, _}, 2000
+      end)
 
       # Enqueue seq 1 (conflicting) and seq 2 (valid)
       receipt1 = %{
@@ -2093,7 +2111,8 @@ defmodule SecretHub.Agent.PKIBundleTest do
       # Seq 2 submitted next because seq 1 was moved to dead letter and yielded to next turn
       assert_receive {:submitted_seq, 2}, 2000
 
-      Process.sleep(50)
+      # Status queues behind the drain handler that persists the final ACK.
+      TrustBundleManager.status(manager)
 
       # Outbox should now be completely drained
       assert {:ok, %{outbox: []}} = AtomicStore.read_outbox(bundle_dir)
@@ -2709,8 +2728,8 @@ defmodule SecretHub.Agent.PKIBundleTest do
       assert sub_receipt1["agent_id"] == enrolled_agent_id
       assert sub_receipt1["observation_sequence"] == 1
 
-      # Wait for ACK to complete outbox drain
-      Process.sleep(50)
+      # Status queues behind the drain handler that persists the receipt ACK.
+      TrustBundleManager.status(manager)
       assert {:ok, %{outbox: []}} = AtomicStore.read_outbox(bundle_dir)
 
       # 4. Now process a newer CRL update bundle (generation 1, higher CRL number)
@@ -3519,9 +3538,6 @@ defmodule SecretHub.Agent.PKIBundleTest do
 
       # Receipt was submitted
       assert_receive {:submitted_receipt, _receipt}, 2000
-
-      # Give manager a moment to process rejection
-      Process.sleep(50)
 
       # Manager must remain alive and responsive!
       assert Process.alive?(manager)
