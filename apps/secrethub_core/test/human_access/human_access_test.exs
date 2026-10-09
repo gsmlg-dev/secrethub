@@ -1119,8 +1119,7 @@ defmodule SecretHub.Core.HumanAccessTest do
       PostgreSQLBackend.revoke(ctx.mounts["postgres-test"], issued.lease.username)
     end)
 
-    {:ok, blocker} = Postgrex.start_link(ctx.fixture.connection)
-    on_exit(fn -> if Process.alive?(blocker), do: GenServer.stop(blocker) end)
+    blocker = start_link_supervised!({Postgrex, ctx.fixture.connection})
     {:ok, _} = Postgrex.query(blocker, "BEGIN", [])
 
     {:ok, %{rows: [[_]]}} =
