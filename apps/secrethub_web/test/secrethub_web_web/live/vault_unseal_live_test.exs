@@ -5,6 +5,7 @@ defmodule SecretHub.Web.VaultUnsealLiveTest do
 
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Core.VaultTestHelpers
   alias SecretHub.Shared.Crypto.Shamir
   alias SecretHub.Shared.Schemas.VaultConfig
 
@@ -16,6 +17,7 @@ defmodule SecretHub.Web.VaultUnsealLiveTest do
     Repo.delete_all(VaultConfig)
 
     start_supervised!(SealState)
+    :ok = VaultTestHelpers.await_vault_state(:not_initialized)
     {:ok, shares} = SealState.initialize(5, 3)
 
     on_exit(fn ->

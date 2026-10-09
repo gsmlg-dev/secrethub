@@ -14,17 +14,26 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   import Phoenix.ConnTest, except: [connect: 2]
   import Phoenix.ChannelTest
   import ExUnit.CaptureIO
+  import SecretHub.Core.VaultTestHelpers, only: [await_vault_state: 1]
 
-  alias Ecto.Adapters.SQL.Sandbox
-  alias SecretHub.Agent.{Cache, Connection, TrustedConnection, UDSServer}
+  alias SecretHub.Agent.{
+    Cache,
+    CertVerifier,
+    Connection,
+    IdentityStore,
+    TrustedConnection,
+    UDSServer
+  }
+
   alias SecretHub.Core.Agents.{ConnectionManager, Enrollment}
-  alias SecretHub.Core.PKI.{CA, CSR}
-  alias SecretHub.Core.{Policies, Secrets}
+  alias SecretHub.Core.PKI.{AppCertificates, CA, CSR}
+  alias SecretHub.Core.{Agents, Apps, Policies, Secrets, UpgradeGates}
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.RuntimeDatabaseFixture
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.E2E.Helpers
   alias SecretHub.Shared.Crypto.AgentCSRProof
-  alias SecretHub.Shared.Schemas.{AgentEnrollment, Certificate}
+  alias SecretHub.Shared.Schemas.AgentEnrollment
   alias SecretHub.Web.{AgentChannel, AgentRuntimeChannel, AgentTrustedSocket, UserSocket}
   alias SecretHub.Web.AgentEndpointManager
   alias X509.Certificate.Extension
@@ -46,39 +55,28 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   # ─── Setup ─────────────────────────────────────────────────
 
   setup_all do
-    # Ensure Ecto sandbox is in shared mode for all E2E tests.
-    # This allows the endpoint and channel processes to see test data.
-    pid = Sandbox.start_owner!(Repo, shared: true)
-    Repo.delete_all(Certificate)
+    RuntimeDatabaseFixture.prepare_template()
+  end
+
+  setup tags do
+    RuntimeDatabaseFixture.setup(tags, default_repo: true)
     ensure_current_audit_partition!()
 
-    # Start SealState GenServer (disabled in test config)
-    seal_state_pid =
-      case SealState.start_link([]) do
-        {:ok, pid} -> pid
-        {:error, {:already_started, pid}} -> pid
-      end
+    # Each fresh Core fixture has its own loopback authentication budget.
+    :ets.delete(:rate_limiter_table, {:auth, "127.0.0.1"})
+    on_exit(fn -> :ets.delete(:rate_limiter_table, {:auth, "127.0.0.1"}) end)
 
-    connection_manager_pid =
-      case ConnectionManager.start_link(name: ConnectionManager) do
-        {:ok, pid} -> pid
-        {:error, {:already_started, pid}} -> pid
-      end
-
-    on_exit(fn ->
-      # Stop SealState
-      if Process.alive?(seal_state_pid), do: GenServer.stop(seal_state_pid, :normal)
-
-      if Process.alive?(connection_manager_pid),
-        do: GenServer.stop(connection_manager_pid, :normal)
-
-      Sandbox.stop_owner(pid)
-    end)
+    if pid = Process.whereis(SealState), do: GenServer.stop(pid, :normal, 5_000)
+    if pid = Process.whereis(ConnectionManager), do: GenServer.stop(pid, :normal, 5_000)
+    start_supervised!(SealState)
+    start_supervised!({ConnectionManager, name: ConnectionManager})
+    :ok = await_vault_state(:not_initialized)
 
     # ── Phase 1: Initialize and unseal vault ──
     {_conn, init_resp} = Helpers.init_vault(5, 3)
     shares = init_resp["shares"]
     _unseal_resp = Helpers.unseal_vault(shares, 3)
+    :ok = await_vault_state(:unsealed)
 
     # ── Phase 2: Create AppRole and bootstrap agent ──
     {role_id, secret_id} =
@@ -307,9 +305,8 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   # Agent's actual WebSocket client, exercising certificate chain
   # validation on both sides of a real socket.
 
-  @real_mtls_port 4666
-
-  test "S9: agent connects through the real mTLS endpoint and joins runtime" do
+  @tag :tmp_dir
+  test "S9: agent connects through the real mTLS endpoint and joins runtime", %{tmp_dir: tmp_dir} do
     flush_mailbox()
     Process.flag(:trap_exit, true)
 
@@ -322,7 +319,8 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     previous_dev_mode = Application.get_env(:secrethub_web, :dev_mode)
     previous_endpoint = Application.get_env(:secrethub_web, :agent_trusted_endpoint)
-    endpoint_url = "wss://localhost:#{@real_mtls_port}/agent/socket/websocket"
+    previous_endpoint_config = Application.get_env(:secrethub_web, SecretHub.Web.AgentEndpoint)
+    endpoint_url = "wss://localhost:0/agent/socket/websocket"
 
     Application.put_env(:secrethub_web, :dev_mode, true)
     Application.put_env(:secrethub_web, :agent_trusted_endpoint, endpoint_url)
@@ -330,27 +328,34 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     on_exit(fn ->
       Application.put_env(:secrethub_web, :dev_mode, previous_dev_mode || false)
 
-      if previous_endpoint do
-        Application.put_env(:secrethub_web, :agent_trusted_endpoint, previous_endpoint)
-      end
+      restore_app_env(:secrethub_web, :agent_trusted_endpoint, previous_endpoint)
 
       Supervisor.terminate_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
       Supervisor.delete_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
+      restore_app_env(:secrethub_web, SecretHub.Web.AgentEndpoint, previous_endpoint_config)
     end)
 
     assert :ok = AgentEndpointManager.ensure_started()
+    assert {:ok, {_address, port}} = SecretHub.Web.AgentEndpoint.server_info(:https)
+    endpoint_url = "wss://localhost:#{port}/agent/socket/websocket"
 
     {:ok, ca_chain_pem} = CA.get_ca_chain()
     test_pid = self()
 
+    connect_info = %{
+      "trusted_websocket_endpoint" => endpoint_url,
+      "expected_core_server_name" => "localhost",
+      "core_ca_cert_pem" => ca_chain_pem
+    }
+
+    state_dir =
+      persist_agent_identity!(tmp_dir, enrollment, certificate, tls_private_key, connect_info)
+
     {:ok, conn} =
       TrustedConnection.start_link(
         agent_id: enrollment.agent_id,
-        connect_info: %{
-          "trusted_websocket_endpoint" => endpoint_url,
-          "expected_core_server_name" => "localhost",
-          "core_ca_cert_pem" => ca_chain_pem
-        },
+        state_dir: state_dir,
+        connect_info: connect_info,
         certificate_pem: certificate.certificate_pem,
         private_key_pem: X509.PrivateKey.to_pem(tls_private_key),
         on_runtime_accepted: fn payload -> send(test_pid, {:runtime_accepted, payload}) end
@@ -403,8 +408,6 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
   # ─── Scenario 11: CLI Against Local Agent ──────────────────
 
-  @agent_cli_mtls_port 4667
-
   @tag :tmp_dir
   @tag timeout: 120_000
   test "S11: CLI reads a secret from the local Agent backed by Core runtime", %{
@@ -425,7 +428,8 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     previous_dev_mode = Application.get_env(:secrethub_web, :dev_mode)
     previous_endpoint = Application.get_env(:secrethub_web, :agent_trusted_endpoint)
-    endpoint_url = "wss://localhost:#{@agent_cli_mtls_port}/agent/socket/websocket"
+    previous_endpoint_config = Application.get_env(:secrethub_web, SecretHub.Web.AgentEndpoint)
+    endpoint_url = "wss://localhost:0/agent/socket/websocket"
 
     Application.put_env(:secrethub_web, :dev_mode, true)
     Application.put_env(:secrethub_web, :agent_trusted_endpoint, endpoint_url)
@@ -436,12 +440,11 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     on_exit(fn ->
       Application.put_env(:secrethub_web, :dev_mode, previous_dev_mode || false)
 
-      if previous_endpoint do
-        Application.put_env(:secrethub_web, :agent_trusted_endpoint, previous_endpoint)
-      end
+      restore_app_env(:secrethub_web, :agent_trusted_endpoint, previous_endpoint)
 
       Supervisor.terminate_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
       Supervisor.delete_child(SecretHub.Web.Supervisor, SecretHub.Web.AgentEndpoint)
+      restore_app_env(:secrethub_web, SecretHub.Web.AgentEndpoint, previous_endpoint_config)
       stop_registered_process(UDSServer)
       stop_registered_process(Cache)
       stop_registered_process(Connection)
@@ -449,21 +452,33 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     end)
 
     assert :ok = AgentEndpointManager.ensure_started()
-
-    {:ok, _cache} = Cache.start_link([])
-    {:ok, _uds} = UDSServer.start_link(socket_path: socket_path, request_timeout: 15_000)
+    assert {:ok, {_address, port}} = SecretHub.Web.AgentEndpoint.server_info(:https)
+    endpoint_url = "wss://localhost:#{port}/agent/socket/websocket"
 
     {:ok, ca_chain_pem} = CA.get_ca_chain()
     test_pid = self()
 
+    connect_info = %{
+      "trusted_websocket_endpoint" => endpoint_url,
+      "expected_core_server_name" => "localhost",
+      "core_ca_cert_pem" => ca_chain_pem
+    }
+
+    state_dir =
+      persist_agent_identity!(tmp_dir, enrollment, certificate, tls_private_key, connect_info)
+
+    start_supervised!(CertVerifier)
+    start_supervised!(Cache)
+
+    start_supervised!(
+      {UDSServer, socket_path: socket_path, state_dir: state_dir, request_timeout: 15_000}
+    )
+
     {:ok, conn} =
       TrustedConnection.start_link(
         agent_id: enrollment.agent_id,
-        connect_info: %{
-          "trusted_websocket_endpoint" => endpoint_url,
-          "expected_core_server_name" => "localhost",
-          "core_ca_cert_pem" => ca_chain_pem
-        },
+        state_dir: state_dir,
+        connect_info: connect_info,
         certificate_pem: certificate.certificate_pem,
         private_key_pem: X509.PrivateKey.to_pem(tls_private_key),
         on_runtime_accepted: fn payload -> send(test_pid, {:runtime_accepted, payload}) end
@@ -472,7 +487,10 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     assert_receive {:runtime_accepted, %{"agent_id" => agent_id}}, 15_000
     assert agent_id == enrollment.agent_id
 
-    app_cert_path = write_app_certificate!(tmp_dir)
+    {app_cert_path, app_key_path} =
+      write_app_certificate!(tmp_dir, enrollment.agent_id, secret_path)
+
+    assert {:ok, _} = UpgradeGates.verify_typed_runtime_authorization(actor_id: "operator:e2e")
     home_dir = Path.join(tmp_dir, "cli-home")
 
     assert {output, 0} =
@@ -485,6 +503,8 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
                  socket_path,
                  "--agent-cert",
                  app_cert_path,
+                 "--agent-key",
+                 app_key_path,
                  "--format",
                  "json"
                ],
@@ -493,6 +513,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     expected_value = secret_data["value"]
     assert %{"value" => ^expected_value} = Jason.decode!(output)
+    assert {:ok, %{auth_successes: 1, auth_failures: 0}} = UDSServer.get_stats()
 
     GenServer.stop(conn)
     flush_mailbox()
@@ -514,6 +535,22 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
   end
 
   # ─── Private Helpers ───────────────────────────────────────
+
+  defp persist_agent_identity!(tmp_dir, enrollment, certificate, tls_private_key, connect_info) do
+    state_dir = Path.join(tmp_dir, "agent-state")
+
+    :ok =
+      IdentityStore.write(state_dir, %{
+        agent_id: enrollment.agent_id,
+        certificate_pem: certificate.certificate_pem,
+        private_key_pem: X509.PrivateKey.to_pem(tls_private_key),
+        ca_chain_pem: connect_info["core_ca_cert_pem"],
+        connect_info: connect_info,
+        identity: %{"agent_id" => enrollment.agent_id}
+      })
+
+    state_dir
+  end
 
   defp flush_mailbox do
     receive do
@@ -643,18 +680,36 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     Application.put_env(app, key, value)
   end
 
-  defp write_app_certificate!(tmp_dir) do
-    app_id = Ecto.UUID.generate()
-    private_key = :public_key.generate_key({:rsa, 2048, 65_537})
+  defp write_app_certificate!(tmp_dir, agent_id, secret_path) do
+    agent = Agents.get_agent(agent_id)
 
-    cert_pem =
-      private_key
-      |> X509.Certificate.self_signed("/CN=#{app_id}")
-      |> X509.Certificate.to_pem()
+    {:ok, %{app: app, token: token}} =
+      Apps.register_app(%{
+        name: "e2e-cli-app-#{System.unique_integer([:positive])}",
+        agent_id: agent.id
+      })
+
+    private_key = X509.PrivateKey.new_ec(:secp256r1)
+    csr = private_key |> X509.CSR.new("/CN=untrusted") |> X509.CSR.to_pem()
+    {:ok, issued} = AppCertificates.issue_from_bootstrap(token, csr, Ecto.UUID.generate())
+
+    {:ok, _policy} =
+      Policies.create_policy(%{
+        name: "e2e-cli-app-read-#{app.id}",
+        policy_document: %{
+          "version" => "1.0",
+          "allowed_secrets" => [secret_path],
+          "allowed_operations" => ["read"]
+        },
+        entity_bindings: ["application:" <> app.id]
+      })
 
     cert_path = Path.join(tmp_dir, "app-client.pem")
-    File.write!(cert_path, cert_pem)
-    cert_path
+    key_path = Path.join(tmp_dir, "app-client-key.pem")
+    File.write!(cert_path, issued.certificate)
+    File.write!(key_path, X509.PrivateKey.to_pem(private_key))
+    File.chmod!(key_path, 0o600)
+    {cert_path, key_path}
   end
 
   defp stop_registered_process(name) do

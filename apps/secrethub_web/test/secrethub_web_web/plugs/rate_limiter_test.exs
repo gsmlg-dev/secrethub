@@ -1,6 +1,8 @@
 defmodule SecretHub.Web.Plugs.RateLimiterTest do
   use SecretHub.Web.ConnCase, async: false
 
+  @endpoint SecretHub.Web.MachineEndpoint
+
   alias SecretHub.Web.Plugs.RateLimiter
 
   @table_name :rate_limiter_table
@@ -196,7 +198,7 @@ defmodule SecretHub.Web.Plugs.RateLimiterTest do
 
     test "has exactly one public issuance route" do
       routes =
-        SecretHub.Web.Router
+        SecretHub.Web.MachineRouter
         |> Phoenix.Router.routes()
         |> Enum.filter(&(&1.verb == :post and &1.path == "/v1/pki/app/issue"))
 

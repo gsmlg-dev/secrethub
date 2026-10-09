@@ -56,7 +56,7 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
              subscribe_and_join(socket, AgentRuntimeChannel, "agent:runtime")
 
     ref = push(socket, "secret:lease_renew", %{"lease_id" => "disabled-launch-lease"})
-    assert_reply ref, :error, %{reason: "feature_unavailable"}
+    assert_reply ref, :error, %{reason: "feature_unavailable"}, 2_000
   end
 
   test "connects and joins trusted runtime using certificate-derived identity" do
@@ -144,7 +144,7 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
              })
 
     ref = push(socket, "secret:read", %{"path" => "prod.db.password"})
-    assert_reply ref, :error, %{reason: "INCOMPATIBLE_VERSION"}
+    assert_reply ref, :error, %{reason: "INCOMPATIBLE_VERSION"}, 2_000
   end
 
   test "application read preserves exact revision and rejects app claims or independent policy denial" do
@@ -160,26 +160,29 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
 
     ref = push(socket, "secret:read", payload)
 
-    assert_reply ref, :ok, %{
-      value: %{"value" => "app-runtime-private"},
-      version: 1,
-      revision: revision
-    }
+    assert_reply ref,
+                 :ok,
+                 %{
+                   value: %{"value" => "app-runtime-private"},
+                   version: 1,
+                   revision: revision
+                 },
+                 2_000
 
     ref = push(socket, "secret:read", Map.put(payload, "known_revision", revision))
-    assert_reply ref, :ok, %{not_modified: true, revision: ^revision, version: 1}
+    assert_reply ref, :ok, %{not_modified: true, revision: ^revision, version: 1}, 2_000
 
     for bad <- [
           Map.put(payload, "app_id", Ecto.UUID.generate()),
           Map.put(payload, "certificate_fingerprint", String.duplicate("0", 64))
         ] do
       ref = push(socket, "secret:read", bad)
-      assert_reply ref, :error, %{reason: "UNAUTHORIZED"}
+      assert_reply ref, :error, %{reason: "UNAUTHORIZED"}, 2_000
     end
 
     assert {:ok, _} = Policies.delete_policy(policy.id)
     ref = push(socket, "secret:read", payload)
-    assert_reply ref, :error, %{reason: "FORBIDDEN"}
+    assert_reply ref, :error, %{reason: "FORBIDDEN"}, 2_000
   end
 
   test "current Core floor rejects stale proof version and malformed payloads without releasing values" do
@@ -203,17 +206,17 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
           Map.put(payload, "local_auth_version", "2")
         ] do
       ref = push(socket, "secret:read", bad)
-      assert_reply ref, :error, %{reason: "INCOMPATIBLE_VERSION"}
+      assert_reply ref, :error, %{reason: "INCOMPATIBLE_VERSION"}, 2_000
     end
 
     for bad <- [Map.put(payload, "path", %{}), Map.put(payload, "known_revision", "1")] do
       ref = push(socket, "secret:read", bad)
-      assert_reply ref, :error, %{reason: "FORBIDDEN"}
+      assert_reply ref, :error, %{reason: "FORBIDDEN"}, 2_000
     end
 
     certificate |> Certificate.revoke_changeset("app-revoked") |> Repo.update!()
     ref = push(socket, "secret:read", payload)
-    assert_reply ref, :error, %{reason: "UNAUTHORIZED"}
+    assert_reply ref, :error, %{reason: "UNAUTHORIZED"}, 2_000
   end
 
   test "legacy read waiting on floor activation cannot release a value after cutover commits" do

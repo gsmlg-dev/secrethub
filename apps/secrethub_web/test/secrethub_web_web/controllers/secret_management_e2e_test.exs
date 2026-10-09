@@ -16,35 +16,32 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
   # Secret management E2E tests — require register_agent, generate_approle_credentials,
   # and the /v1/secret/* and /v1/auth/approle/login routes.
 
-  alias Ecto.Adapters.SQL.Sandbox
   alias SecretHub.Core.{Agents, Policies}
   alias SecretHub.Core.Repo
+  alias SecretHub.Core.RuntimeDatabaseFixture
+  alias SecretHub.Core.VaultTestHelpers
   alias SecretHub.Core.Vault.SealState
 
   @rate_limiter_table :rate_limiter_table
 
-  setup do
-    # Use shared mode for database access
-    Sandbox.mode(Repo, {:shared, self()})
+  setup_all do
+    RuntimeDatabaseFixture.prepare_template()
+  end
+
+  setup context do
+    :ok = RuntimeDatabaseFixture.setup(context)
     ensure_current_audit_partition!()
     cleanup_rate_limit_scope(:auth)
 
-    # Start SealState for E2E tests
-    {:ok, _pid} = start_supervised(SealState)
-    Process.sleep(100)
+    start_supervised!({SealState, repo: RuntimeDatabaseFixture.VaultRepo})
+    :ok = VaultTestHelpers.await_vault_state(:not_initialized)
+    {:ok, shares} = SealState.initialize(3, 2)
 
-    # Initialize and unseal vault if needed
-    case SealState.status() do
-      %{initialized: false} ->
-        {:ok, shares} = SealState.initialize(3, 2)
+    shares
+    |> Enum.take(2)
+    |> Enum.each(fn share -> assert {:ok, _} = SealState.unseal(share) end)
 
-        shares
-        |> Enum.take(2)
-        |> Enum.each(&SealState.unseal/1)
-
-      _ ->
-        :ok
-    end
+    assert %{state: :unsealed} = SealState.status()
 
     # Create a test policy with full secret access
     {:ok, policy} =
@@ -80,7 +77,6 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
 
     on_exit(fn ->
       cleanup_rate_limit_scope(:auth)
-      Sandbox.mode(Repo, :manual)
     end)
 
     %{token: token, agent: agent, policy: policy}
@@ -155,7 +151,7 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
           }
         })
 
-      assert conn.status == 200
+      assert conn.status == 200, conn.resp_body
       update_response = json_response(conn, 200)
       assert update_response["version"] == 2
 
@@ -376,9 +372,12 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
       assert conn.status == 200
 
       # Multiple concurrent reads
+      repo = Repo.get_dynamic_repo()
+
       tasks =
         Enum.map(1..20, fn _i ->
           Task.async(fn ->
+            Repo.put_dynamic_repo(repo)
             conn = build_conn()
             conn = put_req_header(conn, "x-vault-token", token)
             get(conn, "/v1/#{secret_path}")
@@ -416,9 +415,12 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
       assert conn.status == 200
 
       # Multiple concurrent updates
+      repo = Repo.get_dynamic_repo()
+
       tasks =
         Enum.map(1..10, fn i ->
           Task.async(fn ->
+            Repo.put_dynamic_repo(repo)
             conn = build_conn()
             conn = put_req_header(conn, "x-vault-token", token)
 
@@ -430,9 +432,9 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
 
       results = Task.await_many(tasks, 10_000)
 
-      # All updates should succeed (or some might conflict)
+      # The authorization lock serializes updates through separate database connections.
       success_count = Enum.count(results, fn conn -> conn.status == 200 end)
-      assert success_count >= 1
+      assert success_count == 10
 
       # Final version number should reflect all successful updates
       conn = build_conn()
@@ -442,7 +444,7 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
       assert conn.status == 200
       response = json_response(conn, 200)
       # Should have version = 1 (initial) + number of successful updates
-      assert response["metadata"]["version"] >= 1
+      assert response["metadata"]["version"] == 1 + success_count
     end
   end
 end

@@ -15,6 +15,8 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
   alias Ecto.Adapters.SQL.Sandbox
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Core.VaultTestHelpers
+  alias SecretHub.Shared.Crypto.Shamir
 
   setup do
     # Use shared mode for the Sandbox so all processes can access the database
@@ -25,8 +27,7 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
     # It's normally not started in test mode to avoid database writes
     {:ok, _pid} = start_supervised(SealState)
 
-    # Give it a moment to initialize
-    Process.sleep(100)
+    :ok = VaultTestHelpers.await_vault_state(:not_initialized)
 
     # Return to manual mode for cleanup
     on_exit(fn ->
@@ -161,64 +162,24 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
       end
     end
 
-    test "unsealing with duplicate shares is handled correctly", %{conn: conn} do
-      # Initialize vault if needed
-      conn =
-        post(conn, "/v1/sys/init", %{
-          "secret_shares" => 3,
-          "secret_threshold" => 2
-        })
+    test "unsealing with duplicate shares is rejected and clears progress", %{conn: conn} do
+      conn = post(conn, "/v1/sys/init", %{secret_shares: 3, secret_threshold: 2})
+      [share1, share2 | _] = json_response(conn, 200)["shares"]
 
-      case conn.status do
-        200 ->
-          shares = json_response(conn, 200)["shares"]
+      conn = post(build_conn(), "/v1/sys/unseal", %{share: share1})
+      assert %{"sealed" => true, "progress" => 1} = json_response(conn, 200)
 
-          # Seal the vault first
-          conn = build_conn()
-          post(conn, "/v1/sys/seal", %{})
+      conn = post(build_conn(), "/v1/sys/unseal", %{share: share1})
+      assert json_response(conn, 400) == %{"error" => "Duplicate share coordinate"}
 
-          # Provide first share
-          conn = build_conn()
+      conn = get(build_conn(), "/v1/sys/seal-status")
+      assert %{"sealed" => true, "progress" => 0} = json_response(conn, 200)
 
-          conn =
-            post(conn, "/v1/sys/unseal", %{
-              "share" => Enum.at(shares, 0)
-            })
+      conn = post(build_conn(), "/v1/sys/unseal", %{share: share1})
+      assert %{"sealed" => true, "progress" => 1} = json_response(conn, 200)
 
-          response = json_response(conn, 200)
-          assert response["progress"] == 1
-
-          # Provide same share again - should be deduplicated
-          conn = build_conn()
-
-          conn =
-            post(conn, "/v1/sys/unseal", %{
-              "share" => Enum.at(shares, 0)
-            })
-
-          response = json_response(conn, 200)
-          # Progress should still be 1 (duplicate ignored)
-          assert response["progress"] == 1
-          assert response["sealed"] == true
-
-          # Provide different share - should unseal
-          conn = build_conn()
-
-          conn =
-            post(conn, "/v1/sys/unseal", %{
-              "share" => Enum.at(shares, 1)
-            })
-
-          response = json_response(conn, 200)
-          assert response["sealed"] == false
-
-        400 ->
-          # Already initialized, skip test
-          :skipped
-
-        _ ->
-          flunk("Unexpected response")
-      end
+      conn = post(build_conn(), "/v1/sys/unseal", %{share: share2})
+      assert %{"sealed" => false, "progress" => 2} = json_response(conn, 200)
     end
 
     test "unsealing when already unsealed returns success", %{conn: conn} do
@@ -271,7 +232,7 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
 
       assert conn.status == 400
       response = json_response(conn, 400)
-      assert response["error"] =~ "between 1 and 255"
+      assert response["error"] =~ "between 1 and 251"
 
       # Test: secret_threshold greater than secret_shares
       conn = build_conn()
@@ -297,7 +258,7 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
 
       assert conn.status == 400
       response = json_response(conn, 400)
-      assert response["error"] =~ "between 1 and 255"
+      assert response["error"] =~ "between 1 and 251"
     end
 
     test "unsealing with invalid share format returns error", %{conn: conn} do
@@ -321,26 +282,14 @@ defmodule SecretHub.Web.VaultUnsealingE2ETest do
     end
 
     test "unsealing uninitialized vault returns error", %{conn: conn} do
-      # Check if vault is uninitialized
       conn = get(conn, "/v1/sys/seal-status")
-      status = json_response(conn, 200)
+      assert %{"initialized" => false, "sealed" => true} = json_response(conn, 200)
 
-      if status["initialized"] do
-        # Vault already initialized, skip this test
-        :skipped
-      else
-        # Try to unseal without initializing
-        conn = build_conn()
+      {:ok, [share | _]} = Shamir.split(:crypto.strong_rand_bytes(32), 3, 2)
+      conn = post(build_conn(), "/v1/sys/unseal", %{share: Shamir.encode_share(share)})
 
-        conn =
-          post(conn, "/v1/sys/unseal", %{
-            "share" => "secrethub-share-test"
-          })
-
-        assert conn.status == 400
-        response = json_response(conn, 400)
-        assert response["error"] =~ "not initialized" or response["error"] =~ "Invalid share"
-      end
+      assert json_response(conn, 400) == %{"error" => "Vault unavailable or not initialized"}
+      assert %{state: :not_initialized, progress: 0} = SealState.status()
     end
   end
 

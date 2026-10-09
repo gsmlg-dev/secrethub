@@ -45,6 +45,13 @@ jobs:
           elixir-version: '1.18'
           otp-version: '28'
 
+      - name: Expose PostgreSQL fixture tools
+        run: |
+          postgres_bin="$(pg_config --bindir)"
+          test -x "$postgres_bin/initdb"
+          test -x "$postgres_bin/pg_ctl"
+          echo "$postgres_bin" >> "$GITHUB_PATH"
+
       - name: Cache dependencies
         uses: actions/cache@v4
         with:

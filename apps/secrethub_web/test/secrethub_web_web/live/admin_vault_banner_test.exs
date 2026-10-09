@@ -5,6 +5,7 @@ defmodule SecretHub.Web.AdminVaultBannerTest do
 
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Core.VaultTestHelpers
   alias SecretHub.Shared.Schemas.Certificate
   alias SecretHub.Shared.Schemas.VaultConfig
 
@@ -17,6 +18,7 @@ defmodule SecretHub.Web.AdminVaultBannerTest do
     Repo.delete_all(Certificate)
 
     start_supervised!(SealState)
+    :ok = VaultTestHelpers.await_vault_state(:not_initialized)
     {:ok, _shares} = SealState.initialize(3, 2)
 
     conn = init_test_session(conn, %{admin_id: "test-admin"})
