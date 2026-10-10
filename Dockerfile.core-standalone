@@ -13,6 +13,10 @@ COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --ignore-scripts
 RUN cd apps/secrethub_web && bun ./node_modules/@tailwindcss/cli/dist/index.mjs --input=assets/css/app.css --output=priv/static/assets/css/app.css --minify && bun build assets/js/app.js --outdir=priv/static/assets/js --external '/fonts/*' --external '/images/*' --minify
+ARG SECRET_HUB_GIT_REF
+ARG SECRET_HUB_GIT_SHA
+ARG SECRET_HUB_BUILD_TIME
+ENV SECRET_HUB_GIT_REF=$SECRET_HUB_GIT_REF SECRET_HUB_GIT_SHA=$SECRET_HUB_GIT_SHA SECRET_HUB_BUILD_TIME=$SECRET_HUB_BUILD_TIME
 RUN mix compile --warnings-as-errors
 RUN mix phx.digest --no-compile
 RUN mix release secrethub_core

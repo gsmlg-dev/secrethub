@@ -35,6 +35,7 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       release_sha: ${{ steps.bump.outputs.release_sha }}
+      build_time: ${{ steps.bump.outputs.build_time }}
       prerelease: ${{ steps.release.outputs.prerelease }}
 
     steps:
@@ -118,6 +119,7 @@ jobs:
           fi
 
           echo "release_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
   publish-cli-hex:
     name: Publish CLI to Hex.pm
@@ -179,6 +181,10 @@ jobs:
     name: Build Core Release (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
     needs: prepare-release
+    env:
+      SECRET_HUB_GIT_REF: ${{ needs.prepare-release.outputs.tag }}
+      SECRET_HUB_GIT_SHA: ${{ needs.prepare-release.outputs.release_sha }}
+      SECRET_HUB_BUILD_TIME: ${{ needs.prepare-release.outputs.build_time }}
     permissions:
       contents: read
     strategy:
@@ -444,6 +450,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            SECRET_HUB_GIT_REF=${{ needs.prepare-release.outputs.tag }}
+            SECRET_HUB_GIT_SHA=${{ needs.prepare-release.outputs.release_sha }}
+            SECRET_HUB_BUILD_TIME=${{ needs.prepare-release.outputs.build_time }}
 
   create-release:
     name: Create GitHub Release

@@ -156,6 +156,9 @@
               nativeBuildInputs = [ pkgs.bun ];
 
               MIX_BUN_PATH = "${pkgs.bun}/bin/bun";
+              SECRET_HUB_GIT_REF = self.rev or self.dirtyRev or "";
+              SECRET_HUB_GIT_SHA = self.rev or self.dirtyRev or "";
+              SOURCE_DATE_EPOCH = toString (self.lastModified or 0);
 
               postBuild = ''
                 # Install pre-fetched node_modules for asset pipeline
