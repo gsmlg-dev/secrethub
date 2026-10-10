@@ -1,5 +1,6 @@
 <div class="min-h-screen flex flex-col">
   <.dm_appbar title="SecretHub" title_to={~p"/"} class="appbar-primary" sticky>
+    <:after_title><.version_badge /></:after_title>
     <:menu to={~p"/vault/init"}>Initialize</:menu>
     <:menu to={~p"/vault/unseal"}>Unseal</:menu>
     <:menu to={~p"/admin/dashboard"}>Management</:menu>

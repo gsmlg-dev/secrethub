@@ -10,6 +10,56 @@ defmodule SecretHub.Web.Layouts do
 
   embed_templates "layouts/*"
 
+  @doc "Shows the running version with build details in a tooltip."
+  attr :id, :string, default: "app-version"
+  attr :info, :map, default: nil
+
+  def version_badge(assigns) do
+    info = assigns.info || SecretHub.Web.BuildInfo.info()
+    version = "v#{info.version}#{if info.environment == :dev, do: "-dev", else: ""}"
+
+    details =
+      [
+        {"Version", version},
+        {"Environment", info.environment},
+        {"Git ref", info.git_ref || "Unavailable"},
+        {"Git SHA", info.git_sha || "Unavailable"},
+        {"Built at", info.built_at},
+        {"Source time", info.source_date}
+      ]
+      |> Enum.reject(fn {_label, value} -> is_nil(value) end)
+      |> Enum.map_join("\n", fn {label, value} -> "#{label}: #{value}" end)
+
+    assigns = assign(assigns, version: version, details: details)
+
+    ~H"""
+    <.dm_tooltip
+      :let={trigger_attrs}
+      id={@id}
+      content={@details}
+      position="bottom"
+      class="whitespace-pre-line max-w-[calc(100vw-2rem)] break-words text-left font-mono"
+    >
+      <button
+        id={@id}
+        type="button"
+        class="ml-2 inline-flex shrink-0 rounded-full cursor-help focus-visible:outline-2 focus-visible:outline-offset-2"
+        aria-label="Version details"
+        {trigger_attrs}
+      >
+        <.dm_badge
+          variant="secondary"
+          size="lg"
+          pill
+          class="whitespace-nowrap text-lg leading-5 font-medium"
+        >
+          {@version}
+        </.dm_badge>
+      </button>
+    </.dm_tooltip>
+    """
+  end
+
   @doc """
   Shows the flash group with standard titles and content.
 

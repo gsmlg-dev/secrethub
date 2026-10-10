@@ -16,6 +16,8 @@
 # General application configuration
 import Config
 
+import_config "build_info.exs"
+
 # Configure Ecto repositories
 config :secrethub_core,
   env: config_env(),
