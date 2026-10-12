@@ -39,6 +39,7 @@ defmodule SecretHub.Web.AgentEndpointManager do
     File.mkdir_p!(@cert_dir)
 
     fingerprint_path = Path.join(@cert_dir, "ca-fingerprint")
+    host_path = Path.join(@cert_dir, "server-host")
     cert_path = Path.join(@cert_dir, "server-cert.pem")
     key_path = Path.join(@cert_dir, "server-key.pem")
     ca_path = Path.join(@cert_dir, "ca-cert.pem")
@@ -51,8 +52,10 @@ defmodule SecretHub.Web.AgentEndpointManager do
       current_fingerprint =
         if File.exists?(fingerprint_path), do: File.read!(fingerprint_path), else: nil
 
+      current_host = if File.exists?(host_path), do: File.read!(host_path), else: nil
+
       changed? =
-        current_fingerprint != material.ca_fingerprint or
+        current_fingerprint != material.ca_fingerprint or current_host != host or
           Enum.any?([cert_path, key_path, ca_path], &(not File.exists?(&1)))
 
       if changed? do
@@ -60,6 +63,7 @@ defmodule SecretHub.Web.AgentEndpointManager do
         File.write!(key_path, material.private_key_pem)
         File.write!(ca_path, material.ca_certificate_pem)
         File.write!(fingerprint_path, material.ca_fingerprint)
+        File.write!(host_path, host)
       end
 
       {:ok, %{certfile: cert_path, keyfile: key_path, cacertfile: ca_path}, changed?}

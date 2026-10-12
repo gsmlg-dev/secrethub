@@ -64,6 +64,29 @@ defmodule SecretHub.Web.AgentEndpointManagerTest do
     assert transport_options[:fail_if_no_peer_cert]
   end
 
+  test "refreshes the dev server certificate when the advertised host changes" do
+    assert :ok = AgentEndpointManager.ensure_started()
+    old_pid = Process.whereis(SecretHub.Web.AgentEndpoint)
+
+    Application.put_env(
+      :secrethub_web,
+      :agent_trusted_endpoint,
+      "wss://core.dev.test:0/agent/socket/websocket"
+    )
+
+    assert :ok = AgentEndpointManager.ensure_started()
+
+    certificate =
+      Application.fetch_env!(:secrethub_web, SecretHub.Web.AgentEndpoint)
+      |> get_in([:https, :certfile])
+      |> File.read!()
+      |> X509.Certificate.from_pem!()
+      |> X509.Certificate.to_der()
+
+    assert :public_key.pkix_verify_hostname(certificate, dns_id: ~c"core.dev.test")
+    refute Process.whereis(SecretHub.Web.AgentEndpoint) == old_pid
+  end
+
   test "starts a configured trusted listener outside dev mode" do
     assert :ok = AgentEndpointManager.ensure_started()
 
