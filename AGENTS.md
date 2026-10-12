@@ -25,21 +25,27 @@ This project uses **devenv** (devenv.sh) with Nix for reproducible development e
 
 ```bash
 devenv shell          # Enter devenv shell (or use direnv for automatic activation)
-db-setup              # Create database, run migrations, seed data
 assets-install        # Install frontend dependencies (Bun + Tailwind)
+devenv processes up   # Start postgres, core, agent in dependency order
 ```
+
+Core waits for PostgreSQL readiness, initializes missing databases, applies Core migrations, and starts Phoenix. Agent starts after Core's liveness endpoint responds. Startup preserves existing data and does not run seeds. First boot still requires Vault initialization/unsealing, CA setup, and operator approval in `/admin/pending-agents`.
+
+Use `devenv processes up -d` for background startup. After process configuration changes, stop the old manager with `devenv processes down` and run `devenv processes up` again; PostgreSQL data and Agent certificate material persist.
 
 ### Essential Commands
 
 ```bash
 # Development
-devenv up             # Start PostgreSQL + Phoenix server (http://localhost:4664)
+devenv processes up   # Start postgres, core, agent (Core HTTP: localhost:4664)
+devenv processes list # Show process status
+devenv processes down # Stop processes without removing persistent state
 mix phx.server        # Start Phoenix server only (PostgreSQL must already be running)
 console               # Start IEx shell with application loaded
 mix agent.run         # Run a local agent against Core (see Trusted Agent Connection below)
 
 # Database
-db-setup              # Create database and run migrations + seeds
+db-setup              # Optional setup + seeds; may modify existing data
 db-reset              # Drop, recreate, migrate, and seed database
 db-migrate            # Run pending migrations only
 db-clean              # Remove stale postgres lock files after unclean shutdown
@@ -129,7 +135,7 @@ Full design in `docs/agents/trusted-agent-connection.md` (supersedes older AppRo
 - Agent runtime uses a dedicated mTLS listener, separate from the normal web/API endpoint.
 - First-boot enrollment flow: discover host identity (SSH host key) -> create pending enrollment via Core API -> operator approves in `/admin/pending-agents` -> submit CSR -> receive certificate -> connect over mTLS and join `agent:runtime` -> finalize.
 - The startup coordinator (`SecretHub.Agent.RuntimeBootstrapper`) owns material loading, enrollment, runtime startup, finalization, and renewal scheduling; `SecretHub.Agent.Connection` is only the low-level socket client.
-- Local dev: `mix agent.run` starts an agent against Core. Env vars: `SECRET_HUB_AGENT_CORE_URL` (default `https://localhost:4664`), `SECRET_HUB_AGENT_STATE_DIR` (default `priv/cert`), `SECRET_HUB_AGENT_HOST_KEY_PATH` (auto-generates a dev RSA key if unset).
+- Local dev: `devenv processes up` starts a standalone Agent using `mix agent.run`. Inside the managed Agent process, unset `SECRET_HUB_AGENT_CORE_URL` defaults to `http://localhost:<port>` following Core's HTTP port (`PORT`, then `PHX_PORT`, then `4664`); unset `SECRET_HUB_AGENT_STATE_DIR` defaults to `$DEVENV_STATE/secrethub-agent`, and unset `SECRET_HUB_AGENT_SOCKET_PATH` defaults to `<state-dir>/agent.sock`. Explicit environment values are preserved. These defaults apply to the managed process; direct `mix agent.run` retains its `priv/cert` state directory fallback unless an environment override is supplied. The trusted mTLS runtime uses `SECRET_HUB_AGENT_ENDPOINT_HOST`/`SECRET_HUB_AGENT_ENDPOINT_PORT` (defaults `localhost:4665`). `SECRET_HUB_AGENT_HOST_KEY_PATH` can select an existing RSA/ECDSA SSH host key; otherwise a development RSA key is generated and persisted. First enrollment requires operator approval; subsequent starts reuse certificate material and reconnect.
 
 ### Background Jobs
 - **Oban** for persistent background tasks (secret rotation, lease cleanup)

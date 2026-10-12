@@ -16,6 +16,8 @@ in
 
     # Additional tools
     openssl
+    openssh
+    curl
 
     # For testing AWS integrations locally
     awscli2
@@ -35,8 +37,35 @@ in
   languages.javascript.bun.enable = true;
   languages.javascript.bun.package = pkgs-stable.bun;
 
-  processes.secrethub-core = {
-    exec = "mix phx.server";
+  processes.core = {
+    after = [ "devenv:processes:postgres" ];
+    env = {
+      SECRETHUB_ROLE = "core";
+      SECRET_HUB_AGENT_ENABLED = "false";
+    };
+    exec = ''
+      set -e
+      db-init
+      mix ecto.migrate -r SecretHub.Core.Repo
+      exec mix phx.server
+    '';
+    ready = {
+      exec = ''curl --fail --silent --max-time 2 --output /dev/null "http://127.0.0.1:''${PORT:-$PHX_PORT}/v1/sys/health/live"'';
+      period = 1;
+      probe_timeout = 3;
+      timeout = 300;
+    };
+  };
+
+  processes.agent = {
+    after = [ "devenv:processes:core" ];
+    env.SECRETHUB_ROLE = "agent";
+    exec = ''
+      export SECRET_HUB_AGENT_CORE_URL="''${SECRET_HUB_AGENT_CORE_URL:-http://localhost:''${PORT:-$PHX_PORT}}"
+      export SECRET_HUB_AGENT_STATE_DIR="''${SECRET_HUB_AGENT_STATE_DIR:-$DEVENV_STATE/secrethub-agent}"
+      export SECRET_HUB_AGENT_SOCKET_PATH="''${SECRET_HUB_AGENT_SOCKET_PATH:-$SECRET_HUB_AGENT_STATE_DIR/agent.sock}"
+      exec mix agent.run
+    '';
   };
 
   # Development services
@@ -108,8 +137,14 @@ in
 
     # Phoenix
     PHX_HOST = "localhost";
-    PHX_PORT = "4664";
+    PHX_PORT = lib.mkDefault "4664";
     HUMAN_ENDPOINT_PORT = "4666";
+
+    # Dev enrollment uses the Core HTTP port (PORT, or PHX_PORT) in dev.exs.
+    # SECRET_HUB_AGENT_CORE_URL remains an optional explicit URL override.
+    # Core advertises this separate, certificate-authenticated runtime listener.
+    SECRET_HUB_AGENT_ENDPOINT_HOST = lib.mkDefault "localhost";
+    SECRET_HUB_AGENT_ENDPOINT_PORT = lib.mkDefault "4665";
 
     # Development flags
     ELIXIR_ERL_OPTIONS = "+sbwt none +sbwtdcpu none +sbwtdio none";
@@ -254,7 +289,7 @@ in
        • db-reset         → Reset database
        • assets-install   → Install frontend dependencies (Bun)
        • assets-build     → Build frontend assets
-       • server           → Start Phoenix server
+       • devenv processes up → Start postgres, core, and agent
        • test-all         → Run all tests
        • console          → Start IEx shell
        • quality          → Run all quality checks
@@ -263,9 +298,6 @@ in
        • PostgreSQL:  Unix socket ($DEVENV_STATE/postgres)
 
     EOF
-
-    # Initialize database (creates user/databases if needed)
-    db-init 2>/dev/null || true
 
     # Check if dependencies are installed
     if [ ! -d "deps" ]; then

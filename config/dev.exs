@@ -108,10 +108,17 @@ config :secrethub_core,
 #
 live_reload_enabled? = System.find_executable("inotifywait") != nil
 
+core_port = String.to_integer(System.get_env("PORT") || System.get_env("PHX_PORT") || "4664")
+agent_host = System.get_env("SECRET_HUB_AGENT_ENDPOINT_HOST") || "localhost"
+agent_port = System.get_env("SECRET_HUB_AGENT_ENDPOINT_PORT") || "4665"
+
+config :secrethub_web,
+  agent_trusted_endpoint: "wss://#{agent_host}:#{agent_port}/agent/socket/websocket"
+
 config :secrethub_web, SecretHub.Web.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4664")],
+  http: [ip: {0, 0, 0, 0}, port: core_port],
   check_origin: false,
   code_reloader: live_reload_enabled?,
   debug_errors: true,
@@ -190,6 +197,7 @@ config :swoosh, :api_client, false
 # normal Phoenix development.
 config :secrethub_agent,
   enabled: System.get_env("SECRET_HUB_AGENT_ENABLED") in ["1", "true", "TRUE"],
-  core_url: System.get_env("SECRET_HUB_AGENT_CORE_URL"),
-  # Use /tmp for socket in development (no root permissions needed)
-  socket_path: "/tmp/secrethub_dev_agent.sock"
+  core_url: System.get_env("SECRET_HUB_AGENT_CORE_URL") || "http://localhost:#{core_port}",
+  state_dir: System.get_env("SECRET_HUB_AGENT_STATE_DIR") || "priv/cert",
+  # devenv keeps the socket beside Agent state; standalone dev can use /tmp.
+  socket_path: System.get_env("SECRET_HUB_AGENT_SOCKET_PATH") || "/tmp/secrethub_dev_agent.sock"

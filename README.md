@@ -163,30 +163,57 @@ cd secrethub
 # Activate devenv (or use direnv allow)
 devenv shell
 
-# Set up the database
-db-setup
+# Install frontend dependencies
+assets-install
 
-# Start the development server
-server
+# Start PostgreSQL, Core, and Agent
+devenv processes up
 ```
 
-**Available at:**
+Core starts after PostgreSQL is ready, initializes missing development databases, and applies Core migrations. Agent starts after Core's liveness endpoint is available. Startup preserves existing data; the optional `db-setup` command also runs seeds and may modify existing data.
+
+For background processes, use `devenv processes up -d`. After changing process configuration, restart the manager with `devenv processes down` followed by `devenv processes up`; PostgreSQL and Agent state persist.
+
+**Development endpoints:**
+
 - **Web UI / Admin Dashboard:** http://localhost:4664/admin
 - **REST API:** http://localhost:4664/v1
+- **Agent runtime:** `wss://localhost:4665/agent/socket/websocket` (Core-issued client certificate required)
+
+On first boot, initialize/unseal the Vault, configure the CA, and approve the Agent in `/admin/pending-agents`. Later starts reuse its certificate and reconnect automatically. See [Trusted Agent Connection](docs/agents/trusted-agent-connection.md).
+
+Development connection settings come from environment variables. The managed `agent` process supplies URL, state directory, and socket defaults when unset, preserving explicit environment values:
+
+| Variable | Default / purpose |
+|----------|-------------------|
+| `PORT`, `PHX_PORT` | Core HTTP port: `PORT` takes precedence over `PHX_PORT` (default `4664`) |
+| `SECRET_HUB_AGENT_CORE_URL` | Optional enrollment API override; otherwise follows Core's HTTP port at `http://localhost:<port>` |
+| `SECRET_HUB_AGENT_ENDPOINT_HOST`, `SECRET_HUB_AGENT_ENDPOINT_PORT` | Trusted mTLS runtime host/port: `localhost`, `4665` |
+| `SECRET_HUB_AGENT_STATE_DIR` | Persistent Agent material: `$DEVENV_STATE/secrethub-agent` |
+| `SECRET_HUB_AGENT_SOCKET_PATH` | Local application socket: `$SECRET_HUB_AGENT_STATE_DIR/agent.sock` |
+| `SECRET_HUB_AGENT_HOST_KEY_PATH` | Optional existing RSA/ECDSA SSH host key; otherwise a development RSA key is generated and persisted |
+
+These Agent defaults apply inside the managed process. Running `mix agent.run` directly uses its existing `priv/cert` state directory fallback unless `SECRET_HUB_AGENT_STATE_DIR` is supplied.
+
+Choose `SECRET_HUB_AGENT_ENDPOINT_HOST` and `SECRET_HUB_AGENT_ENDPOINT_PORT` before the first enrollment. An enrolled Agent persists the advertised WSS connection information. To change the trusted runtime host or port afterward, select a fresh `SECRET_HUB_AGENT_STATE_DIR`, preserve the original directory, and complete a new operator-approved enrollment.
+
 ### Quick Commands
 
 ```bash
 # Database
-db-setup        # Create and migrate database
+db-setup        # Optional database setup + seeds (may modify existing data)
 db-reset        # Reset database (drop, create, migrate, seed)
 
 # Development
-server          # Start Phoenix server
-console         # Start IEx shell with app loaded
+devenv processes up          # Start postgres, core, agent
+devenv processes up -d       # Start in the background
+devenv processes list        # Show process status
+devenv processes down        # Stop processes; preserve their state
+console                      # Start IEx shell with app loaded
 
-# Testing
-mix test                    # Run all tests
-mix coveralls.html          # Generate coverage report
+# Testing (devenv defaults to MIX_ENV=dev)
+test-all                       # Run all tests with MIX_ENV=test
+MIX_ENV=test mix coveralls.html # Generate coverage report
 
 # Code Quality
 quality         # Run format, credo, dialyzer
