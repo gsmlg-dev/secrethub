@@ -4,6 +4,8 @@ defmodule SecretHub.Web.Plugs.ManagementIngress do
 
   Caddy authenticates the operator. Forwarded identity headers, Host and old
   administrator sessions do not establish this transport boundary.
+
+  Development may explicitly allow direct access from private IPv4 LAN peers.
   """
 
   import Plug.Conn
@@ -26,13 +28,22 @@ defmodule SecretHub.Web.Plugs.ManagementIngress do
   def call(conn, endpoint) do
     conn = put_resp_header(conn, "cache-control", "no-store")
 
-    if conn.remote_ip in endpoint.config(:trusted_proxy_ips, @loopback) and
-         allowed_origin?(conn, endpoint) do
+    if allowed_peer?(conn.remote_ip, endpoint) and allowed_origin?(conn, endpoint) do
       assign(conn, :current_actor, %{type: "operator", id: "operator", external_id: "operator"})
     else
       conn |> send_resp(403, "Forbidden") |> halt()
     end
   end
+
+  defp allowed_peer?(peer, endpoint) do
+    peer in endpoint.config(:trusted_proxy_ips, @loopback) or
+      (endpoint.config(:development_direct_access, false) and private_ipv4?(peer))
+  end
+
+  defp private_ipv4?({10, _, _, _}), do: true
+  defp private_ipv4?({172, second, _, _}) when second in 16..31, do: true
+  defp private_ipv4?({192, 168, _, _}), do: true
+  defp private_ipv4?(_peer), do: false
 
   defp allowed_origin?(conn, endpoint) do
     case get_req_header(conn, "origin") do
@@ -41,8 +52,19 @@ defmodule SecretHub.Web.Plugs.ManagementIngress do
 
       [origin] ->
         case endpoint.config(:check_origin) do
-          origins when is_list(origins) -> origin in origins
-          _ -> origin == endpoint.url()
+          :conn ->
+            origin ==
+              URI.to_string(%URI{
+                scheme: Atom.to_string(conn.scheme),
+                host: conn.host,
+                port: conn.port
+              })
+
+          origins when is_list(origins) ->
+            origin in origins
+
+          _ ->
+            origin == endpoint.url()
         end
 
       _ ->

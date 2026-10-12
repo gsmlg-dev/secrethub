@@ -116,10 +116,10 @@ config :secrethub_web,
   agent_trusted_endpoint: "wss://#{agent_host}:#{agent_port}/agent/socket/websocket"
 
 config :secrethub_web, SecretHub.Web.Endpoint,
-  # Binding to loopback ipv4 address prevents access from other machines.
-  # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
+  # Explicit development exception: private LAN peers may use same-origin HTTP.
   http: [ip: {0, 0, 0, 0}, port: core_port],
-  check_origin: false,
+  development_direct_access: true,
+  check_origin: :conn,
   code_reloader: live_reload_enabled?,
   debug_errors: true,
   secret_key_base: "vAPoEmgczs3B5WPFpsHw8tV5a+VV79FjDI7umvmAt1YdlBvpz1J9sXW+/mb5Tj5A",

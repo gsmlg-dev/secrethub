@@ -42,6 +42,7 @@ defmodule SecretHub.Web.RuntimeConfigIntegrationTest do
     assert endpoint[:http] == [ip: {127, 0, 0, 1}, port: 4664]
     assert endpoint[:url] == [scheme: "https", host: "admin.example.test", port: 443, path: ""]
     assert endpoint[:trusted_proxy_ips] == [{127, 0, 0, 1}]
+    assert endpoint[:development_direct_access] == false
     assert endpoint[:check_origin] == ["https://admin.example.test"]
   end
 

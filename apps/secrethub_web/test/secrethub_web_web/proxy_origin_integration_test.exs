@@ -51,6 +51,25 @@ defmodule SecretHub.Web.ProxyOriginIntegrationTest do
     end
   end
 
+  test "development HTTP origins work for WebSocket and longpoll on LAN and loopback hosts", %{
+    port: port
+  } do
+    dev_config = Config.Reader.read!(Path.join(@root, "config/dev.exs"), env: :dev)
+    endpoint_config = dev_config[:secrethub_web][Endpoint]
+    assert endpoint_config[:development_direct_access] == true
+    assert endpoint_config[:check_origin] == :conn
+
+    old_config = Application.fetch_env!(:secrethub_web, Endpoint)
+    changes = Keyword.take(endpoint_config, [:development_direct_access, :check_origin])
+    Endpoint.config_change([{Endpoint, Keyword.merge(old_config, changes)}], [])
+
+    for origin <- ["http://10.100.10.10:4664", "http://localhost:4664", "http://127.0.0.1:4664"] do
+      assert request(port, "/", origin) == 200
+      assert request(port, "/live/websocket?vsn=2.0.0", origin) == 101
+      assert request(port, "/live/longpoll?vsn=2.0.0", origin) == 200
+    end
+  end
+
   test "unrelated origins, HTTP origins and wrong ports fail despite forwarded headers", %{
     port: port
   } do

@@ -178,6 +178,7 @@ if config_env() == :prod do
     http: [ip: management_ip, port: port],
     https: nil,
     trusted_proxy_ips: [proxy_ip],
+    development_direct_access: false,
     secret_key_base: secret_key_base,
     check_origin: allowed_origins
 
