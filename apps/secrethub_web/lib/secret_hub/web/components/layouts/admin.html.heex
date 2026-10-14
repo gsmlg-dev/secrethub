@@ -18,7 +18,7 @@
         <.version_badge id="sidebar-version" size="sm" class="normal-case" />
       </div>
     </div>
-    <div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+    <div class="admin-sidebar-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
       <.dm_left_menu
         id="admin-sidebar-menu"
         size="md"
@@ -148,7 +148,7 @@
         </:menu>
       </.dm_left_menu>
     </div>
-    <div class="admin-sidebar-footer shrink-0 border-t border-secondary-content/20 p-3">
+    <div class="admin-sidebar-footer flex shrink-0 justify-end border-t border-secondary-content/20">
       <.dm_tooltip
         :let={trigger_attrs}
         id="admin-sidebar-toggle-hint"
@@ -158,7 +158,9 @@
         <.dm_btn
           id="admin-sidebar-toggle"
           variant="ghost"
-          class="flex w-full items-center justify-center gap-2 text-secondary-content"
+          size="sm"
+          shape="square"
+          class="text-secondary-content"
           data-sidebar-toggle
           aria-controls="admin-sidebar"
           aria-expanded="true"
@@ -167,7 +169,6 @@
         >
           <.dm_mdi name="chevron-left" class="admin-sidebar-collapse-icon h-5 w-5 shrink-0" />
           <.dm_mdi name="chevron-right" class="admin-sidebar-expand-icon h-5 w-5 shrink-0" />
-          <span class="admin-sidebar-label">Collapse</span>
         </.dm_btn>
       </.dm_tooltip>
     </div>

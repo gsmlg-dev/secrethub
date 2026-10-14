@@ -61,6 +61,22 @@ pre {
   font-family: var(--font-mono);
 }
 
+.admin-sidebar-scroll {
+  scrollbar-color: color-mix(in oklch, var(--color-secondary-content) 30%, var(--color-secondary)) var(--color-secondary);
+}
+
+.admin-sidebar-scroll::-webkit-scrollbar-track {
+  background: var(--color-secondary);
+}
+
+.admin-sidebar-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in oklch, var(--color-secondary-content) 30%, var(--color-secondary));
+}
+
+.admin-sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--color-secondary-content) 45%, var(--color-secondary));
+}
+
 .admin-sidebar[data-collapsed="false"] .admin-sidebar-expand-icon {
   display: none;
 }
@@ -81,7 +97,8 @@ pre {
 }
 
 .admin-sidebar[data-collapsed="true"] .admin-sidebar-brand a,
-.admin-sidebar[data-collapsed="true"] #admin-sidebar-menu a {
+.admin-sidebar[data-collapsed="true"] #admin-sidebar-menu a,
+.admin-sidebar[data-collapsed="true"] .admin-sidebar-footer {
   justify-content: center;
 }
 
