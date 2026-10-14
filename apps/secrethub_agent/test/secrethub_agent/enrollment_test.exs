@@ -25,6 +25,34 @@ defmodule SecretHub.Agent.EnrollmentTest do
   end
 
   @tag :tmp_dir
+  test "create_pending reports the running Agent version to Core", %{tmp_dir: tmp_dir} do
+    Req.Test.verify_on_exit!()
+    original_req_options = Application.get_env(:secrethub_agent, :enrollment_req_options)
+
+    on_exit(fn ->
+      restore_env(:enrollment_req_options, original_req_options)
+    end)
+
+    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+
+    expected_version = Mix.Project.config()[:version]
+
+    Req.Test.expect(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v1/agent/enrollments"
+      assert %{"agent_version" => ^expected_version} = conn.body_params
+
+      Req.Test.json(conn, %{"enrollment_id" => "enrollment-1"})
+    end)
+
+    host_key_path = generate_key!(tmp_dir, "ssh_host_rsa_key", "rsa")
+    {:ok, host_key} = HostKey.discover(paths: [rsa: host_key_path])
+
+    assert {:ok, %{"enrollment_id" => "enrollment-1"}} =
+             Enrollment.create_pending("https://core.example", host_key)
+  end
+
+  @tag :tmp_dir
   test "create_pending rejects insecure enrollment URLs when disabled", %{tmp_dir: tmp_dir} do
     original_allow = Application.get_env(:secrethub_agent, :allow_insecure_enrollment)
     original_req_options = Application.get_env(:secrethub_agent, :enrollment_req_options)

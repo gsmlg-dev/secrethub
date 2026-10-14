@@ -114,7 +114,7 @@ defmodule SecretHub.Agent.Enrollment do
       "machine_id" => Keyword.get(opts, :machine_id, machine_id()),
       "os" => :os.type() |> Tuple.to_list() |> Enum.join("-"),
       "arch" => :erlang.system_info(:system_architecture) |> to_string(),
-      "agent_version" => Keyword.get(opts, :agent_version, "0.1.0"),
+      "agent_version" => Keyword.get(opts, :agent_version, app_version()),
       "ssh_host_key_algorithm" => host_key.algorithm,
       "ssh_host_key_fingerprint" => host_key.fingerprint,
       "ssh_host_public_key" => HostKey.public_key_openssh(host_key),
@@ -351,6 +351,13 @@ defmodule SecretHub.Agent.Enrollment do
     opts
     |> Keyword.merge(req_options())
     |> Keyword.put(:redirect, false)
+  end
+
+  defp app_version do
+    case Application.spec(:secrethub_agent, :vsn) do
+      nil -> "unknown"
+      version -> to_string(version)
+    end
   end
 
   defp hostname do
