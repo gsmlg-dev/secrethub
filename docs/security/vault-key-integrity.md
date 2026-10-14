@@ -79,12 +79,22 @@ immutable binaries; status and normal Inspect output redact key material.
 
 ## Controlled legacy recovery
 
-Use the explicit local operator API
+For a sealed legacy Vault, follow **Recover vault** from the initialization or
+unseal page, or the management banner, to `/vault/recover`. This ordinary HTML
+form uses the existing recovery operation behind the management ingress; it does
+not submit old shares through LiveView. Access it through the protected
+management proxy. Confirm that the current database has been backed up, enter
+the original shares one per line, and submit. The UI preserves the existing
+total-share count and threshold. After successful verification, save the new v4
+shares using the download offered on the result page before leaving that page.
+The Vault remains sealed; use the new shares on `/vault/unseal` for manual unseal.
+
+The explicit local operator API remains available:
 `SecretHub.Core.Vault.SealState.recover_legacy(encoded_shares, total, threshold)`.
-It is available only for a sealed durable legacy row. Ordinary unseal and the v4
-share decoder continue rejecting legacy shares. Do not put shares into a shell
-command, command history, ordinary configuration, logs, or an image. Supply them
-through a protected operator session from securely held material.
+Recovery is available only for a sealed durable legacy row. Ordinary unseal and
+the v4 share decoder continue rejecting legacy shares. Do not put shares into a
+shell command, command history, ordinary configuration, logs, or an image. Supply
+them through a protected operator session from securely held material.
 
 The quarantined recovery decoder accepts only canonical, bounded historical
 wire versions 1–3 with exact 32-byte values, matching durable parameters, matching
@@ -108,3 +118,9 @@ that reconstruction, reset the database, or generate a replacement data key.
 Restore verified backup/evidence and securely held shares, or have the operator
 explicitly decide how disposable staging data should be recreated. Unknown or
 production data is never treated as disposable.
+
+The UI cannot bypass these verification requirements. If the original shares do
+not authenticate any reliable existing secret ciphertext, recovery fails and
+does not replace the Vault configuration or existing secret data. A recovery
+link does not establish that the available materials are sufficient. The page
+does not reset the Vault or restore a database backup.

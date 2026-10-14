@@ -197,6 +197,34 @@ window.addEventListener("phx:download", (event) => {
   URL.revokeObjectURL(url)
 })
 
+// Recovery results are delivered once by a normal HTML form submission.
+document.addEventListener("submit", (event) => {
+  const form = event.target
+  if (form.id !== "vault-recovery-form") return
+
+  if (form.dataset.recoverySubmitted === "true") {
+    event.preventDefault()
+    return
+  }
+
+  form.dataset.recoverySubmitted = "true"
+  form.setAttribute("aria-busy", "true")
+  form.querySelectorAll('button[type="submit"], input[type="submit"]').forEach((button) => {
+    button.disabled = true
+  })
+})
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("[data-vault-recovery-download]")) return
+
+  const shares = document.getElementById("recovered-shares")
+  if (!shares) return
+
+  window.dispatchEvent(new CustomEvent("phx:download", {
+    detail: {filename: "vault-recovery-shares.txt", content: shares.value}
+  }))
+})
+
 // connect if there are any LiveViews on the page
 liveSocket.connect()
 

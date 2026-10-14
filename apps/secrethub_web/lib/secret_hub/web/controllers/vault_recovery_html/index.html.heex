@@ -1,0 +1,136 @@
+<section class="mx-auto max-w-3xl px-4 py-10 sm:px-6">
+  <div class="mb-8">
+    <.dm_badge variant="warning" class="mb-3">Vault maintenance</.dm_badge>
+    <h1 class="text-3xl font-semibold text-on-surface">Vault Recovery</h1>
+    <p class="mt-2 text-on-surface-variant">
+      Recover an existing Vault using its original shares while preserving stored secrets.
+    </p>
+  </div>
+
+  <div
+    :if={@error_message}
+    id="recovery-error"
+    role="alert"
+    class="mb-6 rounded-lg border border-error/40 bg-error/10 p-4 text-on-surface"
+  >
+    <p class="font-semibold text-error">Recovery could not be completed</p>
+    <p class="mt-2 text-sm">{@error_message}</p>
+  </div>
+
+  <%= cond do %>
+    <% @recovered_shares != nil -> %>
+      <.dm_card variant="bordered" shadow="sm">
+        <:title>Recovery completed — save your new shares</:title>
+        <div class="space-y-6">
+          <p>
+            Your existing secrets were preserved. The Vault is still sealed.
+            Use {@vault_status.threshold} of these {@vault_status.total_shares} new shares to unseal it.
+          </p>
+          <div role="alert" class="rounded-lg border border-warning/40 bg-warning/10 p-4">
+            <p class="font-semibold">Save these shares before leaving this page</p>
+            <p class="mt-1 text-sm">
+              They are shown only in this response and cannot be retrieved by refreshing.
+              Store each share separately in a secure location.
+              Keep your original shares with the database backup.
+            </p>
+          </div>
+          <.dm_input
+            type="textarea"
+            id="recovered-shares"
+            name={nil}
+            label="New unseal shares"
+            value={Enum.join(@recovered_shares, "\n") <> "\n"}
+            rows={min(@vault_status.total_shares + 1, 12)}
+            readonly
+            autocomplete="off"
+            spellcheck="false"
+            class="font-mono text-xs"
+          />
+          <.dm_btn
+            id="download-recovered-shares"
+            variant="primary"
+            data-vault-recovery-download
+          >
+            Download new shares
+          </.dm_btn>
+          <.form for={%{}} action={~p"/vault/unseal"} method="get" id="recovery-complete-form">
+            <label class="mb-4 flex items-start gap-3">
+              <input id="recovery-shares-saved" type="checkbox" required class="mt-1" />
+              <span>I have saved all new shares securely.</span>
+            </label>
+            <.dm_btn native_submit variant="secondary">Continue to unseal</.dm_btn>
+          </.form>
+        </div>
+      </.dm_card>
+    <% @vault_status.state in [:loading, :unavailable] -> %>
+      <.dm_card variant="bordered">
+        <:title>Vault storage is unavailable</:title>
+        <p>Restore database access before recovering or unsealing the Vault.</p>
+        <.dm_link href={~p"/vault/recover"} class="mt-4 inline-block">Check again</.dm_link>
+      </.dm_card>
+    <% @vault_status.sealed && @vault_status.recovery_required -> %>
+      <.dm_card variant="bordered" shadow="sm">
+        <:title>Verify your original recovery shares</:title>
+        <div class="space-y-6">
+          <dl class="flex flex-wrap gap-6 text-sm">
+            <div>
+              <dt class="text-on-surface-variant">Shares required</dt>
+              <dd class="mt-1 text-xl font-semibold">{@vault_status.threshold}</dd>
+            </div>
+            <div>
+              <dt class="text-on-surface-variant">Original total shares</dt>
+              <dd class="mt-1 text-xl font-semibold">{@vault_status.total_shares}</dd>
+            </div>
+          </dl>
+          <p class="text-sm">
+            Recovery verifies the shares against existing encrypted data.
+            If verification fails, the existing Vault is preserved.
+            Recovery keeps the current share count and threshold.
+          </p>
+          <.form for={@form} action={~p"/vault/recover"} method="post" id="vault-recovery-form">
+            <.dm_input
+              field={@form[:shares]}
+              type="textarea"
+              label="Original recovery shares"
+              helper={"Enter at least #{@vault_status.threshold} original shares, one per line."}
+              rows="6"
+              maxlength="32768"
+              required
+              autocomplete="off"
+              spellcheck="false"
+              class="font-mono text-xs"
+            />
+            <label class="my-6 flex items-start gap-3 text-sm">
+              <input
+                id="recovery-backup-confirmed"
+                type="checkbox"
+                name="recovery[backup_confirmed]"
+                value="true"
+                required
+                class="mt-1"
+              />
+              <span>I have backed up the existing database and kept the original shares.</span>
+            </label>
+            <.dm_btn native_submit variant="primary">Verify and recover Vault</.dm_btn>
+          </.form>
+          <p class="text-sm text-on-surface-variant">
+            If the shares do not match this data, check that they came from the same
+            initialization. Keep any other original shares and the matching database
+            backup for further recovery.
+          </p>
+        </div>
+      </.dm_card>
+    <% !@vault_status.initialized -> %>
+      <.dm_card variant="bordered">
+        <:title>No existing Vault to recover</:title>
+        <p>The Vault has not been initialized.</p>
+        <.dm_link href={~p"/vault/init"} class="mt-4 inline-block">Go to initialization</.dm_link>
+      </.dm_card>
+    <% true -> %>
+      <.dm_card variant="bordered">
+        <:title>This Vault does not require legacy recovery</:title>
+        <p>Use your current unseal shares to continue.</p>
+        <.dm_link href={~p"/vault/unseal"} class="mt-4 inline-block">Go to unseal</.dm_link>
+      </.dm_card>
+  <% end %>
+</section>

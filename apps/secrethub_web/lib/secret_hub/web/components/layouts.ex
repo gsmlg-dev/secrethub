@@ -109,6 +109,13 @@ defmodule SecretHub.Web.Layouts do
   attr :vault_status, :map, default: nil
 
   def vault_sealed_banner(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :recovery_required,
+        match?(%{state: :sealed, recovery_required: true}, assigns.vault_status)
+      )
+
     ~H"""
     <div
       :if={vault_sealed?(@vault_status)}
@@ -121,17 +128,24 @@ defmodule SecretHub.Web.Layouts do
         <div class="flex items-center gap-3">
           <.dm_mdi name="lock-alert" class="h-5 w-5 flex-none" color="currentcolor" />
           <div>
-            <p class="font-semibold leading-5">Vault sealed</p>
+            <p class="font-semibold leading-5">
+              {if @recovery_required, do: "Vault recovery required", else: "Vault sealed"}
+            </p>
             <p class="text-sm text-error/90">
-              Secret and PKI operations are unavailable until the vault is unsealed.
+              <%= if @recovery_required do %>
+                Preserve the existing data and shares. Recover the legacy Vault, then unseal it with the new shares.
+              <% else %>
+                Secret and PKI operations are unavailable until the vault is unsealed.
+              <% end %>
             </p>
           </div>
         </div>
         <.dm_link
-          href={~p"/vault/unseal"}
+          href={if @recovery_required, do: ~p"/vault/recover", else: ~p"/vault/unseal"}
           class="inline-flex items-center gap-1 rounded-md border border-error/40 px-3 py-1.5 text-sm font-medium text-error hover:bg-error/10"
         >
-          Unseal vault <.dm_mdi name="arrow-right" class="h-4 w-4" color="currentcolor" />
+          {if @recovery_required, do: "Recover vault", else: "Unseal vault"}
+          <.dm_mdi name="arrow-right" class="h-4 w-4" color="currentcolor" />
         </.dm_link>
       </div>
     </div>

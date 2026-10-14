@@ -241,12 +241,20 @@ defmodule SecretHub.Web.VaultUnsealLive do
   end
 
   defp render_blocked(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :recovery_required,
+        match?(%{state: :sealed, recovery_required: true}, assigns.vault_status)
+      )
+
     ~H"""
     <div role="alert" class="bg-warning/5 border border-warning text-warning px-4 py-3 rounded-lg">
-      <%= if Map.get(@vault_status, :recovery_required, false) do %>
+      <%= if @recovery_required do %>
         <p>
-          Vault recovery is required. Preserve the existing data and shares; follow the explicit legacy recovery procedure.
+          Vault recovery is required. Preserve the existing data and shares; recover the legacy Vault before unsealing.
         </p>
+        <.dm_link href={~p"/vault/recover"} class="mt-3 inline-flex">Recover vault</.dm_link>
       <% else %>
         <p>Vault storage is unavailable. Restore database access before initializing or unsealing.</p>
       <% end %>

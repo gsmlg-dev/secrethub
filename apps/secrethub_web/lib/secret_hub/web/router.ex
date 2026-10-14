@@ -99,6 +99,8 @@ defmodule SecretHub.Web.Router do
 
     live "/init", VaultInitLive, :index
     live "/unseal", VaultUnsealLive, :index
+    get "/recover", VaultRecoveryController, :show
+    post "/recover", VaultRecoveryController, :recover
   end
 
   # Admin routes with authentication

@@ -57,12 +57,12 @@ defmodule SecretHub.Core.Vault.SealState do
   end
 
   @doc "Explicit legacy recovery; verifies against preexisting database ciphertext before replacing only the legacy envelope."
-  def recover_legacy(encoded_shares, total_shares, threshold),
+  def recover_legacy(encoded_shares, total_shares, threshold, timeout \\ 30_000),
     do:
       GenServer.call(
         __MODULE__,
         {:recover_legacy, encoded_shares, total_shares, threshold},
-        30_000
+        timeout
       )
 
   @impl true

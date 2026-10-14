@@ -6,6 +6,7 @@ defmodule SecretHub.Web.VaultIngressAvailabilityTest do
     html = render_component(&SecretHub.Web.VaultInitLive.render/1, init_assigns(:unavailable))
     assert html =~ "unavailable"
     refute html =~ "phx-submit=\"initialize\""
+    refute html =~ ~s(href="/vault/recover")
   end
 
   test "legacy recovery state never offers a fresh Vault initialization" do
@@ -21,6 +22,8 @@ defmodule SecretHub.Web.VaultIngressAvailabilityTest do
       )
 
     assert html =~ "recovery"
+    assert html =~ ~s(href="/vault/recover")
+    assert html =~ "Recover vault"
     refute html =~ "phx-submit=\"initialize\""
   end
 
@@ -43,12 +46,65 @@ defmodule SecretHub.Web.VaultIngressAvailabilityTest do
     assert html =~ "unavailable"
     refute html =~ "href=\"/vault/init\""
     refute html =~ "phx-submit=\"submit_share\""
+    refute html =~ ~s(href="/vault/recover")
+  end
+
+  test "legacy unseal page links to recovery instead of collecting shares" do
+    html =
+      render_component(&SecretHub.Web.VaultUnsealLive.render/1, %{
+        vault_status: legacy_status()
+      })
+
+    assert html =~ ~s(href="/vault/recover")
+    assert html =~ "Recover vault"
+    refute html =~ "phx-submit=\"submit_share\""
+  end
+
+  test "legacy admin banner links to recovery before manual unseal" do
+    html =
+      render_component(&SecretHub.Web.Layouts.vault_sealed_banner/1, %{
+        vault_status: legacy_status()
+      })
+
+    assert html =~ "Vault recovery required"
+    assert html =~ "Recover vault"
+    assert html =~ ~s(href="/vault/recover")
+    refute html =~ ~s(href="/vault/unseal")
+  end
+
+  test "ordinary sealed admin banner keeps the unseal link" do
+    html =
+      render_component(&SecretHub.Web.Layouts.vault_sealed_banner/1, %{
+        vault_status: %{legacy_status() | recovery_required: false}
+      })
+
+    assert html =~ "Vault sealed"
+    assert html =~ "Unseal vault"
+    assert html =~ ~s(href="/vault/unseal")
+    refute html =~ ~s(href="/vault/recover")
+  end
+
+  test "unavailable legacy storage never offers recovery" do
+    status = %{legacy_status() | state: :unavailable}
+
+    for render <- [
+          &SecretHub.Web.VaultInitLive.render/1,
+          &SecretHub.Web.VaultUnsealLive.render/1,
+          &SecretHub.Web.Layouts.vault_sealed_banner/1
+        ] do
+      html = render_component(render, %{vault_status: status})
+      refute html =~ ~s(href="/vault/recover")
+    end
   end
 
   test "initialization input uses the v4 public maximum of 251 shares" do
     html = render_component(&SecretHub.Web.VaultInitLive.render/1, init_assigns(:empty))
     assert html =~ "max=\"251\""
     refute html =~ "max=\"255\""
+  end
+
+  defp legacy_status do
+    %{state: :sealed, initialized: true, sealed: true, recovery_required: true}
   end
 
   defp init_assigns(state) do
