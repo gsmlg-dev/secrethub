@@ -539,17 +539,17 @@ jobs:
 
           ## Changes
 
-          - Fixes [#12](https://github.com/${REPOSITORY}/issues/12): preflight
-            accepts intentionally disabled Machine and Agent listeners while
-            retaining validation for enabled listeners.
-          - Fixes [#13](https://github.com/${REPOSITORY}/issues/13): operators can
-            issue runtime TLS server material through the CSRF-protected
-            management API using the existing active signing CA.
-          - Fixes [#14](https://github.com/${REPOSITORY}/issues/14): successful
-            releases promote the versioned Core multi-platform image to
-            \`core:latest\`, including supported prereleases.
-          - Release archives clear cached assemblies before rebuilding and verify
-            that every bundled SecretHub application matches the release version.
+          - Agent enrollment reports the running Agent package version instead of
+            a hard-coded version.
+          - The admin sidebar can collapse to icons and remembers its state;
+            version details remain available in the sidebar header.
+          - Operators can recover a sealed legacy Vault through a protected HTML
+            form at \`/vault/recover\`. Recovery requires a preserved database
+            backup and the original shares, authenticates existing ciphertext,
+            and keeps the Vault sealed after issuing replacement v4 shares.
+            Save those shares before leaving the response page; they are returned
+            only once. Initialization, unseal, and management pages link to
+            recovery when required.
 
           ## LiveView behind HTTPS proxies
 
