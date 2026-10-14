@@ -174,6 +174,7 @@ defmodule SecretHub.Web.Router do
   scope "/admin/api", SecretHub.Web do
     pipe_through :admin_api
 
+    post "/pki/runtime-server-certificate", RuntimeServerCertificateController, :create
     get "/dashboard/stats", AdminDashboardController, :system_stats
     get "/dashboard/agents", AdminDashboardController, :connected_agents
     get "/dashboard/secrets", AdminDashboardController, :secret_stats

@@ -185,8 +185,15 @@ defmodule SecretHub.Core.PKI.Issuer do
     |> Enum.flat_map(fn
       name when is_binary(name) ->
         case :inet.parse_address(to_charlist(name)) do
-          {:ok, address} -> [{:iPAddress, address |> Tuple.to_list() |> :erlang.list_to_binary()}]
-          {:error, _reason} -> [name]
+          {:ok, address} when tuple_size(address) == 4 ->
+            [{:iPAddress, address |> Tuple.to_list() |> :erlang.list_to_binary()}]
+
+          {:ok, address} ->
+            octets = for segment <- Tuple.to_list(address), into: <<>>, do: <<segment::16>>
+            [{:iPAddress, octets}]
+
+          {:error, _reason} ->
+            [name]
         end
 
       _other ->
