@@ -1,13 +1,103 @@
 """Release packaging contracts; no publication, containers, or runtime secrets."""
 from pathlib import Path
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReleasePackagingTest(unittest.TestCase):
+    def write_app(self, release, name, version):
+        path = release / "lib" / f"{name}-{version}" / "ebin" / f"{name}.app"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{application, %s, [{vsn, "%s"}]}.\n' % (name, version))
+        return path
+
+    def verify_versions(self, release):
+        return subprocess.run(
+            ["elixir", str(ROOT / "scripts/verify_release_versions.exs"), str(release), "1.0.0-rc.15"],
+            text=True,
+            capture_output=True,
+        )
+
+    def test_release_version_validator_accepts_own_apps_and_independent_x509(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release = Path(directory)
+            self.write_app(release, "secrethub_core", "1.0.0-rc.15")
+            self.write_app(release, "secrethub_shared", "1.0.0-rc.15")
+            self.write_app(release, "x509", "0.9.2")
+            result = self.verify_versions(release)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_release_version_validator_rejects_old_cached_own_apps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release = Path(directory)
+            self.write_app(release, "secrethub_core", "1.0.0-rc.15")
+            old_app = self.write_app(release, "secrethub_core", "1.0.0-rc11")
+            result = self.verify_versions(release)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(str(old_app), result.stderr)
+            self.assertIn("1.0.0-rc11", result.stderr)
+            self.assertIn("1.0.0-rc.15", result.stderr)
+
+    def test_release_version_validator_rejects_missing_own_apps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            release = Path(directory)
+            self.write_app(release, "x509", "0.9.2")
+            result = self.verify_versions(release)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("No SecretHub applications", result.stderr)
+
+    def test_release_build_steps_remove_stale_assembly_before_rebuilding(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        for role in ["Core", "Agent"]:
+            with self.subTest(role=role), tempfile.TemporaryDirectory() as directory:
+                step = workflow.split(f"      - name: Build {role} release\n", 1)[1]
+                step = step.split("\n      - name:", 1)[0]
+                run = re.search(r"        run: (.*)\n", step).group(1)
+                if run == "|":
+                    script = "\n".join(line[10:] for line in step.split("        run: |\n", 1)[1].splitlines())
+                else:
+                    script = run
+                script = re.sub(r"\$\{\{.*?\}\}", "1.0.0-rc.15", script)
+                fixture = Path(directory)
+                release_name = f"secrethub_{role.lower()}"
+                stale = fixture / "_build/prod/rel" / release_name / "lib/stale-sentinel"
+                stale.parent.mkdir(parents=True)
+                stale.write_text("cached assembly")
+                compiled = fixture / "_build/prod/lib" / release_name / "ebin/keep"
+                compiled.parent.mkdir(parents=True)
+                compiled.write_text("compiled application")
+                (fixture / "scripts").mkdir()
+                validator = ROOT / "scripts/verify_release_versions.exs"
+                shutil.copyfile(validator, fixture / "scripts" / validator.name)
+                stub = fixture / "mix"
+                stub.write_text('''#!/bin/sh
+set -eu
+[ "$1" = release ]
+target="_build/prod/rel/$2"
+if [ -e "$target/lib/stale-sentinel" ]; then
+  echo "stale assembly survived before mix release" >&2
+  exit 1
+fi
+mkdir -p "$target/lib/$2-1.0.0-rc.15/ebin"
+printf '{application, %s, [{vsn, "1.0.0-rc.15"}]}.\\n' "$2" > "$target/lib/$2-1.0.0-rc.15/ebin/$2.app"
+''')
+                stub.chmod(0o755)
+                environment = dict(os.environ, PATH=f"{fixture}{os.pathsep}{os.environ['PATH']}")
+                environment.update(RELEASE_VERSION="1.0.0-rc.15", RELEASE_TAG="v1.0.0-rc.15")
+                result = subprocess.run(["bash", "-e", "-c", script], cwd=fixture, env=environment,
+                                        text=True, capture_output=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertFalse(stale.exists())
+                self.assertTrue(compiled.exists(), "compiled application outputs must be retained")
+                self.assertIn("        shell: bash\n", step)
+                self.assertIn("elixir scripts/verify_release_versions.exs", script)
+
     def test_workflow_assets_do_not_load_production_runtime_config(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         core = workflow.split("  build-core-release:", 1)[1].split("  build-agent-release:", 1)[0]

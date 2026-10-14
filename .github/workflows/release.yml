@@ -249,7 +249,14 @@ jobs:
           mix phx.digest --no-compile
 
       - name: Build Core release
-        run: mix release secrethub_core
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          rm -rf _build/prod/rel/secrethub_core
+          mix release secrethub_core
+          elixir scripts/verify_release_versions.exs _build/prod/rel/secrethub_core "$RELEASE_VERSION"
 
       - name: Package Core release
         shell: bash
@@ -327,7 +334,14 @@ jobs:
         run: mix compile
 
       - name: Build Agent release
-        run: mix release secrethub_agent
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          rm -rf _build/prod/rel/secrethub_agent
+          mix release secrethub_agent
+          elixir scripts/verify_release_versions.exs _build/prod/rel/secrethub_agent "$RELEASE_VERSION"
 
       - name: Package Agent tarball
         if: ${{ matrix.archive == 'tar.gz' }}
@@ -390,6 +404,7 @@ jobs:
             mix deps.get --only prod
             mix compile
             mix release secrethub_agent
+            elixir scripts/verify_release_versions.exs _build/prod/rel/secrethub_agent "${RELEASE_TAG#v}"
             tar -C _build/prod/rel/secrethub_agent -czf "secrethub_agent-${RELEASE_TAG}-freebsd-amd64.tar.gz" .
 
       - name: Upload FreeBSD Agent release artifact
@@ -533,6 +548,8 @@ jobs:
           - Fixes [#14](https://github.com/${REPOSITORY}/issues/14): successful
             releases promote the versioned Core multi-platform image to
             \`core:latest\`, including supported prereleases.
+          - Release archives clear cached assemblies before rebuilding and verify
+            that every bundled SecretHub application matches the release version.
 
           ## LiveView behind HTTPS proxies
 
