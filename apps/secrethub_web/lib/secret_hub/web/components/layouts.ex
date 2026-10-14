@@ -13,6 +13,8 @@ defmodule SecretHub.Web.Layouts do
   @doc "Shows the running version with build details in a tooltip."
   attr :id, :string, default: "app-version"
   attr :info, :map, default: nil
+  attr :size, :string, default: "lg", values: ["sm", "md", "lg"]
+  attr :class, :any, default: "ml-2"
 
   def version_badge(assigns) do
     info = assigns.info || SecretHub.Web.BuildInfo.info()
@@ -38,20 +40,24 @@ defmodule SecretHub.Web.Layouts do
       id={@id}
       content={@details}
       position="bottom"
-      class="whitespace-pre-line max-w-[calc(100vw-2rem)] break-words text-left font-mono"
+      color="primary"
+      class="whitespace-pre-line max-w-[calc(100vw-2rem)] break-words text-left font-mono normal-case"
     >
       <button
         id={@id}
         type="button"
-        class="ml-2 inline-flex shrink-0 rounded-full cursor-help focus-visible:outline-2 focus-visible:outline-offset-2"
+        class={[
+          "inline-flex shrink-0 rounded-full cursor-help focus-visible:outline-2 focus-visible:outline-offset-2",
+          @class
+        ]}
         aria-label="Version details"
         {trigger_attrs}
       >
         <.dm_badge
-          variant="secondary"
-          size="lg"
+          variant="primary"
+          size={@size}
           pill
-          class="whitespace-nowrap text-lg leading-5 font-medium"
+          class={["whitespace-nowrap font-medium", @size == "lg" && "text-lg leading-5"]}
         >
           {@version}
         </.dm_badge>

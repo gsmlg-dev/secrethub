@@ -61,6 +61,47 @@ pre {
   font-family: var(--font-mono);
 }
 
+.admin-sidebar[data-collapsed="false"] .admin-sidebar-expand-icon {
+  display: none;
+}
+
+.admin-sidebar[data-collapsed="true"] {
+  width: 4.5rem;
+}
+
+.admin-sidebar[data-collapsed="true"] .admin-sidebar-label,
+.admin-sidebar[data-collapsed="true"] .admin-sidebar-version,
+.admin-sidebar[data-collapsed="true"] .admin-sidebar-collapse-icon,
+.admin-sidebar[data-collapsed="true"] summary {
+  display: none;
+}
+
+.admin-sidebar[data-collapsed="true"] .admin-sidebar-brand {
+  padding-inline: 0;
+}
+
+.admin-sidebar[data-collapsed="true"] .admin-sidebar-brand a,
+.admin-sidebar[data-collapsed="true"] #admin-sidebar-menu a {
+  justify-content: center;
+}
+
+.admin-sidebar[data-collapsed="true"] #admin-sidebar-menu details > ul {
+  padding-inline: 0;
+}
+
+.admin-sidebar[data-collapsed="true"] #admin-sidebar-menu a {
+  min-height: 2.75rem;
+  padding: 0.625rem;
+}
+
+.admin-sidebar[data-collapsed="true"] #admin-sidebar-menu svg {
+  flex-shrink: 0;
+}
+
+.admin-sidebar[data-collapsed="true"] #admin-sidebar-toggle {
+  padding-inline: 0;
+}
+
 /* Respect reduced motion preferences */
 @media (prefers-reduced-motion: reduce) {
   *,
