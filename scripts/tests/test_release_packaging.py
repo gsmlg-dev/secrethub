@@ -48,6 +48,9 @@ class ReleasePackagingTest(unittest.TestCase):
 
     def test_core_latest_is_promoted_after_successful_release(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        concurrency = workflow.split("concurrency:\n", 1)[1].split("\nenv:", 1)[0]
+        self.assertNotIn("github.ref", concurrency)
+        self.assertIn("cancel-in-progress: false", concurrency)
         self.assertTrue("  publish-core-latest:\n" in workflow, "Core latest promotion is missing")
         build, promotion = workflow.split("  publish-core-latest:", 1)
         images = build.split("  build-docker-images:", 1)[1].split("  create-release:", 1)[0]
