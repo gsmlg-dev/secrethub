@@ -46,6 +46,29 @@ class ReleasePackagingTest(unittest.TestCase):
         self.assertIn("standalone", notes)
         self.assertNotIn("docker run", notes)
 
+    def test_core_latest_is_promoted_after_successful_release(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        concurrency = workflow.split("concurrency:\n", 1)[1].split("\nenv:", 1)[0]
+        self.assertNotIn("github.ref", concurrency)
+        self.assertIn("cancel-in-progress: false", concurrency)
+        self.assertTrue("  publish-core-latest:\n" in workflow, "Core latest promotion is missing")
+        build, promotion = workflow.split("  publish-core-latest:", 1)
+        images = build.split("  build-docker-images:", 1)[1].split("  create-release:", 1)[0]
+        self.assertNotIn(":latest", images)
+        self.assertIn("      - create-release\n", promotion)
+        self.assertIn("      - prepare-release\n", promotion)
+        self.assertNotIn("always()", promotion)
+        self.assertNotIn("prerelease", promotion)
+        self.assertIn("packages: write", promotion)
+        self.assertIn(
+            'SOURCE: ghcr.io/${{ github.repository }}/core:${{ needs.prepare-release.outputs.tag }}',
+            promotion,
+        )
+        self.assertIn('TARGET: ghcr.io/${{ github.repository }}/core:latest', promotion)
+        self.assertIn('imagetools create --tag "$TARGET" "$SOURCE"', promotion)
+        self.assertIn('cmp source-manifest.json latest-manifest.json', promotion)
+        self.assertNotIn("/agent:latest", promotion)
+
     def test_embedded_shell_scripts_parse(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         blocks = re.findall(r"        run: \|\n((?:          .*\n|\n)+)", workflow)
