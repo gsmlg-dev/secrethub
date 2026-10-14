@@ -390,6 +390,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "system.sealed",
       "system.backup_created",
       "system.certificate_revoked",
+      "system.runtime_server_certificate_issued",
       "system.upgrade_gate_verified",
       "system.upgrade_stale_node_acknowledged",
       # Rate limiting events

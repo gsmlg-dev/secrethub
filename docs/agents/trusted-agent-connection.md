@@ -30,6 +30,9 @@ The result was that the trusted Agent-to-Core runtime connection did not work re
 8. The same internal SecretHub CA can issue trusted Agent endpoint server certificates and Agent client certificates for now, but verification must enforce EKU separation:
    - Core server certificate: `serverAuth`
    - Agent client certificate: `clientAuth`
+
+   Operators can [issue or renew runtime server material](../deployment/runtime-server-certificate.md)
+   through the CSRF-protected management API using the existing active signing CA.
 9. Recovery behavior is explicit:
    - Missing local material: enter enrollment mode.
    - Expired certificate: attempt renewal when the current material is still known to Core; otherwise re-enroll.
