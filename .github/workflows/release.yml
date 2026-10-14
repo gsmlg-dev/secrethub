@@ -548,6 +548,12 @@ jobs:
           - \`ghcr.io/${REPOSITORY}/core-standalone:${RELEASE_TAG}\`
           - \`ghcr.io/${REPOSITORY}/agent:${RELEASE_TAG}\`
 
+          After all release jobs succeed, \`ghcr.io/${REPOSITORY}/core:latest\`
+          is promoted to the same multi-platform image as the versioned Core tag,
+          including supported prereleases. The promotion verifies that both tags
+          have identical manifests. Updating this tag does not deploy the image,
+          run migrations, or alter existing Vault data.
+
           ## Upgrade and deployment requirements
 
           This release defaults to the restricted single-operator profile. Read the
@@ -642,3 +648,38 @@ jobs:
             echo "- Agent release artifacts: linux amd64, linux arm64, macOS amd64, macOS arm64, Windows amd64, FreeBSD amd64"
             echo "- Docker images: core, core-standalone, agent"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-core-latest:
+    name: Promote Supported Core Image
+    runs-on: ubuntu-24.04
+    needs:
+      - prepare-release
+      - create-release
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote and verify Core latest manifest
+        shell: bash
+        env:
+          SOURCE: ghcr.io/${{ github.repository }}/core:${{ needs.prepare-release.outputs.tag }}
+          TARGET: ghcr.io/${{ github.repository }}/core:latest
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools create --tag "$TARGET" "$SOURCE"
+          docker buildx imagetools inspect --raw "$SOURCE" > source-manifest.json
+          docker buildx imagetools inspect --raw "$TARGET" > latest-manifest.json
+          cmp source-manifest.json latest-manifest.json
+          docker buildx imagetools inspect "$TARGET" >> "$GITHUB_STEP_SUMMARY"
