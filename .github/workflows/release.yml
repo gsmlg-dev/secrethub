@@ -101,10 +101,13 @@ jobs:
             apps/secrethub_shared/mix.exs
             apps/secrethub_cli/mix.exs
             apps/secrethub_human/mix.exs
+            Dockerfile.core-standalone
+            apps/secrethub_core/Dockerfile
+            apps/secrethub_agent/Dockerfile
           )
 
           for file in "${version_files[@]}"; do
-            perl -0pi -e 's/version: "[^"]+"/version: "'"${VERSION}"'"/' "$file"
+            perl -0pi -e 's/version: "[^"]+"/version: "'"${VERSION}"'"/; s/      version="[^"]+"/      version="'"${VERSION}"'"/' "$file"
           done
 
           git config user.name "github-actions[bot]"
@@ -518,6 +521,18 @@ jobs:
 
           cat > release_notes.md <<EOF
           # SecretHub ${RELEASE_TAG}
+
+          ## Changes
+
+          - Fixes [#12](https://github.com/${REPOSITORY}/issues/12): preflight
+            accepts intentionally disabled Machine and Agent listeners while
+            retaining validation for enabled listeners.
+          - Fixes [#13](https://github.com/${REPOSITORY}/issues/13): operators can
+            issue runtime TLS server material through the CSRF-protected
+            management API using the existing active signing CA.
+          - Fixes [#14](https://github.com/${REPOSITORY}/issues/14): successful
+            releases promote the versioned Core multi-platform image to
+            \`core:latest\`, including supported prereleases.
 
           ## LiveView behind HTTPS proxies
 
