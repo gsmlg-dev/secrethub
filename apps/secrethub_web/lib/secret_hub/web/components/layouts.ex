@@ -10,6 +10,33 @@ defmodule SecretHub.Web.Layouts do
 
   embed_templates "layouts/*"
 
+  @doc "Shows sidebar menu content with a tooltip for its generated link."
+  attr :id, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+
+  def sidebar_menu_content(assigns) do
+    ~H"""
+    <.dm_tooltip
+      :let={trigger_attrs}
+      id={@id}
+      content={@label}
+      position="right"
+      color="primary"
+      class="whitespace-nowrap"
+    >
+      <span
+        class="contents"
+        data-sidebar-menu-tooltip={trigger_attrs["aria-describedby"]}
+        data-sidebar-menu-anchor={trigger_attrs["style"]}
+      >
+        <.dm_mdi name={@icon} class="w-5 h-5" />
+        <span class="admin-sidebar-label">{@label}</span>
+      </span>
+    </.dm_tooltip>
+    """
+  end
+
   @doc "Shows the running version with build details in a tooltip."
   attr :id, :string, default: "app-version"
   attr :info, :map, default: nil

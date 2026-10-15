@@ -23,7 +23,7 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
-import AdminSidebar from "./hooks/admin_sidebar"
+import AdminSidebar, {AdminSidebarNavigation} from "./hooks/admin_sidebar"
 
 // DuskMoon UI hooks and element registration
 import * as DuskmoonHooks from "phoenix_duskmoon/hooks"
@@ -56,6 +56,7 @@ const writeClipboard = async (text) => {
 const Hooks = {
   ...DuskmoonHooks,
   AdminSidebar,
+  AdminSidebarNavigation,
   PreserveFormValues: {
     mounted() {
       this.captureValues = () => {
