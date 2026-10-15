@@ -3,7 +3,7 @@ defmodule SecretHub.Web.AdminSidebarLive do
 
   use SecretHub.Web, :live_view
 
-  import SecretHub.Web.Layouts, only: [version_badge: 1, sidebar_menu_content: 1]
+  import SecretHub.Web.Layouts, only: [version_badge: 1, sidebar_menu_group: 1]
 
   @menu_ids ~w(
     dashboard secrets rotators engines rotations leases policies approles agents

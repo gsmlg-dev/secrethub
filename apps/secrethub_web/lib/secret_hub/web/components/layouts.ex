@@ -10,29 +10,56 @@ defmodule SecretHub.Web.Layouts do
 
   embed_templates "layouts/*"
 
-  @doc "Shows sidebar menu content with a tooltip for its generated link."
-  attr :id, :string, required: true
-  attr :icon, :string, required: true
-  attr :label, :string, required: true
+  @doc "Shows a sidebar group with tooltips attached to its navigation links."
+  attr :title, :string, required: true
+  attr :active, :string, required: true
+  attr :items, :list, required: true
 
-  def sidebar_menu_content(assigns) do
+  def sidebar_menu_group(assigns) do
+    assigns
+    |> assign(remaining: assigns.items, trigger_attrs: %{})
+    |> sidebar_menu_tooltips()
+  end
+
+  defp sidebar_menu_tooltips(%{remaining: []} = assigns) do
+    ~H"""
+    <.dm_left_menu_group active={@active}>
+      <:title>{@title}</:title>
+      <:menu
+        :for={item <- @items}
+        id={item.id}
+        to={item.to}
+        rest={
+          Map.merge(@trigger_attrs[item.id], %{
+            "aria-label" => item.label,
+            "data-sidebar-menu-tooltip" => @trigger_attrs[item.id]["aria-describedby"],
+            "data-sidebar-menu-anchor" => @trigger_attrs[item.id]["style"]
+          })
+        }
+      >
+        <.dm_mdi name={item.icon} class="w-5 h-5" />
+        <span class="admin-sidebar-label">{item.label}</span>
+      </:menu>
+    </.dm_left_menu_group>
+    """
+  end
+
+  defp sidebar_menu_tooltips(%{remaining: [item | remaining]} = assigns) do
+    assigns = assign(assigns, item: item, remaining: remaining)
+
     ~H"""
     <.dm_tooltip
       :let={trigger_attrs}
-      id={@id}
-      content={@label}
+      id={"sidebar-menu-#{@item.id}"}
+      content={@item.label}
       position="right"
       color="primary"
       class="whitespace-nowrap"
     >
-      <span
-        class="contents"
-        data-sidebar-menu-tooltip={trigger_attrs["aria-describedby"]}
-        data-sidebar-menu-anchor={trigger_attrs["style"]}
-      >
-        <.dm_mdi name={@icon} class="w-5 h-5" />
-        <span class="admin-sidebar-label">{@label}</span>
-      </span>
+      <.sidebar_menu_tooltips
+        {assigns}
+        trigger_attrs={Map.put(@trigger_attrs, @item.id, trigger_attrs)}
+      />
     </.dm_tooltip>
     """
   end

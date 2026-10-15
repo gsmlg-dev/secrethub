@@ -5,6 +5,24 @@ defmodule SecretHub.Web.AdminSidebarLiveTest do
 
   alias SecretHub.Web.AdminSidebarLive
 
+  test "attaches independent tooltips to the native navigation links", %{conn: conn} do
+    {:ok, view, _html} = live_isolated(conn, AdminSidebarLive)
+
+    for {path, id, label} <- [
+          {"/admin/dashboard", "sidebar-menu-dashboard-tooltip", "Dashboard"},
+          {"/admin/secrets", "sidebar-menu-secrets-tooltip", "Secrets"}
+        ] do
+      assert has_element?(
+               view,
+               "a[href='#{path}'][aria-label='#{label}'][aria-describedby='#{id}'][interestfor='#{id}'][data-phx-link='redirect'][style='anchor-name: --anchor-#{id}']"
+             )
+
+      assert has_element?(view, "span[id='#{id}'][popover='hint'][role='tooltip']", label)
+    end
+
+    refute has_element?(view, "a [role='tooltip']")
+  end
+
   test "selects the initial active link from the session", %{conn: conn} do
     {:ok, view, _html} =
       live_isolated(conn, AdminSidebarLive, session: %{"active_nav" => "secrets"})

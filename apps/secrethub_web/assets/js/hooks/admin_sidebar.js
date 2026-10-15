@@ -110,19 +110,16 @@ const AdminSidebar = {
 
       link.setAttribute("aria-label", label)
 
-      // TODO(upstream): duskmoon-dev/phoenix-duskmoon-ui#202
-      // WORKAROUND(upstream): duskmoon-dev/phoenix-duskmoon-ui#202 - forward public tooltip attributes.
-      const hint = link.querySelector("[data-sidebar-menu-tooltip]")
-      if (!hint) {
+      const tooltipId = link.dataset.sidebarMenuTooltip
+      if (!tooltipId) {
         link.setAttribute("title", label)
         return
       }
 
-      const tooltipId = hint.dataset.sidebarMenuTooltip
       if (this.collapsed) {
         link.setAttribute("interestfor", tooltipId)
         link.setAttribute("aria-describedby", tooltipId)
-        link.setAttribute("style", hint.dataset.sidebarMenuAnchor)
+        link.setAttribute("style", link.dataset.sidebarMenuAnchor)
         link.setAttribute("title", label)
       } else {
         link.removeAttribute("interestfor")

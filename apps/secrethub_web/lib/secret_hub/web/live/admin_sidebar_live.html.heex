@@ -24,197 +24,131 @@
       class="bg-secondary text-secondary-content"
     >
       <:menu>
-        <.dm_left_menu_group active={to_string(@active_nav)}>
-          <:title>Overview</:title>
-          <:menu id="dashboard" to={~p"/admin/dashboard"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-dashboard"
-              icon="view-dashboard"
-              label="Dashboard"
-            />
-          </:menu>
-        </.dm_left_menu_group>
+        <.sidebar_menu_group
+          title="Overview"
+          active={to_string(@active_nav)}
+          items={[
+            %{
+              id: "dashboard",
+              to: ~p"/admin/dashboard",
+              icon: "view-dashboard",
+              label: "Dashboard"
+            }
+          ]}
+        />
 
-        <.dm_left_menu_group active={to_string(@active_nav)}>
-          <:title>Secrets</:title>
-          <:menu id="secrets" to={~p"/admin/secrets"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-secrets"
-              icon="key-variant"
-              label="Secrets"
-            />
-          </:menu>
-          <:menu id="rotators" to={~p"/admin/rotators"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-rotators"
-              icon="rotate-3d-variant"
-              label="Rotators"
-            />
-          </:menu>
-          <:menu id="engines" to={~p"/admin/engines"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-engines"
-              icon="cog"
-              label="Engines"
-            />
-          </:menu>
-          <:menu id="rotations" to={~p"/admin/rotations"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-rotations"
-              icon="history"
-              label="Rotation Logs"
-            />
-          </:menu>
-          <:menu id="leases" to={~p"/admin/leases"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-leases"
-              icon="clock-outline"
-              label="Leases"
-            />
-          </:menu>
-        </.dm_left_menu_group>
+        <.sidebar_menu_group
+          title="Secrets"
+          active={to_string(@active_nav)}
+          items={[
+            %{id: "secrets", to: ~p"/admin/secrets", icon: "key-variant", label: "Secrets"},
+            %{
+              id: "rotators",
+              to: ~p"/admin/rotators",
+              icon: "rotate-3d-variant",
+              label: "Rotators"
+            },
+            %{id: "engines", to: ~p"/admin/engines", icon: "cog", label: "Engines"},
+            %{id: "rotations", to: ~p"/admin/rotations", icon: "history", label: "Rotation Logs"},
+            %{id: "leases", to: ~p"/admin/leases", icon: "clock-outline", label: "Leases"}
+          ]}
+        />
 
-        <.dm_left_menu_group active={to_string(@active_nav)}>
-          <:title>Access Control</:title>
-          <:menu id="policies" to={~p"/admin/policies"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-policies"
-              icon="shield-check"
-              label="Policies"
-            />
-          </:menu>
-          <:menu id="approles" to={~p"/admin/approles"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-approles"
-              icon="account-group"
-              label="AppRoles"
-            />
-          </:menu>
-          <:menu id="agents" to={~p"/admin/agents"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-agents"
-              icon="server"
-              label="Agents"
-            />
-          </:menu>
-          <:menu id="pending_agents" to={~p"/admin/pending-agents"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pending_agents"
-              icon="server-plus"
-              label="Pending Agents"
-            />
-          </:menu>
-          <:menu id="cli_access" to={~p"/admin/cli-access"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-cli_access"
-              icon="console"
-              label="CLI Access"
-            />
-          </:menu>
-        </.dm_left_menu_group>
+        <.sidebar_menu_group
+          title="Access Control"
+          active={to_string(@active_nav)}
+          items={[
+            %{id: "policies", to: ~p"/admin/policies", icon: "shield-check", label: "Policies"},
+            %{id: "approles", to: ~p"/admin/approles", icon: "account-group", label: "AppRoles"},
+            %{id: "agents", to: ~p"/admin/agents", icon: "server", label: "Agents"},
+            %{
+              id: "pending_agents",
+              to: ~p"/admin/pending-agents",
+              icon: "server-plus",
+              label: "Pending Agents"
+            },
+            %{id: "cli_access", to: ~p"/admin/cli-access", icon: "console", label: "CLI Access"}
+          ]}
+        />
 
-        <.dm_left_menu_group active={to_string(@active_nav)}>
-          <:title>Security</:title>
-          <:menu id="audit" to={~p"/admin/audit"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-audit"
-              icon="eye"
-              label="Audit Log"
-            />
-          </:menu>
-        </.dm_left_menu_group>
+        <.sidebar_menu_group
+          title="Security"
+          active={to_string(@active_nav)}
+          items={[
+            %{id: "audit", to: ~p"/admin/audit", icon: "eye", label: "Audit Log"}
+          ]}
+        />
 
-        <.dm_left_menu_group active={to_string(@active_nav)}>
-          <:title>PKI</:title>
-          <:menu id="pki_overview" to={~p"/admin/pki"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pki_overview"
-              icon="chart-box-outline"
-              label="Overview"
-            />
-          </:menu>
-          <:menu id="pki_ca_list" to={~p"/admin/pki/ca"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pki_ca_list"
-              icon="shield-key-outline"
-              label="CA List"
-            />
-          </:menu>
-          <:menu id="pki_certificates" to={~p"/admin/pki/certificates"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pki_certificates"
-              icon="certificate-outline"
-              label="Certificate List"
-            />
-          </:menu>
-          <:menu id="pki_certificates_issue" to={~p"/admin/pki/certificates/issue"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pki_certificates_issue"
-              icon="file-sign"
-              label="Issue Certificate"
-            />
-          </:menu>
-          <:menu id="pki_csr" to={~p"/admin/pki/csr"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pki_csr"
-              icon="file-document-edit-outline"
-              label="CSR Management"
-            />
-          </:menu>
-          <:menu id="pki_csr_upload" to={~p"/admin/pki/csr/upload"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pki_csr_upload"
-              icon="upload"
-              label="Upload CSR"
-            />
-          </:menu>
-          <:menu id="pki_search" to={~p"/admin/pki/search"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pki_search"
-              icon="magnify"
-              label="Search"
-            />
-          </:menu>
-          <:menu id="pki_analytics" to={~p"/admin/pki/analytics"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-pki_analytics"
-              icon="chart-line"
-              label="Analytics"
-            />
-          </:menu>
-        </.dm_left_menu_group>
+        <.sidebar_menu_group
+          title="PKI"
+          active={to_string(@active_nav)}
+          items={[
+            %{
+              id: "pki_overview",
+              to: ~p"/admin/pki",
+              icon: "chart-box-outline",
+              label: "Overview"
+            },
+            %{
+              id: "pki_ca_list",
+              to: ~p"/admin/pki/ca",
+              icon: "shield-key-outline",
+              label: "CA List"
+            },
+            %{
+              id: "pki_certificates",
+              to: ~p"/admin/pki/certificates",
+              icon: "certificate-outline",
+              label: "Certificate List"
+            },
+            %{
+              id: "pki_certificates_issue",
+              to: ~p"/admin/pki/certificates/issue",
+              icon: "file-sign",
+              label: "Issue Certificate"
+            },
+            %{
+              id: "pki_csr",
+              to: ~p"/admin/pki/csr",
+              icon: "file-document-edit-outline",
+              label: "CSR Management"
+            },
+            %{
+              id: "pki_csr_upload",
+              to: ~p"/admin/pki/csr/upload",
+              icon: "upload",
+              label: "Upload CSR"
+            },
+            %{id: "pki_search", to: ~p"/admin/pki/search", icon: "magnify", label: "Search"},
+            %{
+              id: "pki_analytics",
+              to: ~p"/admin/pki/analytics",
+              icon: "chart-line",
+              label: "Analytics"
+            }
+          ]}
+        />
 
-        <.dm_left_menu_group active={to_string(@active_nav)}>
-          <:title>Infrastructure</:title>
-          <:menu id="cluster" to={~p"/admin/cluster"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-cluster"
-              icon="server-network"
-              label="Cluster"
-            />
-          </:menu>
-          <:menu id="templates" to={~p"/admin/templates"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-templates"
-              icon="file-document-outline"
-              label="Templates"
-            />
-          </:menu>
-          <:menu id="alerts" to={~p"/admin/alerts"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-alerts"
-              icon="bell"
-              label="Alerts"
-            />
-          </:menu>
-          <:menu id="performance" to={~p"/admin/performance"}>
-            <.sidebar_menu_content
-              id="sidebar-menu-performance"
-              icon="chart-bar"
-              label="Performance"
-            />
-          </:menu>
-        </.dm_left_menu_group>
+        <.sidebar_menu_group
+          title="Infrastructure"
+          active={to_string(@active_nav)}
+          items={[
+            %{id: "cluster", to: ~p"/admin/cluster", icon: "server-network", label: "Cluster"},
+            %{
+              id: "templates",
+              to: ~p"/admin/templates",
+              icon: "file-document-outline",
+              label: "Templates"
+            },
+            %{id: "alerts", to: ~p"/admin/alerts", icon: "bell", label: "Alerts"},
+            %{
+              id: "performance",
+              to: ~p"/admin/performance",
+              icon: "chart-bar",
+              label: "Performance"
+            }
+          ]}
+        />
       </:menu>
     </.dm_left_menu>
   </div>
