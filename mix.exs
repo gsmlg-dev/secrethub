@@ -178,9 +178,35 @@ defmodule SecretHub.MixProject do
         runtime_config_path: "config/agent_runtime.exs",
         overlays: ["rel/agent/overlays"],
         include_executables_for: [:unix, :windows],
-        steps: [:assemble, &agent_config_windows_command/1, :tar]
+        steps: [:assemble, &agent_ssh_helper_commands/1, &agent_config_windows_command/1, :tar]
       ]
     ]
+  end
+
+  defp agent_ssh_helper_commands(release) do
+    launcher = Path.join(release.path, "bin/secrethub_agent")
+    contents = File.read!(launcher)
+
+    # sshd supplies a minimal environment. Set trusted utility paths before the
+    # generated launcher needs dirname/cut, including on NixOS without /usr/bin.
+    helper_environment = """
+    case "$1" in
+      fetch-ssh-keys|fetch-ssh-host-keys)
+        PATH="/run/current-system/sw/bin:/usr/bin:/bin"
+        export PATH
+        ;;
+    esac
+    """
+
+    case String.split(contents, "#!/bin/sh\n", parts: 2) do
+      ["", commands] ->
+        File.write!(launcher, "#!/bin/sh\n" <> helper_environment <> commands)
+
+      _ ->
+        Mix.raise("Agent Unix launcher shell header was not found")
+    end
+
+    release
   end
 
   defp agent_config_windows_command(release) do

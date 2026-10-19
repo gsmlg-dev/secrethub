@@ -2,6 +2,7 @@ defmodule SecretHub.Agent.SSH.Helper do
   @moduledoc "Public-only OpenSSH helpers, runnable before configuration and application startup."
   alias SecretHub.Agent.SSH.{Identity, Lookup, SocketPath}
   @default_socket "/run/secrethub-ssh/lookup.sock"
+  @spec main([String.t()]) :: no_return()
   def main(args), do: System.halt(run(args))
   def run([command, "--socket", path | args]), do: execute(command, args, path)
   def run([command | args]), do: execute(command, args, @default_socket)

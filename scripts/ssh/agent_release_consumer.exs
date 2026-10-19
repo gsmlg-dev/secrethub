@@ -74,7 +74,6 @@ try do
       primary_group,
       "env",
       "-i",
-      "PATH=" <> System.get_env("PATH", "/usr/bin:/bin"),
       "HOME=/nonexistent",
       "SECRET_HUB_AGENT_CONFIG_FILE=" <> blocked_config,
       "ERL_FLAGS=+S 2:2",
