@@ -180,7 +180,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 # Labels for orchestration
 LABEL maintainer="SecretHub Development Team" \
-      version="1.0.0-rc.18" \
+      version="1.0.0-rc.19" \
       description="SecretHub Core Standalone - Enterprise secrets management with embedded PostgreSQL" \
       org.opencontainers.image.source="https://github.com/gsmlg-dev/secrethub" \
       org.opencontainers.image.licenses="MIT"
