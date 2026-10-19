@@ -8,6 +8,7 @@ defmodule SecretHub.Agent.ConfigCLI do
   @template File.read!(@template_path)
 
   @doc false
+  @spec main([String.t()]) :: no_return()
   def main(args), do: System.halt(run(args))
 
   @doc false
