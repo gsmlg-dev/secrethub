@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-19
 
-**Status:** Draft for user review
+**Status:** Approved by the owner on 2026-10-19
 
 ## Confirmed Decisions
 
@@ -17,8 +17,8 @@ The owner has confirmed these requirements:
 - An access rule identifies both ends: source machine/group and source Unix
   user, then destination machine/group and destination Unix user.
 
-The defaults and delivery boundaries below are proposed for review. They are
-not an implementation or deployment acceptance report.
+The owner approved the defaults and delivery boundaries below. They are not an
+implementation or deployment acceptance report.
 
 ## Agent skills
 
