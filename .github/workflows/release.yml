@@ -343,6 +343,40 @@ jobs:
           mix release secrethub_agent
           elixir scripts/verify_release_versions.exs _build/prod/rel/secrethub_agent "$RELEASE_VERSION"
 
+      - name: Check Agent configuration commands (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          agent_config_file="$(mktemp)"
+          trap 'rm -f "$agent_config_file"' EXIT
+          _build/prod/rel/secrethub_agent/bin/secrethub_agent config generate > "$agent_config_file"
+          cmp rel/agent/overlays/config/agent.example.toml "$agent_config_file"
+          _build/prod/rel/secrethub_agent/bin/secrethub_agent config validate "$agent_config_file"
+
+      - name: Check Agent configuration commands (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $launcher = Join-Path $PWD '_build/prod/rel/secrethub_agent/bin/secrethub_agent.bat'
+          $agentConfigFile = Join-Path ([System.IO.Path]::GetTempPath()) ("secrethub-agent-" + [guid]::NewGuid().ToString('N') + '.toml')
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          try {
+            $generated = & $launcher config generate
+            if ($LASTEXITCODE -ne 0) { throw 'Agent config generate failed' }
+            [System.IO.File]::WriteAllLines($agentConfigFile, [string[]]$generated, $utf8)
+            & $launcher config validate $agentConfigFile
+            if ($LASTEXITCODE -ne 0) { throw 'Agent config validate rejected the generated configuration' }
+            [System.IO.File]::WriteAllText($agentConfigFile, 'core_url = "unterminated', $utf8)
+            & $launcher config validate $agentConfigFile
+            if ($LASTEXITCODE -ne 1) { throw 'Agent config validate did not return exit code 1 for malformed TOML' }
+          } finally {
+            Remove-Item $agentConfigFile -Force -ErrorAction SilentlyContinue
+          }
+          exit 0
+
       - name: Package Agent tarball
         if: ${{ matrix.archive == 'tar.gz' }}
         shell: bash
@@ -405,6 +439,10 @@ jobs:
             mix compile
             mix release secrethub_agent
             elixir scripts/verify_release_versions.exs _build/prod/rel/secrethub_agent "${RELEASE_TAG#v}"
+            agent_config_file="$(mktemp)"
+            trap 'rm -f "$agent_config_file"' EXIT
+            _build/prod/rel/secrethub_agent/bin/secrethub_agent config generate > "$agent_config_file"
+            _build/prod/rel/secrethub_agent/bin/secrethub_agent config validate "$agent_config_file"
             tar -C _build/prod/rel/secrethub_agent -czf "secrethub_agent-${RELEASE_TAG}-freebsd-amd64.tar.gz" .
 
       - name: Upload FreeBSD Agent release artifact
@@ -539,6 +577,9 @@ jobs:
 
           ## Changes
 
+          - Agent releases accept a TOML configuration file and provide offline
+            \`config generate\` and \`config validate [file]\` commands. See the
+            [Agent configuration guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/deployment/agent-deployment-guide.md).
           - Agent enrollment reports the running Agent package version instead of
             a hard-coded version.
           - The admin sidebar can collapse to icons and remembers its state;

@@ -176,10 +176,29 @@ defmodule SecretHub.MixProject do
           secrethub_shared: :permanent
         ],
         runtime_config_path: "config/agent_runtime.exs",
+        overlays: ["rel/agent/overlays"],
         include_executables_for: [:unix, :windows],
-        steps: [:assemble, :tar]
+        steps: [:assemble, &agent_config_windows_command/1, :tar]
       ]
     ]
+  end
+
+  defp agent_config_windows_command(release) do
+    launcher = Path.join(release.path, "bin/secrethub_agent.bat")
+    contents = File.read!(launcher)
+    newline = if String.contains?(contents, "\r\n"), do: "\r\n", else: "\n"
+    hook = "call \"!REL_VSN_DIR!\\env.bat\" %*" <> newline
+
+    case String.split(contents, hook) do
+      [before_hook, after_hook] ->
+        return = ~s(if "%~1" == "config" exit /b !errorlevel!) <> newline
+        File.write!(launcher, before_hook <> hook <> return <> after_hook)
+
+      _ ->
+        Mix.raise("Agent Windows launcher env.bat hook was not found exactly once")
+    end
+
+    release
   end
 
   defp docs do

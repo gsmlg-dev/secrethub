@@ -18,7 +18,7 @@ export SECRETHUB_HOST=secrethub.example.com
 | SecretHub Agent | Beside applications | Enrolls with Core, maintains mTLS runtime link, serves local Unix socket secrets |
 | SecretHub CLI | Operator workstation or automation | Login, secret reads/writes, admin workflows |
 
-Core and Agent are separate OTP releases. Core uses `config/core_runtime.exs` in packaged releases, while `config/runtime.exs` preserves direct production execution from source. The standalone Agent release uses `config/agent_runtime.exs` and requires only `SECRET_HUB_AGENT_CORE_URL` at boot. CLI builds use an app-local empty runtime config and do not require Core runtime variables.
+Core and Agent are separate OTP releases. Core uses `config/core_runtime.exs` in packaged releases, while `config/runtime.exs` preserves direct production execution from source. The standalone Agent release uses `config/agent_runtime.exs`; builds containing TOML support read `/etc/secrethub/agent.toml` or the file selected by `SECRET_HUB_AGENT_CONFIG_FILE`. See the [Agent configuration guide](deployment/agent-deployment-guide.md) for required options and environment overrides. CLI builds use an app-local empty runtime config and do not require Core runtime variables.
 
 ## Release Artifacts
 
@@ -283,69 +283,78 @@ curl -f "https://$SECRETHUB_HOST/v1/sys/health/ready"
 
 ## Deploy Agent With Docker
 
-The Agent container runs as uid/gid `1002`. Ensure mounted state and Unix socket directories are writable by that uid/gid.
+Use an image built from a revision containing TOML support; the historical
+`v1.0.0-rc9` examples elsewhere in this guide do not include it. Prepare
+`/etc/secrethub/agent.toml`, a private readable host-key copy, and persistent
+mounts using the [Agent deployment and configuration guide](deployment/agent-deployment-guide.md#docker).
+The container runs as UID/GID `1002`.
 
 ```bash
-sudo install -d -o 1002 -g 1002 -m 0700 /var/lib/secrethub-agent
-sudo install -d -o 1002 -g 1002 -m 0770 /var/run/secrethub
+# Set this to your newly built image, or a release containing TOML support.
+export SECRETHUB_AGENT_IMAGE=your-registry/secrethub-agent:your-build
 
 docker run -d \
   --name secrethub-agent \
   --restart unless-stopped \
-  -e SECRET_HUB_AGENT_CORE_URL="https://$SECRETHUB_HOST" \
-  -v /var/lib/secrethub-agent:/app/.local/state/secrethub/agent \
-  -v /var/run/secrethub:/var/run/secrethub \
-  ghcr.io/gsmlg-dev/secrethub/agent:$SECRETHUB_VERSION
+  --mount type=bind,src=/etc/secrethub/agent.toml,dst=/etc/secrethub/agent.toml,readonly \
+  --mount type=bind,src=/etc/secrethub/agent-host-key,dst=/run/secrethub-host-key,readonly \
+  --mount type=bind,src=/var/lib/secrethub-agent,dst=/var/lib/secrethub \
+  --mount type=bind,src=/var/run/secrethub,dst=/var/run/secrethub \
+  "$SECRETHUB_AGENT_IMAGE"
 ```
 
-On first boot, the Agent creates a pending enrollment. Approve it in Core at:
+Set `core_url` to the machine enrollment HTTPS URL and `host_key_path` to
+`/run/secrethub-host-key` in TOML. The image environment supplies state
+`/var/lib/secrethub/agent`, bundle directory
+`/var/lib/secrethub/pki/client-auth`, and socket
+`/var/run/secrethub/agent.sock`. These environment values override TOML;
+keep the same paths in the file or override the image environment too.
 
-```text
-/admin/pending-agents
-```
-
-After approval, the Agent generates a TLS keypair, submits a CSR and SSH host-key proof, stores trusted material, connects to the mTLS runtime endpoint, and serves the local Unix socket at:
-
-```text
-/var/run/secrethub/agent.sock
-```
-
-Applications and the CLI can use that socket to retrieve secrets through the Agent.
+Approve the first enrollment in `/admin/pending-agents` through the Caddy mTLS
+management URL after verifying the host fingerprint. Confirm connection and
+advancing heartbeat in `/admin/agents`; a healthy local socket alone does not
+prove connection to Core.
 
 ## Deploy Agent From a Tarball
 
-Download the matching Agent artifact for the host OS and architecture.
+Download an Agent artifact containing TOML support for the host platform.
+Extract the entire release, rather than copying its launcher alone:
 
 ```bash
-sudo useradd --system --home /var/lib/secrethub-agent --shell /usr/sbin/nologin secrethub-agent
-sudo install -d -o secrethub-agent -g secrethub-agent -m 0700 /var/lib/secrethub-agent
-sudo install -d -o secrethub-agent -g secrethub-agent -m 0770 /var/run/secrethub
-sudo install -d -o secrethub-agent -g secrethub-agent /opt/secrethub-agent
-sudo tar -xzf secrethub_agent-$SECRETHUB_VERSION-linux-amd64.tar.gz -C /opt/secrethub-agent
+sudo install -d /opt/secrethub-agent
+sudo tar -xzf /path/to/downloaded-agent-release.tar.gz -C /opt/secrethub-agent
 ```
 
-Example systemd unit:
+Generate and edit a template, then validate the file before installing it:
 
-```ini
-[Unit]
-Description=SecretHub Agent
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=secrethub-agent
-Group=secrethub-agent
-WorkingDirectory=/opt/secrethub-agent
-Environment=HOME=/var/lib/secrethub-agent
-Environment=SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com
-ExecStart=/opt/secrethub-agent/bin/secrethub_agent start
-ExecStop=/opt/secrethub-agent/bin/secrethub_agent stop
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
+```bash
+/opt/secrethub-agent/bin/secrethub_agent config generate > agent.toml
+# Edit agent.toml for this host.
+/opt/secrethub-agent/bin/secrethub_agent config validate agent.toml
 ```
+
+Generation needs no existing configuration and writes only TOML to standard
+output. Validation selects its explicit file argument, then
+`SECRET_HUB_AGENT_CONFIG_FILE`, then `/etc/secrethub/agent.toml`; the selected
+file must exist. It checks TOML, supported options, required values, and HTTPS
+without per-option environment overrides. It does not check configured key or
+directory access, connect to Core, or start the Agent. Exit codes are `0` for
+success, `1` for invalid configuration, and `2` for invalid command usage.
+
+Prepare the service user, private host-key access, writable directories, and
+`/etc/secrethub/agent.toml` following the complete
+[tarball/systemd example](deployment/agent-deployment-guide.md#tarball-and-systemd).
+Once those prerequisites are in place, the release uses the default file with:
+
+```bash
+/opt/secrethub-agent/bin/secrethub_agent eval 'SecretHub.Agent.Preflight.run()'
+/opt/secrethub-agent/bin/secrethub_agent start
+```
+
+Run both commands as the service UID with its configured credentials, as the
+systemd example does. For another configuration location, set
+`SECRET_HUB_AGENT_CONFIG_FILE`. Restart after configuration changes; preserve
+Agent identity and PKI bundle directories across restarts and upgrades.
 
 ## Install the CLI
 

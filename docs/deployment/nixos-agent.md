@@ -5,6 +5,10 @@ It builds the native Agent release and runs `secrethub-agent.service` as an
 unprivileged dynamic user. Supported module targets are `x86_64-linux` and
 `aarch64-linux`.
 
+For manually managed releases, see the [TOML configuration reference](agent-deployment-guide.md).
+The NixOS module supplies the required values through environment variables,
+which take precedence over a present Agent TOML file.
+
 ## Core prerequisites
 
 Core must be initialized, unsealed, and configured with its Agent PKI. The host

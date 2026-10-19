@@ -458,15 +458,30 @@ docker run -d -p 4664:4664 \
   ghcr.io/gsmlg-dev/secrethub/core:v1.0.0-rc9
 ```
 
-Agent:
+Agent builds containing TOML support read `/etc/secrethub/agent.toml` by
+default; select another file with `SECRET_HUB_AGENT_CONFIG_FILE`. Generate a
+template, edit it for the host, and validate the file:
 
 ```bash
-docker run -d \
-  -e SECRET_HUB_AGENT_CORE_URL="https://secrethub.example.com" \
-  -v /var/lib/secrethub-agent:/app/.local/state/secrethub/agent \
-  -v /var/run/secrethub:/var/run/secrethub \
-  ghcr.io/gsmlg-dev/secrethub/agent:v1.0.0-rc9
+/path/to/built-or-new-release/bin/secrethub_agent config generate > agent.toml
+# Edit agent.toml for this host.
+/path/to/built-or-new-release/bin/secrethub_agent config validate agent.toml
 ```
+
+Generation needs no existing configuration and prints only TOML. Validation
+checks the file independently of per-option environment overrides, without
+starting the Agent or connecting to Core. Prepare host-key access and writable
+persistent directories before starting:
+
+```bash
+SECRET_HUB_AGENT_CONFIG_FILE=./agent.toml \
+  /path/to/built-or-new-release/bin/secrethub_agent start
+```
+
+See the [Agent configuration guide](docs/deployment/agent-deployment-guide.md)
+for validation file selection and exit codes, the full option table, environment
+precedence, preflight, and Docker/systemd examples. Earlier published releases
+need an upgrade to gain TOML support.
 
 For production, run migrations before starting Core, serve the management/admin UI through Caddy with mandatory mTLS, expose the trusted Agent mTLS endpoint, and persist Agent state. The Core web backend must not be publicly accessible around Caddy. See [docs/deploy.md](docs/deploy.md).
 
@@ -477,7 +492,7 @@ For production, run migrations before starting Core, serve the management/admin 
 | Core | `PHX_SERVER=true`, `DATABASE_URL`, `SECRET_KEY_BASE`, `PHX_HOST`, `SECRET_HUB_CLUSTER_NODE_ID` |
 | Core trusted Agent endpoint | `SECRET_HUB_AGENT_ENDPOINT_SERVER=true`, endpoint cert/key/CA paths |
 | Caddy management proxy | Mandatory mTLS client-certificate verification; private connectivity to the Core web backend |
-| Agent | `SECRET_HUB_AGENT_CORE_URL` |
+| Agent | TOML or environment inputs for Core HTTPS URL, SSH host-key path, persistent state, socket, and client-auth bundle directory; [configuration reference](docs/deployment/agent-deployment-guide.md#options-and-environment-overrides) |
 
 The Caddy boundary is the intended management deployment design. Existing Core admin endpoint and certificate-fingerprint configuration must be reconciled with this design; see [docs/deploy.md](docs/deploy.md) for the current deployment configuration.
 

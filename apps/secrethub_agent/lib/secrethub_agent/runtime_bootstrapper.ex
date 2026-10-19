@@ -144,7 +144,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
     state = %__MODULE__{
       core_url: core_url,
       core_endpoints: Keyword.get(opts, :core_endpoints, [core_url]),
-      state_dir: Keyword.get(opts, :state_dir, default_state_dir()),
+      state_dir: Keyword.get_lazy(opts, :state_dir, &default_state_dir/0),
       enrollment_opts: Keyword.get(opts, :enrollment_opts, [])
     }
 
@@ -633,12 +633,11 @@ defmodule SecretHub.Agent.RuntimeBootstrapper do
   defp binary_present?(value), do: is_binary(value) and value != ""
 
   defp default_state_dir do
-    System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
-      Application.get_env(
-        :secrethub_agent,
-        :state_dir,
-        Path.expand(@default_state_dir)
-      )
+    System.get_env(
+      "SECRET_HUB_AGENT_STATE_DIR",
+      Application.get_env(:secrethub_agent, :state_dir)
+    ) ||
+      Path.expand(@default_state_dir)
   end
 
   defp safe_reason(reason) when is_atom(reason), do: Atom.to_string(reason)

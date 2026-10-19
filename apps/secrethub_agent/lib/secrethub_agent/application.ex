@@ -38,12 +38,11 @@ defmodule SecretHub.Agent.Application do
         )
 
     state_dir =
-      System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||
-        Application.get_env(
-          :secrethub_agent,
-          :state_dir,
-          Path.expand("~/.local/state/secrethub/agent")
-        )
+      System.get_env(
+        "SECRET_HUB_AGENT_STATE_DIR",
+        Application.get_env(:secrethub_agent, :state_dir)
+      ) ||
+        Path.expand("~/.local/state/secrethub/agent")
 
     pki_children =
       if client_auth_pki_enabled do

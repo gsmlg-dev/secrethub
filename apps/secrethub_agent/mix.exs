@@ -31,6 +31,7 @@ defmodule SecretHub.Agent.MixProject do
       {:phoenix_socket_client, "~> 0.7"},
       {:websocket_client, "~> 1.5"},
       {:jason, "~> 1.4"},
+      {:toml, "~> 0.7"},
       {:req, "~> 0.5"},
       {:x509, in_umbrella: true},
       {:secrethub_shared, in_umbrella: true},

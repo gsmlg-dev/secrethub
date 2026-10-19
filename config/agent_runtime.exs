@@ -2,16 +2,12 @@ import Config
 
 # Dedicated runtime config for standalone Agent releases. Packaged Core uses
 # config/core_runtime.exs for DB/Phoenix secrets; config/runtime.exs is the source-execution compatibility entrypoint.
-alias SecretHub.Shared.{RuntimeConfig, RuntimeSecrets}
+alias SecretHub.Shared.RuntimeConfig
 
-core_url = RuntimeSecrets.read!("SECRET_HUB_AGENT_CORE_URL")
-RuntimeConfig.https_url!("SECRET_HUB_AGENT_CORE_URL", core_url)
+settings = SecretHub.Agent.Config.load!()
 RuntimeConfig.distribution!()
-host_key_path = RuntimeSecrets.read!("SECRET_HUB_AGENT_HOST_KEY_PATH")
-state_dir = RuntimeSecrets.read!("SECRET_HUB_AGENT_STATE_DIR")
-socket_path = RuntimeSecrets.read!("SECRET_HUB_AGENT_SOCKET_PATH")
-bundle_dir = RuntimeSecrets.read!("SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR")
-enrollment_ca = RuntimeSecrets.read!("SECRET_HUB_AGENT_ENROLLMENT_CA_PATH", required: false)
+host_key_path = settings[:host_key_path]
+enrollment_ca = settings[:enrollment_ca_path]
 
 enrollment_req_options =
   if enrollment_ca do
@@ -25,9 +21,9 @@ config :secrethub_agent,
   launch_profile: :single_operator,
   enabled_features: [:static_secrets, :client_auth_pki],
   client_auth_pki_enabled: true,
-  core_url: core_url,
-  state_dir: state_dir,
-  socket_path: socket_path,
-  client_auth_bundle_dir: bundle_dir,
+  core_url: settings[:core_url],
+  state_dir: settings[:state_dir],
+  socket_path: settings[:socket_path],
+  client_auth_bundle_dir: settings[:client_auth_bundle_dir],
   enrollment_req_options: enrollment_req_options,
   enrollment_opts: [paths: [ecdsa: host_key_path, rsa: host_key_path]]

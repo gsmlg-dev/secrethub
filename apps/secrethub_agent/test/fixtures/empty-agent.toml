@@ -1,0 +1,2 @@
+# Keep runtime-config probes independent of the host's /etc/secrethub/agent.toml.
+# Required values are supplied by each probe's isolated environment.

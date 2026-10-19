@@ -1,373 +1,334 @@
-# SecretHub Agent Deployment Guide
+# SecretHub Agent Deployment and Configuration
 
-This guide explains how to deploy and configure SecretHub Agents to enable secure secret delivery to your applications.
+The standalone `secrethub_agent` release reads a TOML configuration file at
+startup. Use a build or release that includes this feature; older published
+releases do not gain file support by adding a configuration file.
 
-## Overview
-
-SecretHub Agents are lightweight daemons that run alongside your applications to:
-- Enroll with SecretHub Core using host identity and a Core-issued challenge
-- Authenticate runtime traffic with a Core-issued mTLS client certificate
-- Maintain persistent WebSocket connections to Core
-- Fetch and cache secrets locally
-- Render secrets into configuration files
-- Handle automatic secret rotation
+For native NixOS deployment, use the [NixOS Agent guide](nixos-agent.md). Its
+module already supplies required options and manages service credentials.
 
 ## Prerequisites
 
-- SecretHub Core is deployed and operational
-- Vault is initialized and unsealed
-- Network connectivity between Agent and Core
-- Root CA and Intermediate CA generated (for mTLS)
+- Core is initialized, unsealed, and configured with its Agent PKI.
+- The host can reach Core's HTTPS machine enrollment API and the separate
+  runtime mTLS endpoint advertised by Core.
+- An existing, unencrypted RSA or ECDSA SSH host private key is readable by
+  the Agent service. Ed25519 host keys are not supported for enrollment.
+- Persistent state and PKI bundle directories, and the socket's parent
+  directory, exist and are writable by the service UID.
 
-## Deployment Options
+Use the machine enrollment URL, such as `https://enroll.example.com`, for
+`core_url`. A fresh Agent cannot enroll through an operator management URL
+requiring a Caddy client certificate. See the
+[runtime contract](../security/runtime-contract.md) for listener requirements.
 
-For native NixOS deployment, use the [NixOS flake Agent guide](nixos-agent.md).
+## Configuration file
 
-### Option 1: Docker Container (Recommended)
-
-```bash
-docker run -d \
-  --name secrethub-agent \
-  --restart unless-stopped \
-  -v /app/config:/app/config \
-  -v secrethub-agent-state:/home/secrethub/.local/state/secrethub/agent \
-  -v /var/run/secrethub:/var/run/secrethub \
-  -e SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com \
-  secrethub/agent:latest
-```
-
-### Option 2: Kubernetes DaemonSet
-
-```yaml
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: secrethub-agent
-  namespace: default
-spec:
-  selector:
-    matchLabels:
-      app: secrethub-agent
-  template:
-    metadata:
-      labels:
-        app: secrethub-agent
-    spec:
-      containers:
-      - name: agent
-        image: secrethub/agent:latest
-        env:
-        - name: SECRET_HUB_AGENT_CORE_URL
-          value: "https://secrethub-core.secrethub.svc.cluster.local"
-        volumeMounts:
-        - name: config
-          mountPath: /app/config
-        - name: state
-          mountPath: /home/secrethub/.local/state/secrethub/agent
-        - name: secrets
-          mountPath: /var/run/secrethub
-      volumes:
-      - name: config
-        configMap:
-          name: secrethub-agent-config
-      - name: state
-        hostPath:
-          path: /var/lib/secrethub-agent
-          type: DirectoryOrCreate
-      - name: secrets
-        emptyDir: {}
-```
-
-### Option 3: Systemd Service
+The default file is `/etc/secrethub/agent.toml`. When present, it loads
+automatically. Select another file with:
 
 ```bash
-# Install agent binary
-sudo wget -O /usr/local/bin/secrethub-agent \
-  https://releases.secrethub.io/agent/latest/secrethub-agent-linux-amd64
-sudo chmod +x /usr/local/bin/secrethub-agent
+SECRET_HUB_AGENT_CONFIG_FILE=/etc/secrethub/production-agent.toml \
+  /path/to/built-or-new-release/bin/secrethub_agent start
+```
 
-# Create systemd unit file
-sudo tee /etc/systemd/system/secrethub-agent.service <<EOF
+If the default file is absent, existing environment-only configuration continues
+to work. An explicitly selected file must exist and be readable. A present
+default file that cannot be read or parsed also prevents startup.
+
+Generate a configuration template outside the release directory, then edit it
+for the host:
+
+```bash
+/path/to/built-or-new-release/bin/secrethub_agent config generate > agent.toml
+```
+
+Generation needs no existing configuration and writes only TOML to standard
+output. The same template is available as
+[agent.example.toml](../../rel/agent/overlays/config/agent.example.toml), bundled
+as `config/agent.example.toml` in new Agent release archives.
+
+For example:
+
+```toml
+# HTTPS machine enrollment URL; Core advertises the runtime WSS endpoint.
+core_url = "https://enroll.example.com"
+
+# Stable, existing RSA or ECDSA SSH private host key.
+# The systemd example below provides this credential copy.
+host_key_path = "/run/credentials/secrethub-agent.service/ssh-host-key"
+
+# Preserve these directories across restarts and upgrades.
+state_dir = "/var/lib/secrethub-agent"
+client_auth_bundle_dir = "/var/lib/secrethub-agent/client-auth"
+
+# Local consumers use this private Unix socket.
+socket_path = "/run/secrethub-agent/agent.sock"
+
+# Optional: CA bundle for a privately signed enrollment HTTPS server.
+# enrollment_ca_path = "/etc/secrethub/enrollment-ca.pem"
+```
+
+These are flat, root-level TOML keys. All values must be nonempty strings of
+at most 4096 bytes. The file is limited to 64 KiB. Unknown keys, TOML tables,
+wrong types, malformed TOML, and invalid HTTPS enrollment URLs are rejected at
+startup. Errors identify the setting or failure category without printing
+configuration values or file contents.
+
+Relative path values in TOML resolve relative to the configuration file's
+directory: `enrollment_ca_path = "enrollment-ca.pem"` in
+`/etc/secrethub/agent.toml` selects `/etc/secrethub/enrollment-ca.pem`.
+Environment paths retain their existing behavior. TOML values do not expand
+shell variables or `~`; use explicit paths.
+
+### Generate and validate configuration
+
+After editing the generated file, validate it before installing it:
+
+```bash
+/path/to/built-or-new-release/bin/secrethub_agent config validate agent.toml
+```
+
+`config validate [file]` selects the explicit file argument first, otherwise
+`SECRET_HUB_AGENT_CONFIG_FILE`, otherwise `/etc/secrethub/agent.toml`. The
+selected file must exist and be readable, including when using the default
+path. Validation checks only that file: TOML syntax, allowed keys, string types
+and size limits, all five required values, and the HTTPS enrollment URL.
+Per-option environment variables and their `_FILE` forms are ignored, so they
+cannot supply missing file values or override invalid ones.
+
+Neither configuration command starts the Agent or connects to Core. Validation
+does not check whether configured keys or directories exist, their permissions,
+or whether the enrollment CA contains valid PEM certificates. Run preflight as
+the service UID after provisioning those files and directories, as shown below.
+
+| Exit code | Meaning |
+| --- | --- |
+| `0` | Command succeeded; for validation, the file is valid |
+| `1` | Configuration is invalid or the selected file cannot be loaded |
+| `2` | Command usage is invalid |
+
+### Options and environment overrides
+
+Required means the file or an environment override must supply the value.
+The release has no defaults for these five required values.
+
+| TOML key | Environment variable | Required | Purpose |
+| --- | --- | --- | --- |
+| `core_url` | `SECRET_HUB_AGENT_CORE_URL` | Yes | HTTPS machine enrollment URL; do not supply a WebSocket URL |
+| `host_key_path` | `SECRET_HUB_AGENT_HOST_KEY_PATH` | Yes | Existing RSA/ECDSA SSH private host key for host-identity proof |
+| `state_dir` | `SECRET_HUB_AGENT_STATE_DIR` | Yes | Persistent Core-issued identity, TLS material, and enrollment state |
+| `socket_path` | `SECRET_HUB_AGENT_SOCKET_PATH` | Yes | Unix socket for local applications; its parent must exist and be writable |
+| `client_auth_bundle_dir` | `SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR` | Yes | Persistent client-auth PKI bundle storage |
+| `enrollment_ca_path` | `SECRET_HUB_AGENT_ENROLLMENT_CA_PATH` | No | PEM CA bundle for enrollment HTTPS; omitted uses the normal trust store |
+
+`SECRET_HUB_AGENT_CONFIG_FILE` selects the TOML file itself. It is not a TOML
+key or a value-file override for another option.
+
+Each option's environment variable accepts the existing `_FILE` form.
+For example, `SECRET_HUB_AGENT_CORE_URL_FILE=/run/secrets/enrollment-url`
+reads the URL from that file. `SECRET_HUB_AGENT_HOST_KEY_PATH_FILE` reads a
+**path string**, rather than SSH private-key contents.
+
+The precedence is:
+
+1. The option's environment variable or its `_FILE` value.
+2. The option in the selected TOML file.
+
+Setting both `NAME` and `NAME_FILE` is an error, even when TOML supplies that
+option. Empty or invalid overrides fail instead of falling back to TOML.
+Value files must be readable regular files outside the Nix store, at most
+4096 bytes, with a nonempty value; trailing line endings are removed.
+The TOML file is validated even when environment variables override every
+value, so invalid file contents cannot be hidden by overrides.
+
+Runtime Agent ID, WebSocket URL, expected TLS server name, certificates,
+heartbeat, and timeout settings come from Core-issued state. AppRole credentials
+do not authorize runtime access. Logger, cache, sinker, dynamic-secret, and
+launch-profile settings are not additional TOML keys.
+
+### Permissions and restart behavior
+
+Keep configuration writable only by the operator. For a dedicated
+`secrethub-agent` user, use root ownership, group `secrethub-agent`, and mode
+`0640`. Keep host keys private; systemd credentials provide a readable copy
+without opening the original host key to other users. Preflight requires a
+readable supported host key without world access.
+
+Create state and bundle directories and the socket's parent before startup;
+preflight checks writeability and does not create missing directories. Use
+private directories, normally mode `0700`. The socket is mode `0600`, so
+consumers need the Agent UID or root access in addition to application
+certificate/proof authorization. Group membership alone does not grant access.
+
+Configuration loads when the release process starts. Restart after editing;
+there is no hot reload. Preserve state and bundle directories across restarts
+and upgrades. Changing `core_url` does not replace the runtime endpoint
+persisted in an enrolled Agent's `connect-info.json`.
+
+## Tarball and systemd
+
+Download the matching `secrethub_agent-<tag>-<platform>.tar.gz` artifact from
+[GitHub Releases](https://github.com/gsmlg-dev/secrethub/releases), using a tag
+that includes TOML support. Extract the **whole archive**, including `bin`,
+`lib`, `releases`, and the bundled runtime; the launcher is not a standalone
+executable. This example is for Linux with systemd:
+
+```bash
+sudo useradd --system --home /var/lib/secrethub-agent \
+  --shell /usr/sbin/nologin secrethub-agent
+sudo install -d -o root -g root /opt/secrethub-agent
+sudo tar -xzf /path/to/downloaded-agent-release.tar.gz -C /opt/secrethub-agent
+sudo install -d -o root -g secrethub-agent -m 0750 /etc/secrethub
+sudo install -o root -g secrethub-agent -m 0640 \
+  /path/to/prepared-agent.toml /etc/secrethub/agent.toml
+```
+
+Use the TOML example above with this unit in
+`/etc/systemd/system/secrethub-agent.service`:
+
+```ini
 [Unit]
 Description=SecretHub Agent
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
-Type=simple
-User=secrethub
-Group=secrethub
-Environment="SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com"
-ExecStart=/usr/local/bin/secrethub-agent
-Restart=always
+Type=exec
+User=secrethub-agent
+Group=secrethub-agent
+WorkingDirectory=/var/lib/secrethub-agent
+StateDirectory=secrethub-agent
+StateDirectoryMode=0700
+RuntimeDirectory=secrethub-agent
+RuntimeDirectoryMode=0700
+UMask=0077
+LoadCredential=ssh-host-key:/etc/ssh/ssh_host_rsa_key
+Environment=SECRET_HUB_AGENT_CONFIG_FILE=/etc/secrethub/agent.toml
+Environment=RELEASE_TMP=/run/secrethub-agent
+ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/secrethub-agent/client-auth
+ExecStartPre=/opt/secrethub-agent/bin/secrethub_agent eval 'SecretHub.Agent.Preflight.run()'
+ExecStart=/opt/secrethub-agent/bin/secrethub_agent start
+Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-EOF
-
-# Enable and start service
-sudo systemctl daemon-reload
-sudo systemctl enable secrethub-agent
-sudo systemctl start secrethub-agent
 ```
 
-## Agent Configuration
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `SECRET_HUB_AGENT_CORE_URL` | Yes | HTTPS URL of SecretHub Core for enrollment; trusted WebSocket details come from `connect-info.json` |
-
-Trusted enrollment no longer uses AppRole credentials for runtime authorization. AppRole values may exist for older deployments, but new Agents should use the pending enrollment flow.
-
-### Configuration Sources
-
-The Agent reads `SECRET_HUB_AGENT_CORE_URL` at application startup. Core-managed runtime options are delivered through enrollment and `connect-info.json`.
-
-### Local State and Startup Modes
-
-`RuntimeBootstrapper` selects the startup mode from local state and configuration:
-
-- `trusted_runtime`: `IdentityStore` loads trusted material from `state_dir` and starts the mTLS runtime.
-- `enrollment`: trusted material is missing, so the Agent creates a pending enrollment, waits for approval, receives certificate material, and then starts trusted runtime.
-
-The internal `state_dir` is `~/.local/state/secrethub/agent`.
-
-| File | Purpose | Permissions |
-|------|---------|------|
-| `agent-cert.pem` | Core-issued Agent client certificate | `0644` |
-| `agent-key.pem` | TLS client private key generated by `TLSIdentity` | `0600` |
-| `ca-chain.pem` | CA chain used to verify the trusted Core endpoint | `0644` |
-| `connect-info.json` | Trusted WebSocket endpoint, expected server name, heartbeat, and timeout settings | `0644` |
-| `identity.json` | Agent ID, certificate metadata, SSH host-key fingerprint, and host metadata | `0644` |
-| `pending.json` | Pending enrollment token and enrollment URL kept until runtime acceptance is finalized | `0600` |
-
-## Bootstrap Process
-
-### Step 1: Start Agent Enrollment
-
-Start the Agent with `SECRET_HUB_AGENT_CORE_URL`. On first boot, `RuntimeBootstrapper` enters enrollment mode because trusted material is not present.
-
-### Step 2: Pending Enrollment
-
-The Agent discovers its SSH host key, hostname, FQDN, and machine identity, then creates a pending enrollment. The enrollment request includes `ssh_host_public_key`; the private SSH host key never leaves the host.
+systemd creates directories and copies the SSH credential before
+`ExecStartPre`. The explicit preflight runs as the service user with the same
+credentials and configuration as the Agent. An optional private enrollment CA
+must also be readable by this user.
 
 ```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now secrethub-agent.service
+sudo systemctl status secrethub-agent.service
+sudo journalctl -u secrethub-agent.service -f
+```
+
+The launcher defaults to `RELEASE_DISTRIBUTION=none`. This unit lets systemd
+stop the foreground process; it does not use the distribution-based release
+`stop` command.
+
+## Docker
+
+Use an Agent image built from a revision containing TOML support. The root
+`Dockerfile.agent` supplies these environment defaults, which **override TOML**:
+
+| Image environment | Default |
+| --- | --- |
+| `SECRET_HUB_AGENT_STATE_DIR` | `/var/lib/secrethub/agent` |
+| `SECRET_HUB_AGENT_SOCKET_PATH` | `/var/run/secrethub/agent.sock` |
+| `SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR` | `/var/lib/secrethub/pki/client-auth` |
+
+For this container example, keep those same three paths in TOML and set
+`host_key_path = "/run/secrethub-host-key"`. To change storage paths, override
+the corresponding image environment variables too and provide writable mounts.
+Mount configuration and key files read-only; persist identity and bundle storage.
+
+The service runs as UID/GID 1002. Provision a private copy of the existing
+supported host key readable by that UID; do not make the original host key
+world-readable.
+
+```bash
+# Set this to an image built from a revision containing TOML support.
+export SECRETHUB_AGENT_IMAGE=your-registry/secrethub-agent:your-build
+sudo install -d -o 1002 -g 1002 -m 0700 \
+  /var/lib/secrethub-agent /var/lib/secrethub-agent/agent \
+  /var/lib/secrethub-agent/pki/client-auth /var/run/secrethub
+sudo install -d -o root -g root -m 0755 /etc/secrethub
+sudo install -o root -g 1002 -m 0640 \
+  /path/to/prepared-container-agent.toml /etc/secrethub/agent.toml
+sudo install -o 1002 -g 1002 -m 0600 \
+  /etc/ssh/ssh_host_rsa_key /etc/secrethub/agent-host-key
+
 docker run -d \
   --name secrethub-agent \
-  -e SECRET_HUB_AGENT_CORE_URL=https://secrethub.example.com \
-  -v secrethub-agent-state:/home/secrethub/.local/state/secrethub/agent \
-  secrethub/agent:latest
+  --restart unless-stopped \
+  --mount type=bind,src=/etc/secrethub/agent.toml,dst=/etc/secrethub/agent.toml,readonly \
+  --mount type=bind,src=/etc/secrethub/agent-host-key,dst=/run/secrethub-host-key,readonly \
+  --mount type=bind,src=/var/lib/secrethub-agent,dst=/var/lib/secrethub \
+  --mount type=bind,src=/var/run/secrethub,dst=/var/run/secrethub \
+  "$SECRETHUB_AGENT_IMAGE"
 ```
 
-An operator approves the pending enrollment in Core.
+For a private enrollment CA, mount the PEM file read-only at the path specified
+by `enrollment_ca_path`. This CA verifies enrollment HTTPS; it does not replace
+the Core-issued `ca-chain.pem` used for runtime mTLS.
 
-### Step 3: CSR, SSH Proof, and Runtime Material
-
-After approval, the Agent will:
-
-1. Generate a separate TLS keypair with `TLSIdentity`
-2. Create a CSR using the required subject and SAN fields from Core
-3. Sign an `AgentCSRProof` over the CSR, enrollment ID, and Core challenge with the SSH host private key
-4. Submit the CSR and `ssh_proof` to Core
-5. Core verifies `ssh_proof` against the stored `ssh_host_public_key`
-6. Core issues a clientAuth Agent certificate with Agent and host-key SANs
-7. The Agent stores `agent-cert.pem`, `agent-key.pem`, `ca-chain.pem`, `connect-info.json`, `identity.json`, and `pending.json` under `state_dir`
-8. The Agent connects to the trusted runtime endpoint with the Core-issued mTLS certificate
-
-`pending.json` remains until the runtime WebSocket is accepted.
-
-### Step 4: Runtime Acceptance and Finalization
-
-The Agent joins `agent:runtime` over `AgentTrustedSocket`. Core derives `agent_id`, `certificate_serial`, `certificate_fingerprint`, and `certificate_id` from the verified certificate and returns them in the accepted join reply. The Agent's `on_runtime_accepted` callback finalizes enrollment and deletes `pending.json` only after that accepted reply.
-
-### Step 5: Verify Agent Connection
-
-Check agent status in SecretHub Admin UI:
-- Navigate to **Agent Monitoring** (`/admin/agents`)
-- Find your agent by ID
-- Verify status is "Connected" with green indicator
-- Check last heartbeat timestamp
-
-## Certificate Management
-
-### Certificate Lifecycle
-
-- **Initial issuance**: During enrollment, after Core verifies `ssh_proof`
-- **Default validity**: 30 days
-- **Maximum validity**: 90 days
-- **Renewal**: Not implemented in this slice; monitor expiry and re-enroll before expiration
-- **Revocation**: Manual via Admin UI if needed
-
-### Certificate Replacement
-
-Automatic and manual certificate renewal endpoints are not part of this first trusted-connection slice. Until renewal is implemented, replace an expiring Agent certificate by creating and approving a new enrollment for the host. Treat unexpected replacement requests as suspicious and verify the SSH host-key fingerprint before approval.
-
-### Certificate Revocation
-
-If an agent is compromised:
-
-1. Navigate to **Certificates** in Admin UI
-2. Find the agent's certificate
-3. Click **Revoke**
-4. Agent will be automatically disconnected
-5. Re-bootstrap the agent with new credentials
-
-## Secret Access
-
-### Requesting Secrets
-
-Applications request secrets through the local Agent Unix Domain Socket. The Agent runtime uses the `secret:read` channel event for both static secret reads and dynamic role reads.
-
-### Secret Caching
-
-Agents cache secrets locally for resilience:
-
-- **Cache TTL**: Configurable (default: 5 minutes)
-- **Fallback mode**: Use cached secrets if Core is unavailable
-- **Invalidation**: On secret rotation notification from Core
-
-### Dynamic Secrets
-
-For dynamic secrets (temporary credentials):
-
-```yaml
-secrets:
-  - name: postgres-readonly
-    path: prod.db.postgres.readonly  # Dynamic secret engine path
-    type: dynamic
-    ttl: 3600  # 1 hour
-    destination: /app/config/db-temp.yml
-    template: |
-      username: {{ .username }}
-      password: {{ .password }}
-      expires_at: {{ .lease_expires_at }}
-```
-
-## Monitoring & Troubleshooting
-
-### Health Check
+To run preflight without enrollment, use the same mounts in a temporary
+container and append `eval 'SecretHub.Agent.Preflight.run()'` after the image
+name. Preflight prints boolean checks and exits nonzero on failure; it does not
+contact Core. Inspect the running container with:
 
 ```bash
-# Check agent process
-systemctl status secrethub-agent
-
-# Check logs
-journalctl -u secrethub-agent -f
-
-# Docker logs
 docker logs -f secrethub-agent
+docker exec secrethub-agent /app/bin/secrethub_agent eval 'SecretHub.Agent.Preflight.run()'
 ```
 
-### Common Issues
+## Enrollment, state, and verification
 
-**Agent fails to connect to Core:**
-- Verify `SECRET_HUB_AGENT_CORE_URL` is correct and accessible
-- Check network connectivity: `ping secrethub.example.com`
-- Verify firewall rules allow outbound HTTPS to Core and outbound WebSocket to the trusted Agent endpoint from `connect-info.json`
+On first boot the Agent submits a pending enrollment using its SSH public
+identity. Open `/admin/pending-agents` through the Caddy mTLS management URL,
+verify the hostname and SSH fingerprint, and approve it. The Agent generates a
+separate TLS keypair, signs a CSR-binding proof with its SSH host key, receives
+its Core-issued client certificate, connects to `agent:runtime` over mTLS, and
+finalizes after Core accepts the connection.
 
-**Authentication failed:**
-- Verify the pending enrollment is approved and not expired
-- Check that `ssh_host_public_key` matches the host key fingerprint shown in Core
-- Verify `ssh_proof` was generated from the SSH host key and current TLS CSR
-- Re-enroll if the local certificate fingerprint is unknown to Core
+The state directory contains:
 
-**Certificate errors:**
-- Verify CA certificate chain is valid
-- Check certificate expiration: `openssl x509 -in agent-cert.pem -noout -dates`
-- Confirm the certificate has `clientAuth` EKU and Agent/host-key URI SANs
-- Ensure system time is synchronized (NTP)
+| File | Purpose |
+| --- | --- |
+| `agent-cert.pem` | Core-issued Agent client certificate |
+| `agent-key.pem` | Agent-generated TLS private key; mode `0600` |
+| `ca-chain.pem` | Core-issued CA chain for runtime TLS verification |
+| `connect-info.json` | Core-advertised runtime endpoint and connection settings |
+| `identity.json` | Core-issued Agent ID and identity metadata |
+| `pending.json` | Pending credential; mode `0600`, removed after finalization |
 
-**Secrets not updating:**
-- Check agent cache settings
-- Verify secret path exists in Core
-- Check agent has policy permissions for the secret path
-- Review agent logs for errors
+Subsequent starts reuse this state. Preflight rejects partial or damaged
+identity instead of silently enrolling a replacement. Preserve the directory
+for investigation and recovery; do not delete it to hide a startup failure.
 
-### Debug Logging
+Confirm the Agent is connected in `/admin/agents` and its heartbeat advances.
+A running process, passing preflight, or local socket health check alone does
+not prove Core connectivity or authorization to read a secret.
 
-Configure Logger level through the Elixir release/runtime configuration. The Agent does not currently read an Agent-specific logging environment variable.
+## Troubleshooting
 
-### Metrics & Observability
-
-Agent exposes metrics on `:9091/metrics`:
-
-```
-# Connection status
-secrethub_agent_connected{agent_id="..."} 1
-secrethub_agent_last_heartbeat_timestamp_seconds 1698765432
-
-# Secret operations
-secrethub_agent_secrets_fetched_total{path="..."} 42
-secrethub_agent_secret_cache_hits_total 128
-secrethub_agent_secret_cache_misses_total 5
-
-# Certificate status
-secrethub_agent_certificate_expiry_timestamp_seconds 1706541432
-```
-
-## Security Best Practices
-
-### Credential Management
-
-1. **Never commit trusted material to version control**
-   - Keep `state_dir` outside application source trees
-   - Protect `agent-key.pem` and `pending.json` with `0600` permissions
-
-2. **Protect enrollment state**
-   - Treat `pending.json` as an enrollment credential until finalization
-   - Delete stale pending enrollments instead of reusing them
-
-3. **Rotate certificates**
-   - Default validity is 30 days
-   - Core caps Agent certificates at 90 days
-   - Monitor certificate expiration
-
-### Network Security
-
-1. **Use mTLS for all connections**
-   - Enrollment uses HTTPS with Core server verification
-   - Runtime uses the trusted Agent endpoint with Core-issued mTLS material
-   - Plain HTTP bootstrap is development-only and must be explicit
-
-2. **Restrict network access**
-   - Agent should only connect to Core (outbound)
-   - Applications connect to Agent via Unix socket (not TCP)
-
-3. **Enable TLS 1.3**
-   - Disable older TLS versions
-   - Use strong cipher suites
-
-### Least Privilege
-
-1. **Assign minimal policies**
-   - Only grant access to needed secret paths
-   - Use path-based policies: `prod.app.*`
-
-2. **Isolate agents**
-   - One agent per application/service
-   - Avoid sharing agents between environments
-
-## Production Checklist
-
-Before deploying to production:
-
-- [ ] Core is deployed with HA configuration
-- [ ] Vault is initialized and unsealed
-- [ ] Root CA and Intermediate CA generated
-- [ ] Trusted Agent endpoint configured with server certificate material
-- [ ] Agent `state_dir` is persistent, owned by the Agent user, and mode `0700`
-- [ ] Agent configuration tested in staging
-- [ ] Certificate expiration monitoring configured
-- [ ] Agent metrics collection enabled
-- [ ] Backup and disaster recovery tested
-- [ ] Security review completed
-- [ ] Documentation updated with environment-specific details
-
-## Support
-
-For issues or questions:
-- **Documentation**: https://docs.secrethub.io
-- **GitHub Issues**: https://github.com/secrethub/secrethub/issues
-- **Community**: https://discuss.secrethub.io
+- **Configuration rejected:** check the selected file, flat key names, string
+  types, file size, and required values. Remove stale overrides or conflicting
+  `NAME`/`NAME_FILE` pairs. Restart after edits.
+- **Preflight fails:** verify directories exist and are writable by the service
+  UID, the SSH key is supported and private, a configured enrollment CA is valid
+  PEM, and persisted identity is complete.
+- **Enrollment cannot connect:** check the HTTPS machine URL, DNS, outbound
+  access, server certificate trust, and pending approval. An operator-only
+  management URL is unsuitable for fresh enrollment.
+- **Runtime cannot connect:** check the endpoint advertised in
+  `connect-info.json`, its network access, certificate validity, and the
+  Core-issued CA chain. Enrollment CA overrides do not change this chain.
+- **Local application cannot use the socket:** check the effective path,
+  directory/socket permissions, application certificate/proof, and Core policies.

@@ -29,10 +29,19 @@ unknown historical key. Do not rotate a production key until old entries have
 been verified with the proposed keyring. No rotation operation is implemented
 or authorized by this change.
 
-Agent requires `SECRET_HUB_AGENT_CORE_URL` (HTTPS enrollment/machine URL),
-`SECRET_HUB_AGENT_HOST_KEY_PATH`, `SECRET_HUB_AGENT_STATE_DIR`,
-`SECRET_HUB_AGENT_SOCKET_PATH`, and `SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR`. It does
-not read Core database, Phoenix signing, or Human subsystem secrets. An optional
+Agent accepts these required settings from `/etc/secrethub/agent.toml`, or a
+file selected with `SECRET_HUB_AGENT_CONFIG_FILE`: `core_url` (HTTPS
+enrollment/machine URL), `host_key_path`, `state_dir`, `socket_path`, and
+`client_auth_bundle_dir`. Existing environment inputs
+`SECRET_HUB_AGENT_CORE_URL`, `SECRET_HUB_AGENT_HOST_KEY_PATH`,
+`SECRET_HUB_AGENT_STATE_DIR`, `SECRET_HUB_AGENT_SOCKET_PATH`, and
+`SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR` (including their `_FILE` forms) override
+the corresponding file values. If the default file is absent, environment-only
+configuration remains supported. Explicitly selected missing files and invalid
+files fail startup with bounded, redacted errors. See the
+[Agent configuration guide](../deployment/agent-deployment-guide.md) for all
+options and precedence. Agent does not read Core database, Phoenix signing, or
+Human subsystem secrets. An optional TOML `enrollment_ca_path` or environment
 `SECRET_HUB_AGENT_ENROLLMENT_CA_PATH` supplies an existing private enrollment TLS
 CA bundle; HTTPS still verifies the peer. Otherwise the existing operating-system
 trust store is used. Agent preflight rejects unreadable/malformed configured CA
