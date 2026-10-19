@@ -59,6 +59,12 @@
           active={to_string(@active_nav)}
           items={[
             %{id: "policies", to: ~p"/admin/policies", icon: "shield-check", label: "Policies"},
+            %{
+              id: "ssh_access",
+              to: ~p"/admin/ssh-access",
+              icon: "key-chain",
+              label: "SSH Access"
+            },
             %{id: "approles", to: ~p"/admin/approles", icon: "account-group", label: "AppRoles"},
             %{id: "agents", to: ~p"/admin/agents", icon: "server", label: "Agents"},
             %{

@@ -34,11 +34,22 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
       :ok = ConnectionManager.register_connection(agent_id, cert_serial, self(), metadata)
       :ok = SecretHub.Core.PKI.ClientAuth.Notifier.subscribe()
       :ok = Phoenix.PubSub.subscribe(SecretHub.Web.PubSub, "authorization:uds_auth_floor")
+      :ok = Phoenix.PubSub.subscribe(SecretHub.Web.PubSub, "ssh:policy")
+
+      capabilities =
+        payload
+        |> Map.get("runtime_capabilities", [])
+        |> Enum.filter(&(&1 in ["uds_auth_v2", "ssh_lookup_v1", "ssh_signing_v1"]))
+        |> Enum.uniq()
+        |> Enum.sort()
+
+      socket = assign(socket, :runtime_capabilities, capabilities)
 
       {:ok,
        %{
          status: "accepted",
          minimum_uds_auth_version: UpgradeGates.minimum_uds_auth_version(),
+         runtime_capabilities: capabilities,
          agent_id: agent_id,
          certificate_serial: cert_serial,
          certificate_fingerprint: cert_fingerprint,
@@ -161,11 +172,69 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
     end)
   end
 
+  def handle_in("ssh:" <> operation, payload, socket)
+      when operation in [
+             "identities",
+             "authorize_sign",
+             "authorized_keys",
+             "known_hosts",
+             "inventory"
+           ] do
+    with_runtime_authorized(socket, fn ->
+      negotiated = Map.get(socket.assigns, :runtime_capabilities, [])
+
+      supported =
+        case operation do
+          "inventory" -> Enum.any?(["ssh_lookup_v1", "ssh_signing_v1"], &(&1 in negotiated))
+          op when op in ["identities", "authorize_sign"] -> "ssh_signing_v1" in negotiated
+          _ -> "ssh_lookup_v1" in negotiated
+        end
+
+      cond do
+        not supported ->
+          {:reply, {:error, %{reason: "SSH_UNAVAILABLE"}}, socket}
+
+        not is_map(payload) ->
+          {:reply, {:error, %{reason: "FORBIDDEN"}}, socket}
+
+        true ->
+          identity = %{
+            agent_id: socket.assigns.agent_id,
+            certificate_id: socket.assigns.certificate_id
+          }
+
+          case SecretHub.Core.SSH.runtime_operation(identity, operation, payload) do
+            {:ok, result} ->
+              with_runtime_authorized(socket, fn -> {:reply, {:ok, result}, socket} end)
+
+            {:error, :sealed} ->
+              {:reply, {:error, %{reason: "VAULT_SEALED"}}, socket}
+
+            {:error, :capability_unavailable} ->
+              {:reply, {:error, %{reason: "SSH_UNAVAILABLE"}}, socket}
+
+            {:error, reason} when reason in [:denied, :invalid_request] ->
+              {:reply, {:error, %{reason: "FORBIDDEN"}}, socket}
+
+            _ ->
+              {:reply, {:error, %{reason: "UNAVAILABLE"}}, socket}
+          end
+      end
+    end)
+  rescue
+    _ -> {:reply, {:error, %{reason: "UNAVAILABLE"}}, socket}
+  end
+
   def handle_in(event, _payload, socket) do
     {:reply, {:error, %{reason: "unknown_event", event: event}}, socket}
   end
 
   @impl true
+  def handle_info({:ssh_policy_changed, revision}, socket) do
+    push(socket, "ssh:policy_changed", %{revision: revision})
+    {:noreply, socket}
+  end
+
   def handle_info({:uds_auth_floor_changed, payload}, socket) do
     push(socket, "agent:uds_auth_floor", payload)
     {:noreply, socket}

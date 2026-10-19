@@ -118,6 +118,7 @@ defmodule SecretHub.Web.Router do
       live "/pending-agents", AgentPendingLive, :index
       live "/pending-agents/:id", AgentPendingLive, :show
       live "/cli-access", CliAccessLive, :index
+      live "/ssh-access", SSHAccessLive, :index
       live "/agents/:id", AgentMonitoringLive, :show
       live "/secrets", SecretManagementLive, :index
       live "/secrets/:id/versions", SecretVersionHistoryLive, :index
