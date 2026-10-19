@@ -79,6 +79,8 @@ priv/plts/
 # Release artifacts
 rel/*
 !rel/env.sh.eex
+!rel/env.bat.eex
+!rel/agent/
 releases/
 burrito_out/
 
