@@ -192,6 +192,29 @@ defmodule SecretHub.Agent.Connection do
     GenServer.call(server, :status)
   end
 
+  @doc "Requests an SSH operation only when its versioned capability was negotiated."
+  def ssh_request(server, operation, payload, timeout) do
+    GenServer.call(server, {:ssh_request, operation, payload, timeout}, timeout + 100)
+  catch
+    :exit, _ -> {:error, :ssh_unavailable}
+  end
+
+  @doc false
+  def ssh_capabilities do
+    [{:ssh_lookup_enabled, "ssh_lookup_v1"}, {:ssh_signing_enabled, "ssh_signing_v1"}]
+    |> Enum.flat_map(fn {setting, capability} ->
+      if Application.get_env(:secrethub_agent, setting, false), do: [capability], else: []
+    end)
+  end
+
+  @doc false
+  def negotiated_ssh_capabilities(advertised, response) do
+    remote =
+      Map.get(response, "runtime_capabilities", Map.get(response, :runtime_capabilities, []))
+
+    if is_list(remote), do: Enum.filter(advertised, &(&1 in remote)), else: []
+  end
+
   ## GenServer Callbacks
 
   @impl true
@@ -212,6 +235,7 @@ defmodule SecretHub.Agent.Connection do
       agent_id: agent_id,
       state_dir: Keyword.get(opts, :state_dir),
       minimum_uds_auth_version: 1,
+      ssh_capabilities: [],
       core_url: core_url,
       cert_pem: cert_pem,
       private_key: private_key,
@@ -238,6 +262,47 @@ defmodule SecretHub.Agent.Connection do
 
   def get_static_secret_for_app(server, path, claims, known_revision, timeout) do
     GenServer.call(server, {:get_static_secret_for_app, path, claims, known_revision}, timeout)
+  end
+
+  @impl true
+  def handle_call({:ssh_request, operation, payload, timeout}, from, state) do
+    capability =
+      case operation do
+        op when op in ["identities", "authorize_sign"] ->
+          "ssh_signing_v1"
+
+        op when op in ["authorized_keys", "known_hosts"] ->
+          "ssh_lookup_v1"
+
+        "inventory" ->
+          Enum.find(
+            Map.get(state, :ssh_capabilities, []),
+            &(&1 in ["ssh_lookup_v1", "ssh_signing_v1"])
+          )
+
+        _ ->
+          nil
+      end
+
+    if state.connection_status == :connected and capability != nil and
+         capability in Map.get(state, :ssh_capabilities, []) do
+      channel = state.channel
+      channel_ref = Map.get(state, :channel_ref)
+      owner = self()
+      tasks = Map.get(state, :ssh_task_supervisor, SecretHub.Agent.SSH.Tasks)
+
+      case Task.Supervisor.start_child(tasks, fn ->
+             result = ssh_channel_request(channel, operation, payload, timeout)
+             send(owner, {:ssh_result, channel, channel_ref, capability, from, result})
+           end) do
+        {:ok, _pid} -> {:noreply, state}
+        {:error, _} -> {:reply, {:error, :ssh_unavailable}, state}
+      end
+    else
+      {:reply, {:error, :ssh_unavailable}, state}
+    end
+  catch
+    :exit, _ -> {:reply, {:error, :ssh_unavailable}, state}
   end
 
   @impl true
@@ -327,6 +392,16 @@ defmodule SecretHub.Agent.Connection do
   @runtime_heartbeat_timeout 10_000
 
   @impl true
+  def handle_info({:ssh_result, channel, generation, capability, from, result}, state) do
+    current? =
+      state.connection_status == :connected and state.channel == channel and
+        Map.get(state, :channel_ref) == generation and
+        capability in Map.get(state, :ssh_capabilities, [])
+
+    GenServer.reply(from, if(current?, do: result, else: {:error, :ssh_unavailable}))
+    {:noreply, state}
+  end
+
   def handle_info(:connect, state) do
     Logger.info("Attempting to connect to Core", agent_id: state.agent_id)
 
@@ -461,12 +536,32 @@ defmodule SecretHub.Agent.Connection do
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state), do: {:noreply, state}
 
   @impl true
+  def handle_info(:ssh_inventory, %{connection_status: :connected} = state) do
+    if Map.get(state, :ssh_capabilities, []) != [] do
+      if Process.whereis(SecretHub.Agent.SSH.Tasks) do
+        connection = self()
+
+        Task.Supervisor.start_child(SecretHub.Agent.SSH.Tasks, fn ->
+          SecretHub.Agent.SSH.Inventory.report(connection)
+        end)
+      else
+        Process.send_after(self(), :ssh_inventory, 1000)
+      end
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_info(:ssh_inventory, state), do: {:noreply, state}
+
+  @impl true
   def handle_info(:runtime_heartbeat, %{connection_status: :connected} = state) do
     # The heartbeat must be acknowledged end-to-end: after a transparent
     # socket-level reconnect the local channel process can stay alive while
     # the server-side topic no longer exists, so process liveness alone
     # cannot detect a dead runtime link.
     if runtime_link_alive?(state) and heartbeat_acknowledged?(state.channel) do
+      if Map.get(state, :ssh_capabilities, []) != [], do: send(self(), :ssh_inventory)
       {:noreply, %{state | heartbeat_timer: schedule_runtime_heartbeat()}}
     else
       Logger.warning("Runtime connection lost (heartbeat check); reconnecting",
@@ -536,7 +631,14 @@ defmodule SecretHub.Agent.Connection do
       Process.exit(state.socket, :shutdown)
     end
 
-    %{state | socket: nil, channel: nil, channel_ref: nil, heartbeat_timer: nil}
+    %{
+      state
+      | socket: nil,
+        channel: nil,
+        channel_ref: nil,
+        heartbeat_timer: nil,
+        ssh_capabilities: []
+    }
   end
 
   defp connect_to_core(state) do
@@ -672,6 +774,7 @@ defmodule SecretHub.Agent.Connection do
             channel_ref: Process.monitor(channel),
             heartbeat_timer: schedule_runtime_heartbeat(),
             connection_status: :connected,
+            ssh_capabilities: negotiated_ssh_capabilities(ssh_capabilities(), response),
             retry_count: 0
           })
           |> notify_runtime_accepted(response)
@@ -680,6 +783,7 @@ defmodule SecretHub.Agent.Connection do
           SecretHub.Agent.PKI.TrustBundleManager.sync_bundle()
         end
 
+        if next_state.ssh_capabilities != [], do: Process.send_after(self(), :ssh_inventory, 1000)
         {:noreply, next_state}
 
       {:error, _} ->
@@ -718,7 +822,7 @@ defmodule SecretHub.Agent.Connection do
 
   defp join_payload(state) do
     %{
-      "runtime_capabilities" => ["uds_auth_v2"],
+      "runtime_capabilities" => ["uds_auth_v2" | ssh_capabilities()],
       "agent_id" => state.agent_id,
       "name" => state.agent_id,
       "hostname" => local_hostname(),
@@ -762,6 +866,16 @@ defmodule SecretHub.Agent.Connection do
   defp private_key_der_entry(private_key) when is_tuple(private_key) do
     type = elem(private_key, 0)
     {type, :public_key.der_encode(type, private_key)}
+  end
+
+  # TODO(upstream): gsmlg-dev/phoenix_socket_client#108
+  # Signing acceptance requires upstream status/telemetry redaction before release.
+  defp ssh_channel_request(channel, operation, payload, timeout) do
+    Channel.push(channel, "ssh:" <> operation, payload, timeout)
+  rescue
+    _ -> {:error, :ssh_unavailable}
+  catch
+    _, _ -> {:error, :ssh_unavailable}
   end
 
   defp send_request(state, _from, event, payload) do

@@ -32,3 +32,14 @@ client_auth_bundle_dir = "/var/lib/secrethub-agent/client-auth"
 # This does not replace the Core-issued runtime certificate chain.
 # Relative paths resolve from this file's directory; no shell or ~ expansion.
 # enrollment_ca_path = "enrollment-ca.pem"
+
+# Optional SSH integration. Both capabilities default to disabled.
+# These are separate public-lookup and signing sockets, never the private socket.
+# Create the shared parent directory outside private Agent state before startup.
+ssh_lookup_enabled = false
+ssh_signing_enabled = false
+# Explicit path/group settings are required when enabling each capability.
+# ssh_lookup_socket_path = "/run/secrethub-ssh/lookup.sock"
+# ssh_lookup_socket_group = "secrethub-ssh-lookup"
+# ssh_signing_socket_path = "/run/secrethub-ssh-signing/agent.sock"
+# ssh_signing_socket_group = "secrethub-ssh-signing"

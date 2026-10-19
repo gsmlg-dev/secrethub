@@ -18,6 +18,12 @@ enrollment_req_options =
 
 config :secrethub_agent,
   enabled: true,
+  ssh_lookup_enabled: settings[:ssh_lookup_enabled],
+  ssh_signing_enabled: settings[:ssh_signing_enabled],
+  ssh_lookup_socket_path: settings[:ssh_lookup_socket_path],
+  ssh_signing_socket_path: settings[:ssh_signing_socket_path],
+  ssh_lookup_socket_group: settings[:ssh_lookup_socket_group],
+  ssh_signing_socket_group: settings[:ssh_signing_socket_group],
   launch_profile: :single_operator,
   enabled_features: [:static_secrets, :client_auth_pki],
   client_auth_pki_enabled: true,

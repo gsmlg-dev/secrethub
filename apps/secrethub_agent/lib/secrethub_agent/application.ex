@@ -95,6 +95,7 @@ defmodule SecretHub.Agent.Application do
          ]}
       ] ++
         pki_children ++
+        ssh_children() ++
         [
           # Lease renewer for dynamic secrets
           {SecretHub.Agent.LeaseRenewer,
@@ -136,6 +137,16 @@ defmodule SecretHub.Agent.Application do
     # and UDSServer restart since they depend on the Core connection).
     opts = [strategy: :rest_for_one, name: SecretHub.Agent.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp ssh_children do
+    settings = Application.get_all_env(:secrethub_agent)
+
+    if settings[:ssh_lookup_enabled] || settings[:ssh_signing_enabled] do
+      [{SecretHub.Agent.SSH.Supervisor, settings}]
+    else
+      []
+    end
   end
 
   defp configured_value(key, env_name) do

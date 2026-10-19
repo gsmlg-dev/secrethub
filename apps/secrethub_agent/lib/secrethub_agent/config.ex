@@ -15,6 +15,15 @@ defmodule SecretHub.Agent.Config do
     {:enrollment_ca_path, "SECRET_HUB_AGENT_ENROLLMENT_CA_PATH", false}
   ]
 
+  @ssh_fields [
+    {:ssh_lookup_enabled, "SECRET_HUB_AGENT_SSH_LOOKUP_ENABLED", :boolean},
+    {:ssh_signing_enabled, "SECRET_HUB_AGENT_SSH_SIGNING_ENABLED", :boolean},
+    {:ssh_lookup_socket_path, "SECRET_HUB_AGENT_SSH_LOOKUP_SOCKET_PATH", :path},
+    {:ssh_signing_socket_path, "SECRET_HUB_AGENT_SSH_SIGNING_SOCKET_PATH", :path},
+    {:ssh_lookup_socket_group, "SECRET_HUB_AGENT_SSH_LOOKUP_SOCKET_GROUP", :group},
+    {:ssh_signing_socket_group, "SECRET_HUB_AGENT_SSH_SIGNING_SOCKET_GROUP", :group}
+  ]
+
   @doc "Loads validated settings; environment inputs take precedence over the file."
   def load!(opts \\ []) do
     get_env = Keyword.get(opts, :get_env, &System.get_env/1)
@@ -27,14 +36,27 @@ defmodule SecretHub.Agent.Config do
         path -> read_file!(path, false)
       end
 
-    Enum.map(@fields, fn {key, env_name, required} ->
-      value =
-        RuntimeSecrets.read!(env_name, required: false, get_env: get_env) || file_config[key]
+    settings =
+      Enum.map(@fields, fn {key, env_name, required} ->
+        value =
+          RuntimeSecrets.read!(env_name, required: false, get_env: get_env) || file_config[key]
 
-      if required and is_nil(value), do: raise(ArgumentError, "#{env_name}: missing")
-      if key == :core_url, do: RuntimeConfig.https_url!(env_name, value)
-      {key, value}
-    end)
+        if required and is_nil(value), do: raise(ArgumentError, "#{env_name}: missing")
+        if key == :core_url, do: RuntimeConfig.https_url!(env_name, value)
+        {key, value}
+      end)
+
+    ssh =
+      Enum.map(@ssh_fields, fn {key, env_name, type} ->
+        value =
+          RuntimeSecrets.read!(env_name, required: false, get_env: get_env) || file_config[key]
+
+        {key, ssh_value!(type, value)}
+      end)
+
+    settings = settings ++ ssh
+    validate_ssh!(settings)
+    settings
   end
 
   @doc "Validates a complete TOML file without applying option environment overrides."
@@ -49,6 +71,7 @@ defmodule SecretHub.Agent.Config do
         do: raise(ArgumentError, "#{env_name}: missing")
     end)
 
+    validate_ssh!(Map.to_list(settings))
     :ok
   end
 
@@ -87,21 +110,89 @@ defmodule SecretHub.Agent.Config do
   end
 
   defp validate_file!(config, directory) do
-    names = Enum.map(@fields, fn {key, _, _} -> Atom.to_string(key) end)
+    names = Enum.map(@fields ++ @ssh_fields, fn {key, _, _} -> Atom.to_string(key) end)
 
     unless Enum.all?(Map.keys(config), &(&1 in names)), do: config_error!(:unknown_option)
 
-    Enum.reduce(@fields, %{}, fn {key, env_name, _required}, values ->
-      case Map.fetch(config, Atom.to_string(key)) do
-        {:ok, value} ->
-          validate_value!(env_name, value)
-          resolved = resolve_value!(key, env_name, value, directory)
-          Map.put(values, key, resolved)
+    values =
+      Enum.reduce(@fields, %{}, fn {key, env_name, _required}, values ->
+        case Map.fetch(config, Atom.to_string(key)) do
+          {:ok, value} ->
+            validate_value!(env_name, value)
+            resolved = resolve_value!(key, env_name, value, directory)
+            Map.put(values, key, resolved)
 
-        :error ->
-          values
-      end
+          :error ->
+            values
+        end
+      end)
+
+    Enum.reduce(@ssh_fields, values, fn {key, _env_name, type}, values ->
+      value = ssh_value!(type, config[Atom.to_string(key)])
+
+      resolved =
+        if type == :path and value,
+          do: resolve_value!(key, "SSH socket path", value, directory),
+          else: value
+
+      Map.put(values, key, resolved)
     end)
+  end
+
+  defp ssh_value!(:boolean, nil), do: false
+  defp ssh_value!(:boolean, value) when is_boolean(value), do: value
+  defp ssh_value!(:boolean, "true"), do: true
+  defp ssh_value!(:boolean, "false"), do: false
+  defp ssh_value!(:boolean, _), do: config_error!(:invalid_ssh_boolean)
+  defp ssh_value!(_, nil), do: nil
+
+  defp ssh_value!(:path, value) do
+    validate_value!("SSH socket path", value)
+    value
+  end
+
+  defp ssh_value!(:group, value) when is_binary(value) do
+    if Regex.match?(~r/\A[a-zA-Z_][a-zA-Z0-9_-]{0,63}\z/, value),
+      do: value,
+      else: config_error!(:invalid_ssh_group)
+  end
+
+  defp ssh_value!(_, _), do: config_error!(:invalid_ssh_value)
+
+  defp validate_ssh!(settings) do
+    paths =
+      [
+        settings[:socket_path],
+        settings[:ssh_lookup_socket_path],
+        settings[:ssh_signing_socket_path]
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.map(&Path.expand/1)
+
+    if length(paths) != length(Enum.uniq(paths)), do: config_error!(:ssh_socket_paths_must_differ)
+
+    for path <- [settings[:ssh_lookup_socket_path], settings[:ssh_signing_socket_path]],
+        is_binary(path) do
+      if Path.type(path) != :absolute or byte_size(path) > 100,
+        do: config_error!(:invalid_ssh_socket_path)
+
+      for directory <- [settings[:state_dir], settings[:client_auth_bundle_dir]],
+          is_binary(directory) do
+        if path == Path.expand(directory) or
+             String.starts_with?(path, Path.expand(directory) <> "/"),
+           do: config_error!(:ssh_socket_must_be_outside_private_state)
+      end
+    end
+
+    for {enabled, path, group} <- [
+          {:ssh_lookup_enabled, :ssh_lookup_socket_path, :ssh_lookup_socket_group},
+          {:ssh_signing_enabled, :ssh_signing_socket_path, :ssh_signing_socket_group}
+        ] do
+      if settings[enabled] and (is_nil(settings[path]) or is_nil(settings[group])),
+        do: config_error!(:ssh_socket_path_and_group_required)
+    end
+
+    :ok
   end
 
   defp resolve_value!(:core_url, env_name, value, _directory) do

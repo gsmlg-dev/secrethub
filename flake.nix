@@ -408,6 +408,26 @@
       nixosModules.agent = { config, lib, pkgs, ... }:
         let
           cfg = config.services.secrethub-agent;
+          sshEnabled = cfg.ssh.lookup.enable || cfg.ssh.signing.enable;
+          lookupDir = builtins.dirOf cfg.ssh.lookup.socketPath;
+          signingDir = builtins.dirOf cfg.ssh.signing.socketPath;
+          socketDirectoryValid = path:
+            builtins.match "/run/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*" path != null && builtins.dirOf path != "/run"
+            && !(lib.hasInfix "/../" path) && builtins.stringLength path <= 100
+            && !(lib.hasPrefix "/run/secrethub-agent/" path);
+          sshGroups = lib.optional cfg.ssh.lookup.enable cfg.ssh.lookup.group
+            ++ lib.optional cfg.ssh.signing.enable cfg.ssh.signing.group;
+          publicHelpers = pkgs.symlinkJoin {
+            name = "secrethub-ssh-helpers";
+            paths = [
+              (pkgs.writeShellScriptBin "secrethub-fetch-ssh-keys" ''
+                exec ${cfg.package}/bin/secrethub_agent fetch-ssh-keys --socket ${lib.escapeShellArg cfg.ssh.lookup.socketPath} "$@"
+              '')
+              (pkgs.writeShellScriptBin "secrethub-fetch-ssh-host-keys" ''
+                exec ${cfg.package}/bin/secrethub_agent fetch-ssh-host-keys --socket ${lib.escapeShellArg cfg.ssh.lookup.socketPath} "$@"
+              '')
+            ];
+          };
         in
         {
           options.services.secrethub-agent = {
@@ -451,6 +471,24 @@
               '';
             };
 
+            ssh = {
+              lookup = {
+                enable = lib.mkEnableOption "public SSH key and known-host lookups";
+                socketPath = lib.mkOption { type = lib.types.str; default = "/run/secrethub-ssh/lookup.sock"; };
+                group = lib.mkOption { type = lib.types.str; default = "secrethub-ssh-lookup"; };
+              };
+              signing = {
+                enable = lib.mkEnableOption "SSH agent signing";
+                socketPath = lib.mkOption { type = lib.types.str; default = "/run/secrethub-ssh-signing/agent.sock"; };
+                group = lib.mkOption { type = lib.types.str; default = "secrethub-ssh-signing"; };
+              };
+              sourceUsers = lib.mkOption {
+                type = lib.types.listOf lib.types.str;
+                default = [ ];
+                description = "Existing Unix source accounts receiving enabled SSH socket groups. Core policy still authorizes each request.";
+              };
+            };
+
             agentId = lib.mkOption {
               type = lib.types.nullOr lib.types.str;
               default = null;
@@ -472,7 +510,34 @@
                 assertion = cfg.enrollmentCaPath == null || lib.hasPrefix "/" cfg.enrollmentCaPath;
                 message = "services.secrethub-agent.enrollmentCaPath must be an absolute path.";
               }
+              {
+                assertion = !cfg.ssh.lookup.enable || socketDirectoryValid cfg.ssh.lookup.socketPath;
+                message = "services.secrethub-agent.ssh.lookup.socketPath must use a separate shared directory under /run and fit Linux socket limits.";
+              }
+              {
+                assertion = !cfg.ssh.signing.enable || socketDirectoryValid cfg.ssh.signing.socketPath;
+                message = "services.secrethub-agent.ssh.signing.socketPath must use a separate shared directory under /run and fit Linux socket limits.";
+              }
+              {
+                assertion = !(cfg.ssh.lookup.enable && cfg.ssh.signing.enable) || (lookupDir != signingDir && cfg.ssh.lookup.group != cfg.ssh.signing.group);
+                message = "services.secrethub-agent.ssh lookup and signing directories and groups must differ.";
+              }
+              {
+                assertion = !(builtins.elem "nobody" cfg.ssh.sourceUsers);
+                message = "services.secrethub-agent.ssh.sourceUsers must exclude the public helper account nobody.";
+              }
+              {
+                assertion = lib.all (name: builtins.match "[a-zA-Z_][a-zA-Z0-9_-]{0,63}" name != null) sshGroups;
+                message = "services.secrethub-agent.ssh groups must be valid static Unix group names.";
+              }
             ];
+
+            users.groups = lib.genAttrs sshGroups (_: { });
+            users.users = lib.mkMerge [
+              (lib.genAttrs cfg.ssh.sourceUsers (_: { extraGroups = sshGroups; }))
+              (lib.mkIf cfg.ssh.lookup.enable { nobody.extraGroups = [ cfg.ssh.lookup.group ]; })
+            ];
+            environment.systemPackages = lib.optional cfg.ssh.lookup.enable publicHelpers;
 
             warnings = lib.optional (cfg.agentId != null)
               "services.secrethub-agent.agentId is ignored; remove it because Core assigns the Agent identity.";
@@ -483,6 +548,7 @@
               wants = [ "network-online.target" ]
                 ++ lib.optional config.services.openssh.enable "sshd-keygen.service";
               wantedBy = [ "multi-user.target" ];
+              path = [ pkgs.getent pkgs.coreutils ];
 
               environment = {
                 SECRET_HUB_AGENT_CORE_URL = cfg.coreUrl;
@@ -494,6 +560,14 @@
                 RELEASE_TMP = "/run/secrethub-agent";
                 ERL_CRASH_DUMP = "/dev/null";
                 LANG = "C.UTF-8";
+                SECRET_HUB_AGENT_SSH_LOOKUP_ENABLED = lib.boolToString cfg.ssh.lookup.enable;
+                SECRET_HUB_AGENT_SSH_SIGNING_ENABLED = lib.boolToString cfg.ssh.signing.enable;
+              } // lib.optionalAttrs cfg.ssh.lookup.enable {
+                SECRET_HUB_AGENT_SSH_LOOKUP_SOCKET_PATH = cfg.ssh.lookup.socketPath;
+                SECRET_HUB_AGENT_SSH_LOOKUP_SOCKET_GROUP = cfg.ssh.lookup.group;
+              } // lib.optionalAttrs cfg.ssh.signing.enable {
+                SECRET_HUB_AGENT_SSH_SIGNING_SOCKET_PATH = cfg.ssh.signing.socketPath;
+                SECRET_HUB_AGENT_SSH_SIGNING_SOCKET_GROUP = cfg.ssh.signing.group;
               } // lib.optionalAttrs (cfg.enrollmentCaPath != null) {
                 SECRET_HUB_AGENT_ENROLLMENT_CA_PATH = "%d/enrollment-ca";
               };
@@ -505,7 +579,11 @@
                 DynamicUser = true;
                 StateDirectory = "secrethub-agent";
                 StateDirectoryMode = "0700";
-                RuntimeDirectory = "secrethub-agent";
+                SupplementaryGroups = sshGroups;
+                RuntimeDirectory = if sshEnabled then [ "secrethub-agent" ]
+                  ++ lib.optional cfg.ssh.lookup.enable (lib.removePrefix "/run/" lookupDir)
+                  ++ lib.optional cfg.ssh.signing.enable (lib.removePrefix "/run/" signingDir)
+                  else "secrethub-agent";
                 RuntimeDirectoryMode = "0700";
                 WorkingDirectory = "/var/lib/secrethub-agent";
                 UMask = "0077";
@@ -515,6 +593,12 @@
 
               preStart = ''
                 install -d -m 0700 "$SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR"
+              '' + lib.optionalString cfg.ssh.lookup.enable ''
+                chgrp ${lib.escapeShellArg cfg.ssh.lookup.group} ${lib.escapeShellArg lookupDir}
+                chmod 0750 ${lib.escapeShellArg lookupDir}
+              '' + lib.optionalString cfg.ssh.signing.enable ''
+                chgrp ${lib.escapeShellArg cfg.ssh.signing.group} ${lib.escapeShellArg signingDir}
+                chmod 0750 ${lib.escapeShellArg signingDir}
               '';
 
               script = ''

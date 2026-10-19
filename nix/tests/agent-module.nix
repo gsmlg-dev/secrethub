@@ -22,11 +22,36 @@ let
     hostKeyPath = "/run/keys/ssh-host-key";
     enrollmentCaPath = "/run/keys/enrollment-ca.pem";
   })).config.systemd.services.secrethub-agent;
+  ssh = (evaluate (settings // {
+    ssh.lookup.enable = true;
+    ssh.signing.enable = true;
+    ssh.sourceUsers = [ "deploy" ];
+  })).config;
+  sshService = ssh.systemd.services.secrethub-agent;
   agentFailures = config:
     lib.filter (item: !item.assertion && lib.hasPrefix "services.secrethub-agent." item.message) config.assertions;
   rejected = overrides:
     agentFailures (evaluate (settings // overrides)).config != [ ];
   checks = [
+    (lib.assertMsg (lib.any (package: lib.hasInfix "getent" (toString package)) sshService.path)
+      "The hardened Agent must retain its NSS lookup executable")
+    (lib.assertMsg (rejected { ssh.lookup.enable = true; ssh.sourceUsers = [ "nobody" ]; })
+      "The public helper account must not receive source signing group membership")
+    (lib.assertMsg (sshService.serviceConfig.DynamicUser && sshService.serviceConfig.UMask == "0077" && sshService.serviceConfig.StateDirectoryMode == "0700")
+      "SSH must preserve DynamicUser and private persistent state")
+    (lib.assertMsg (sshService.environment.SECRET_HUB_AGENT_SSH_LOOKUP_ENABLED == "true" && sshService.environment.SECRET_HUB_AGENT_SSH_SIGNING_ENABLED == "true")
+      "SSH capabilities must be explicitly enabled")
+    (lib.assertMsg (builtins.elem "secrethub-ssh-lookup" ssh.users.users.nobody.extraGroups && !(builtins.elem "secrethub-ssh-signing" ssh.users.users.nobody.extraGroups))
+      "Nobody must only receive public lookup group access")
+    (lib.assertMsg (builtins.elem "secrethub-ssh-lookup" ssh.users.users.deploy.extraGroups && builtins.elem "secrethub-ssh-signing" ssh.users.users.deploy.extraGroups)
+      "Source accounts need both signing and public known-host lookup access")
+    (lib.assertMsg (builtins.elem "secrethub-ssh" sshService.serviceConfig.RuntimeDirectory && builtins.elem "secrethub-ssh-signing" sshService.serviceConfig.RuntimeDirectory)
+      "Shared SSH directories must be separate from private Agent runtime state")
+    (lib.assertMsg (lib.hasInfix "0750" sshService.preStart && lib.hasInfix "chgrp" sshService.preStart)
+      "SSH parent directories must be traversable but not writable by clients")
+    (lib.assertMsg (rejected { ssh.lookup.enable = true; ssh.signing.enable = true; ssh.signing.socketPath = "/run/secrethub-ssh/signing.sock"; })
+      "Lookup and signing parent directories must differ")
+
     (lib.assertMsg ((service.environment.SECRET_HUB_AGENT_CORE_URL or null) == settings.coreUrl)
       "The Agent service must pass the current HTTPS enrollment input")
     (lib.assertMsg (!(service.environment ? AGENT_ID) && !(service.environment ? CORE_URL))
