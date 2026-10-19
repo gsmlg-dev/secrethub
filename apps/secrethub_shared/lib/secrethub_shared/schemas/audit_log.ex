@@ -385,6 +385,13 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "policy.updated",
       "policy.deleted",
       "policy.bound",
+      # SSH management and runtime views (no keys or signing payloads)
+      "ssh.configuration",
+      "ssh.identities",
+      "ssh.authorize_sign",
+      "ssh.authorized_keys",
+      "ssh.known_hosts",
+      "ssh.inventory",
       # System events
       "system.unsealed",
       "system.sealed",

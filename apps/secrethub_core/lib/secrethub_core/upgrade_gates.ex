@@ -65,7 +65,10 @@ defmodule SecretHub.Core.UpgradeGates do
       when is_map(identity) and is_list(capabilities) do
     if Enum.all?(capabilities, &is_binary/1) and length(capabilities) <= 32 do
       normalized =
-        capabilities |> Enum.filter(&(&1 == "uds_auth_v2")) |> Enum.uniq() |> Enum.sort()
+        capabilities
+        |> Enum.filter(&(&1 in ["uds_auth_v2", "ssh_lookup_v1", "ssh_signing_v1"]))
+        |> Enum.uniq()
+        |> Enum.sort()
 
       Repo.transaction(fn ->
         SecretHub.Core.AuthorizationVersions.lock_global()
