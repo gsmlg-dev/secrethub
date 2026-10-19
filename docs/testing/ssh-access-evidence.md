@@ -1,5 +1,55 @@
 # SSH access implementation evidence
 
+## Current qualification (2026-10-20)
+
+**Verdict: confidentiality and Linux x86_64 runtime qualification PASS.** The
+broader plan still has lint debt and unexecuted target-runtime checks below;
+these results do not establish deployment or aarch64/NixOS runtime acceptance.
+
+The Agent now requires `phoenix_socket_client ~> 0.8.7`, consuming the published
+fix for [upstream #108](https://github.com/gsmlg-dev/phoenix_socket_client/issues/108).
+The lockfile resolves `http_web_socket`, `http_core` and `http_runtime` 0.21.14,
+including the upstream transport confidentiality fix. No dependency internals,
+logger filters or alternate transports were patched locally.
+
+| Check | Current result |
+| --- | --- |
+| Original redaction diagnostic before update | RED: exit 1 with 0.8.5; both status and telemetry exposed the sentinel. `/tmp/secrethub-ssh-release-redaction-before.log`. |
+| Same diagnostic after update | PASS: exit 0, both exposure flags false. `/tmp/secrethub-ssh-release-redaction-after.log`. |
+| Normal application-started scoped suite | PASS: 98 tests, 0 failures, seed `364646`. `/tmp/secrethub-ssh-release-normal-tests.log`. |
+| Core-only scoped suite | PASS: 98 tests, 0 failures, seed `180419`. `/tmp/secrethub-ssh-release-core-only-tests.log`. |
+| Production compile / Agent assembly | PASS: `mix compile --warnings-as-errors`, rebuilt native Agent and own-app version verification. |
+| Minimal-environment packaged helpers | RED/GREEN: removing the consumer's supplied PATH reproduced `dirname: command not found`; the release assembly now supplies trusted system utility paths for only the two public SSH commands before launcher utilities run. Both helpers, lookup reasons, peer checks and error exits pass with `env -i` and no supplied PATH. `/tmp/secrethub-ssh-release-minimal-env-before.log`, `/tmp/secrethub-ssh-release-minimal-env-after.log`. |
+| Release packaging regressions | PASS: 10 tests, `/tmp/secrethub-ssh-release-packaging-fixed.log`. |
+| Changed helper type analysis | PASS: helper and its SSH dependencies, 0 Dialyzer warnings. `/tmp/secrethub-ssh-release-helper-dialyzer.log`. This is not an umbrella-wide Dialyzer claim. |
+| Actual Core / Agent / OpenSSH | PASS: 1 test, 0 failures, seed `291716`, 34.5 seconds. `/tmp/secrethub-ssh-release-openssh-final.log`. |
+
+Both source users successfully authenticate with the real mTLS runtime and the
+packaged helpers. The same run verifies wrong-user/reverse denial, group removal
+and batch revocation, explicit deny override, wrong host keys, alternate local
+authorized-key files and user CAs, cross-UID signing isolation and inaccessible
+sockets. The nobody client uses its actual primary group and supplementary
+fixture membership, as required by OpenSSH's subprocess privilege handling.
+Test setup reuses already running PubSub/Endpoint services while retaining the
+original assertions in both startup modes.
+
+Native qualification artifact:
+`/tmp/secrethub-ssh-release-agent/secrethub_agent-1.0.0-rc.18.tar.gz`, SHA256
+`fcdaae3951a0de3e48a4f2a0505761a94b05ad17775a6b9a0c009b62c291132c`.
+This is a local prepublication build; the release workflow assigns the next
+version and builds published archives from its immutable release commit.
+Independent review found no blockers in the dependency minimum, helper-only
+launcher environment or application-started test setup. Existing 18-file lint
+findings and unexecuted target-runtime checks remain recorded below. Test-only
+channel teardown may log an unregister error after ConnectionManager stops;
+the runtime assertions pass. No live services or databases were changed.
+
+## Historical qualification (2026-10-19)
+
+The following sections preserve the original results and blockers as recorded
+before the current update; the upstream and real-login status above supersedes
+their historical verdict.
+
 Date: 2026-10-19. Branch: `codex/ssh-access`, isolated worktree `.trees/ssh-access`,
 based on design commit `396b744a0250c37fa3a5c2fc0494186046115765`.
 

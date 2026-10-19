@@ -1,11 +1,12 @@
 # Managed SSH access
 
-**Implementation qualification is incomplete.** Signing confidentiality and final
-SSH acceptance are blocked by
-[phoenix_socket_client#108](https://github.com/gsmlg-dev/phoenix_socket_client/issues/108).
-Do not treat these installation examples as deployment approval. SSH remains
-disabled by default; the dependency fix and a fresh complete qualification are
-required before signing is accepted.
+SSH signing and public lookups have passed native Linux x86_64 qualification
+with `phoenix_socket_client` 0.8.7 and `http_web_socket` 0.21.14, including real
+Core/Agent/OpenSSH login and revocation. These fixed dependency versions are
+required for private-response confidentiality. SSH remains disabled by default.
+See the [qualification record](../testing/ssh-access-evidence.md) for exact
+evidence, remaining lint debt and unexecuted target-runtime checks. Installation
+examples do not establish deployment acceptance.
 
 SecretHub manages source signing identities, destination authorized keys and host
 trust from one directed policy. A rule binds a source machine/group **and Unix

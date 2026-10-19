@@ -8,14 +8,16 @@
 
 **Tech Stack:** Elixir/OTP 28, Ecto/PostgreSQL, Phoenix LiveView/DuskMoon, OpenSSH, Mix releases and NixOS.
 
-**Execution status (2026-10-19): INCOMPLETE / BLOCKED_UPSTREAM.** Local code is
-committed in reviewable chunks; consolidated source checks are **98 tests / 0
-failures**, scoped format and incremental compilation pass, and packaged public
-helpers pass. Signing confidentiality is blocked by
-[phoenix_socket_client#108](https://github.com/gsmlg-dev/phoenix_socket_client/issues/108).
-No workaround, push, merge or deployment. Full real SSH login qualification,
-remaining scoped lint findings and target architecture/runtime checks are still
-open. See [exact evidence](../../testing/ssh-access-evidence.md).
+**Execution status (2026-10-20): native Linux x86_64 runtime qualified.** The
+published upstream confidentiality fix is consumed through
+`phoenix_socket_client ~> 0.8.7` and the fixed 0.21.14 transport. The original
+sentinel diagnostic now passes; both application-started and Core-only scoped
+suites pass **98 tests / 0 failures**. Packaged public helpers pass without a
+supplied PATH, and actual two-user SSH login, isolation, strict trust and batch
+revocation pass. The implementation was merged into main; the owner requested
+the next prerelease. Remaining scoped lint findings and target runtime checks
+stay open. No deployment was performed. See
+[exact evidence](../../testing/ssh-access-evidence.md).
 
 Historical first-start baseline/missing-module RED transcripts are not preserved
 here; unchecked provenance steps below are not assertions of current failures.
@@ -29,7 +31,8 @@ here; unchecked provenance steps below are not assertions of current failures.
 
 ## Execution boundaries
 
-Worktree: `/home/gao/Workspace/gsmlg-dev/secrethub/.trees/ssh-access`, branch `codex/ssh-access`.
+Original worktree: `/home/gao/Workspace/gsmlg-dev/secrethub/.trees/ssh-access`, branch `codex/ssh-access`.
+Release qualification: `/home/gao/Workspace/gsmlg-dev/secrethub/.trees/ssh-release`, branch `codex/ssh-release`.
 Only the approved SSH scope is editable. Existing origin handling and adjacent
 changes are excluded from inspection, diff, formatting, testing and modification.
 Never run an umbrella-wide formatter or test command. Preserve other work.
@@ -205,11 +208,11 @@ release packaging tests, and SSH documentation. Add an isolated OpenSSH fixture.
   DynamicUser/private-state boundaries and root-owned executable profiles.
 - [x] Build a standalone Agent release and run both helper commands as an
   unprivileged/nobody consumer, with no private config, cookie or release writes.
-- [ ] Test real ssh-add list/sign and actual SSH login against isolated sshd using
+- [x] Test real ssh-add list/sign and actual SSH login against isolated sshd using
   current Core/Agent runtime and two source users/target accounts where available.
-- [ ] Prove reverse/wrong-user/host-key/alternate CA/local-file denials and batch
+- [x] Prove reverse/wrong-user/host-key/alternate CA/local-file denials and batch
   revocation. Do not use a fake server as evidence of real Core acceptance.
-- [ ] Qualify Linux amd64 locally; run aarch64/Nix checks when available and record
+- [x] Qualify Linux amd64 locally; run aarch64/Nix checks when available and record
   explicit BLOCKED/NOT RUN evidence where target execution is unavailable.
 - [x] Run scoped formatting, compile and the complete in-scope test set once after integration.
 - [ ] Perform independent specification review, then quality/security review;
@@ -219,15 +222,16 @@ release packaging tests, and SSH documentation. Add an isolated OpenSSH fixture.
 
 ### Remaining acceptance work
 
-- [ ] Consume the upstream confidentiality fix and make the preserved sentinel
+- [x] Consume the upstream confidentiality fix and make the preserved sentinel
   diagnostic pass; do not patch dependency internals locally.
 - [ ] Resolve in-scope findings from the explicit 18-file strict Credo run; keep
   pre-existing integration findings separate from new SSH code.
-- [ ] Rebuild the matching release and rerun complete actual login, direction,
+- [x] Rebuild the matching release and rerun complete actual login, direction,
   wrong-user/host-key, alternate local-file/CA and batch-revocation scenarios.
 - [ ] Qualify aarch64 and a running NixOS service when target environments exist.
 
 Fresh specification and quality/security reviews were completed, with follow-up
 reviews confirming the corrected helper exits, host scope, socket integrity and
-delayed-response checks. Both preserve overall acceptance as incomplete because
-upstream #108 remains open.
+delayed-response checks. Upstream #108 is now fixed and the consumed update,
+minimal-environment launcher repair and test setup were independently reviewed.
+Broader lint and unavailable target-runtime checks remain incomplete.
