@@ -4,7 +4,7 @@ defmodule SecretHub.Human.MixProject do
   def project do
     [
       app: :secrethub_human,
-      version: "1.0.0-rc.17",
+      version: "1.0.0-rc.18",
       build_path: "../../_build",
       config_path: "../../config/config.exs",
       deps_path: "../../deps",
