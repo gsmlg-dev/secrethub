@@ -685,6 +685,10 @@ defmodule SecretHub.SSH.OpenSSHQualification do
         do: System.cmd(hd(args), tl(args), stderr_to_stdout: true),
         else: sudo_as(source, group, args)
 
+    if code != expected do
+      IO.puts("failure sshd log: " <> sudo!("cat", [fixture <> "/sshd.log"]))
+    end
+
     assert code == expected,
            "SSH source=#{source} target=#{target}: expected #{expected}, got #{code}: #{output}"
 
@@ -692,7 +696,9 @@ defmodule SecretHub.SSH.OpenSSHQualification do
     output
   end
 
-  defp sudo_as(user, group, args),
+  # OpenSSH drops subprocess privileges to the account's passwd primary group.
+  # The fixture group is supplementary; forcing it as primary prevents that drop.
+  defp sudo_as(user, _group, args),
     do:
       System.cmd(
         "sudo",
@@ -700,8 +706,6 @@ defmodule SecretHub.SSH.OpenSSHQualification do
           "-n",
           "-u",
           user,
-          "-g",
-          group,
           "env",
           "-i",
           "PATH=/run/current-system/sw/bin",

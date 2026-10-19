@@ -12,7 +12,11 @@ defmodule SecretHub.Web.SSHRuntimeChannelTest do
 
   setup tags do
     RuntimeDatabaseFixture.setup(tags)
-    start_supervised!({Phoenix.PubSub, name: SecretHub.Web.PubSub})
+
+    unless Process.whereis(SecretHub.Web.PubSub) do
+      start_supervised!({Phoenix.PubSub, name: SecretHub.Web.PubSub})
+    end
+
     start_supervised!({ConnectionManager, name: ConnectionManager})
     start_supervised!({SealState, repo: RuntimeDatabaseFixture.VaultRepo})
     await_vault()

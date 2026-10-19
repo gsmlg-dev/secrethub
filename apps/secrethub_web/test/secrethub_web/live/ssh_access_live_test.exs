@@ -15,8 +15,15 @@ defmodule SecretHub.Web.SSHAccessLiveTest do
 
   setup tags do
     RuntimeDatabaseFixture.setup(tags, default_repo: true)
-    start_supervised!({Phoenix.PubSub, name: SecretHub.Web.PubSub})
-    start_supervised!(SecretHub.Web.Endpoint)
+
+    unless Process.whereis(SecretHub.Web.PubSub) do
+      start_supervised!({Phoenix.PubSub, name: SecretHub.Web.PubSub})
+    end
+
+    unless Process.whereis(SecretHub.Web.Endpoint) do
+      start_supervised!(SecretHub.Web.Endpoint)
+    end
+
     start_supervised!(SealState)
     await_vault()
     {:ok, shares} = SealState.initialize(3, 2)

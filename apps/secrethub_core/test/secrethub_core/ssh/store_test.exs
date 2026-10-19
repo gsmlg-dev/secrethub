@@ -402,7 +402,10 @@ defmodule SecretHub.Core.SSH.StoreTest do
 
   @tag :reports
   test "reported OS prerequisites are advisory, public and revisioned", ctx do
-    start_supervised!({Phoenix.PubSub, name: SecretHub.Web.PubSub})
+    unless Process.whereis(SecretHub.Web.PubSub) do
+      start_supervised!({Phoenix.PubSub, name: SecretHub.Web.PubSub})
+    end
+
     Phoenix.PubSub.subscribe(SecretHub.Web.PubSub, "ssh:policy")
     Repo.update!(Ecto.Changeset.change(ctx.source, runtime_capabilities: ["ssh_signing_v1"]))
 
