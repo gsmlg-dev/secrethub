@@ -28,7 +28,7 @@ defmodule SecretHub.Agent.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:phoenix_socket_client, "~> 0.7"},
+      {:phoenix_socket_client, "~> 0.8.7"},
       {:websocket_client, "~> 1.5"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},

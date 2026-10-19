@@ -868,8 +868,6 @@ defmodule SecretHub.Agent.Connection do
     {type, :public_key.der_encode(type, private_key)}
   end
 
-  # TODO(upstream): gsmlg-dev/phoenix_socket_client#108
-  # Signing acceptance requires upstream status/telemetry redaction before release.
   defp ssh_channel_request(channel, operation, payload, timeout) do
     Channel.push(channel, "ssh:" <> operation, payload, timeout)
   rescue
