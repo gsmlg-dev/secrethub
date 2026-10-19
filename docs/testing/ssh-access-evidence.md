@@ -5,8 +5,19 @@ based on design commit `396b744a0250c37fa3a5c2fc0494186046115765`.
 
 **Verdict: INCOMPLETE / BLOCKED_UPSTREAM.** This is a local implementation and
 qualification record, not deployment or release acceptance. SSH stays opt-in and
-disabled by default. No changes were published, merged or applied to running
-Core, Agent or system sshd services.
+disabled by default. During qualification, no changes were published, merged or
+applied to running Core, Agent or system sshd services.
+
+## Main integration and release gate
+
+On 2026-10-19, the implementation through `d5ed92d` was fast-forwarded into
+`main`, and the clean `.trees/ssh-access` worktree and branch were removed.
+Upstream #108 remains open; GitHub and Hex both still publish 0.8.5 as the latest
+dependency version. Release publication remains **BLOCKED_UPSTREAM** under the
+repository blocker policy. No release workflow was dispatched or version bumped;
+the latest published SecretHub version is still `v1.0.0-rc.18` and predates this
+integration. The qualification results below have not been rerun during this
+merge and do not establish release acceptance.
 
 ## Blocking dependency
 
@@ -142,7 +153,8 @@ Both reviews preserve overall acceptance as blocked by upstream #108.
 
 Local implementation commits: `4aa2f7a` (shared keys/profiles), `1ca5cf8` (Core
 policy/storage), `311607b` (Agent/configuration/Nix), `ba87d58` (management and
-trusted channel). None were pushed or merged into the original checkout.
+trusted channel). These were local at qualification time and were subsequently
+included in the main integration described above.
 
 The management checkbox workaround is tracked by
 [phoenix-duskmoon-ui#205](https://github.com/duskmoon-dev/phoenix-duskmoon-ui/issues/205),
