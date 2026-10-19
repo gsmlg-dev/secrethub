@@ -161,7 +161,13 @@ printf '{application, %s, [{vsn, "1.0.0-rc.15"}]}.\\n' "$2" > "$target/lib/$2-1.
 
     def test_embedded_shell_scripts_parse(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
-        blocks = re.findall(r"        run: \|\n((?:          .*\n|\n)+)", workflow)
+        blocks = []
+        for step in re.split(r"(?m)^      - ", workflow)[1:]:
+            shell = re.search(r"(?m)^        shell: (.+)$", step)
+            if shell and shell.group(1).strip() not in {"bash", "sh"}:
+                continue
+            blocks.extend(re.findall(r"        run: \|\n((?:          .*\n|\n)+)", step))
+        self.assertTrue(blocks, "No Bash or default Unix run blocks were found")
         for block in blocks:
             script = "\n".join(line[10:] for line in block.splitlines())
             script = re.sub(r"\$\{\{.*?\}\}", "fixture", script)
