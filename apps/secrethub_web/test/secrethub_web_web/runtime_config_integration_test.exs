@@ -70,7 +70,7 @@ defmodule SecretHub.Web.RuntimeConfigIntegrationTest do
     assert output =~ "SECRET_HUB_ADMIN_ENDPOINT_SERVER: unsupported_duplicate_authentication"
   end
 
-  test "the separate Agent mTLS listener requires peer certificates" do
+  test "the Agent HTTPS listener allows enrollment without a peer certificate" do
     %{agent_endpoint: endpoint} = read_runtime_config(agent_endpoint_env())
     https = endpoint[:https]
     transport = https[:thousand_island_options][:transport_options]
@@ -80,7 +80,7 @@ defmodule SecretHub.Web.RuntimeConfigIntegrationTest do
     assert https[:certfile] == "/run/secrethub/agent/server.pem"
     assert https[:keyfile] == "/run/secrethub/agent/server-key.pem"
     assert transport[:cacertfile] == ~c"/run/secrethub/agent/ca.pem"
-    assert transport[:fail_if_no_peer_cert] == true
+    assert transport[:fail_if_no_peer_cert] == false
     assert transport[:verify] == :verify_peer
     assert transport[:versions] == [:"tlsv1.2", :"tlsv1.3"]
   end
@@ -99,11 +99,9 @@ defmodule SecretHub.Web.RuntimeConfigIntegrationTest do
     end
   end
 
-  test "management, machine and Agent listeners cannot reuse each other's ports" do
+  test "management and Agent listeners cannot reuse each other's ports" do
     for overrides <- [
-          [{"SECRET_HUB_MACHINE_PORT", "4664"}],
-          [{"SECRET_HUB_AGENT_ENDPOINT_PORT", "4664"}],
-          [{"SECRET_HUB_MACHINE_PORT", "4665"}]
+          [{"SECRET_HUB_AGENT_ENDPOINT_PORT", "4664"}]
         ] do
       {output, status} = run_runtime_config(overrides)
       assert status != 0

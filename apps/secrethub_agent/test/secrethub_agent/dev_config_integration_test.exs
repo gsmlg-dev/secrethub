@@ -9,36 +9,39 @@ defmodule SecretHub.Agent.DevConfigIntegrationTest do
   config = Config.Reader.read!(#{inspect(@dev_config)}, env: :dev)
   web = Keyword.fetch!(config, :secrethub_web)
   payload = %{
-    agent: Keyword.fetch!(config, :secrethub_agent),
+    agent:
+      config
+      |> Keyword.fetch!(:secrethub_agent)
+      |> Keyword.take([:enabled, :core_url, :state_dir, :socket_path]),
     endpoint: Keyword.take(Keyword.fetch!(web, SecretHub.Web.Endpoint), [:http]),
     trusted_endpoint: Keyword.get(web, :agent_trusted_endpoint)
   }
   IO.puts(#{inspect(@result_prefix)} <> Base.encode64(:erlang.term_to_binary(payload)))
   """
 
-  test "default enrollment URL matches the HTTP Core listener without enabling Agent" do
+  test "default enrollment URL uses the Agent HTTPS listener without enabling Agent" do
     %{agent: agent, endpoint: endpoint, trusted_endpoint: trusted_endpoint} = read_dev_config()
 
     assert endpoint[:http][:port] == 4664
-    assert agent[:core_url] == "http://localhost:4664"
+    assert agent[:core_url] == "https://localhost:4665"
     assert agent[:enabled] == false
     assert agent[:socket_path] == "/tmp/secrethub_dev_agent.sock"
     assert trusted_endpoint == "wss://localhost:4665/agent/socket/websocket"
   end
 
-  test "PORT takes precedence over PHX_PORT for Core and Agent enrollment" do
+  test "PORT takes precedence over PHX_PORT for Core without changing Agent enrollment" do
     %{agent: agent, endpoint: endpoint} =
       read_dev_config([{"PORT", "4774"}, {"PHX_PORT", "4884"}])
 
     assert endpoint[:http][:port] == 4774
-    assert agent[:core_url] == "http://localhost:4774"
+    assert agent[:core_url] == "https://localhost:4665"
   end
 
-  test "PHX_PORT configures Core and Agent enrollment when PORT is absent" do
+  test "PHX_PORT configures Core without changing Agent enrollment when PORT is absent" do
     %{agent: agent, endpoint: endpoint} = read_dev_config([{"PHX_PORT", "4884"}])
 
     assert endpoint[:http][:port] == 4884
-    assert agent[:core_url] == "http://localhost:4884"
+    assert agent[:core_url] == "https://localhost:4665"
   end
 
   test "an explicit Agent enrollment URL overrides the local Core URL" do

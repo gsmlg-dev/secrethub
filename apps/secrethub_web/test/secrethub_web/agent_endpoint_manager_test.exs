@@ -61,7 +61,7 @@ defmodule SecretHub.Web.AgentEndpointManagerTest do
     assert config[:check_origin] == ["https://configured-origin.example.test"]
     transport_options = get_in(config, [:https, :thousand_island_options, :transport_options])
     assert transport_options[:verify] == :verify_peer
-    assert transport_options[:fail_if_no_peer_cert]
+    assert transport_options[:fail_if_no_peer_cert] == false
   end
 
   test "refreshes the dev server certificate when the advertised host changes" do

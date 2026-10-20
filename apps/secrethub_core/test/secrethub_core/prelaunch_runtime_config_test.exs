@@ -50,7 +50,7 @@ defmodule SecretHub.Core.PrelaunchRuntimeConfigTest do
     assert endpoint[:check_origin] == ["https://admin.example.test"]
     assert endpoint[:https] == nil
     assert config[:secrethub_human][:enabled] == false
-    assert config[:secrethub_web][SecretHub.Web.MachineEndpoint][:server]
+    assert config[:secrethub_web][SecretHub.Web.MachineEndpoint][:server] == false
   end
 
   test "additional public origins are explicit, normalized and deduplicated" do
@@ -116,8 +116,6 @@ defmodule SecretHub.Core.PrelaunchRuntimeConfigTest do
     end
 
     System.delete_env("SECRET_HUB_MANAGEMENT_BIND_IP")
-    System.put_env("SECRET_HUB_MACHINE_PORT", "4664")
-    assert_raise ArgumentError, "listeners: conflicting_ports", fn -> read("core") end
   end
 
   test "Agent configuration needs no Core DB or Human secrets" do
