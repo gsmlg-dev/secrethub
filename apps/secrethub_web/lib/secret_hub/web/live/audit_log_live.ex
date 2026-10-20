@@ -1,552 +1,618 @@
 defmodule SecretHub.Web.AuditLogLive do
-  @moduledoc """
-  LiveView for audit log viewing with advanced filtering and search capabilities.
-  """
-
+  @moduledoc "Persisted application access evidence and reporting coverage."
   use SecretHub.Web, :live_view
-  require Logger
+  import Ecto.Query, only: [from: 2]
 
-  alias SecretHub.Core.Audit
+  alias SecretHub.Core.{AccessAudit, Repo}
+  alias SecretHub.Shared.Schemas.AuditLog
+
+  @filter_keys ~w(application_id agent_id secret_path outcome reason_code from to limit cursor)
+  @counts [
+    requests: "Requests",
+    success: "Success",
+    denied: "Denied",
+    error: "Error",
+    incomplete: "Incomplete",
+    attempts: "Attempts",
+    unverified: "Unverified"
+  ]
+  @refresh_ms 15_000
 
   @impl true
   def mount(_params, _session, socket) do
-    audit_logs = fetch_audit_logs()
-    event_types = fetch_event_types()
+    if connected?(socket), do: Process.send_after(self(), :refresh_audit, @refresh_ms)
 
+    {:ok,
+     assign(socket,
+       filters: %{},
+       summary: nil,
+       requests: [],
+       next_cursor: nil,
+       applications: [],
+       secrets: [],
+       reasons: [],
+       buckets: [],
+       timeline: [],
+       selected_request: nil,
+       selected_namespace: nil,
+       query_error: nil,
+       timeline_error: nil,
+       health: nil,
+       health_error: nil,
+       legacy: [],
+       legacy_error: nil,
+       loaded: false,
+       refreshed_at: nil,
+       count_labels: @counts
+     )}
+  end
+
+  @impl true
+  def handle_params(params, _uri, socket) do
     socket =
-      socket
-      |> assign(:audit_logs, audit_logs)
-      |> assign(:event_types, event_types)
-      |> assign(:selected_event, nil)
-      |> assign(:loading, false)
-      |> assign(:filters, %{
-        event_type: "all",
-        agent_id: "",
-        secret_path: "",
-        date_from: "",
-        date_to: "",
-        access_granted: "all"
-      })
-      |> assign(:search_query, "")
-      |> assign(:pagination, %{
-        page: 1,
-        per_page: 50,
-        total_count: 0,
-        total_pages: 0
-      })
+      assign(socket,
+        filters: filters(params),
+        selected_request: text_or_nil(params["id"]),
+        selected_namespace: text_or_nil(params["namespace"])
+      )
 
-    {:ok, socket}
+    {:noreply, load(socket)}
   end
 
   @impl true
-  def handle_params(%{"id" => event_id}, _url, socket) do
-    event = Enum.find(socket.assigns.audit_logs, &(&1.id == event_id))
-    socket = assign(socket, :selected_event, event)
-    {:noreply, socket}
+  def handle_event("filter_logs", %{"filters" => params}, socket) do
+    params =
+      socket.assigns.filters
+      |> Map.merge(Map.take(params, @filter_keys))
+      |> Map.delete("cursor")
+      |> nonempty()
+
+    {:noreply, push_patch(socket, to: audit_url(params))}
   end
 
-  def handle_params(_params, _url, socket) do
-    socket = assign(socket, :selected_event, nil)
-    {:noreply, socket}
-  end
+  def handle_event("clear_filters", _, socket),
+    do: {:noreply, push_patch(socket, to: "/admin/audit")}
+
+  def handle_event("refresh", _, socket), do: {:noreply, load(socket)}
 
   @impl true
-  def handle_event("filter_logs", %{"filters" => filter_params}, socket) do
-    filters = Map.merge(socket.assigns.filters, filter_params)
-
-    audit_logs = fetch_filtered_audit_logs(filters)
-    pagination = calculate_pagination(audit_logs, socket.assigns.pagination.page)
-
-    socket =
-      socket
-      |> assign(:audit_logs, audit_logs)
-      |> assign(:filters, filters)
-      |> assign(:pagination, pagination)
-
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_event("search_logs", %{"query" => query}, socket) do
-    socket = assign(socket, :search_query, query)
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_event("export_logs", _params, socket) do
-    Logger.info("Exporting audit logs with filters: #{inspect(socket.assigns.filters)}")
-
-    filters = build_audit_filters(socket.assigns.filters)
-    csv_content = Audit.export_to_csv(filters)
-
-    # Return CSV as download
-    socket =
-      socket
-      |> put_flash(:info, "Audit logs exported successfully")
-      |> push_event("download", %{
-        filename:
-          "audit_logs_#{DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_unix()}.csv",
-        content: csv_content
-      })
-
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_event("clear_filters", _params, socket) do
-    filters = %{
-      event_type: "all",
-      agent_id: "",
-      secret_path: "",
-      date_from: "",
-      date_to: "",
-      access_granted: "all"
-    }
-
-    audit_logs = fetch_audit_logs()
-    pagination = calculate_pagination(audit_logs, 1)
-
-    socket =
-      socket
-      |> assign(:audit_logs, audit_logs)
-      |> assign(:filters, filters)
-      |> assign(:search_query, "")
-      |> assign(:pagination, pagination)
-
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_event("page_change", %{"page" => page}, socket) do
-    page = String.to_integer(page)
-
-    audit_logs = fetch_filtered_audit_logs(socket.assigns.filters)
-    pagination = calculate_pagination(audit_logs, page)
-
-    socket =
-      socket
-      |> assign(:pagination, pagination)
-
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_event("select_event", %{"id" => event_id}, socket) do
-    _event = Enum.find(socket.assigns.audit_logs, &(&1.id == event_id))
-    socket = push_patch(socket, to: "/admin/audit/#{event_id}")
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_info({:close_event_details}, socket) do
-    socket =
-      socket
-      |> assign(:selected_event, nil)
-      |> push_patch(to: "/admin/audit")
-
-    {:noreply, socket}
+  def handle_info(:refresh_audit, socket) do
+    Process.send_after(self(), :refresh_audit, @refresh_ms)
+    {:noreply, load(socket)}
   end
 
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="space-y-6">
-      <!-- Header -->
-      <div class="flex justify-between items-center">
+    <div class="space-y-4 text-on-surface" aria-busy={!@loaded}>
+      <header class="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 class="text-2xl font-bold text-on-surface">Audit Logs</h2>
+          <h1 class="text-3xl font-bold">Application access audit</h1>
           <p class="text-sm text-on-surface-variant">
-            Monitor and analyze all secret access attempts and system events
+            Retained evidence only. A successful local response does not prove consumer use.
           </p>
         </div>
-        <div class="flex space-x-4">
-          <button
-            class="btn btn-secondary"
-            phx-click="export_logs"
-          >
-            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+        <button type="button" class="btn btn-secondary" phx-click="refresh">Refresh evidence</button>
+      </header>
+      <p class="text-sm text-on-surface-variant">
+        Counts represent logical requests, not phase events or upload retries. Core grants do not prove delivery.
+        This fixed window refreshes every 15 seconds for late reports; clear filters to open the latest 24 hours.
+        Last refreshed: {timestamp(@refreshed_at)}.
+      </p>
+
+      <.dm_card id="audit-filters">
+        <:title>Filter retained requests</:title>
+        <form id="audit-filter-form" phx-submit="filter_logs" class="space-y-4">
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div :for={
+              {key, label} <- [
+                {"application_id", "Application UUID"},
+                {"agent_id", "Agent ID"},
+                {"secret_path", "Secret path"},
+                {"reason_code", "Reason code"},
+                {"from", "From (ISO 8601 with timezone)"},
+                {"to", "To (ISO 8601 with timezone)"}
+              ]
+            }>
+              <label for={"audit-#{key}"} class="block text-sm font-medium">{label}</label>
+              <input
+                id={"audit-#{key}"}
+                type="text"
+                name={"filters[#{key}]"}
+                value={text_or_nil(@filters[key])}
+                class="input w-full"
               />
-            </svg>
-            Export Logs
-          </button>
-        </div>
-      </div>
-
-      <!-- Filters -->
-      <div class="bg-surface-container p-6 rounded-lg shadow">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="text-lg font-medium text-on-surface">Filters</h3>
-          <button
-            class="text-sm text-primary hover:text-primary"
-            phx-click="clear_filters"
-          >
-            Clear all filters
-          </button>
-        </div>
-
-        <form phx-change="filter_logs" class="space-y-4">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            </div>
             <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Event Type</label>
-              <select name="filters[event_type]" class="select form-select w-full">
-                <option value="all" selected={@filters.event_type == "all"}>All Events</option>
-                <%= for type <- @event_types do %>
-                  <option
-                    value={type}
-                    selected={@filters.event_type == type}
-                  >
-                    {format_event_type(type)}
-                  </option>
-                <% end %>
+              <label for="audit-outcome" class="block text-sm font-medium">Outcome</label>
+              <select id="audit-outcome" name="filters[outcome]" class="select w-full">
+                <option value="">All outcomes</option>
+                <option
+                  :for={outcome <- ~w(success denied error incomplete)}
+                  value={outcome}
+                  selected={@filters["outcome"] == outcome}
+                >
+                  {outcome}
+                </option>
               </select>
             </div>
-
             <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Access Status</label>
-              <select name="filters[access_granted]" class="select form-select w-full">
-                <option value="all" selected={@filters.access_granted == "all"}>All Status</option>
-                <option value="true" selected={@filters.access_granted == "true"}>Granted</option>
-                <option value="false" selected={@filters.access_granted == "false"}>Denied</option>
-              </select>
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Agent ID</label>
+              <label for="audit-limit" class="block text-sm font-medium">Requests per page (1–100)</label>
               <input
-                type="text"
-                name="filters[agent_id]"
-                value={@filters.agent_id}
-                class="input form-input w-full"
-                placeholder="agent-prod-01"
-              />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Secret Path</label>
-              <input
-                type="text"
-                name="filters[secret_path]"
-                value={@filters.secret_path}
-                class="input form-input w-full"
-                placeholder="prod/db/postgres"
-              />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Date From</label>
-              <input
-                type="datetime-local"
-                name="filters[date_from]"
-                value={@filters.date_from}
-                class="input form-input w-full"
-              />
-            </div>
-
-            <div>
-              <label class="block text-sm font-medium text-on-surface mb-1">Date To</label>
-              <input
-                type="datetime-local"
-                name="filters[date_to]"
-                value={@filters.date_to}
-                class="input form-input w-full"
+                id="audit-limit"
+                name="filters[limit]"
+                type="number"
+                min="1"
+                max="100"
+                value={text_or_nil(@filters["limit"])}
+                class="input w-full"
               />
             </div>
           </div>
-
-          <div>
-            <label class="block text-sm font-medium text-on-surface mb-1">Search</label>
-            <input
-              type="text"
-              name="query"
-              value={@search_query}
-              class="input form-input w-full"
-              placeholder="Search by IP address, policy, or correlation ID..."
-              phx-change="search_logs"
-            />
+          <p class="text-sm text-on-surface-variant">
+            Maximum window: 31 days. Start inclusive, end exclusive. Default: latest 24 hours.
+          </p>
+          <div class="flex gap-4">
+            <button type="submit" class="btn btn-primary">Apply filters</button>
+            <button type="button" class="btn btn-ghost" phx-click="clear_filters">Clear filters / latest 24 hours</button>
           </div>
         </form>
-      </div>
+      </.dm_card>
 
-      <!-- Results Summary -->
-      <div class="bg-primary/5 border border-primary/50 rounded-lg p-4">
-        <div class="flex items-center justify-between">
-          <div>
-            <span class="text-sm font-medium text-primary">
-              Showing {length(current_page_logs(@audit_logs, @pagination.page, @pagination.per_page))} of {@pagination.total_count} audit events
-            </span>
+      <p :if={!@loaded} role="status">Loading audit evidence…</p>
+      <.dm_card :if={@query_error} id="audit-query-error">
+        <:title>Audit query unavailable</:title>
+        <p role="alert">
+          {error_message(@query_error)} Counts are unavailable; this is not zero activity.
+        </p>
+      </.dm_card>
+
+      <.dm_card :if={@summary} id="audit-summary">
+        <:title>
+          {if @filters["application_id"], do: "Selected application", else: "Request overview"}
+        </:title>
+        <p :if={@filters["application_id"]} class="font-mono break-all">
+          {@filters["application_id"]}
+        </p>
+        <p class="text-sm text-on-surface-variant">
+          Last observed activity in this window: {timestamp(@summary[:last_activity])}
+        </p>
+        <dl class="grid grid-cols-2 gap-4 md:grid-cols-7">
+          <div :for={{key, label} <- @count_labels}>
+            <dt class="text-sm text-on-surface-variant">{label}</dt>
+            <dd id={"audit-count-#{key}"} class="text-2xl font-semibold">{@summary[key]}</dd>
           </div>
-          <%= if @pagination.total_pages > 1 do %>
-            <div class="flex items-center space-x-2">
-              <span class="text-sm text-primary">Page:</span>
-              <div class="flex space-x-1">
-                <%= for page <- 1..@pagination.total_pages do %>
-                  <button
-                    class={"px-3 py-1 text-sm rounded #{if page == @pagination.page, do: "bg-primary text-primary-content", else: "bg-surface-container text-primary border border-primary hover:bg-primary/5"}"}
-                    phx-click="page_change"
-                    phx-value-page={page}
-                  >
-                    {page}
-                  </button>
-                <% end %>
-              </div>
-            </div>
-          <% end %>
-        </div>
-      </div>
+        </dl>
+        <p :if={@summary.requests == 0} role="status">
+          No retained requests in this window. This does not establish inactivity; check reporting coverage below.
+        </p>
+      </.dm_card>
 
-      <!-- Audit Log Table -->
-      <div class="bg-surface-container rounded-lg shadow">
+      <.dm_card :if={@summary} id="audit-applications">
+        <:title>Applications and identity provenance</:title>
+        <p class="text-sm text-on-surface-variant">
+          At most 100 application/provenance groups, using the selected non-application filters. Unverified requests are excluded from these groups.
+        </p>
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-outline-variant">
-            <thead class="bg-surface-container-low">
+          <table class="table w-full">
+            <caption class="sr-only">Application request totals by identity provenance</caption>
+            <thead>
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Timestamp
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Event Type
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Agent
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Secret Path
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Status
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Source IP
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Response Time
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-on-surface-variant uppercase tracking-wider">
-                  Actions
-                </th>
+                <th scope="col">Application</th><th scope="col">Provenance</th><th
+                  :for={{_, label} <- @count_labels}
+                  scope="col"
+                >
+                  {label}
+                </th><th scope="col">Last activity</th>
               </tr>
             </thead>
-            <tbody class="bg-surface-container divide-y divide-outline-variant">
-              <%= for event <- current_page_logs(@audit_logs, @pagination.page, @pagination.per_page) do %>
-                <tr
-                  class="hover:bg-surface-container-low transition-colors cursor-pointer"
-                  phx-click="select_event"
-                  phx-value-id={event.id}
-                >
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
-                    {format_timestamp(event.timestamp)}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <span class={"inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium #{event_type_badge_color(event.event_type)}"}>
-                      {format_event_type(event.event_type)}
-                    </span>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
-                    {event.agent_id}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <code class="text-sm bg-surface-container px-1 py-0.5 rounded">
-                      {event.secret_path || "-"}
-                    </code>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap">
-                    <div class="flex items-center">
-                      <div class={"w-2 h-2 rounded-full mr-2 #{access_status_color(event.access_granted)}"}>
-                      </div>
-                      <span class="text-sm">
-                        {if event.access_granted, do: "Granted", else: "Denied"}
-                      </span>
-                    </div>
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface">
-                    {event.source_ip}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm text-on-surface-variant">
-                    {event.response_time_ms}ms
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button class="text-secondary hover:text-secondary">
-                      View Details
-                    </button>
-                  </td>
-                </tr>
-              <% end %>
+            <tbody>
+              <tr :for={app <- @applications}>
+                <td>
+                  <.link
+                    patch={
+                      audit_url(
+                        Map.put(Map.delete(@filters, "cursor"), "application_id", app.application_id)
+                      )
+                    }
+                    class="link font-mono"
+                  >{app.application_id}</.link>
+                </td>
+                <td>{identity_label(app.attribution)}</td>
+                <td :for={{key, _} <- @count_labels}>{app[key]}</td>
+                <td>{timestamp(app[:last_activity])}</td>
+              </tr>
             </tbody>
           </table>
         </div>
+        <p :if={@applications == []}>No attributed application evidence matches these filters.</p>
+      </.dm_card>
+
+      <div :if={@summary} class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <.dm_card id="audit-secrets">
+          <:title>Requested secrets</:title>
+          <p class="text-sm text-on-surface-variant">
+            At most 100 groups. Missing paths remain unknown.
+          </p>
+          <div class="overflow-x-auto">
+            <table class="table w-full">
+              <caption class="sr-only">Request counts by secret path</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Secret</th><th :for={{_, label} <- @count_labels} scope="col">
+                    {label}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={secret <- @secrets}>
+                  <td class="font-mono">{secret.secret_path || "Unknown"}</td><td :for={
+                    {key, _} <- @count_labels
+                  }>
+                    {secret[key]}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </.dm_card>
+        <.dm_card id="audit-reasons">
+          <:title>Outcome reasons</:title>
+          <p class="text-sm text-on-surface-variant">
+            Final observed request reasons, at most 100 groups.
+          </p>
+          <dl>
+            <div :for={reason <- @reasons} class="flex justify-between gap-4">
+              <dt>{reason.reason_code || "Unknown"}</dt><dd>{reason.count}</dd>
+            </div>
+          </dl>
+        </.dm_card>
       </div>
 
-      <!-- Event Details Modal -->
-      <%= if @selected_event do %>
-        <.live_component
-          module={SecretHub.Web.AuditEventDetailsComponent}
-          id={"event-#{@selected_event.id}"}
-          event={@selected_event}
-        />
-      <% end %>
+      <.dm_card :if={@summary} id="audit-trends">
+        <:title>Hourly request trend (UTC)</:title>
+        <div class="overflow-x-auto max-h-80">
+          <table class="table w-full">
+            <caption class="sr-only">Persisted hourly request counts</caption>
+            <thead>
+              <tr>
+                <th scope="col">Hour</th><th :for={{_, label} <- @count_labels} scope="col">
+                  {label}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={bucket <- @buckets}>
+                <th scope="row">{timestamp(bucket.at)}</th><td :for={{key, _} <- @count_labels}>
+                  {bucket[key]}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </.dm_card>
+
+      <.dm_card :if={@summary} id="audit-requests">
+        <:title>Recent requests</:title>
+        <div class="overflow-x-auto">
+          <table class="table w-full">
+            <caption class="sr-only">Recent logical requests in the selected window</caption>
+            <thead>
+              <tr>
+                <th scope="col">Started (UTC)</th><th scope="col">Request / Agent</th><th scope="col">
+                  Application provenance
+                </th><th scope="col">Secret</th><th scope="col">Outcome / reason</th><th scope="col">
+                  Attempts / cache
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={request <- @requests}>
+                <td>{timestamp(request.started_at)}</td>
+                <td>
+                  <.link patch={request_url(@filters, request)} class="link font-mono">{request.request_id}</.link><div>
+                    {request.agent_id || "Direct Core request"}
+                  </div>
+                </td>
+                <td>
+                  <div class="font-mono">{request.application_id || "Unattributed"}</div>{identity_label(
+                    request.attribution
+                  )}
+                  <div :if={request.identity_status == "unverified"}>Unverified identity</div>
+                </td>
+                <td class="font-mono">{request.secret_path || "Unknown"}</td>
+                <td>
+                  {request.outcome} / {request.reason_code}
+                  <div :if={request.incomplete}>Incomplete evidence</div><strong :if={
+                    request.contradictory
+                  }>Contradictory observations</strong><div>
+                    Core: {request.core_outcome || "No observation"} / {Map.get(
+                      request,
+                      :core_reason_code
+                    ) || "Unknown reason"}; response: {request.delivery_outcome ||
+                      "No observation"}
+                  </div>
+                </td>
+                <td>{request.attempts} / {request.cache_status}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <nav aria-label="Request pagination" class="flex gap-4">
+          <.link
+            :if={@filters["cursor"]}
+            patch={audit_url(Map.delete(@filters, "cursor"))}
+            class="link"
+          >Newest requests</.link>
+          <.link
+            :if={@next_cursor}
+            patch={audit_url(Map.put(@filters, "cursor", @next_cursor))}
+            class="link"
+          >Next requests</.link>
+        </nav>
+      </.dm_card>
+
+      <.dm_card :if={@selected_request} id="audit-timeline">
+        <:title>Request timeline</:title>
+        <.link patch={audit_url(@filters)} class="link">Close timeline</.link>
+        <p class="font-mono break-all">{@selected_namespace} / {@selected_request}</p>
+        <p class="text-sm text-on-surface-variant">
+          Observation clocks may differ. Received by Core is recorded independently. Admission, attempts and response observations remain separate; missing send evidence leaves delivery ambiguous. At most 1000 observations.
+        </p>
+        <p :if={@timeline_error == :raw_expired} role="status">
+          Raw timeline expired under retention; the aggregate may remain. Signed chain checkpoints and replay tombstones are retained.
+        </p>
+        <p :if={@timeline_error && @timeline_error != :raw_expired} role="alert">
+          Timeline unavailable: {error_message(@timeline_error)}
+        </p>
+        <p :if={!@timeline_error and @timeline == []}>
+          No retained observations for this request and namespace.
+        </p>
+        <ol class="space-y-4">
+          <li :for={observation <- @timeline} class="border-l border-outline-variant pl-4">
+            <strong>{observation.envelope["source"]} / {observation.envelope["phase"]}</strong>
+            <div>
+              {identity_label(observation.envelope["attribution"])}; identity: {observation.envelope[
+                "identity_status"
+              ]}
+            </div>
+            <div class="font-mono break-all">
+              Agent: {observation.envelope["agent_id"] || "None"}; application: {observation.envelope[
+                "application_id"
+              ] || "Unattributed"}; secret: {observation.envelope["secret_path"] || "Unknown"}
+            </div>
+            <div>
+              Outcome: {observation.envelope["outcome"]}; reason: {observation.envelope["reason_code"]}; cache: {observation.envelope[
+                "cache_status"
+              ]}
+            </div>
+            <div>
+              Observed: {timestamp(observation.observed_at)}; Received by Core: {timestamp(
+                observation.received_at
+              )}
+            </div>
+            <div class="font-mono break-all">
+              Event: {observation.event_id}; attempt: {observation.envelope["attempt_id"] || "None"}; producer sequence: {observation.producer_sequence}
+            </div>
+          </li>
+        </ol>
+      </.dm_card>
+
+      <.dm_card id="audit-health">
+        <:title>Audit pipeline health</:title>
+        <p :if={@health_error} role="alert">Reporting health unavailable. Completeness is unknown.</p>
+        <div :if={@health}>
+          <p>
+            Retained evidence only. Automatic retention deletion is disabled. Health lists at most 100 producers and 100 Agent reports.
+          </p>
+          <p :if={Map.has_key?(@health, :retention_policy)}>
+            Raw detail target: {@health.retention_policy.raw_days} days; aggregate target: {@health.retention_policy.aggregate_days} days.
+            Manual pruning enabled: {if @health.retention_policy.enabled, do: "yes", else: "no"}. No automatic scheduler runs.
+          </p>
+          <p :if={@health.pending_unknown} role="status">
+            Pending backlog is unknown for some Agents. Missing, stale or legacy reports mean coverage may be partial.
+          </p>
+          <p :if={Map.get(@health, :coverage_limited, false)} role="status">
+            Health coverage is limited to the most recent 100 Agents, producers and reports. Other pipeline state is unknown.
+          </p>
+          <p :if={Map.get(@health, :unknown_agents, []) != []}>
+            Agents without a current report: {Enum.join(Map.get(@health, :unknown_agents, []), ", ")}
+          </p>
+          <ul class="space-y-4">
+            <li :for={producer <- @health.producers}>
+              <span class="font-mono break-all">{producer.namespace} / {producer.producer_id}</span>
+              <strong :if={producer.stale}>Stale / disconnected</strong>
+              <div>
+                Sequence gaps: {producer.gaps}; last sequence: {producer.last_sequence}; received events: {producer.event_count}
+              </div>
+              <div>
+                Last report received: {timestamp(producer.last_received_at)}; last producer observation: {timestamp(
+                  producer.last_observed_at
+                )}
+              </div>
+            </li>
+          </ul>
+          <ul class="space-y-4 mt-4">
+            <li :for={report <- @health.reports}>
+              <strong>{report.agent_id}: {report.status["journal_status"]}</strong>
+              <div>Agent connection status: {Map.get(report, :agent_status) || "unknown"}</div>
+              <strong :if={report.stale}>Stale / disconnected</strong>
+              <div>
+                Pending events: {report.status["pending_events"]}; pending bytes: {report.status[
+                  "pending_bytes"
+                ]}; Quarantined: {report.status["quarantined_events"]}
+              </div>
+              <div>
+                Reported oldest pending age: {report.oldest_pending_age_ms || "unknown"} ms; received: {timestamp(
+                  report.received_at
+                )}
+              </div>
+              <p :if={report.stale}>Backlog values are stale; current pending work is unknown.</p>
+            </li>
+          </ul>
+        </div>
+      </.dm_card>
+
+      <.dm_card id="audit-legacy">
+        <:title>Legacy / partial coverage</:title>
+        <p>
+          Latest 50 legacy audit records across history, independently of the request filters. These records do not establish application identity, request totals, cache outcomes or delivery. Arbitrary event payloads are excluded.
+        </p>
+        <p :if={@legacy_error} role="alert">Legacy records unavailable.</p>
+        <p :if={!@legacy_error and @legacy == []}>No retained legacy records.</p>
+        <ul>
+          <li :for={record <- @legacy}>
+            {timestamp(record.timestamp)} · {record.event_type} · {record.actor_type}: {record.actor_id} · resource: {record.secret_id ||
+              "Unknown"} · access granted: {legacy_outcome(record.access_granted)}
+          </li>
+        </ul>
+      </.dm_card>
     </div>
     """
   end
 
-  # Helper functions
-  defp fetch_audit_logs do
-    # FIXME: Replace with actual SecretHub.Core.Audit.list_logs()
-    [
-      %{
-        id: "1",
-        timestamp:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-300, :second),
-        event_type: "secret_access",
-        agent_id: "agent-prod-01",
-        secret_path: "prod/db/postgres",
-        access_granted: true,
-        policy_matched: "webapp-secrets",
-        source_ip: "10.0.1.42",
-        response_time_ms: 45,
-        correlation_id: "550e8400-e29b-41d4-a5a0-c276e42c5ca",
-        user_agent: "SecretHub-Agent/1.0.0",
-        request_size: 245,
-        response_size: 1024
-      },
-      %{
-        id: "2",
-        timestamp:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-600, :second),
-        event_type: "secret_access_denied",
-        agent_id: "agent-prod-02",
-        secret_path: "prod/api/payment",
-        access_granted: false,
-        policy_matched: "production-secrets",
-        denial_reason: "Agent not authorized for production secrets",
-        source_ip: "10.0.1.45",
-        response_time_ms: 23,
-        correlation_id: "550e8400-e29b-41d4-a5a0-c276e42c5cb",
-        user_agent: "SecretHub-Agent/1.0.1",
-        request_size: 189,
-        response_size: 156
-      },
-      %{
-        id: "3",
-        timestamp:
-          DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.add(-1200, :second),
-        event_type: "agent_connect",
-        agent_id: "agent-dev-01",
-        secret_path: nil,
-        access_granted: true,
-        policy_matched: "development-access",
-        source_ip: "192.168.1.100",
-        response_time_ms: 89,
-        correlation_id: "550e8400-e29b-41d4-a5a0-c276e42c5cc",
-        user_agent: "SecretHub-Agent/0.9.0",
-        request_size: 412,
-        response_size: 2048
-      }
-    ]
+  defp load(socket) do
+    filters = socket.assigns.filters
+
+    socket =
+      case query_data(filters) do
+        {:ok, data} ->
+          socket |> assign(data) |> assign(:query_error, nil)
+
+        {:error, reason} ->
+          assign(socket,
+            summary: nil,
+            requests: [],
+            applications: [],
+            secrets: [],
+            reasons: [],
+            buckets: [],
+            next_cursor: nil,
+            query_error: reason
+          )
+      end
+
+    socket
+    |> load_health()
+    |> load_legacy()
+    |> load_timeline()
+    |> assign(loaded: true, refreshed_at: DateTime.utc_now())
   end
 
-  defp fetch_event_types do
-    # FIXME: Replace with actual event types from audit system
-    [
-      "secret_access",
-      "secret_access_denied",
-      "agent_connect",
-      "agent_disconnect",
-      "secret_created",
-      "secret_updated",
-      "secret_deleted",
-      "policy_created",
-      "policy_updated"
-    ]
-  end
-
-  defp fetch_filtered_audit_logs(_filters) do
-    fetch_audit_logs()
-    # FIXME: Apply actual filtering logic
-  end
-
-  defp current_page_logs(logs, page, per_page) do
-    start_index = (page - 1) * per_page
-    Enum.slice(logs, start_index, per_page)
-  end
-
-  defp calculate_pagination(logs, page) do
-    per_page = 50
-    total_count = length(logs)
-    total_pages = ceil(total_count / per_page)
-
-    %{
-      page: page,
-      per_page: per_page,
-      total_count: total_count,
-      total_pages: total_pages
-    }
-  end
-
-  defp format_timestamp(datetime) do
-    DateTime.to_string(datetime)
-  end
-
-  defp format_event_type("secret_access"), do: "Secret Access"
-  defp format_event_type("secret_access_denied"), do: "Access Denied"
-  defp format_event_type("agent_connect"), do: "Agent Connect"
-  defp format_event_type("agent_disconnect"), do: "Agent Disconnect"
-  defp format_event_type("secret_created"), do: "Secret Created"
-  defp format_event_type("secret_updated"), do: "Secret Updated"
-  defp format_event_type("secret_deleted"), do: "Secret Deleted"
-  defp format_event_type("policy_created"), do: "Policy Created"
-  defp format_event_type("policy_updated"), do: "Policy Updated"
-  defp format_event_type(type), do: String.replace(String.capitalize(type), "_", " ")
-
-  defp event_type_badge_color("secret_access"), do: "bg-success/10 text-success"
-  defp event_type_badge_color("secret_access_denied"), do: "bg-error/10 text-error"
-  defp event_type_badge_color("agent_connect"), do: "bg-primary/10 text-primary"
-  defp event_type_badge_color("agent_disconnect"), do: "bg-warning/10 text-warning"
-  defp event_type_badge_color(_), do: "bg-surface-container text-on-surface"
-
-  defp access_status_color(true), do: "bg-success"
-  defp access_status_color(false), do: "bg-error text-error-content"
-
-  defp build_audit_filters(ui_filters) do
-    %{}
-    |> add_event_type_filter(ui_filters.event_type)
-    |> add_agent_id_filter(ui_filters.agent_id)
-    |> add_access_granted_filter(ui_filters.access_granted)
-    |> add_date_from_filter(ui_filters.date_from)
-    |> add_date_to_filter(ui_filters.date_to)
-  end
-
-  defp add_event_type_filter(filters, "all"), do: filters
-  defp add_event_type_filter(filters, event_type), do: Map.put(filters, :event_type, event_type)
-
-  defp add_agent_id_filter(filters, ""), do: filters
-  defp add_agent_id_filter(filters, agent_id), do: Map.put(filters, :actor_id, agent_id)
-
-  defp add_access_granted_filter(filters, "all"), do: filters
-
-  defp add_access_granted_filter(filters, access_granted) do
-    Map.put(filters, :access_granted, access_granted == "granted")
-  end
-
-  defp add_date_from_filter(filters, ""), do: filters
-
-  defp add_date_from_filter(filters, date_from) do
-    case DateTime.from_iso8601(date_from <> "T00:00:00Z") do
-      {:ok, dt, _} -> Map.put(filters, :from_date, dt)
-      _ -> filters
+  defp load_health(socket) do
+    case AccessAudit.health() do
+      {:ok, health} -> assign(socket, health: health, health_error: nil)
+      {:error, reason} -> assign(socket, health: nil, health_error: reason)
     end
   end
 
-  defp add_date_to_filter(filters, ""), do: filters
-
-  defp add_date_to_filter(filters, date_to) do
-    case DateTime.from_iso8601(date_to <> "T23:59:59Z") do
-      {:ok, dt, _} -> Map.put(filters, :to_date, dt)
-      _ -> filters
+  defp load_legacy(socket) do
+    case legacy_records() do
+      {:ok, legacy} -> assign(socket, legacy: legacy, legacy_error: nil)
+      {:error, reason} -> assign(socket, legacy: [], legacy_error: reason)
     end
   end
+
+  defp load_timeline(%{assigns: %{selected_request: nil}} = socket),
+    do: assign(socket, timeline: [], timeline_error: nil)
+
+  defp load_timeline(socket) do
+    case AccessAudit.timeline(socket.assigns.selected_namespace, socket.assigns.selected_request) do
+      {:ok, timeline} -> assign(socket, timeline: timeline, timeline_error: nil)
+      {:error, reason} -> assign(socket, timeline: [], timeline_error: reason)
+    end
+  end
+
+  defp query_data(filters) do
+    totals_filters = Map.delete(filters, "cursor")
+
+    with {:ok, page} <- AccessAudit.requests(filters),
+         {:ok, summary} <- AccessAudit.summary(totals_filters),
+         {:ok, applications} <-
+           AccessAudit.applications(Map.delete(totals_filters, "application_id")),
+         {:ok, secrets} <- AccessAudit.secrets(totals_filters),
+         {:ok, reasons} <- AccessAudit.reasons(totals_filters),
+         {:ok, buckets} <- AccessAudit.time_buckets(totals_filters) do
+      {:ok,
+       %{
+         requests: page.entries,
+         next_cursor: page.next_cursor,
+         summary: summary,
+         applications: applications,
+         secrets: secrets,
+         reasons: reasons,
+         buckets: buckets
+       }}
+    end
+  end
+
+  defp legacy_records do
+    {:ok,
+     Repo.all(
+       from(a in AuditLog,
+         where: a.event_type not in ["access.observed", "access.retention_checkpoint"],
+         order_by: [desc: a.timestamp, desc: a.id],
+         limit: 50,
+         select: %{
+           id: a.id,
+           timestamp: a.timestamp,
+           event_type: a.event_type,
+           actor_type: a.actor_type,
+           actor_id: a.actor_id,
+           secret_id: a.secret_id,
+           access_granted: a.access_granted
+         }
+       )
+     )}
+  rescue
+    _ in [Postgrex.Error, DBConnection.ConnectionError] -> {:error, :storage_unavailable}
+  catch
+    :exit, _ -> {:error, :storage_unavailable}
+  end
+
+  defp filters(params) do
+    params = params |> Map.take(@filter_keys) |> nonempty()
+    now = DateTime.utc_now()
+    to = Map.get(params, "to", DateTime.to_iso8601(now))
+
+    from =
+      case DateTime.from_iso8601(if(is_binary(to), do: to, else: "")) do
+        {:ok, date, _} -> DateTime.to_iso8601(DateTime.add(date, -86_400))
+        _ -> DateTime.to_iso8601(DateTime.add(now, -86_400))
+      end
+
+    params |> Map.put_new("to", to) |> Map.put_new("from", from) |> Map.put_new("limit", "50")
+  end
+
+  defp nonempty(params), do: Map.reject(params, fn {_key, value} -> value in [nil, ""] end)
+
+  defp audit_url(filters),
+    do:
+      "/admin/audit?" <>
+        URI.encode_query(Map.filter(filters, fn {_, value} -> is_binary(value) end))
+
+  defp request_url(filters, request),
+    do:
+      "/admin/audit/#{request.request_id}?" <>
+        URI.encode_query(Map.put(filters, "namespace", request.namespace))
+
+  defp identity_label("core_certificate"),
+    do: "Independently Core-verified application certificate"
+
+  defp identity_label("agent_certificate"), do: "Agent-attested application certificate"
+  defp identity_label("token"), do: "Token identity; no verified application"
+  defp identity_label(_), do: "Unverified / unattributed"
+  defp timestamp(nil), do: "Unknown"
+  defp timestamp(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+  defp timestamp(%NaiveDateTime{} = datetime), do: NaiveDateTime.to_iso8601(datetime) <> "Z"
+  defp text_or_nil(value) when is_binary(value), do: value
+  defp text_or_nil(_), do: nil
+  defp legacy_outcome(true), do: "yes (legacy observation)"
+  defp legacy_outcome(false), do: "no (legacy observation)"
+  defp legacy_outcome(_), do: "unknown"
+
+  defp error_message(reason) when reason in [:invalid_filter, :invalid_cursor],
+    do: "Check the filters, time window and pagination cursor."
+
+  defp error_message(_), do: "The persisted audit source could not be read."
 end
