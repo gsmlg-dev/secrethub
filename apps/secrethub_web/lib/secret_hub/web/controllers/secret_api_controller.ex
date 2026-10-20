@@ -16,9 +16,10 @@ defmodule SecretHub.Web.SecretApiController do
   use SecretHub.Web, :controller
   require Logger
 
-  alias SecretHub.Core.{Audit, Policies, Repo}
+  alias SecretHub.Core.{AccessAudit, Audit, Policies, Repo}
   alias SecretHub.Core.Secrets
   alias SecretHub.Core.Vault.SealState
+  alias SecretHub.Shared.AccessAudit.{Event, Telemetry}
   alias SecretHub.Shared.Schemas.Secret
 
   @doc """
@@ -57,21 +58,66 @@ defmodule SecretHub.Web.SecretApiController do
   Read a secret at the given path.
   """
   def read(conn, params) do
-    if vault_sealed?() do
-      sealed_response(conn)
-    else
-      path = extract_path(params)
-      secret_path = vault_path_to_dot(path)
-      vault_path = "secret/data/" <> path
+    path = extract_path(params)
+    started = System.monotonic_time(:microsecond)
 
-      case check_policy(conn, vault_path, "read") do
-        :ok ->
-          read_secret(conn, secret_path, params["version"])
+    evidence = %{
+      request_id: Ecto.UUID.generate(),
+      attempt_id: Ecto.UUID.generate(),
+      agent_id: verified_token_agent(conn),
+      application_id: nil,
+      identity_status: "unverified",
+      attribution: "token",
+      operation: "read",
+      secret_path: Event.safe_path(vault_path_to_dot(path)),
+      phase: "admitted",
+      outcome: "unknown",
+      reason_code: "none",
+      cache_status: "none"
+    }
 
-        {:error, _reason} ->
-          forbidden_response(conn)
-      end
+    result =
+      Repo.transaction(fn ->
+        checked_read_observation!(evidence)
+        Telemetry.emit(:request_start, %{count: 1}, %{source: "core", operation: "read"})
+        response = read_response(conn, path, params["version"])
+
+        attrs =
+          Map.merge(evidence, %{
+            phase: "core_decision",
+            outcome: response.outcome,
+            reason_code: response.reason,
+            secret_id: response.secret_id,
+            secret_version: response.version,
+            duration_us: System.monotonic_time(:microsecond) - started
+          })
+
+        decision = checked_read_observation!(attrs)
+        checked_legacy_read_audit!(conn, attrs)
+
+        if response.outcome == "success" do
+          checked_read_observation!(
+            %{attrs | phase: "core_access"}
+            |> Map.put(:core_event_id, decision.event_id)
+          )
+
+          checked_read_observation!(%{attrs | phase: "release_intent", outcome: "unknown"})
+        end
+
+        {response, attrs}
+      end)
+
+    case result do
+      {:ok, {response, attrs}} ->
+        send_read_response(conn, response, attrs, started)
+
+      {:error, _} ->
+        audit_unavailable_response(conn)
     end
+  rescue
+    _ in [Postgrex.Error, DBConnection.ConnectionError] -> audit_unavailable_response(conn)
+  catch
+    :exit, _ -> audit_unavailable_response(conn)
   end
 
   @doc """
@@ -188,39 +234,154 @@ defmodule SecretHub.Web.SecretApiController do
 
   # Private helpers — read
 
-  defp read_secret(conn, secret_path, version) when is_binary(version) do
-    read_specific_version(conn, secret_path, version)
+  defp send_read_response(conn, response, attrs, started) do
+    sent = conn |> put_status(response.status) |> json(response.body)
+    # Adapter success proves a write only. If this append fails, committed
+    # release intent remains incomplete and operational health records failure.
+    record_response(%{attrs | phase: "response_sent"})
+
+    Telemetry.emit(
+      :request_stop,
+      %{count: 1, duration_us: System.monotonic_time(:microsecond) - started},
+      %{
+        source: "core",
+        operation: "read",
+        outcome: response.outcome,
+        reason_code: response.reason
+      }
+    )
+
+    sent
+  rescue
+    _ -> failed_read_response(attrs)
+  catch
+    :exit, _ -> failed_read_response(attrs)
   end
 
-  defp read_secret(conn, secret_path, _version) do
-    actor = current_actor(conn)
+  defp failed_read_response(attrs) do
+    record_response(%{
+      attrs
+      | phase: "response_failed",
+        outcome: "error",
+        reason_code: "transport_error"
+    })
 
-    case Secrets.read_decrypted(secret_path) do
-      {:ok, decrypted_data, secret} ->
-        Audit.log_event(%{
-          event_type: "secret.accessed",
-          actor_type: actor.type,
-          actor_id: actor.id,
-          agent_id: actor.agent_id,
-          secret_id: secret.id,
-          secret_type: to_string(secret.secret_type),
-          access_granted: true,
-          event_data: %{secret_path: secret_path}
-        })
+    Telemetry.emit(:request_exception, %{count: 1}, %{
+      source: "core",
+      operation: "read",
+      outcome: "error",
+      reason_code: "transport_error"
+    })
 
-        json(conn, %{
-          data: decrypted_data,
-          metadata: %{
-            version: secret.version || 1,
-            created_time: secret.inserted_at,
-            updated_time: secret.updated_at
-          }
-        })
+    # Adapter exceptions may contain response data; never propagate their text.
+    raise Plug.Conn.NotSentError, "Secret response transport failed"
+  end
+
+  defp record_response(attrs) do
+    case AccessAudit.record_core(attrs) do
+      {:ok, _} ->
+        :ok
 
       {:error, _} ->
-        not_found_response(conn, "Secret not found")
+        Telemetry.emit(:request_exception, %{count: 1}, %{
+          source: "core",
+          operation: "read",
+          outcome: "error",
+          reason_code: "audit_unavailable"
+        })
     end
   end
+
+  defp read_response(conn, path, version) do
+    cond do
+      vault_sealed?() ->
+        read_error(503, "error", "sealed", "Vault is sealed")
+
+      is_nil(Event.safe_path(vault_path_to_dot(path))) ->
+        read_error(400, "denied", "invalid_path", "Invalid secret path")
+
+      check_policy(conn, "secret/data/" <> path, "read") != :ok ->
+        read_error(403, "denied", "permission_denied", "permission denied")
+
+      true ->
+        read_secret_result(vault_path_to_dot(path), version)
+    end
+  end
+
+  defp read_secret_result(path, version) when is_binary(version),
+    do: read_specific_version(path, version)
+
+  defp read_secret_result(path, _) do
+    case Secrets.read_decrypted(path) do
+      {:ok, data, secret} ->
+        %{
+          status: 200,
+          outcome: "success",
+          reason: "allowed",
+          secret_id: secret.id,
+          version: secret.version || 1,
+          body: %{
+            data: data,
+            metadata: %{
+              version: secret.version || 1,
+              created_time: secret.inserted_at,
+              updated_time: secret.updated_at
+            }
+          }
+        }
+
+      {:error, :sealed} ->
+        read_error(503, "error", "sealed", "Vault is sealed")
+
+      {:error, _} ->
+        read_error(404, "error", "not_found", "Secret not found")
+    end
+  end
+
+  defp read_error(status, outcome, reason, message),
+    do: %{
+      status: status,
+      outcome: outcome,
+      reason: reason,
+      secret_id: nil,
+      version: nil,
+      body: %{error: message}
+    }
+
+  defp checked_read_observation!(attrs) do
+    case AccessAudit.record_core(attrs) do
+      {:ok, event} -> event
+      {:error, _} -> Repo.rollback(:audit_unavailable)
+    end
+  end
+
+  defp checked_legacy_read_audit!(conn, attrs) do
+    actor = current_actor(conn)
+
+    case Audit.log_event(%{
+           event_type:
+             if(attrs.outcome == "success", do: "secret.accessed", else: "secret.access_denied"),
+           actor_type: actor.type,
+           actor_id: actor.id,
+           agent_id: actor.agent_id,
+           secret_id: attrs.secret_id,
+           access_granted: attrs.outcome == "success",
+           event_data: %{secret_path: attrs.secret_path, reason_code: attrs.reason_code}
+         }) do
+      {:ok, _} -> :ok
+      {:error, _} -> Repo.rollback(:audit_unavailable)
+    end
+  end
+
+  defp verified_token_agent(conn) do
+    case conn.assigns[:current_agent] do
+      %{agent_id: public_id} -> public_id
+      _ -> nil
+    end
+  end
+
+  defp audit_unavailable_response(conn),
+    do: conn |> put_status(:service_unavailable) |> json(%{error: "audit_unavailable"})
 
   # Private helpers — delete
 
@@ -377,7 +538,7 @@ defmodule SecretHub.Web.SecretApiController do
     end
   end
 
-  defp read_specific_version(conn, secret_path, version_str) do
+  defp read_specific_version(secret_path, version_str) do
     alias SecretHub.Core.Vault.SealState
     alias SecretHub.Shared.Crypto.Encryption
 
@@ -387,18 +548,20 @@ defmodule SecretHub.Web.SecretApiController do
          {:ok, master_key} <- SealState.get_master_key(),
          {:ok, json_data} <- Encryption.decrypt_from_blob(version.encrypted_data, master_key),
          {:ok, data} <- Jason.decode(json_data) do
-      json(conn, %{
-        data: data,
-        metadata: %{
-          version: version.version_number,
-          created_time: version.inserted_at
+      %{
+        status: 200,
+        outcome: "success",
+        reason: "allowed",
+        secret_id: secret.id,
+        version: version.version_number,
+        body: %{
+          data: data,
+          metadata: %{version: version.version_number, created_time: version.inserted_at}
         }
-      })
+      }
     else
       _ ->
-        conn
-        |> put_status(:not_found)
-        |> json(%{error: "Version not found"})
+        read_error(404, "error", "not_found", "Version not found")
     end
   end
 

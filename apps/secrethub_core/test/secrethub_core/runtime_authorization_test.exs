@@ -15,7 +15,9 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
   end
 
   alias SecretHub.Core.{
+    AccessAudit,
     Apps,
+    Audit,
     AuthorizationVersions,
     Policies,
     RuntimeAuthorization,
@@ -168,6 +170,61 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
     refute inspect(log.event_data) =~ "private-runtime-value"
   end
 
+  test "a detached failing metrics handler leaves checked authorization and signed evidence intact",
+       ctx do
+    event = [:secrethub, :access_audit, :authorization, :result]
+    id = "access-audit-authorization-failure-#{System.unique_integer([:positive])}"
+    :ok = :telemetry.attach(id, event, &__MODULE__.failing_exporter/4, nil)
+    on_exit(fn -> :telemetry.detach(id) end)
+    assert {:ok, _} = RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path)
+    refute Enum.any?(:telemetry.list_handlers(event), &(&1.id == id))
+    assert {:ok, %{requests: 1, incomplete: 1}} = AccessAudit.summary()
+    assert {:ok, %{entries: [%{core_outcome: "success"}]}} = AccessAudit.requests()
+    assert {:ok, :valid} = Audit.verify_chain()
+  end
+
+  def failing_exporter(_, _, _, _), do: raise("test exporter unavailable")
+
+  test "correlates independently checked decisions and cache access without counting delivery",
+       ctx do
+    request_id = Ecto.UUID.generate()
+    attempt_id = Ecto.UUID.generate()
+    correlation = %{request_id: request_id, attempt_id: attempt_id}
+
+    assert {:ok, %{revision: revision}} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, nil, correlation)
+
+    assert {:ok, %{not_modified: true}} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, revision, %{
+               request_id: request_id,
+               attempt_id: Ecto.UUID.generate()
+             })
+
+    assert {:ok, events} =
+             AccessAudit.timeline("agent:" <> ctx.agent.agent_id, request_id)
+
+    assert Enum.count(events, &(&1.envelope["phase"] == "core_decision")) == 2
+    assert Enum.count(events, &(&1.envelope["phase"] == "core_access")) == 2
+    assert Enum.any?(events, &(&1.envelope["cache_status"] == "hit"))
+    assert Enum.all?(events, &(&1.envelope["attribution"] == "core_certificate"))
+    refute inspect(events) =~ "private-runtime-value"
+
+    assert {:ok, %{requests: 1, incomplete: 1, success: 0, attempts: 2}} =
+             AccessAudit.summary(%{application_id: ctx.app.id})
+  end
+
+  test "required access evidence failure refuses both fresh and validated-cache release", ctx do
+    assert {:ok, %{revision: revision}} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path)
+
+    Repo.query!("ALTER TABLE access_audit_events RENAME TO access_audit_events_unavailable", [])
+
+    for known_revision <- [nil, revision] do
+      assert {:error, :audit_unavailable} =
+               RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, known_revision)
+    end
+  end
+
   test "the Agent and app gates are independent and explicit deny wins", ctx do
     app_policy =
       Repo.get_by!(SecretHub.Shared.Schemas.Policy, name: "runtime-application:" <> ctx.app.id)
@@ -210,10 +267,21 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
   test "suspension, revocation, reassignment, expiry and missing associations are rechecked",
        ctx do
     assert {:ok, _} = Apps.suspend_app(ctx.app.id)
-    assert {:error, _} = RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path)
+
+    assert {:error, :disabled} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path)
+
+    assert {:ok, %{entries: [%{core_reason_code: "disabled", application_id: nil}]}} =
+             AccessAudit.requests()
+
     assert {:ok, _} = Apps.activate_app(ctx.app.id)
     assert {:ok, _} = AppCertificates.revoke(ctx.app.id, ctx.certificate.id, "operator_revoked")
-    assert {:error, _} = RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path)
+
+    assert {:error, :revoked} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path)
+
+    assert {:ok, %{entries: requests}} = AccessAudit.requests()
+    assert MapSet.new(requests, & &1.core_reason_code) == MapSet.new(~w(disabled revoked))
   end
 
   test "path revision survives delete and recreation, updates and rollback", ctx do
@@ -558,7 +626,7 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
          )
   end
 
-  defp await_state(expected, attempts \\ 100)
+  defp await_state(expected, attempts \\ 500)
   defp await_state(_, 0), do: flunk("Vault did not reach expected state")
 
   defp await_state(expected, attempts) do
@@ -571,7 +639,7 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
         )
   end
 
-  defp await_empty(attempts \\ 100)
+  defp await_empty(attempts \\ 500)
   defp await_empty(0), do: flunk("Vault did not load")
 
   defp await_empty(attempts) do

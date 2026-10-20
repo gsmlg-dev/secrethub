@@ -57,8 +57,9 @@ defmodule SecretHub.Core.Audit do
   require Logger
   import Ecto.Query
 
-  alias SecretHub.Core.{CanonicalJSON, Repo}
+  alias SecretHub.Core.AccessAudit.Retention
   alias SecretHub.Core.Audit.SigningKeys
+  alias SecretHub.Core.{CanonicalJSON, Repo}
   alias SecretHub.Shared.Schemas.AuditLog
 
   @append_lock_name "secrethub:audit-log-append:v1"
@@ -204,16 +205,23 @@ defmodule SecretHub.Core.Audit do
         order_by: [asc: a.sequence_number]
       )
 
-    logs = Repo.all(query)
-
-    case logs do
-      [] ->
-        {:ok, :valid}
-
-      [first | rest] ->
-        verify_chain_start(first, rest)
+    with {:ok, logs} <- Retention.chain_entries(Repo.all(query)) do
+      case logs do
+        [] -> {:ok, :valid}
+        [first | rest] -> verify_chain_start(first, rest)
+      end
     end
   end
+
+  @doc false
+  def verify_retention_entry(%AuditLog{event_type: "access.observed", hash_version: 2} = log),
+    do: verify_entry(log)
+
+  def verify_retention_entry(_), do: {:error, :invalid_retention_source}
+
+  @doc false
+  def verify_retention_signature(%AuditLog{} = log),
+    do: if(verify_signature(log), do: :ok, else: {:error, :invalid_retention_signature})
 
   defp verify_chain_start(first, rest) do
     if first.sequence_number != 1 do
@@ -588,6 +596,9 @@ defmodule SecretHub.Core.Audit do
     :crypto.mac(:hmac, :sha256, key, content)
     |> Base.encode16(case: :lower)
   end
+
+  defp verify_entry(%{retention_checkpoint: checkpoint}),
+    do: Retention.verify_checkpoint(checkpoint)
 
   defp verify_entry(%AuditLog{hash_version: hash_version} = log)
        when hash_version in [1, 2] do

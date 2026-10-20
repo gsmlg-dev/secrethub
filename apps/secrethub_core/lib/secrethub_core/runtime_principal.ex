@@ -1,8 +1,9 @@
 defmodule SecretHub.Core.RuntimePrincipal do
   @moduledoc "Core-derived runtime identity; socket identity must come from the trusted mTLS endpoint."
   import Ecto.Query
-  alias SecretHub.Core.{Agents, Audit, Repo}
+  alias SecretHub.Core.{AccessAudit, Agents, Audit, Repo}
   alias SecretHub.Core.PKI.CertificateIdentity
+  alias SecretHub.Shared.AccessAudit.Event
   alias SecretHub.Shared.Schemas.{Agent, AppCertificate, Certificate}
   alias SecretHub.Shared.Schemas.Application, as: App
 
@@ -16,7 +17,10 @@ defmodule SecretHub.Core.RuntimePrincipal do
     :local_auth_version
   ]
 
-  def resolve_runtime_principal(identity, app_claim, fingerprint) when is_map(identity) do
+  def resolve_runtime_principal(identity, app_claim, fingerprint, correlation \\ %{})
+
+  def resolve_runtime_principal(identity, app_claim, fingerprint, correlation)
+      when is_map(identity) do
     result =
       with {:ok, _} <- CertificateIdentity.decode_fingerprint(fingerprint),
            {:ok, app_id} <- cast_app_id(app_claim),
@@ -62,18 +66,20 @@ defmodule SecretHub.Core.RuntimePrincipal do
 
     case result do
       {:ok, _} -> result
-      {:error, reason} -> record_denial(identity, fingerprint, reason)
+      {:error, reason} -> record_denial(identity, fingerprint, reason, correlation)
     end
   end
 
-  def resolve_runtime_principal(_, _, _), do: {:error, :invalid_principal}
+  def resolve_runtime_principal(_, _, _, _), do: {:error, :invalid_principal}
 
-  defp record_denial(identity, fingerprint, reason) do
+  defp record_denial(identity, fingerprint, reason, correlation) do
     canonical =
       case CertificateIdentity.decode_fingerprint(fingerprint) do
         {:ok, _} -> fingerprint
         _ -> nil
       end
+
+    reason = denial_reason(identity, canonical, reason)
 
     application_id =
       if canonical do
@@ -101,10 +107,87 @@ defmodule SecretHub.Core.RuntimePrincipal do
       }
     }
 
-    case Audit.log_event(attrs) do
-      {:ok, _} -> {:error, reason}
-      _ -> {:error, :audit_unavailable}
+    Repo.transaction(fn ->
+      # Failed identity resolution cannot assign the claimed application's ID.
+      with {:ok, _} <-
+             AccessAudit.record_core(%{
+               phase: "core_decision",
+               outcome: "denied",
+               reason_code: Event.reason(reason),
+               agent_id: identity[:agent_id],
+               application_id: nil,
+               identity_status: "unverified",
+               attribution: "none",
+               request_id: correlation[:request_id],
+               attempt_id: correlation[:attempt_id]
+             }),
+           {:ok, _} <- Audit.log_event(attrs) do
+        {:error, reason}
+      else
+        _ -> Repo.rollback(:audit_unavailable)
+      end
+    end)
+    |> case do
+      {:ok, result} -> result
+      {:error, _} -> {:error, :audit_unavailable}
     end
+  rescue
+    _ in [DBConnection.ConnectionError, Postgrex.Error] -> {:error, :audit_unavailable}
+  catch
+    :exit, _ -> {:error, :audit_unavailable}
+  end
+
+  defp denial_reason(identity, fingerprint, fallback) do
+    agent = if identity[:agent_id], do: Repo.get_by(Agent, agent_id: identity[:agent_id])
+
+    bound =
+      if fingerprint do
+        Repo.one(
+          from(c in Certificate,
+            join: ac in AppCertificate,
+            on: ac.certificate_id == c.id,
+            join: a in App,
+            on: a.id == ac.app_id,
+            where: c.canonical_fingerprint == ^fingerprint,
+            select: {c, ac, a},
+            limit: 1
+          )
+        )
+      end
+
+    identity_denial_reason(agent, bound, fallback)
+  end
+
+  defp identity_denial_reason(agent, bound, fallback) do
+    case {agent, bound} do
+      {%{status: :revoked}, _} ->
+        :revoked
+
+      {%{status: status}, _} when status in [:suspended, :rejected] ->
+        :disabled
+
+      {_, {%{revoked: true}, _, _}} ->
+        :revoked
+
+      {_, {_, %{revoked_at: revoked}, _}} when not is_nil(revoked) ->
+        :revoked
+
+      {_, {_, _, %{status: status}}} when status != "active" ->
+        :disabled
+
+      {_, {certificate, association, _}} ->
+        certificate_denial_reason(certificate, association, fallback)
+
+      _ ->
+        fallback
+    end
+  end
+
+  defp certificate_denial_reason(certificate, association, fallback) do
+    if live?(certificate.valid_from, certificate.valid_until) and
+         live?(association.issued_at, association.expires_at),
+       do: fallback,
+       else: :expired
   end
 
   defp cast_app_id(claim) when is_binary(claim) do
