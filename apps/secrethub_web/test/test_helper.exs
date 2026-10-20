@@ -71,4 +71,7 @@ end
 
 # Legacy MachineRouter unit-test fixture only; server: false opens no listener.
 {:ok, machine_endpoint_pid} = SecretHub.Web.MachineEndpoint.start_link(server: false)
-ExUnit.after_suite(fn _ -> Supervisor.stop(machine_endpoint_pid) end)
+
+ExUnit.after_suite(fn _ ->
+  if Process.alive?(machine_endpoint_pid), do: Supervisor.stop(machine_endpoint_pid)
+end)
