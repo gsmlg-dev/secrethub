@@ -1,6 +1,8 @@
 defmodule SecretHub.Agent.ApplicationTest do
   use ExUnit.Case, async: false
 
+  alias SecretHub.Agent.AccessAudit.Journal
+
   alias SecretHub.Agent.{
     Connection,
     EndpointManager,
@@ -8,6 +10,8 @@ defmodule SecretHub.Agent.ApplicationTest do
     RuntimeBootstrapper,
     UDSServer
   }
+
+  alias SecretHub.Shared.AccessAudit.Telemetry
 
   @localhost_core_url "https://localhost:4664"
 
@@ -69,11 +73,52 @@ defmodule SecretHub.Agent.ApplicationTest do
       Application.put_env(:secrethub_agent, key, value)
     end
 
+    :telemetry.detach("secrethub-access-audit-handler-monitor")
+    on_exit(fn -> Telemetry.install_handler_monitor() end)
     assert {:ok, _supervisor} = SecretHub.Agent.Application.start(:normal, [])
+
+    assert Enum.any?(
+             :telemetry.list_handlers([:telemetry, :handler, :failure]),
+             &(&1.id == "secrethub-access-audit-handler-monitor")
+           )
+
     refute Process.whereis(SecretHub.Agent.LeaseRenewer)
     assert Process.whereis(SecretHub.Agent.PKI.TrustBundleManager)
     assert Process.whereis(RuntimeBootstrapper)
     assert Process.whereis(UDSServer)
+    assert Process.whereis(SecretHub.Agent.AccessAudit.Journal)
+    assert Process.whereis(SecretHub.Agent.AccessAudit.Reporter)
+
+    # Actual production :rest_for_one ordering preserves the WAL when a
+    # consumer fails, and restarts every consumer when its WAL owner fails.
+    journal = Process.whereis(SecretHub.Agent.AccessAudit.Journal)
+    uds = Process.whereis(UDSServer)
+    Process.exit(uds, :kill)
+    assert eventually(fn -> Process.whereis(UDSServer) not in [nil, uds] end)
+    assert Process.whereis(SecretHub.Agent.AccessAudit.Journal) == journal
+    uds = Process.whereis(UDSServer)
+
+    assert {:ok, admission} =
+             Journal.admit(%{
+               operation: "read",
+               outcome: "unknown",
+               reason_code: "none",
+               cache_status: "none",
+               identity_status: "unverified",
+               attribution: "none",
+               secret_path: "fixture.restart.pending"
+             })
+
+    assert {:ok, [persisted]} = Journal.batch()
+    assert persisted["request_id"] == admission.request_id
+    Process.exit(journal, :kill)
+
+    assert eventually(fn ->
+             Process.whereis(SecretHub.Agent.AccessAudit.Journal) not in [nil, journal] and
+               Process.whereis(UDSServer) not in [nil, uds]
+           end)
+
+    assert {:ok, [^persisted]} = Journal.batch()
   end
 
   test "starts the agent from configured core URL" do
@@ -150,6 +195,19 @@ defmodule SecretHub.Agent.ApplicationTest do
     assert_raise RuntimeError, ~r/SECRET_HUB_AGENT_CORE_URL is required/, fn ->
       SecretHub.Agent.Application.start(:normal, [])
     end
+  end
+
+  defp eventually(fun, remaining \\ 100)
+  defp eventually(_fun, 0), do: false
+
+  defp eventually(fun, remaining) do
+    if fun.(),
+      do: true,
+      else:
+        (
+          Process.sleep(20)
+          eventually(fun, remaining - 1)
+        )
   end
 
   defp trusted_material(overrides \\ []) do

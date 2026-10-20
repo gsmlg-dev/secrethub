@@ -1,7 +1,9 @@
 defmodule SecretHub.Agent.UDSServer do
   @moduledoc "Owner-only newline UDS with connection-bound app private-key proof and Core-authorized reads."
   use GenServer
+  alias SecretHub.Agent.AccessAudit.Journal
   alias SecretHub.Agent.{Cache, CertVerifier, Connection, IdentityStore, UDSAuth}
+  alias SecretHub.Shared.AccessAudit.{Event, Telemetry}
 
   @frame_limit 65_536
 
@@ -126,14 +128,22 @@ defmodule SecretHub.Agent.UDSServer do
 
   def handle_info({:tcp_closed, socket}, state), do: {:noreply, close_connection(state, socket)}
 
-  def handle_info({:tcp_error, socket, _reason}, state),
-    do: {:noreply, close_connection(state, socket)}
+  def handle_info({:tcp_error, socket, _reason}, state) do
+    record_invalid(state)
+    {:noreply, close_connection(state, socket)}
+  end
 
   def handle_info({:authentication_timeout, socket}, state) do
     case state.connections[socket] do
-      %{auth_state: :authenticated} -> {:noreply, state}
-      nil -> {:noreply, state}
-      _ -> {:noreply, close_connection(state, socket)}
+      %{auth_state: :authenticated} ->
+        {:noreply, state}
+
+      nil ->
+        {:noreply, state}
+
+      _ ->
+        record_auth_rejection(state, nil, "timeout")
+        {:noreply, close_connection(state, socket)}
     end
   end
 
@@ -164,8 +174,10 @@ defmodule SecretHub.Agent.UDSServer do
     end
   end
 
-  defp handle_frame(socket, frame, state) when byte_size(frame) > @frame_limit,
-    do: close_connection(state, socket)
+  defp handle_frame(socket, frame, state) when byte_size(frame) > @frame_limit do
+    record_invalid(state)
+    close_connection(state, socket)
+  end
 
   defp handle_frame(socket, frame, state) do
     case Jason.decode(frame) do
@@ -179,6 +191,7 @@ defmodule SecretHub.Agent.UDSServer do
         end
 
       _ ->
+        record_invalid(state)
         close_connection(state, socket)
     end
   end
@@ -195,10 +208,10 @@ defmodule SecretHub.Agent.UDSServer do
 
     cond do
       version not in [nil, 1, 2] or (version != 2 and state.minimum_uds_auth_version == 2) ->
-        fail(state, socket, id, "INCOMPATIBLE_VERSION", true)
+        reject_auth(state, socket, id, "INCOMPATIBLE_VERSION", true, "incompatible_version")
 
       is_nil(state.agent_id) ->
-        fail(state, socket, id, "ENROLLMENT_IN_PROGRESS", false)
+        reject_auth(state, socket, id, "ENROLLMENT_IN_PROGRESS", false, "invalid_identity")
 
       true ->
         authenticate(socket, id, params, connection, state, version || 1)
@@ -239,13 +252,13 @@ defmodule SecretHub.Agent.UDSServer do
 
       state |> put_in([:connections, socket], connection) |> count(:auth_successes)
     else
-      _ -> fail(state, socket, id, "PROOF_FAILED", true)
+      _ -> reject_auth(state, socket, id, "PROOF_FAILED", true, "proof_failed")
     end
   end
 
   defp dispatch(socket, id, action, _params, _connection, state)
        when action in ["authenticate", "authenticate_proof"],
-       do: fail(state, socket, id, "PROOF_FAILED", true)
+       do: reject_auth(state, socket, id, "PROOF_FAILED", true, "proof_failed")
 
   defp dispatch(socket, id, "ping", _params, _connection, state) do
     reply(socket, id, %{message: "pong"})
@@ -260,21 +273,22 @@ defmodule SecretHub.Agent.UDSServer do
          %{auth_state: :authenticated} = connection,
          state
        ) do
-    case read_secret(params["path"], connection, state.request_timeout) do
-      {:ok, data} ->
-        reply(socket, id, data)
-        state
-
-      {:error, code} ->
-        fail(state, socket, id, code, false)
-    end
+    audited_read(socket, id, params, connection, state)
   end
 
-  defp dispatch(socket, id, _action, _params, %{auth_state: :authenticated}, state),
-    do: fail(state, socket, id, "UNAVAILABLE", false)
+  defp dispatch(socket, id, "get_secret", params, _connection, state) do
+    audited_reject(socket, id, params, state, "PROOF_REQUIRED", "proof_required")
+  end
 
-  defp dispatch(socket, id, _action, _params, _connection, state),
-    do: fail(state, socket, id, "PROOF_REQUIRED", false)
+  defp dispatch(socket, id, _action, _params, %{auth_state: :authenticated}, state) do
+    record_invalid(state)
+    fail(state, socket, id, "UNAVAILABLE", false)
+  end
+
+  defp dispatch(socket, id, _action, _params, _connection, state) do
+    record_invalid(state)
+    fail(state, socket, id, "PROOF_REQUIRED", false)
+  end
 
   defp authenticate(socket, id, params, connection, state, version) do
     with {:ok, pem} <- decode_base64(params["certificate"]),
@@ -318,7 +332,167 @@ defmodule SecretHub.Agent.UDSServer do
     end
   end
 
-  defp read_secret(path, connection, timeout) when is_binary(path) and path != "" do
+  defp audited_read(socket, id, params, connection, state) do
+    started = System.monotonic_time(:microsecond)
+    Telemetry.emit(:request_start, %{count: 1}, %{source: "agent", operation: "read"})
+    attrs = audit_attrs(Map.put_new(params, "client_correlation_id", id), state, connection)
+
+    with {:ok, audit} <- Journal.admit(attrs),
+         {:ok, _} <- Journal.append(audit.reservation, Map.put(attrs, :phase, "attempt")) do
+      result =
+        if is_nil(attrs.secret_path),
+          do: {:error, "FORBIDDEN", nil, {"denied", "invalid_path"}},
+          else: read_secret(params["path"], connection, state.request_timeout, audit)
+
+      case result do
+        {:ok, data, cache_status, core_event_id} ->
+          release =
+            Map.merge(attrs, %{
+              phase: "release_intent",
+              secret_version: data.version,
+              cache_status: cache_status,
+              core_event_id: core_event_id
+            })
+
+          release_response(socket, id, data, audit, release, started, state)
+
+        {:error, code, core_event_id, {outcome, reason}} ->
+          attrs = Map.put(attrs, :core_event_id, core_event_id)
+          sent = send_error(socket, id, code)
+          record_transport(audit, attrs, sent, outcome, reason, started)
+          count(state, :failed_requests)
+      end
+    else
+      _ -> audit_unavailable(state, socket, id, started)
+    end
+  end
+
+  defp release_response(socket, id, data, audit, release, started, state) do
+    case Journal.append(audit.reservation, release) do
+      {:ok, _} ->
+        sent = reply(socket, id, data)
+        record_transport(audit, release, sent, "success", "allowed", started)
+        state
+
+      _ ->
+        audit_unavailable(state, socket, id, started)
+    end
+  end
+
+  defp audit_unavailable(state, socket, id, started) do
+    Telemetry.emit(
+      :request_stop,
+      %{count: 1, duration_us: max(System.monotonic_time(:microsecond) - started, 0)},
+      %{source: "agent", operation: "read", outcome: "error", reason_code: "audit_unavailable"}
+    )
+
+    fail(state, socket, id, "AUDIT_UNAVAILABLE", false)
+  end
+
+  defp record_transport(audit, attrs, sent, outcome, reason, started) do
+    {phase, outcome, reason} =
+      case sent do
+        :ok -> {"response_sent", outcome, reason}
+        _ -> {"response_failed", "error", "transport_error"}
+      end
+
+    duration = max(System.monotonic_time(:microsecond) - started, 0)
+
+    metadata = %{
+      source: "agent",
+      operation: "read",
+      outcome: outcome,
+      reason_code: reason,
+      cache_status: attrs.cache_status
+    }
+
+    Telemetry.emit(:response_observation, %{count: 1}, metadata)
+    Telemetry.emit(:request_stop, %{count: 1, duration_us: duration}, metadata)
+
+    Journal.finish(
+      audit.reservation,
+      Map.merge(attrs, %{
+        phase: phase,
+        outcome: outcome,
+        reason_code: reason,
+        duration_us: duration
+      })
+    )
+  end
+
+  defp audited_reject(socket, id, params, state, code, reason) do
+    attrs = audit_attrs(Map.put_new(params, "client_correlation_id", id), state, nil)
+
+    with {:ok, audit} <- Journal.admit(attrs),
+         {:ok, _} <-
+           Journal.finish(
+             audit.reservation,
+             Map.merge(attrs, %{phase: "rejected", outcome: "denied", reason_code: reason})
+           ) do
+      fail(state, socket, id, code, false)
+    else
+      _ -> fail(state, socket, id, "AUDIT_UNAVAILABLE", false)
+    end
+  end
+
+  defp record_invalid(state) do
+    attrs = audit_attrs(%{}, state, nil) |> Map.put(:operation, "invalid")
+
+    with {:ok, audit} <- Journal.admit(attrs) do
+      Journal.finish(
+        audit.reservation,
+        Map.merge(attrs, %{phase: "rejected", outcome: "denied", reason_code: "invalid_request"})
+      )
+    end
+  end
+
+  defp audit_attrs(params, state, connection) do
+    principal = if connection, do: connection.principal, else: nil
+
+    correlation =
+      case Ecto.UUID.cast(params["client_correlation_id"]) do
+        {:ok, id} -> id
+        _ -> nil
+      end
+
+    %{
+      operation: "read",
+      outcome: "unknown",
+      reason_code: "none",
+      cache_status: "none",
+      agent_id: state.agent_id,
+      application_id: if(principal, do: principal.app_id, else: nil),
+      identity_status: if(principal, do: "verified", else: "unverified"),
+      attribution: if(principal, do: "agent_certificate", else: "none"),
+      secret_path: Event.safe_path(params["path"]),
+      client_correlation_id: correlation
+    }
+  end
+
+  defp audit_reason("UNAUTHORIZED"), do: "unauthorized"
+  defp audit_reason("FORBIDDEN"), do: "permission_denied"
+  defp audit_reason("INCOMPATIBLE_VERSION"), do: "incompatible_version"
+  defp audit_reason("VAULT_SEALED"), do: "sealed"
+  defp audit_reason(_), do: "core_unavailable"
+
+  defp audit_classification(
+         {:error, %{"audit_outcome" => outcome, "audit_reason_code" => reason}},
+         code
+       )
+       when outcome in ~w(success denied error unknown) and is_binary(reason) do
+    if Event.reason(reason) == reason,
+      do: {outcome, reason},
+      else: audit_classification(nil, code)
+  end
+
+  defp audit_classification(_, code) do
+    outcome =
+      if code in ~w(UNAUTHORIZED FORBIDDEN INCOMPATIBLE_VERSION), do: "denied", else: "error"
+
+    {outcome, audit_reason(code)}
+  end
+
+  defp read_secret(path, connection, timeout, audit) when is_binary(path) and path != "" do
     principal = connection.principal
     key = {principal.app_id, principal.canonical_fingerprint, path}
     cached = Cache.get_entry(key)
@@ -332,16 +506,37 @@ defmodule SecretHub.Agent.UDSServer do
     claims = %{
       app_id: principal.app_id,
       certificate_fingerprint: principal.canonical_fingerprint,
-      local_auth_version: connection.auth_version
+      local_auth_version: connection.auth_version,
+      audit_request_id: audit.request_id,
+      audit_attempt_id: audit.attempt_id
     }
 
     result = Connection.get_static_secret_for_app(Connection, path, claims, revision, timeout)
-    read_result(result, cached, key)
+
+    cache_status =
+      case cached do
+        {:ok, _} -> "validated"
+        _ -> "miss"
+      end
+
+    case read_result(result, cached, key) do
+      {:ok, data} -> {:ok, data, cache_status, core_event_id(result)}
+      {:error, code} -> {:error, code, core_event_id(result), audit_classification(result, code)}
+    end
   catch
-    :exit, _ -> {:error, "UNAVAILABLE"}
+    :exit, _ -> {:error, "UNAVAILABLE", nil, {"error", "core_unavailable"}}
   end
 
-  defp read_secret(_, _, _), do: {:error, "FORBIDDEN"}
+  defp read_secret(_, _, _, _), do: {:error, "FORBIDDEN", nil, {"denied", "invalid_path"}}
+
+  defp core_event_id({status, %{"audit_event_id" => id}}) when status in [:ok, :error] do
+    case Ecto.UUID.cast(id) do
+      {:ok, normalized} -> normalized
+      _ -> nil
+    end
+  end
+
+  defp core_event_id(_), do: nil
 
   defp read_result(result, cached, key) do
     case result do
@@ -384,16 +579,40 @@ defmodule SecretHub.Agent.UDSServer do
   defp fail_auth(state, socket, id, code) do
     attempts = state.connections[socket].attempts + 1
     state = put_in(state, [:connections, socket, :attempts], attempts) |> count(:auth_failures)
-    fail(state, socket, id, code, attempts >= 3)
+    reject_auth(state, socket, id, code, attempts >= 3, "invalid_identity")
   end
 
-  defp fail(state, socket, id, code, close?) do
+  defp reject_auth(state, socket, id, code, close?, reason) do
+    case record_auth_rejection(state, id, reason) do
+      {:ok, _} -> fail(state, socket, id, code, close?)
+      _ -> fail(state, socket, id, "AUDIT_UNAVAILABLE", close?)
+    end
+  end
+
+  defp record_auth_rejection(state, id, reason) do
+    attrs =
+      audit_attrs(%{"client_correlation_id" => id}, state, nil)
+      |> Map.put(:operation, "authenticate")
+      |> Map.put(:secret_path, nil)
+
+    with {:ok, audit} <- Journal.admit(attrs) do
+      Journal.finish(
+        audit.reservation,
+        Map.merge(attrs, %{phase: "rejected", outcome: "denied", reason_code: reason})
+      )
+    end
+  end
+
+  defp send_error(socket, id, code) do
     :gen_tcp.send(
       socket,
       Jason.encode!(%{request_id: id, status: "error", error: %{code: code, message: code}}) <>
         "\n"
     )
+  end
 
+  defp fail(state, socket, id, code, close?) do
+    send_error(socket, id, code)
     state = count(state, :failed_requests)
     if close?, do: close_connection(state, socket), else: state
   end

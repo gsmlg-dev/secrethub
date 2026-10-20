@@ -82,6 +82,30 @@ defmodule SecretHub.Agent.ConnectionProtocolTest do
     assert Connection.runtime_event(:heartbeat) == "agent:heartbeat"
   end
 
+  test "older Core capability absence never uploads or acknowledges pending evidence" do
+    state = %{connection_status: :connected, access_audit_capable: false}
+
+    assert {:reply, {:error, :unsupported}, ^state} =
+             Connection.handle_call({:submit_audit_batch, [], 1_000}, nil, state)
+
+    assert [] = Connection.negotiated_ssh_capabilities(["access_audit_v1"], %{})
+
+    assert ["access_audit_v1"] =
+             Connection.negotiated_ssh_capabilities(
+               ["access_audit_v1"],
+               %{"runtime_capabilities" => ["uds_auth_v2", "access_audit_v1"]}
+             )
+  end
+
+  test "disconnected audit upload reports outage while retaining capability semantics" do
+    for status <- [:connecting, :disconnected] do
+      state = %{connection_status: status, access_audit_capable: true}
+
+      assert {:reply, {:error, :audit_unavailable}, ^state} =
+               Connection.handle_call({:submit_audit_batch, [], 1_000}, nil, state)
+    end
+  end
+
   test "stores the accepted runtime callback in connection state" do
     callback = fn _payload -> :ok end
 

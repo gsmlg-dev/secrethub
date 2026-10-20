@@ -70,6 +70,11 @@ defmodule SecretHub.Agent.Application do
 
     children =
       [
+        # Durable evidence must outlive all consumers under :rest_for_one.
+        {SecretHub.Agent.AccessAudit.Journal,
+         [state_dir: state_dir] ++
+           Application.get_env(:secrethub_agent, :access_audit_journal, [])},
+        SecretHub.Agent.AccessAudit.Reporter,
         SecretHub.Agent.CertVerifier,
 
         # Cache for secrets

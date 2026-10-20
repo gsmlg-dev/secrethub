@@ -40,6 +40,7 @@ defmodule SecretHub.Agent.Connection do
 
   alias Phoenix.SocketClient
   alias Phoenix.SocketClient.{Channel, Message}
+  alias SecretHub.Agent.AccessAudit.Journal
   alias SecretHub.Agent.{Cache, IdentityStore, UDSServer}
 
   @type state :: %{
@@ -236,6 +237,7 @@ defmodule SecretHub.Agent.Connection do
       state_dir: Keyword.get(opts, :state_dir),
       minimum_uds_auth_version: 1,
       ssh_capabilities: [],
+      access_audit_capable: false,
       core_url: core_url,
       cert_pem: cert_pem,
       private_key: private_key,
@@ -262,6 +264,49 @@ defmodule SecretHub.Agent.Connection do
 
   def get_static_secret_for_app(server, path, claims, known_revision, timeout) do
     GenServer.call(server, {:get_static_secret_for_app, path, claims, known_revision}, timeout)
+  end
+
+  @doc "Uploads a bounded batch only after access_audit_v1 negotiation."
+  def submit_audit_batch(events, timeout \\ 10_000) do
+    GenServer.call(__MODULE__, {:submit_audit_batch, events, timeout}, timeout + 100)
+  catch
+    :exit, _ -> {:error, :audit_unavailable}
+  end
+
+  @impl true
+  def handle_call({:submit_audit_batch, events, timeout}, _from, state) do
+    cond do
+      state.connection_status != :connected ->
+        {:reply, {:error, :audit_unavailable}, state}
+
+      not Map.get(state, :access_audit_capable, false) ->
+        {:reply, {:error, :unsupported}, state}
+
+      true ->
+        health =
+          case Journal.health() do
+            {:ok, health} ->
+              Map.take(
+                health,
+                ~w(pending_events pending_bytes quarantined_events oldest_pending_at oldest_pending_age_ms journal_status)
+              )
+
+            _ ->
+              nil
+          end
+
+        result =
+          Channel.push(
+            state.channel,
+            "audit:batch",
+            %{"events" => events, "health" => health},
+            timeout
+          )
+
+        {:reply, result, state}
+    end
+  catch
+    :exit, _ -> {:reply, {:error, :audit_unavailable}, state}
   end
 
   @impl true
@@ -313,7 +358,9 @@ defmodule SecretHub.Agent.Connection do
         "app_id" => claims.app_id,
         "certificate_fingerprint" => claims.certificate_fingerprint,
         "local_auth_version" => claims.local_auth_version,
-        "known_revision" => revision
+        "known_revision" => revision,
+        "audit_request_id" => Map.get(claims, :audit_request_id),
+        "audit_attempt_id" => Map.get(claims, :audit_attempt_id)
       }
 
       send_request(state, from, runtime_event(:get_static_secret), payload)
@@ -637,7 +684,8 @@ defmodule SecretHub.Agent.Connection do
         channel: nil,
         channel_ref: nil,
         heartbeat_timer: nil,
-        ssh_capabilities: []
+        ssh_capabilities: [],
+        access_audit_capable: false
     }
   end
 
@@ -775,6 +823,8 @@ defmodule SecretHub.Agent.Connection do
             heartbeat_timer: schedule_runtime_heartbeat(),
             connection_status: :connected,
             ssh_capabilities: negotiated_ssh_capabilities(ssh_capabilities(), response),
+            access_audit_capable:
+              "access_audit_v1" in negotiated_ssh_capabilities(["access_audit_v1"], response),
             retry_count: 0
           })
           |> notify_runtime_accepted(response)
@@ -822,7 +872,7 @@ defmodule SecretHub.Agent.Connection do
 
   defp join_payload(state) do
     %{
-      "runtime_capabilities" => ["uds_auth_v2" | ssh_capabilities()],
+      "runtime_capabilities" => ["uds_auth_v2", "access_audit_v1" | ssh_capabilities()],
       "agent_id" => state.agent_id,
       "name" => state.agent_id,
       "hostname" => local_hostname(),

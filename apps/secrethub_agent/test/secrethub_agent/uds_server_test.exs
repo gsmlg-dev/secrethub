@@ -1,10 +1,13 @@
 defmodule SecretHub.Agent.UDSServerTest do
   use ExUnit.Case, async: false
   import Bitwise
+  alias SecretHub.Agent.AccessAudit.Journal
   alias SecretHub.Agent.{Cache, CertVerifier, UDSAuth, UDSServer}
   alias X509.Certificate.Extension
+  @moduletag :tmp_dir
 
-  setup do
+  setup %{tmp_dir: dir} do
+    start_supervised!({Journal, state_dir: dir})
     start_supervised!(CertVerifier)
     start_supervised!(Cache)
     path = Path.join(System.tmp_dir!(), "sh-v2-#{System.unique_integer([:positive])}.sock")
@@ -21,7 +24,7 @@ defmodule SecretHub.Agent.UDSServerTest do
       )
 
     on_exit(fn -> :gen_tcp.close(socket) end)
-    %{socket: socket, path: path}
+    %{socket: socket, path: path, state_dir: dir}
   end
 
   test "socket is owner-only and legacy auth cannot bypass Core floor", %{
@@ -303,6 +306,369 @@ defmodule SecretHub.Agent.UDSServerTest do
     assert {:error, :closed} = :gen_tcp.recv(socket, 0, 1000)
   end
 
+  test "audit joins use generated identities and persist release before successful send without values",
+       %{
+         socket: socket,
+         state_dir: dir
+       } do
+    canary = "disposable-plaintext-canary-6827"
+
+    start_supervised!(
+      {SecretHub.Agent.UDSCoreFixture,
+       responses: [{:ok, %{"value" => canary, "version" => 1, "revision" => 1}}], owner: self()}
+    )
+
+    {key, pem, app_id} = certificate_fixture()
+
+    challenge =
+      request(socket, "authenticate", %{auth_version: 2, certificate: Base.encode64(pem)})["data"]
+
+    assert request(socket, "authenticate_proof", proof_params(challenge, key))["status"] == "ok"
+    untrusted = Ecto.UUID.generate()
+    correlation = Ecto.UUID.generate()
+
+    assert request(socket, "get_secret", %{
+             path: "prod.db.password",
+             audit_request_id: untrusted,
+             audit_attempt_id: untrusted,
+             client_correlation_id: correlation
+           })["data"]["value"] == canary
+
+    assert_receive {:core_request, %{audit_request_id: request_id, audit_attempt_id: attempt_id},
+                    nil}
+
+    refute request_id == untrusted
+    refute attempt_id == untrusted
+    assert {:ok, [admitted, attempt, intent, terminal]} = Journal.batch()
+
+    assert Enum.map([admitted, attempt, intent, terminal], & &1["phase"]) ==
+             ~w(admitted attempt release_intent response_sent)
+
+    assert Enum.all?([admitted, attempt, intent, terminal], &(&1["request_id"] == request_id))
+    assert terminal["application_id"] == app_id
+    assert terminal["attribution"] == "agent_certificate"
+    assert terminal["outcome"] == "success"
+    assert terminal["client_correlation_id"] == correlation
+    refute File.read!(Path.join(dir, "access-audit/observations.wal")) =~ canary
+  end
+
+  test "bounded Core audit classification preserves public errors and legacy fallback", %{
+    socket: socket
+  } do
+    responses = [
+      %{"reason" => "FORBIDDEN", "audit_outcome" => "error", "audit_reason_code" => "not_found"},
+      %{
+        "reason" => "UNAUTHORIZED",
+        "audit_outcome" => "denied",
+        "audit_reason_code" => "revoked"
+      },
+      %{"reason" => "FORBIDDEN"},
+      %{
+        "reason" => "FORBIDDEN",
+        "audit_outcome" => "arbitrary",
+        "audit_reason_code" => "not_found"
+      },
+      %{
+        "reason" => "FORBIDDEN",
+        "audit_outcome" => "error",
+        "audit_reason_code" => "TOKEN-CANARY"
+      }
+    ]
+
+    start_supervised!(
+      {SecretHub.Agent.UDSCoreFixture,
+       responses: Enum.map(responses, &{:error, &1}), owner: self()}
+    )
+
+    {key, pem, _} = certificate_fixture()
+
+    challenge =
+      request(socket, "authenticate", %{auth_version: 2, certificate: Base.encode64(pem)})["data"]
+
+    assert request(socket, "authenticate_proof", proof_params(challenge, key))["status"] == "ok"
+
+    for {reply, expected} <-
+          Enum.zip(responses, [
+            {"error", "not_found"},
+            {"denied", "revoked"},
+            {"denied", "permission_denied"},
+            {"denied", "permission_denied"},
+            {"denied", "permission_denied"}
+          ]) do
+      response = request(socket, "get_secret", %{path: "prod.db.password"})
+      assert error(response) == reply["reason"]
+      refute Map.has_key?(response["error"], "audit_reason_code")
+      # Wait until the actual server callback has persisted its post-send result.
+      _ = :sys.get_state(UDSServer)
+      assert {:ok, events} = Journal.batch()
+      terminal = List.last(events)
+      assert {terminal["outcome"], terminal["reason_code"]} == expected
+      refute Jason.encode!(events) =~ "TOKEN-CANARY"
+    end
+  end
+
+  test "missing journal refuses plaintext and Core authorization even when a cache entry exists",
+       %{socket: socket} do
+    start_supervised!({SecretHub.Agent.UDSCoreFixture, responses: [], owner: self()})
+    {key, pem, app_id} = certificate_fixture()
+
+    challenge =
+      request(socket, "authenticate", %{auth_version: 2, certificate: Base.encode64(pem)})["data"]
+
+    assert request(socket, "authenticate_proof", proof_params(challenge, key))["status"] == "ok"
+
+    Cache.put(
+      {app_id, challenge["certificate_fingerprint"], "prod.db.password"},
+      "cached-private-canary",
+      version: 1,
+      revision: 1
+    )
+
+    assert :ok = stop_supervised(Journal)
+    response = request(socket, "get_secret", %{path: "prod.db.password"})
+    assert error(response) == "AUDIT_UNAVAILABLE"
+    refute Jason.encode!(response) =~ "cached-private-canary"
+    refute_receive {:core_request, _, _}
+  end
+
+  test "invalid local operations omit claimed identity and unsafe path", %{socket: socket} do
+    assert error(
+             request(socket, "get_secret", %{
+               path: "secret-token-body\ncanary",
+               app_id: Ecto.UUID.generate()
+             })
+           ) == "PROOF_REQUIRED"
+
+    assert {:ok, [admitted, rejected]} = Journal.batch()
+    assert admitted["application_id"] == nil
+    assert rejected["identity_status"] == "unverified"
+    assert rejected["secret_path"] == nil
+    assert rejected["phase"] == "rejected"
+  end
+
+  test "failed certificate and proof authentication are durable unverified rejections", %{
+    socket: socket
+  } do
+    {key, pem, _} = certificate_fixture()
+
+    assert error(
+             request(socket, "authenticate", %{
+               auth_version: 2,
+               certificate: Base.encode64("invalid-cert-canary")
+             })
+           ) == "INVALID_CERTIFICATE"
+
+    assert {:ok, [cert_admission, cert_rejection]} = Journal.batch()
+    assert cert_admission["operation"] == "authenticate"
+    assert cert_rejection["reason_code"] == "invalid_identity"
+    assert cert_rejection["application_id"] == nil
+    assert cert_rejection["identity_status"] == "unverified"
+    assert cert_rejection["secret_path"] == nil
+    ids = Enum.map([cert_admission, cert_rejection], & &1["event_id"])
+    assert :ok = Journal.acknowledge(ids)
+
+    challenge =
+      request(socket, "authenticate", %{auth_version: 2, certificate: Base.encode64(pem)})["data"]
+
+    proof =
+      Map.put(proof_params(challenge, key), "signature", Base.encode64("invalid-proof-canary"))
+
+    assert error(request(socket, "authenticate_proof", proof)) == "PROOF_FAILED"
+    assert {:ok, [_, proof_rejection]} = Journal.batch()
+    assert proof_rejection["reason_code"] == "proof_failed"
+    assert proof_rejection["application_id"] == nil
+    assert proof_rejection["attribution"] == "none"
+  end
+
+  test "authentication timeout records unverified rejection before closing real socket", %{
+    socket: socket
+  } do
+    assert request(socket, "ping", %{})["status"] == "ok"
+    [server_socket] = :sys.get_state(UDSServer).connections |> Map.keys()
+    send(UDSServer, {:authentication_timeout, server_socket})
+    assert {:error, :closed} = :gen_tcp.recv(socket, 0, 2_000)
+
+    assert {:ok,
+            [
+              _,
+              %{
+                "operation" => "authenticate",
+                "reason_code" => "timeout",
+                "application_id" => nil
+              }
+            ]} = Journal.batch()
+  end
+
+  test "invalid authenticated paths are classified locally without contacting Core", %{
+    socket: socket
+  } do
+    start_supervised!({SecretHub.Agent.UDSCoreFixture, responses: [], owner: self()})
+    authenticate_client(socket)
+    assert error(request(socket, "get_secret", %{path: "unsafe\npath-canary"})) == "FORBIDDEN"
+
+    assert {:ok,
+            [
+              _,
+              _,
+              %{"phase" => "response_sent", "reason_code" => "invalid_path", "secret_path" => nil}
+            ]} = Journal.batch()
+
+    refute_receive {:core_request, _, _}
+  end
+
+  test "actual UDS crash before Core reply retains incomplete evidence and never releases plaintext",
+       %{socket: socket} do
+    gate = make_ref()
+
+    core =
+      start_supervised!(
+        {SecretHub.Agent.UDSCoreFixture,
+         responses: [
+           {:wait, gate,
+            {:ok, %{"value" => "never-released-canary", "version" => 1, "revision" => 1}}}
+         ],
+         owner: self()}
+      )
+
+    authenticate_client(socket)
+    uds = Process.whereis(UDSServer)
+    monitor = Process.monitor(uds)
+    send_request(socket, "get_secret", %{path: "prod.db.password"})
+    assert_receive {:core_waiting, ^gate}, 2_000
+    Process.exit(uds, :kill)
+    assert_receive {:DOWN, ^monitor, :process, ^uds, :killed}
+    send(core, {:release, gate})
+    assert {:error, :closed} = :gen_tcp.recv(socket, 0, 2_000)
+    assert eventually(fn -> Process.whereis(UDSServer) not in [nil, uds] end)
+    assert {:ok, [%{"phase" => "admitted"}, %{"phase" => "attempt"}]} = Journal.batch()
+  end
+
+  test "actual send failure after release intent records failure rather than successful delivery",
+       %{socket: socket} do
+    gate = make_ref()
+
+    core =
+      start_supervised!(
+        {SecretHub.Agent.UDSCoreFixture,
+         responses: [
+           {:wait, gate, {:ok, %{"value" => "unsent-canary", "version" => 1, "revision" => 1}}}
+         ],
+         owner: self()}
+      )
+
+    authenticate_client(socket)
+    [server_socket] = :sys.get_state(UDSServer).connections |> Map.keys()
+    send_request(socket, "get_secret", %{path: "prod.db.password"})
+    assert_receive {:core_waiting, ^gate}, 2_000
+    # Close the actual transport port while the request owner is waiting for
+    # Core. This deterministically exercises :gen_tcp.send's closed result;
+    # remote FIN delivery depends on the socket driver's active-once state.
+    :ok = :gen_tcp.close(server_socket)
+    :ok = :gen_tcp.close(socket)
+    send(core, {:release, gate})
+
+    assert eventually(fn ->
+             case Journal.batch() do
+               {:ok,
+                [
+                  _,
+                  _,
+                  %{"phase" => "release_intent"},
+                  %{"phase" => "response_failed", "reason_code" => "transport_error"}
+                ]} ->
+                 true
+
+               _ ->
+                 false
+             end
+           end)
+  end
+
+  test "crash after actual plaintext send leaves durable intent ambiguous and never resends", %{
+    socket: socket,
+    path: path
+  } do
+    start_supervised!(
+      {SecretHub.Agent.UDSCoreFixture,
+       responses: [{:ok, %{"value" => "sent-once-canary", "version" => 1, "revision" => 1}}],
+       owner: self()}
+    )
+
+    authenticate_client(socket)
+    uds = Process.whereis(UDSServer)
+    owner = self()
+    handler = "uds-send-crash-#{System.unique_integer([:positive])}"
+
+    :ok =
+      :telemetry.attach(
+        handler,
+        [:secrethub, :access_audit, :response, :observation],
+        fn _, _, _, _ ->
+          if self() == uds do
+            send(owner, :transport_completed_before_crash)
+            Process.exit(self(), :kill)
+          end
+        end,
+        nil
+      )
+
+    on_exit(fn -> :telemetry.detach(handler) end)
+
+    assert request(socket, "get_secret", %{path: "prod.db.password"})["data"]["value"] ==
+             "sent-once-canary"
+
+    assert_receive :transport_completed_before_crash
+    assert_receive {:core_request, _, _}
+    assert eventually(fn -> Process.whereis(UDSServer) not in [nil, uds] end)
+
+    assert {:ok,
+            [%{"phase" => "admitted"}, %{"phase" => "attempt"}, %{"phase" => "release_intent"}]} =
+             Journal.batch()
+
+    assert {:ok, _} = UDSServer.get_stats()
+
+    {:ok, fresh} =
+      :gen_tcp.connect(
+        {:local, to_charlist(path)},
+        0,
+        [:binary, packet: :line, active: false],
+        1_000
+      )
+
+    assert {:error, :timeout} = :gen_tcp.recv(fresh, 0, 100)
+    :gen_tcp.close(fresh)
+    refute_receive {:core_request, _, _}, 100
+  end
+
+  defp authenticate_client(socket) do
+    {key, pem, _} = certificate_fixture()
+
+    challenge =
+      request(socket, "authenticate", %{auth_version: 2, certificate: Base.encode64(pem)})["data"]
+
+    assert request(socket, "authenticate_proof", proof_params(challenge, key))["status"] == "ok"
+  end
+
+  defp send_request(socket, action, params) do
+    :gen_tcp.send(
+      socket,
+      Jason.encode!(%{request_id: Ecto.UUID.generate(), action: action, params: params}) <> "\n"
+    )
+  end
+
+  defp eventually(fun, remaining \\ 100)
+  defp eventually(_fun, 0), do: false
+
+  defp eventually(fun, remaining) do
+    if fun.(),
+      do: true,
+      else:
+        (
+          Process.sleep(10)
+          eventually(fun, remaining - 1)
+        )
+  end
+
   defp request(socket, action, params) do
     id = Ecto.UUID.generate()
 
@@ -386,6 +752,22 @@ defmodule SecretHub.Agent.UDSCoreFixture do
   def handle_call({:get_static_secret_for_app, _path, claims, revision}, _from, state) do
     send(state.owner, {:core_request, claims, revision})
     [response | responses] = state.responses
+
+    response =
+      case response do
+        {:wait, gate, result} ->
+          send(state.owner, {:core_waiting, gate})
+
+          receive do
+            {:release, ^gate} -> result
+          after
+            5_000 -> {:error, :not_connected}
+          end
+
+        result ->
+          result
+      end
+
     {:reply, response, %{state | responses: responses}}
   end
 end

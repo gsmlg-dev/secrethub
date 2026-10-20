@@ -205,6 +205,9 @@ defmodule SecretHub.Agent.RuntimeConfigIntegrationTest do
     assert status == 0, output
     assert [_, encoded] = String.split(output, @result_prefix, parts: 2)
     assert {:ok, payload} = encoded |> String.trim() |> Base.decode64()
+    # The subprocess serializes Config's fixed atom keys. Load their owning
+    # module explicitly so safe decoding does not depend on other test order.
+    Code.ensure_loaded!(SecretHub.Agent.Config)
     :erlang.binary_to_term(payload, [:safe])
   end
 
