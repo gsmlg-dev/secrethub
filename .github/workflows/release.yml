@@ -577,6 +577,12 @@ jobs:
 
           ## Changes
 
+          - Static-secret access now records signed Core decisions and durable
+            Agent observations. The protected \`/admin/audit\` page shows persisted
+            application request totals, timelines, provenance, and reporting health.
+            Agent observations survive restart and upload with idempotent replay.
+            See the [access audit operations guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/operations/access-audit.md)
+            and [qualification report](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/operations/access-audit-qualification-2026-10-20.md).
           - Agent releases accept a TOML configuration file and provide offline
             \`config generate\` and \`config validate [file]\` commands. See the
             [Agent configuration guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/deployment/agent-deployment-guide.md).
@@ -628,6 +634,14 @@ jobs:
           run migrations, or alter existing Vault data.
 
           ## Upgrade and deployment requirements
+
+          Apply the additive Core access-audit migrations and upgrade Core before
+          Agents. Preserve each Agent's state directory, including its new
+          \`access-audit/observations.wal\` journal. Unavailable or exhausted journal
+          storage refuses new secret delivery with \`AUDIT_UNAVAILABLE\`. Retention
+          remains disabled by default and has no automatic deletion scheduler.
+          Older Agents provide partial evidence; review reporting health before
+          interpreting an empty result as inactivity.
 
           This release defaults to the restricted single-operator profile. Read the
           [runtime contract](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/runtime-contract.md)
