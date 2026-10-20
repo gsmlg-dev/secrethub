@@ -9,6 +9,7 @@ defmodule SecretHub.Web.UnifiedAgentSupervisionTest do
 
     assert SecretHub.Web.Endpoint in child_ids
     refute SecretHub.Web.MachineEndpoint in child_ids
-    refute Process.whereis(SecretHub.Web.MachineEndpoint)
+    assert is_pid(Process.whereis(SecretHub.Web.MachineEndpoint))
+    assert SecretHub.Web.MachineEndpoint.config(:server) == false
   end
 end
