@@ -13,6 +13,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
   """
 
   use Ecto.Schema
+  alias SecretHub.Shared.AccessAudit.{Checkpoint, Event}
   alias SecretHub.Shared.HumanAuditEvidence
   import Ecto.Changeset
 
@@ -333,6 +334,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
     |> validate_inclusion(:signature_version, [1, 2])
     |> validate_signature_key_id()
     |> validate_hash_version_event_type()
+    |> validate_access_audit_evidence()
+    |> validate_access_retention_evidence()
     |> validate_human_evidence()
     |> validate_upgrade_gate_evidence()
     |> validate_client_auth_pki_evidence()
@@ -348,6 +351,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
   def valid_event_types do
     [
       # Secret access events
+      "access.observed",
+      "access.retention_checkpoint",
       "secret.accessed",
       "secret.dynamic_issued",
       "secret.lease_renewed",
@@ -441,7 +446,8 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
 
     v2_supported_event_types =
       @upgrade_event_types ++
-        @client_auth_pki_event_types ++ HumanAuditEvidence.events()
+        @client_auth_pki_event_types ++
+        ["access.observed", "access.retention_checkpoint"] ++ HumanAuditEvidence.events()
 
     cond do
       event_type in v2_supported_event_types and hash_version != 2 ->
@@ -452,6 +458,60 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
 
       true ->
         changeset
+    end
+  end
+
+  defp validate_access_audit_evidence(changeset) do
+    if get_field(changeset, :event_type) == "access.observed" do
+      validate_access_audit_data(changeset, get_field(changeset, :event_data))
+    else
+      changeset
+    end
+  end
+
+  defp validate_access_audit_data(
+         changeset,
+         %{
+           "access_audit" =>
+             %{"namespace" => namespace, "received_at" => received, "envelope" => envelope} =
+               evidence
+         } = data
+       )
+       when map_size(data) == 1 and map_size(evidence) == 3 and is_binary(namespace) and
+              is_binary(received) do
+    with {:ok, normalized} <- Event.validate(envelope),
+         true <- normalized == envelope,
+         true <- namespace == access_namespace(envelope),
+         {:ok, _, _} <- DateTime.from_iso8601(received) do
+      changeset
+    else
+      _ -> invalid_access_audit_data(changeset)
+    end
+  end
+
+  defp validate_access_audit_data(changeset, _data), do: invalid_access_audit_data(changeset)
+
+  defp invalid_access_audit_data(changeset),
+    do: add_error(changeset, :event_data, "must contain exactly validated access audit evidence")
+
+  defp access_namespace(%{"agent_id" => agent}) when is_binary(agent), do: "agent:" <> agent
+  defp access_namespace(_envelope), do: "core"
+
+  defp validate_access_retention_evidence(changeset) do
+    if get_field(changeset, :event_type) == "access.retention_checkpoint" do
+      case Checkpoint.validate_marker(get_field(changeset, :event_data)) do
+        {:ok, _} ->
+          changeset
+
+        {:error, _} ->
+          add_error(
+            changeset,
+            :event_data,
+            "must contain exactly validated retention checkpoint evidence"
+          )
+      end
+    else
+      changeset
     end
   end
 
