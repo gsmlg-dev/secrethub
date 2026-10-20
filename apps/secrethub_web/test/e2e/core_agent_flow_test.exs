@@ -467,6 +467,7 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     state_dir =
       persist_agent_identity!(tmp_dir, enrollment, certificate, tls_private_key, connect_info)
 
+    start_supervised!({SecretHub.Agent.AccessAudit.Journal, state_dir: state_dir})
     start_supervised!(CertVerifier)
     start_supervised!(Cache)
 
