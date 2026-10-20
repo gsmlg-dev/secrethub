@@ -195,9 +195,19 @@ config :swoosh, :api_client, false
 # Agent configuration (for development)
 # The agent runtime requires mTLS certificate material, so keep it opt-in for
 # normal Phoenix development.
+enrollment_ca = System.get_env("SECRET_HUB_AGENT_ENROLLMENT_CA_PATH")
+
+enrollment_req_options =
+  if enrollment_ca do
+    [connect_options: [transport_opts: [cacertfile: enrollment_ca, verify: :verify_peer]]]
+  else
+    []
+  end
+
 config :secrethub_agent,
   enabled: System.get_env("SECRET_HUB_AGENT_ENABLED") in ["1", "true", "TRUE"],
-  core_url: System.get_env("SECRET_HUB_AGENT_CORE_URL") || "http://localhost:#{core_port}",
+  core_url: System.get_env("SECRET_HUB_AGENT_CORE_URL") || "https://#{agent_host}:#{agent_port}",
+  enrollment_req_options: enrollment_req_options,
   state_dir: System.get_env("SECRET_HUB_AGENT_STATE_DIR") || "priv/cert",
   # devenv keeps the socket beside Agent state; standalone dev can use /tmp.
   socket_path: System.get_env("SECRET_HUB_AGENT_SOCKET_PATH") || "/tmp/secrethub_dev_agent.sock"

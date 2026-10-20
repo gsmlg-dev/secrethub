@@ -40,10 +40,11 @@ defmodule SecretHub.Core.Preflight do
       management_transport:
         endpoint[:http][:ip] != {0, 0, 0, 0} and endpoint[:trusted_proxy_ips] not in [nil, []],
       # Optional listeners do not require runtime material while disabled.
-      machine_listener: machine[:server] in [nil, false, true],
+      machine_listener: machine[:server] in [nil, false],
       agent_mtls:
         agent[:server] in [nil, false] or
-          (agent[:server] == true and tls_files_readable?(agent[:https])),
+          (agent[:server] == true and agent[:http] in [nil, false] and
+             tls_files_readable?(agent[:https])),
       human_disabled: not Application.get_env(:secrethub_human, :enabled, false),
       features: Keyword.get(config, :enabled_features) == [:static_secrets, :client_auth_pki],
       temporary_directory: writable_tmp?()
@@ -85,7 +86,8 @@ defmodule SecretHub.Core.Preflight do
         _ ->
           false
       end
-    end) and transport[:verify] == :verify_peer and transport[:fail_if_no_peer_cert] == true
+    end) and transport[:verify] == :verify_peer and transport[:fail_if_no_peer_cert] == false and
+      not Keyword.has_key?(transport, :verify_fun)
   end
 
   defp tls_files_readable?(_), do: false

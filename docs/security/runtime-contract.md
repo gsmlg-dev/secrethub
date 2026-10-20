@@ -91,18 +91,21 @@ transport peer may reach management routes; forwarding headers cannot authorize
 another peer or allow an unrelated browser origin. This setting does not add an
 application login or a native admin TLS listener.
 
-Machine enrollment/token HTTP uses a separate route set, enabled with
-`SECRET_HUB_MACHINE_ENDPOINT_SERVER=true`, default `127.0.0.1:4668`.
-`SECRET_HUB_MACHINE_BIND_IP`, `SECRET_HUB_MACHINE_HOST`, and
-`SECRET_HUB_MACHINE_PORT` configure its private backend. Existing external TLS
-terminates in the operator's proxy. Management routes are absent on this listener.
-
-Agent runtime still uses the dedicated mTLS endpoint, enabled with
-`SECRET_HUB_AGENT_ENDPOINT_SERVER=true`. Its host, port, server certificate,
-private key, and client CA use the existing `SECRET_HUB_AGENT_ENDPOINT_*` inputs.
-Core-issued Agent certificates authorize runtime connections. These three
-listener ports must differ. The former extra Core admin TLS listener is refused;
-Human endpoints are disabled. No live ingress configuration is changed here.
+Machine enrollment/token HTTPS and Agent runtime WSS share one Agent listener,
+enabled with `SECRET_HUB_AGENT_ENDPOINT_SERVER=true`, normally port `4665`.
+Its host, port, server certificate, private key, and client CA use the existing
+`SECRET_HUB_AGENT_ENDPOINT_HOST`, `SECRET_HUB_AGENT_ENDPOINT_PORT`,
+`SECRET_HUB_AGENT_ENDPOINT_CERT_PATH`, `SECRET_HUB_AGENT_ENDPOINT_KEY_PATH`, and
+`SECRET_HUB_AGENT_ENDPOINT_CA_CERT_PATH` inputs. TLS 1.2/1.3 verifies presented
+client certificates while allowing bootstrap HTTPS without one. Runtime socket
+admission still requires a valid Core-issued Agent certificate; machine API
+token/proof authorization is unchanged and does not grant runtime identity.
+Management routes are absent on this listener. Core has two service listeners:
+the existing management port `4664` and the Agent port `4665`, which must differ.
+There is no `4668` listener; retired `SECRET_HUB_MACHINE_*` flags cannot start one.
+The former extra Core admin TLS listener is refused; Human endpoints are disabled.
+See the [Agent deployment guide](../deployment/agent-deployment-guide.md#configure-the-core-agent-listener)
+for certificate provisioning, enrollment CA trust, and development startup steps.
 
 ## Preflight and probes
 

@@ -49,6 +49,7 @@ if System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) do
 
   config :secrethub_web, SecretHub.Web.AgentEndpoint,
     server: true,
+    http: false,
     pubsub_server: SecretHub.Web.PubSub,
     url: [host: agent_host, port: agent_port],
     https: [
@@ -61,7 +62,7 @@ if System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) do
         transport_options: [
           cacertfile: String.to_charlist(agent_cacertfile),
           verify: :verify_peer,
-          fail_if_no_peer_cert: true,
+          fail_if_no_peer_cert: false,
           versions: [:"tlsv1.2", :"tlsv1.3"],
           # Dual-stack so IPv4-resolving agents can reach the IPv6 wildcard bind
           ipv6_v6only: false
@@ -166,10 +167,9 @@ if config_env() == :prod do
   port = RuntimeConfig.port!("PORT", 4664)
   management_ip = RuntimeConfig.private_ip!("SECRET_HUB_MANAGEMENT_BIND_IP", "127.0.0.1")
   proxy_ip = RuntimeConfig.private_ip!("SECRET_HUB_TRUSTED_PROXY_IP", "127.0.0.1")
-  machine_port = RuntimeConfig.port!("SECRET_HUB_MACHINE_PORT", 4668)
   agent_port = RuntimeConfig.port!("SECRET_HUB_AGENT_ENDPOINT_PORT", 4665)
 
-  if length(Enum.uniq([port, machine_port, agent_port])) != 3 do
+  if port == agent_port do
     raise ArgumentError, "listeners: conflicting_ports"
   end
 
@@ -182,14 +182,11 @@ if config_env() == :prod do
     secret_key_base: secret_key_base,
     check_origin: allowed_origins
 
-  # Machine enrollment and application-token APIs use an explicit separate route set.
+  # Machine HTTP APIs share the Agent TLS listener; this compatibility endpoint never listens.
   config :secrethub_web, SecretHub.Web.MachineEndpoint,
-    server: System.get_env("SECRET_HUB_MACHINE_ENDPOINT_SERVER") in ~w(true 1),
-    url: [host: System.get_env("SECRET_HUB_MACHINE_HOST") || "localhost", port: machine_port],
-    http: [
-      ip: RuntimeConfig.private_ip!("SECRET_HUB_MACHINE_BIND_IP", "127.0.0.1"),
-      port: machine_port
-    ],
+    server: false,
+    url: [host: "localhost", port: agent_port],
+    http: false,
     secret_key_base: secret_key_base,
     check_origin: false
 
@@ -212,7 +209,7 @@ if config_env() == :prod do
 
     human_port = RuntimeConfig.port!("HUMAN_ENDPOINT_PORT", 4666)
 
-    if human_port in [port, machine_port, agent_port],
+    if human_port in [port, agent_port],
       do: raise(ArgumentError, "listeners: conflicting_ports")
 
     if System.get_env("HUMAN_ENCRYPTION_CONFIG") not in [nil, "client-type2-v1"],

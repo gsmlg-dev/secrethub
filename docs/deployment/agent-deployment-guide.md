@@ -10,17 +10,68 @@ module already supplies required options and manages service credentials.
 ## Prerequisites
 
 - Core is initialized, unsealed, and configured with its Agent PKI.
-- The host can reach Core's HTTPS machine enrollment API and the separate
-  runtime mTLS endpoint advertised by Core.
+- The host can reach Core's single Agent HTTPS/WSS listener, normally port
+  `4665`, with a trusted server certificate matching its advertised hostname.
 - An existing, unencrypted RSA or ECDSA SSH host private key is readable by
   the Agent service. Ed25519 host keys are not supported for enrollment.
 - Persistent state and PKI bundle directories, and the socket's parent
   directory, exist and are writable by the service UID.
 
-Use the machine enrollment URL, such as `https://enroll.example.com`, for
-`core_url`. A fresh Agent cannot enroll through an operator management URL
-requiring a Caddy client certificate. See the
+Use one Agent URL, such as `https://core.example.com:4665`, for `core_url`.
+Core has two service listeners: the existing management listener on `4664`
+behind Caddy's operator mTLS, and the Agent listener on `4665` for enrollment
+HTTPS, machine HTTP APIs, and runtime WSS. A fresh Agent uses the Agent URL;
+management requires an operator client certificate. There is no `4668` listener;
+retired `SECRET_HUB_MACHINE_*` flags cannot start one. See the
 [runtime contract](../security/runtime-contract.md) for listener requirements.
+
+### Configure the Core Agent listener
+
+Set these existing Core environment variables before starting Core:
+
+```bash
+SECRET_HUB_AGENT_ENDPOINT_SERVER=true
+SECRET_HUB_AGENT_ENDPOINT_HOST=core.example.com
+SECRET_HUB_AGENT_ENDPOINT_PORT=4665
+SECRET_HUB_AGENT_ENDPOINT_CERT_PATH=/run/secrethub/agent-server-cert.pem
+SECRET_HUB_AGENT_ENDPOINT_KEY_PATH=/run/secrethub/agent-server-key.pem
+SECRET_HUB_AGENT_ENDPOINT_CA_CERT_PATH=/run/secrethub/signing-ca.pem
+```
+
+Provision the server certificate and private key first using the existing
+[protected certificate issuance operation](runtime-server-certificate.md).
+Its SANs must contain the advertised hostname. The server certificate and client
+CA must use the same internal signing CA used for Agent runtime certificates:
+Agents receive that CA chain during enrollment and use it to verify runtime TLS.
+Explicitly provisioned listener material can start independently of certificate
+issuance availability; issuing a certificate does not install it or restart Core.
+
+Preserve TLS to Core, directly or through TCP passthrough. The Agent listener
+supports TLS 1.2 and 1.3. It verifies presented client certificates and allows
+bootstrap HTTPS without one. Runtime socket admission still requires a valid
+Core-issued Agent certificate; enrollment proof/token checks and existing
+application/CLI token authorization remain separate from runtime identity.
+
+For a private signing CA, distribute its public CA certificate to each Agent
+out of band and set `enrollment_ca_path` (or install it in system trust) before
+first enrollment. Enrollment HTTPS verifies both the server chain and hostname;
+never disable verification. The returned runtime CA chain does not establish
+trust for the initial HTTPS request.
+
+For managed development, `devenv` defaults to
+`https://<SECRET_HUB_AGENT_ENDPOINT_HOST>:<SECRET_HUB_AGENT_ENDPOINT_PORT>`
+(`https://localhost:4665`) and, when supplying that default URL, trusts
+`/tmp/secrethub/agent_endpoint/ca-cert.pem`. Explicit URL and enrollment CA
+environment values are preserved; an explicit URL without a CA override uses
+normal system trust. For direct `mix agent.run`, export
+`SECRET_HUB_AGENT_ENROLLMENT_CA_PATH=/tmp/secrethub/agent_endpoint/ca-cert.pem`
+when using this private development CA; without an override, direct execution
+uses the normal trust store. If Vault is sealed or its CA is absent when Core
+starts, development TLS generation cannot succeed and the Agent listener
+is absent. Initialize/unseal Vault and configure its signing CA, then restart
+Core to create listener material. Enrollment or a later connect-info request
+cannot bootstrap an absent listener. Preserve existing Agent identity/state
+when restarting. These are operator steps; this guide does not perform a restart.
 
 ## Configuration file
 
@@ -51,8 +102,8 @@ as `config/agent.example.toml` in new Agent release archives.
 For example:
 
 ```toml
-# HTTPS machine enrollment URL; Core advertises the runtime WSS endpoint.
-core_url = "https://enroll.example.com"
+# One HTTPS Agent URL; enrollment and runtime WSS share this listener.
+core_url = "https://core.example.com:4665"
 
 # Stable, existing RSA or ECDSA SSH private host key.
 # The systemd example below provides this credential copy.
@@ -65,7 +116,7 @@ client_auth_bundle_dir = "/var/lib/secrethub-agent/client-auth"
 # Local consumers use this private Unix socket.
 socket_path = "/run/secrethub-agent/agent.sock"
 
-# Optional: CA bundle for a privately signed enrollment HTTPS server.
+# Optional: private Agent server CA bundle, provisioned out of band.
 # enrollment_ca_path = "/etc/secrethub/enrollment-ca.pem"
 ```
 
@@ -115,7 +166,7 @@ The release has no defaults for these five required values.
 
 | TOML key | Environment variable | Required | Purpose |
 | --- | --- | --- | --- |
-| `core_url` | `SECRET_HUB_AGENT_CORE_URL` | Yes | HTTPS machine enrollment URL; do not supply a WebSocket URL |
+| `core_url` | `SECRET_HUB_AGENT_CORE_URL` | Yes | HTTPS Agent listener URL for enrollment; do not supply a WebSocket URL |
 | `host_key_path` | `SECRET_HUB_AGENT_HOST_KEY_PATH` | Yes | Existing RSA/ECDSA SSH private host key for host-identity proof |
 | `state_dir` | `SECRET_HUB_AGENT_STATE_DIR` | Yes | Persistent Core-issued identity, TLS material, and enrollment state |
 | `socket_path` | `SECRET_HUB_AGENT_SOCKET_PATH` | Yes | Unix socket for local applications; its parent must exist and be writable |
@@ -324,9 +375,11 @@ not prove Core connectivity or authorization to read a secret.
 - **Preflight fails:** verify directories exist and are writable by the service
   UID, the SSH key is supported and private, a configured enrollment CA is valid
   PEM, and persisted identity is complete.
-- **Enrollment cannot connect:** check the HTTPS machine URL, DNS, outbound
-  access, server certificate trust, and pending approval. An operator-only
-  management URL is unsuitable for fresh enrollment.
+- **Enrollment cannot connect:** check the HTTPS Agent URL and port `4665`,
+  DNS, outbound access, server certificate trust/hostname, and pending approval.
+  If development TLS generation failed at startup, initialize/unseal Vault and
+  configure its CA, then restart Core. An operator-only management URL is
+  unsuitable for fresh enrollment.
 - **Runtime cannot connect:** check the endpoint advertised in
   `connect-info.json`, its network access, certificate validity, and the
   Core-issued CA chain. Enrollment CA overrides do not change this chain.

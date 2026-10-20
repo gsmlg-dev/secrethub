@@ -22,6 +22,17 @@ in the certificate database. The audit event records only the advertised host,
 SANs, leaf serial, and CA fingerprint. If audit logging fails, material is not
 returned.
 
+The certificate serves the single Agent HTTPS/WSS listener, normally port
+`4665`, for both enrollment and runtime. Set the existing Core variables
+`SECRET_HUB_AGENT_ENDPOINT_SERVER=true`, `SECRET_HUB_AGENT_ENDPOINT_HOST`,
+`SECRET_HUB_AGENT_ENDPOINT_PORT`, `SECRET_HUB_AGENT_ENDPOINT_CERT_PATH`,
+`SECRET_HUB_AGENT_ENDPOINT_KEY_PATH`, and
+`SECRET_HUB_AGENT_ENDPOINT_CA_CERT_PATH` to the provisioned material. The server
+certificate and client CA must match the internal signing CA used for Agent
+runtime issuance. Distribute its public CA certificate out of band for initial
+enrollment trust via `enrollment_ca_path` or system trust. TLS server hostname
+verification remains enabled. See the [Agent deployment guide](agent-deployment-guide.md#configure-the-core-agent-listener).
+
 ## Protected operator request
 
 Run from a trusted operator workstation. Set the management origin, operator

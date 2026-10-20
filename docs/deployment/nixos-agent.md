@@ -12,23 +12,36 @@ which take precedence over a present Agent TOML file.
 ## Core prerequisites
 
 Core must be initialized, unsealed, and configured with its Agent PKI. The host
-needs outbound access to both of these endpoints:
+needs outbound access to one Agent URL, such as `https://core.example.com:4665`.
+This Core listener serves enrollment HTTPS, existing machine HTTP APIs, and
+runtime WSS. Core's other service listener remains management on `4664`, behind
+Caddy's mandatory operator mTLS. There is no `4668` listener; retired
+`SECRET_HUB_MACHINE_*` variables cannot enable one.
 
-- **Enrollment HTTPS URL**, such as `https://enroll.secrethub.example.com`.
-  Route it to Core's machine listener (`SECRET_HUB_MACHINE_ENDPOINT_SERVER=true`,
-  private backend port `4668` by default). It must serve `/v1/agent/enrollments`.
-  A fresh Agent cannot use the operator-only management URL protected by Caddy
-  client-certificate authentication.
-- **Agent runtime mTLS endpoint**, such as `agents.secrethub.example.com:4665`.
-  Enable `SECRET_HUB_AGENT_ENDPOINT_SERVER=true` and set
-  `SECRET_HUB_AGENT_ENDPOINT_HOST` to a hostname reachable from the Agent, with
-  matching server certificate SANs and the endpoint's certificate/key/client CA
-  paths. Preserve TLS through to Core, directly or through TCP passthrough.
+Enable `SECRET_HUB_AGENT_ENDPOINT_SERVER=true` and set
+`SECRET_HUB_AGENT_ENDPOINT_HOST` and `SECRET_HUB_AGENT_ENDPOINT_PORT` (`4665`)
+with `SECRET_HUB_AGENT_ENDPOINT_CERT_PATH`, `SECRET_HUB_AGENT_ENDPOINT_KEY_PATH`,
+and `SECRET_HUB_AGENT_ENDPOINT_CA_CERT_PATH`. Preserve TLS to Core directly or
+through TCP passthrough. The listener supports TLS 1.2 and 1.3, verifies presented
+client certificates, and permits enrollment without a client certificate.
+Runtime connections still require valid Core-issued Agent certificates; existing
+machine API token/proof authorization is unchanged.
 
-Core advertises the runtime WebSocket endpoint during enrollment. `coreUrl` is
-the enrollment URL; the Agent obtains its runtime URL, client certificate, and
-Agent ID from Core. See the [runtime contract](../security/runtime-contract.md)
-for the full Core configuration and listener boundaries.
+Provision server material first using the existing
+[protected issuance operation](runtime-server-certificate.md). The server SANs
+must match the advertised host, and the server/client CA must be the same
+internal signing CA used for runtime certificates. Explicit server material lets
+the listener start independently of issuance availability. For a private CA,
+provision its public certificate out of band to the Agent and set
+`enrollmentCaPath` before startup. Server-chain and hostname verification remain
+enabled. A fresh Agent cannot use the operator-only management URL.
+
+Core advertises runtime settings during enrollment; `coreUrl` is the one HTTPS
+Agent URL. Agent ID and runtime identity come from Core. See the
+[Agent deployment guide](agent-deployment-guide.md#configure-the-core-agent-listener)
+for Core setup and the fresh-development Vault/CA initialization and Core restart
+requirement, and the [runtime contract](../security/runtime-contract.md) for
+listener boundaries.
 
 ## Host flake
 
@@ -51,10 +64,10 @@ hardware, boot, and filesystem configuration in `configuration.nix`.
         {
           services.secrethub-agent = {
             enable = true;
-            coreUrl = "https://enroll.secrethub.example.com";
+            coreUrl = "https://core.example.com:4665";
             hostKeyPath = "/etc/ssh/ssh_host_rsa_key";
 
-            # For an enrollment server signed by a private CA:
+            # Public CA certificate provisioned out of band for a private Agent CA:
             # enrollmentCaPath = "/etc/secrethub/enrollment-ca.pem";
           };
         }
@@ -118,7 +131,9 @@ No AppRole credentials or manually selected `agentId` are required. The old
 | `/run/secrethub-agent` | Writable release runtime files; recreated on boot |
 
 systemd owns these directories. Enrollment identity survives restarts and
-package upgrades; preserve the state directory when replacing a host. Damaged
+package upgrades; preserve the state directory when replacing a host. Changing
+`coreUrl` does not rewrite the runtime endpoint saved in `connect-info.json`.
+Damaged
 or partial identity fails preflight and is not automatically replaced by a new
 enrollment. Erlang distribution is disabled and the service creates a temporary
 process cookie outside the Nix store.

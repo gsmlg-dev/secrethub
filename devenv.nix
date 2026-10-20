@@ -61,7 +61,10 @@ in
     after = [ "devenv:processes:core" ];
     env.SECRETHUB_ROLE = "agent";
     exec = ''
-      export SECRET_HUB_AGENT_CORE_URL="''${SECRET_HUB_AGENT_CORE_URL:-http://localhost:''${PORT:-$PHX_PORT}}"
+      if [ -z "''${SECRET_HUB_AGENT_CORE_URL+x}" ]; then
+        export SECRET_HUB_AGENT_CORE_URL="https://''${SECRET_HUB_AGENT_ENDPOINT_HOST:-localhost}:''${SECRET_HUB_AGENT_ENDPOINT_PORT:-4665}"
+        export SECRET_HUB_AGENT_ENROLLMENT_CA_PATH="''${SECRET_HUB_AGENT_ENROLLMENT_CA_PATH-/tmp/secrethub/agent_endpoint/ca-cert.pem}"
+      fi
       export SECRET_HUB_AGENT_STATE_DIR="''${SECRET_HUB_AGENT_STATE_DIR:-$DEVENV_STATE/secrethub-agent}"
       export SECRET_HUB_AGENT_SOCKET_PATH="''${SECRET_HUB_AGENT_SOCKET_PATH:-$SECRET_HUB_AGENT_STATE_DIR/agent.sock}"
       exec mix agent.run
@@ -140,9 +143,9 @@ in
     PHX_PORT = lib.mkDefault "4664";
     HUMAN_ENDPOINT_PORT = "4666";
 
-    # Dev enrollment uses the Core HTTP port (PORT, or PHX_PORT) in dev.exs.
-    # SECRET_HUB_AGENT_CORE_URL remains an optional explicit URL override.
-    # Core advertises this separate, certificate-authenticated runtime listener.
+    # Enrollment HTTPS and runtime WSS share the Agent listener.
+    # When supplying its default URL, the managed Agent trusts the generated
+    # development CA. Explicit URL and CA environment values are preserved.
     SECRET_HUB_AGENT_ENDPOINT_HOST = lib.mkDefault "localhost";
     SECRET_HUB_AGENT_ENDPOINT_PORT = lib.mkDefault "4665";
 

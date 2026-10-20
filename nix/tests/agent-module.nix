@@ -13,7 +13,7 @@ let
   };
   settings = {
     enable = true;
-    coreUrl = "https://enroll.example.test";
+    coreUrl = "https://core.example.test:4665";
   };
   enabled = (evaluate settings).config;
   service = enabled.systemd.services.secrethub-agent;
@@ -78,7 +78,7 @@ let
       "Deprecated agentId must not change runtime identity")
     (lib.assertMsg (!((evaluate { enable = false; }).config.systemd.services ? secrethub-agent))
       "A disabled Agent module must not require deployment inputs")
-    (lib.assertMsg (rejected { coreUrl = "http://enroll.example.test"; })
+    (lib.assertMsg (rejected { coreUrl = "http://core.example.test:4665"; })
       "Insecure enrollment must fail evaluation")
     (lib.assertMsg (rejected { hostKeyPath = "/nix/store/private-host-key"; })
       "SSH private keys must not come from the Nix store")

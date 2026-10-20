@@ -1,6 +1,6 @@
 defmodule SecretHub.Web.AgentEndpoint do
   @moduledoc """
-  Dedicated mTLS endpoint for trusted Agent runtime connections.
+  Agent HTTPS enrollment and certificate-authenticated WebSocket runtime endpoint.
   """
 
   use Phoenix.Endpoint, otp_app: :secrethub_web
@@ -11,9 +11,15 @@ defmodule SecretHub.Web.AgentEndpoint do
     ],
     longpoll: false
 
+  plug SecretHub.Web.Plugs.NoStore
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :agent_endpoint]
-  plug :not_found
 
-  defp not_found(conn, _opts), do: Plug.Conn.send_resp(conn, 404, "Not Found")
+  plug Plug.Parsers,
+    parsers: [:urlencoded, :multipart, :json],
+    pass: ["*/*"],
+    json_decoder: Phoenix.json_library()
+
+  plug Plug.Head
+  plug SecretHub.Web.MachineRouter
 end

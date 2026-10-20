@@ -7,6 +7,7 @@ defmodule SecretHub.Web.Application do
   require Logger
 
   alias SecretHub.Core.Shutdown
+  alias SecretHub.Web.AgentEndpoint
   alias SecretHub.Web.AgentEndpointManager
   alias SecretHub.Web.Endpoint
 
@@ -24,8 +25,7 @@ defmodule SecretHub.Web.Application do
         # {SecretHub.Web.Worker, arg},
         {SecretHub.Web.Plugs.RateLimiter, :server},
         # Start to serve requests, typically the last entry
-        SecretHub.Web.Endpoint,
-        SecretHub.Web.MachineEndpoint
+        SecretHub.Web.Endpoint
       ] ++ agent_endpoint_children()
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -49,11 +49,9 @@ defmodule SecretHub.Web.Application do
     end
   end
 
-  # In dev the trusted Agent endpoint is otherwise only booted lazily by the
-  # enrollment connect-info request, which leaves already-enrolled agents
-  # unable to reconnect after a Core restart. Failure here is non-fatal: a
-  # fresh install has no CA yet, and the endpoint will start on first
-  # connect-info once one exists.
+  # Enrollment and runtime share this listener, so it must start before any
+  # enrollment request. A fresh dev install needs Vault/CA setup followed by
+  # a Core restart before development TLS material can be generated.
   defp maybe_start_dev_agent_endpoint do
     if Application.get_env(:secrethub_web, :dev_mode, false) do
       case AgentEndpointManager.ensure_started() do
@@ -63,7 +61,7 @@ defmodule SecretHub.Web.Application do
         {:error, reason} ->
           Logger.warning(
             "Trusted Agent endpoint not started at boot: #{inspect(reason)}. " <>
-              "It will start when an agent fetches connect-info."
+              "Initialize and unseal the Vault, configure the CA, then restart Core."
           )
       end
     else
@@ -92,7 +90,11 @@ defmodule SecretHub.Web.Application do
   @impl true
   def config_change(changed, _new, removed) do
     Endpoint.config_change(changed, removed)
-    SecretHub.Web.MachineEndpoint.config_change(changed, removed)
+
+    if Process.whereis(AgentEndpoint) do
+      AgentEndpoint.config_change(changed, removed)
+    end
+
     :ok
   end
 end

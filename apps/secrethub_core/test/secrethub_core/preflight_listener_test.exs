@@ -44,8 +44,8 @@ defmodule SecretHub.Core.PreflightListenerTest do
              ListenerChecks.run([server: false], server: false)
   end
 
-  test "enabled Machine listener retains its existing selection validation" do
-    assert %{machine_listener: true, agent_mtls: true} =
+  test "retired separate Machine listener cannot be enabled" do
+    assert %{machine_listener: false, agent_mtls: true} =
              ListenerChecks.run([server: true], [])
   end
 
@@ -59,7 +59,7 @@ defmodule SecretHub.Core.PreflightListenerTest do
              ListenerChecks.run([], server: true)
   end
 
-  test "enabled Agent listener passes with readable TLS files and strict verification", context do
+  test "enabled Agent listener passes with verified optional client certificates", context do
     assert %{machine_listener: true, agent_mtls: true} =
              ListenerChecks.run([], server: true, https: tls_config(context.tmp_dir))
   end
@@ -85,13 +85,34 @@ defmodule SecretHub.Core.PreflightListenerTest do
     assert %{agent_mtls: false} = ListenerChecks.run([], server: true, https: https)
   end
 
-  test "enabled Agent listener requires a client certificate", context do
+  test "enabled Agent listener rejects a custom verification callback", context do
     https =
       context.tmp_dir
       |> tls_config()
-      |> put_in([:thousand_island_options, :transport_options, :fail_if_no_peer_cert], false)
+      |> put_in(
+        [:thousand_island_options, :transport_options, :verify_fun],
+        {fn _, _, state -> {:valid, state} end, []}
+      )
 
     assert %{agent_mtls: false} = ListenerChecks.run([], server: true, https: https)
+  end
+
+  test "enabled Agent listener must allow certificate-free enrollment", context do
+    https =
+      context.tmp_dir
+      |> tls_config()
+      |> put_in([:thousand_island_options, :transport_options, :fail_if_no_peer_cert], true)
+
+    assert %{agent_mtls: false} = ListenerChecks.run([], server: true, https: https)
+  end
+
+  test "enabled Agent listener cannot also expose plaintext HTTP", context do
+    assert %{agent_mtls: false} =
+             ListenerChecks.run([],
+               server: true,
+               http: [port: 4667],
+               https: tls_config(context.tmp_dir)
+             )
   end
 
   defp tls_config(tmp_dir) do
@@ -106,7 +127,7 @@ defmodule SecretHub.Core.PreflightListenerTest do
         transport_options: [
           cacertfile: String.to_charlist(ca),
           verify: :verify_peer,
-          fail_if_no_peer_cert: true
+          fail_if_no_peer_cert: false
         ]
       ]
     ]

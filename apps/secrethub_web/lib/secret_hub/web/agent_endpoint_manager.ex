@@ -10,12 +10,14 @@ defmodule SecretHub.Web.AgentEndpointManager do
   @cert_dir Path.join([System.tmp_dir!(), "secrethub", "agent_endpoint"])
 
   def ensure_started do
+    config = Application.get_env(:secrethub_web, SecretHub.Web.AgentEndpoint, [])
+
     cond do
+      config[:server] && (not dev_mode?() or not generated_dev_tls?(config)) ->
+        with :ok <- validate_explicit_tls(config), do: start_endpoint()
+
       dev_mode?() ->
         ensure_dev_endpoint()
-
-      configured_for_runtime?() ->
-        start_endpoint()
 
       true ->
         {:error, :trusted_endpoint_not_started}
@@ -76,6 +78,8 @@ defmodule SecretHub.Web.AgentEndpointManager do
       |> Keyword.merge(
         adapter: Bandit.PhoenixAdapter,
         server: true,
+        http: false,
+        dev_generated_tls_paths: paths,
         pubsub_server: SecretHub.Web.PubSub,
         url: [host: host, port: port],
         https: [
@@ -90,7 +94,7 @@ defmodule SecretHub.Web.AgentEndpointManager do
             transport_options: [
               cacertfile: to_charlist(paths.cacertfile),
               verify: :verify_peer,
-              fail_if_no_peer_cert: true,
+              fail_if_no_peer_cert: false,
               versions: [:"tlsv1.2", :"tlsv1.3"]
             ]
           ]
@@ -140,10 +144,59 @@ defmodule SecretHub.Web.AgentEndpointManager do
     |> is_pid()
   end
 
-  defp configured_for_runtime? do
-    Application.get_env(:secrethub_web, SecretHub.Web.AgentEndpoint, [])
-    |> Keyword.get(:server, false)
+  defp generated_dev_tls?(config) do
+    case config[:dev_generated_tls_paths] do
+      nil -> false
+      paths -> paths == tls_paths(config)
+    end
   end
+
+  defp tls_paths(config) do
+    https = config[:https] || []
+    transport = get_in(https, [:thousand_island_options, :transport_options]) || []
+
+    %{
+      certfile: https[:certfile],
+      keyfile: https[:keyfile],
+      cacertfile: normalize_path(transport[:cacertfile])
+    }
+  end
+
+  defp validate_explicit_tls(config) do
+    paths = tls_paths(config)
+    transport = get_in(config[:https] || [], [:thousand_island_options, :transport_options]) || []
+
+    cond do
+      Enum.any?(Map.values(paths), &(not readable_file?(&1))) ->
+        {:error, {:invalid_agent_endpoint_tls, :incomplete_tls_material}}
+
+      config[:http] not in [nil, false] ->
+        {:error, {:invalid_agent_endpoint_tls, :plaintext_listener_enabled}}
+
+      transport[:verify] != :verify_peer or transport[:fail_if_no_peer_cert] != false or
+          Keyword.has_key?(transport, :verify_fun) ->
+        {:error, {:invalid_agent_endpoint_tls, :invalid_client_verification}}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp normalize_path(path) when is_list(path), do: List.to_string(path)
+  defp normalize_path(path), do: path
+
+  defp readable_file?(path) when is_binary(path) or is_list(path) do
+    case File.open(path, [:read]) do
+      {:ok, file} ->
+        File.close(file)
+        true
+
+      {:error, _reason} ->
+        false
+    end
+  end
+
+  defp readable_file?(_), do: false
 
   defp dev_mode? do
     Application.get_env(:secrethub_web, :dev_mode, false)

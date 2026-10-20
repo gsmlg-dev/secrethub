@@ -11,9 +11,9 @@
 # All five uncommented settings are required. At Agent startup, environment
 # variables and their existing _FILE forms override these values. Restart after editing.
 
-# HTTPS machine enrollment API, reachable without an operator client certificate.
-# Core supplies the separate runtime mTLS WebSocket endpoint during enrollment.
-core_url = "https://enroll.example.com"
+# One HTTPS Agent URL for enrollment; runtime WSS uses the same Core listener.
+# Fresh enrollment needs no operator client certificate; runtime needs Core-issued identity.
+core_url = "https://core.example.com:4665"
 
 # Existing unencrypted RSA/ECDSA SSH private host key (Ed25519 is unsupported).
 # Grant access to the service UID without making the key world-readable.
@@ -28,7 +28,7 @@ socket_path = "/run/secrethub-agent/agent.sock"
 # Persistent client-auth PKI bundles. Create with mode 0700 before starting.
 client_auth_bundle_dir = "/var/lib/secrethub-agent/client-auth"
 
-# Optional PEM CA bundle for enrollment HTTPS when system trust is insufficient.
+# Optional PEM CA bundle, provisioned out of band, for privately signed Agent HTTPS.
 # This does not replace the Core-issued runtime certificate chain.
 # Relative paths resolve from this file's directory; no shell or ~ expansion.
 # enrollment_ca_path = "enrollment-ca.pem"

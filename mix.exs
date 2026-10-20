@@ -84,7 +84,7 @@ defmodule SecretHub.MixProject do
     core_url =
       System.get_env("SECRET_HUB_AGENT_CORE_URL") ||
         Application.get_env(:secrethub_agent, :core_url) ||
-        "https://localhost:4664"
+        "https://localhost:4665"
 
     state_dir =
       System.get_env("SECRET_HUB_AGENT_STATE_DIR") ||

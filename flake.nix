@@ -443,10 +443,10 @@
             coreUrl = lib.mkOption {
               type = lib.types.str;
               description = ''
-                HTTPS URL of Core's machine enrollment API. Core supplies the
-                separate mTLS WebSocket endpoint during enrollment.
+                HTTPS URL of Core's Agent listener, shared by machine enrollment
+                and runtime WSS. Core supplies runtime connection settings during enrollment.
               '';
-              example = "https://enroll.secrethub.example.com";
+              example = "https://core.example.com:4665";
             };
 
             hostKeyPath = lib.mkOption {
