@@ -294,7 +294,6 @@ defmodule SecretHub.Core.AccessAuditTest do
         analyze: true
       )
 
-    File.write!("/tmp/secrethub-access-audit-pg/core-query-explain.txt", sql)
     assert sql =~ "access_audit_requests_application_id_started_at_id_index"
   end
 
