@@ -1,5 +1,10 @@
 # SecretHub: Mozilla Trust Bundle and ACME DNS-01 Design
 
+The [execution evidence](secrethub-pki-acme-execution.md) records the implementation,
+qualification and delivery status. See the
+[operator guide](managed-public-certificates.md) for the resulting configuration
+and recovery procedures.
+
 Status: proposed implementation design. No feature implementation or live issuance was performed during this review.
 
 Date: 2026-10-22, Asia/Shanghai.
