@@ -94,7 +94,7 @@ the disposable PostgreSQL socket `/tmp/secrethub-acme-pg`, port `55439`, user
 | --- | --- |
 | Combined feature qualification | PASS: 96 Core tests, 0 failures, 2 optional Pebble skips; 14 Web management tests, 0 failures (`/tmp/secrethub-acme-feature-release-final.log`) |
 | Touched internal CA/app/client-auth/ingress/secret/runtime authorization regressions | PASS: 181 Core tests and 5 Web tests, 0 failures; the final feature suite additionally covers exact-snapshot reads racing publication (`/tmp/secrethub-acme-regressions.log`) |
-| Actual named Core Oban execution and restart recovery | PASS: 1 test, 0 failures |
+| Actual named Core Oban execution and restart recovery | PASS: 1 test, 0 failures, using the configured PostgreSQL notifier (`/tmp/secrethub-acme-runtime-postgres-notifier.log`) |
 | Standalone native ACME/Pebble lifecycle | PASS: 22 tests, 0 failures; issuance, replacement, ARI, revocation and TXT cleanup |
 | Durable real Pebble lifecycle | PASS: 1 selected lifecycle (10 tests, 0 failures, 9 excluded); three publications, two renewals, ARI, exact material, revocation and TXT cleanup; recovered after three injected badNonce responses (`/tmp/secrethub-acme-durable-pebble-acceptance.log`) |
 | Scoped authoritative DNS test fixture | PASS: 4 Python tests, including real loopback UDP/TCP framing, source identity and authoritative scope |
@@ -184,6 +184,8 @@ Source implementation is committed locally in reviewable slices:
 - `8acf7e5`: operator/deployment/changelog and qualification documentation.
 - `190cdf4`: corrected CSR contract, bounded DNS types/error handling, claim
   persistence simplification and explicit analysis dependencies.
+- `bb2c0ca`: historical audit migration selection, Core supervision expectation
+  and delivery evidence.
 
 The branch is pushed to `origin/codex/pki-acme` and attached to
 [draft PR #18](https://github.com/gsmlg-dev/secrethub/pull/18). The initial
@@ -192,6 +194,10 @@ verified with `git ls-remote`; subsequent corrections are appended without
 rewriting history. The final integration correction selects the intended older
 audit migrations in their tests and accounts for Core Oban in the supervision
 expectation. It does not weaken the ACME migration's retention safeguard.
+Runtime restart qualification also keeps the configured PostgreSQL notifier.
+Its previous test-only process-group notifier override raced a shared scope
+during restart in the full suite; removing that override exercises the supported
+Core runtime and passes the focused restart regression.
 
 ### Required remote gates
 
@@ -200,6 +206,9 @@ expectation. It does not weaken the ACME migration's retention safeguard.
 | `8acf7e5` | [Test 39660989876](https://github.com/gsmlg-dev/secrethub/actions/runs/39660989876) | FAIL: three feature-induced integration expectations; corrected and passed in the focused supervision/audit regressions above |
 | `190cdf4` | [CI 39662584759](https://github.com/gsmlg-dev/secrethub/actions/runs/39662584759) | Compile, Format, Credo and Caddy Go PASS; Dialyzer FAIL with exactly the 12 pre-existing unignored warning locations/kinds and zero new locations |
 | `190cdf4` | [E2E 39662593501](https://github.com/gsmlg-dev/secrethub/actions/runs/39662593501) | PASS |
+| `bb2c0ca` | [CI 39663769116](https://github.com/gsmlg-dev/secrethub/actions/runs/39663769116) | Compile, Format, Credo and Caddy Go PASS; Dialyzer has exactly the same 12 baseline warning locations/kinds |
+| `bb2c0ca` | [E2E 39663769182](https://github.com/gsmlg-dev/secrethub/actions/runs/39663769182) | PASS: 11 E2E and 38 CLI socket tests, 0 failures |
+| `bb2c0ca` | [Test 39663769535](https://github.com/gsmlg-dev/secrethub/actions/runs/39663769535) | Earlier three integration regressions passed; one restart test failed on its process-group override, corrected as described above |
 
 The 12 remaining Dialyzer warnings are in management ingress URI types, Agent
 UDS cache contracts/patterns, AuthorizationVersions and Human backend/lease

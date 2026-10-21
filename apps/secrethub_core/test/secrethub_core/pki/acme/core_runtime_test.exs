@@ -23,7 +23,6 @@ defmodule SecretHub.Core.PKI.ACME.CoreRuntimeTest do
       |> Keyword.merge(
         testing: :disabled,
         plugins: false,
-        notifier: Oban.Notifiers.PG,
         peer: false,
         queues: [acme: [limit: 1, paused: true]]
       )
