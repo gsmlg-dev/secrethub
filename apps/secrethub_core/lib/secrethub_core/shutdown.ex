@@ -164,7 +164,7 @@ defmodule SecretHub.Core.Shutdown do
 
   defp maybe_wait_for_jobs(state, true) do
     # Check if Oban is running
-    if Code.ensure_loaded?(Oban) && Process.whereis(Oban) do
+    if Code.ensure_loaded?(Oban) && Oban.whereis(SecretHub.Core.Oban) do
       Logger.info("Waiting for background jobs to complete...")
       wait_for_oban_jobs(state)
     else
@@ -270,15 +270,13 @@ defmodule SecretHub.Core.Shutdown do
   end
 
   defp get_oban_status do
-    # Try to get Oban job status
-    # This requires Oban to be running and accessible
-    # Query for executing jobs
-    # This is a simplified check - in production you might want more detailed status
-    if Code.ensure_loaded?(Oban) do
-      # Oban doesn't provide a simple "active jobs" count API
-      # We'll assume if Oban is loaded and running, we give it time
-      # The supervisor will handle the actual graceful shutdown
-      {:ok, 0}
+    if Code.ensure_loaded?(Oban) and Oban.whereis(SecretHub.Core.Oban) do
+      import Ecto.Query
+
+      count =
+        SecretHub.Core.Repo.aggregate(from(j in Oban.Job, where: j.state == "executing"), :count)
+
+      {:ok, count}
     else
       {:ok, 0}
     end

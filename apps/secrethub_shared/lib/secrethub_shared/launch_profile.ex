@@ -2,10 +2,17 @@ defmodule SecretHub.Shared.LaunchProfile do
   @moduledoc "Runtime availability of the supported single-operator launch features."
 
   def enabled?(feature, app \\ :secrethub_core) do
-    features = Application.get_env(app, :enabled_features, [:static_secrets, :client_auth_pki])
+    features =
+      Application.get_env(app, :enabled_features, [
+        :static_secrets,
+        :client_auth_pki,
+        :public_trust,
+        :acme
+      ])
 
-    Application.get_env(app, :launch_profile) not in [:single_operator, :human_operator] or
-      (is_list(features) and feature in features)
+    (feature != :acme or Application.get_env(app, :acme_enabled, true)) and
+      (Application.get_env(app, :launch_profile) not in [:single_operator, :human_operator] or
+         (is_list(features) and feature in features))
   end
 
   def check(feature, app \\ :secrethub_core) do

@@ -37,6 +37,7 @@ defmodule SecretHub.Core.Application do
   def children do
     cache_children() ++
       repo_children() ++
+      job_children() ++
       seal_state_children() ++
       cluster_state_children() ++
       lease_manager_children() ++
@@ -75,6 +76,14 @@ defmodule SecretHub.Core.Application do
   defp seal_state_children do
     if runtime_environment?() do
       [SecretHub.Core.Vault.SealState]
+    else
+      []
+    end
+  end
+
+  defp job_children do
+    if runtime_environment?() do
+      [{Oban, Application.fetch_env!(:secrethub_core, SecretHub.Core.Oban)}]
     else
       []
     end

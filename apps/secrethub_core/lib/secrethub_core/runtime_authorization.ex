@@ -2,6 +2,8 @@ defmodule SecretHub.Core.RuntimeAuthorization do
   @moduledoc "Linearizable static reads with independent Agent and application policy gates."
   import Ecto.Query
 
+  alias SecretHub.Core.PKI.ManagedCertificates
+
   alias SecretHub.Core.{
     AccessAudit,
     Audit,
@@ -87,7 +89,8 @@ defmodule SecretHub.Core.RuntimeAuthorization do
                %Secret{secret_type: :static} = secret <-
                  Repo.one(
                    from(s in Secret, where: s.secret_path == ^normalized, lock: "FOR SHARE")
-                 ) do
+                 ),
+               :ok <- ManagedCertificates.check_delivery(secret.id) do
             if revision.revision == known_revision do
               {:ok, %{not_modified: true, revision: revision.revision, version: secret.version}}
             else

@@ -112,7 +112,8 @@ if config_env() == :prod do
   config :secrethub_core,
     cluster_node_id: cluster_node_id,
     launch_profile: if(human_opt_in, do: :human_operator, else: :single_operator),
-    enabled_features: [:static_secrets, :client_auth_pki],
+    enabled_features: [:static_secrets, :client_auth_pki, :public_trust, :acme],
+    acme_enabled: System.get_env("SECRET_HUB_ACME_ENABLED", "true") in ~w(true 1),
     audit_hmac_secret: audit_key,
     audit_hmac_key_id: audit_key_id,
     audit_hmac_verification_keys: verification_keys
