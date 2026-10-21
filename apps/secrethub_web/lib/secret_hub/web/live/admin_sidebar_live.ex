@@ -9,6 +9,7 @@ defmodule SecretHub.Web.AdminSidebarLive do
     dashboard secrets rotators engines rotations leases policies approles agents
     pending_agents cli_access ssh_access audit pki_overview pki_ca_list pki_certificates
     pki_certificates_issue pki_csr pki_csr_upload pki_search pki_analytics
+    pki_public_trust pki_acme
     cluster templates alerts performance
   )
 

@@ -539,24 +539,26 @@ defmodule SecretHub.Web.SecretApiController do
   end
 
   defp read_specific_version(secret_path, version_str) do
-    alias SecretHub.Core.Vault.SealState
-    alias SecretHub.Shared.Crypto.Encryption
-
     with {version_num, ""} <- Integer.parse(version_str),
          {:ok, secret} <- Secrets.get_secret_by_path(secret_path),
-         {:ok, version} <- Secrets.get_secret_version(secret.id, version_num),
-         {:ok, master_key} <- SealState.get_master_key(),
-         {:ok, json_data} <- Encryption.decrypt_from_blob(version.encrypted_data, master_key),
-         {:ok, data} <- Jason.decode(json_data) do
+         {:ok, data} <- Secrets.read_exact_material(secret.id, version_num) do
+      created_time =
+        if secret.version == version_num do
+          secret.updated_at
+        else
+          {:ok, version} = Secrets.get_secret_version(secret.id, version_num)
+          version.inserted_at
+        end
+
       %{
         status: 200,
         outcome: "success",
         reason: "allowed",
         secret_id: secret.id,
-        version: version.version_number,
+        version: version_num,
         body: %{
           data: data,
-          metadata: %{version: version.version_number, created_time: version.inserted_at}
+          metadata: %{version: version_num, created_time: created_time}
         }
       }
     else
