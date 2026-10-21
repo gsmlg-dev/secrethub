@@ -22,7 +22,7 @@ original checkout. Implementation uses `.trees/codex-pki-acme` on `codex/pki-acm
 - [x] Deterministic protocol/provider/durability/publication tests and Pebble lifecycle.
 - [x] Offline assembled release and scoped regressions/quality checks.
 - [x] Operational documentation and source implementation commits.
-- [ ] Documentation commit, branch push and pull request.
+- [x] Documentation commit, verified branch push and [pull request #18](https://github.com/gsmlg-dev/secrethub/pull/18).
 - [ ] Mandatory branch CI/Test/E2E gates.
 - [ ] Publish and verify the next release after mandatory gates pass.
 
@@ -92,7 +92,7 @@ the disposable PostgreSQL socket `/tmp/secrethub-acme-pg`, port `55439`, user
 
 | Gate | Observed result |
 | --- | --- |
-| Final combined feature suite | PASS: 96 Core tests, 0 failures, 2 optional Pebble skips; 14 Web management tests, 0 failures (`/tmp/secrethub-acme-feature-release-final.log`) |
+| Combined feature qualification | PASS: 96 Core tests, 0 failures, 2 optional Pebble skips; 14 Web management tests, 0 failures (`/tmp/secrethub-acme-feature-release-final.log`) |
 | Touched internal CA/app/client-auth/ingress/secret/runtime authorization regressions | PASS: 181 Core tests and 5 Web tests, 0 failures; the final feature suite additionally covers exact-snapshot reads racing publication (`/tmp/secrethub-acme-regressions.log`) |
 | Actual named Core Oban execution and restart recovery | PASS: 1 test, 0 failures |
 | Standalone native ACME/Pebble lifecycle | PASS: 22 tests, 0 failures; issuance, replacement, ARI, revocation and TXT cleanup |
@@ -102,8 +102,14 @@ the disposable PostgreSQL socket `/tmp/secrethub-acme-pg`, port `55439`, user
 | Scoped formatting | PASS: 65 changed/new Elixir/HEEx paths, excluding whole-file inspection of configuration outside the feature boundary |
 | Scoped strict Credo | PASS: 47 new feature files, 650 modules/functions; final Workflow nonce changes also rechecked (`/tmp/secrethub-acme-final-credo.log`, `/tmp/secrethub-acme-final-nonce-credo.log`) |
 | Final compile | PASS: warnings-as-errors compile, exit 0 (`/tmp/secrethub-acme-final-compile.log`) |
+| CI recovery, protocol | PASS: 22 tests, 0 failures, 1 optional Pebble skip after the documented empty CSR subject type correction (`/tmp/secrethub-acme-protocol-dialyzer-fix.log`) |
+| CI recovery, DNS providers | PASS: 28 tests, 0 failures; includes red/green malformed Cloudflare JSON regression, preserved borrowed records and bounded CNAME traversal (`/tmp/secrethub-dns-dialyzer-green.log`) |
+| CI recovery, DNS claim persistence | PASS: 9 tests, 0 failures (`/tmp/secrethub-acme-dns-claim-dialyzer-fix.log`) |
+| CI recovery, Core supervision | PASS: 6 tests, 0 failures with named Oban represented in the expected runtime children (`/tmp/secrethub-acme-supervision-regression.log`) |
+| CI recovery, historical audit migrations | PASS: both affected tests selected and passed individually; 13 and 5 other tests excluded, respectively. Explicit audit migration lists preserve their original rollback/chain/retention assertions and the ACME rollback guard (`/tmp/secrethub-acme-audit-migration-regression.log`, `/tmp/secrethub-acme-audit-retention-regression.log`) |
 
-The final source passed these local feature checks. Interrupted or contending
+The source passed these local feature checks, with the focused CI recovery
+checks run after their respective corrections. Interrupted or contending
 database runs are not counted as pass evidence. Mandatory remote branch checks
 are a separate release gate, recorded below.
 
@@ -118,7 +124,7 @@ Actual packaged-byte evidence from the final assembled release:
 
 | Material | Count/version | SHA-256 |
 | --- | --- | --- |
-| Core qualification archive | `1.0.0-rc.21` | `960cdd5ef6ad356caca1b3d765b14fcd7408a14bdb685e4f47b8c62bffe6ae0e` |
+| Core qualification archive, rebuilt with CI recovery source | `1.0.0-rc.21` | `b9c7267ebf43d02445f8a573629d1629a7d934f304bca2e0881741d41d1ae6cb` |
 | Mozilla-derived PEM | CAStore `1.0.22`, 118 roots | `53652180bc53975a475f0b1574571426dc4ba27d7e08e04550dab69fb7537c25` |
 | Separate staging PEM | 2 roots | `969992085e88a152ab64584b798d446e10f6de0ba084929c9ea3fa17c8ee3101` |
 
@@ -127,8 +133,8 @@ The archive was built with `MIX_ENV=prod SECRETHUB_ROLE=core`, isolated
 `mix release secrethub_core --path /tmp/secrethub-acme-core-release --overwrite`.
 The probe ran in a `bwrap` sandbox with a read-only root and unshared network;
 Repo and Vault remained absent before and after it. Evidence logs:
-`/tmp/secrethub-acme-release-final-build.log` and
-`/tmp/secrethub-acme-release-offline-probe.log`.
+`/tmp/secrethub-acme-release-recovery-build.log` and
+`/tmp/secrethub-acme-release-recovery-offline-probe.log`.
 
 Reproducible ACME qualification:
 
@@ -175,9 +181,57 @@ Source implementation is committed locally in reviewable slices:
 - `444660a`: managed certificate schemas, ownership and history.
 - `e68fe68`: durable Core jobs and atomic secret publication.
 - `bb9a3cf`: private ACME management and exact exports.
+- `8acf7e5`: operator/deployment/changelog and qualification documentation.
+- `190cdf4`: corrected CSR contract, bounded DNS types/error handling, claim
+  persistence simplification and explicit analysis dependencies.
 
-Documentation commit, push/PR and exact-head remote workflow results are pending.
-No new version, tag, release, image or Hex package has been published.
+The branch is pushed to `origin/codex/pki-acme` and attached to
+[draft PR #18](https://github.com/gsmlg-dev/secrethub/pull/18). The initial
+documentation head `8acf7e588703570e0885b2d98cfac910386f4d3d` was independently
+verified with `git ls-remote`; subsequent corrections are appended without
+rewriting history. The final integration correction selects the intended older
+audit migrations in their tests and accounts for Core Oban in the supervision
+expectation. It does not weaken the ACME migration's retention safeguard.
+
+### Required remote gates
+
+| Source head | Workflow | Observed result |
+| --- | --- | --- |
+| `8acf7e5` | [Test 39660989876](https://github.com/gsmlg-dev/secrethub/actions/runs/39660989876) | FAIL: three feature-induced integration expectations; corrected and passed in the focused supervision/audit regressions above |
+| `190cdf4` | [CI 39662584759](https://github.com/gsmlg-dev/secrethub/actions/runs/39662584759) | Compile, Format, Credo and Caddy Go PASS; Dialyzer FAIL with exactly the 12 pre-existing unignored warning locations/kinds and zero new locations |
+| `190cdf4` | [E2E 39662593501](https://github.com/gsmlg-dev/secrethub/actions/runs/39662593501) | PASS |
+
+The 12 remaining Dialyzer warnings are in management ingress URI types, Agent
+UDS cache contracts/patterns, AuthorizationVersions and Human backend/lease
+monitor code. Comparing warning locations and kinds against starting-head
+[CI 39648764278](https://github.com/gsmlg-dev/secrethub/actions/runs/39648764278)
+produces equal sets, with no new warnings. Recovery evidence:
+`/tmp/secrethub-acme-ci-recovery.log` and
+`/tmp/secrethub-acme-ci-baseline.log`. No broad warning suppression or unrelated
+runtime repair was introduced.
+
+The full Test workflow is rerun after the integration corrections. The
+[PR checks](https://github.com/gsmlg-dev/secrethub/pull/18/checks) and PR
+description hold the final-head workflow results; the source and qualification
+evidence above remain tied to the revisions that actually ran them.
+
+Release status: **BLOCKED by the required baseline Dialyzer gate**. The PR stays
+draft and unmerged. No new version, tag, release, image or Hex package has been
+published. The last verified published release is
+[v1.0.0-rc.21](https://github.com/gsmlg-dev/secrethub/releases/tag/v1.0.0-rc.21).
+
+Remaining delivery steps: repair those baseline warnings in a separately scoped
+change, integrate/requalify the PR through all required checks, then run the
+existing release workflow and verify its archives, image manifests, Hex package
+and tag. If `v1.0.0-rc.21` is still latest, the next dispatch after those gates is:
+
+```sh
+gh workflow run release.yml --repo gsmlg-dev/secrethub --ref main \
+  -f version=1.0.0-rc.22 -f git-rev=main
+```
+
+Recheck the latest version and integrated commit immediately before dispatch.
+Release remains distinct from production deployment or application adoption.
 
 ## Operational evidence
 

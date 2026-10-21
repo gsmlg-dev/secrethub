@@ -375,15 +375,18 @@ defmodule SecretHub.Core.AccessAuditTest do
                actor_id: ctx.identity.agent_id
              })
 
-    path = Application.app_dir(:secrethub_core, "priv/repo/migrations")
+    migrations = [
+      {20_261_020_000_001, SecretHub.Core.Repo.Migrations.CreateAccessAudit},
+      {20_261_020_000_002, SecretHub.Core.Repo.Migrations.CreateAccessAuditRetention}
+    ]
 
     assert [20_261_020_000_002, 20_261_020_000_001] =
-             Ecto.Migrator.run(Repo, path, :down, to: 20_261_020_000_001, log: false)
+             Ecto.Migrator.run(Repo, migrations, :down, to: 20_261_020_000_001, log: false)
 
     assert {:ok, :valid} = Audit.verify_chain()
 
     assert [20_261_020_000_001, 20_261_020_000_002] =
-             Ecto.Migrator.run(Repo, path, :up, to: 20_261_020_000_002, log: false)
+             Ecto.Migrator.run(Repo, migrations, :up, to: 20_261_020_000_002, log: false)
 
     assert {:ok, _} = AccessAudit.ingest(ctx.identity, [event(ctx, 1, "admitted")])
     assert {:ok, :valid} = Audit.verify_chain()

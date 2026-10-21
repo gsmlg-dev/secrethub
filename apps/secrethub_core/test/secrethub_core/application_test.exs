@@ -14,6 +14,7 @@ defmodule SecretHub.Core.ApplicationTest do
 
   @runtime_children [
     Repo,
+    Oban,
     SealState,
     ClusterState,
     LeaseManager,
