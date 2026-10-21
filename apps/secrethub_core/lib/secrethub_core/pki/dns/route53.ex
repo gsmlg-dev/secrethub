@@ -27,7 +27,6 @@ defmodule SecretHub.Core.PKI.DNS.Route53 do
     else
       false -> {:error, :zone_mismatch}
       {:error, _} = error -> error
-      _ -> {:error, :invalid_provider_response}
     end
   end
 

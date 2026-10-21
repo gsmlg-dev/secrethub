@@ -194,6 +194,17 @@ defmodule SecretHub.Core.PKI.DNS.CloudflareTest do
              )
   end
 
+  test "malformed JSON returns a bounded provider error" do
+    for body <- ["", "{", "provider response with credential-shaped data"] do
+      assert {:error, :invalid_provider_response} =
+               Cloudflare.observe(@config, @credentials, @intent["owner"],
+                 transport: fn _, _, _, _, _ ->
+                   {:ok, %{status: 200, headers: %{}, body: body}}
+                 end
+               )
+    end
+  end
+
   test "malformed pagination metadata returns a bounded provider error" do
     assert {:error, :invalid_provider_response} =
              Cloudflare.observe(@config, @credentials, @intent["owner"],

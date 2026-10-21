@@ -85,7 +85,7 @@ defmodule SecretHub.Core.PKI.DNS.Names do
     expected = binding["delegated_owner"] && canonical_owner(binding["delegated_owner"])
 
     with {:ok, final} <-
-           follow(original, resolver, MapSet.new(), Keyword.get(opts, :max_cname_hops, 8)),
+           follow(original, resolver, [], Keyword.get(opts, :max_cname_hops, 8)),
          :ok <- delegation_allowed(original, final, expected),
          true <- within_zone?(final, binding["zone_name"]) do
       {:ok, final}
@@ -123,10 +123,16 @@ defmodule SecretHub.Core.PKI.DNS.Names do
 
   defp ip_address?(domain), do: match?({:ok, _}, :inet.parse_address(String.to_charlist(domain)))
 
+  @spec follow(
+          String.t(),
+          (String.t(), :cname -> {:ok, [String.t()]} | {:error, term()}),
+          [String.t()],
+          integer()
+        ) :: {:ok, String.t()} | {:error, term()}
   defp follow(_, _, _, remaining) when remaining < 0, do: {:error, :delegation_too_deep}
 
   defp follow(owner, resolver, seen, remaining) do
-    if MapSet.member?(seen, owner) do
+    if owner in seen do
       {:error, :delegation_loop}
     else
       case resolver.(owner, :cname) do
@@ -134,7 +140,7 @@ defmodule SecretHub.Core.PKI.DNS.Names do
           {:ok, owner}
 
         {:ok, [next]} when is_binary(next) ->
-          follow(canonical_owner(next), resolver, MapSet.put(seen, owner), remaining - 1)
+          follow(canonical_owner(next), resolver, [owner | seen], remaining - 1)
 
         {:ok, _} ->
           {:error, :ambiguous_delegation}

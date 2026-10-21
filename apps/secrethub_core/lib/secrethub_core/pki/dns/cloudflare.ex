@@ -274,12 +274,11 @@ defmodule SecretHub.Core.PKI.DNS.Cloudflare do
              headers,
              if(body, do: JSON.encode!(body), else: ""),
              opts
-           ),
-         {:ok, decoded} <- JSON.decode(response.body) do
-      decode_response(decoded)
-    else
-      {:error, %JSON.DecodeError{}} -> {:error, :invalid_provider_response}
-      {:error, _} = error -> error
+           ) do
+      case JSON.decode(response.body) do
+        {:ok, decoded} -> decode_response(decoded)
+        {:error, _} -> {:error, :invalid_provider_response}
+      end
     end
   end
 

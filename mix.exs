@@ -16,6 +16,7 @@ defmodule SecretHub.MixProject do
 
       # Testing
       test_coverage: [tool: ExCoveralls, summary: [threshold: 0]],
+      dialyzer: [plt_add_apps: [:jose, :aws_signature]],
       preferred_cli_env: [
         test: :test,
         coveralls: :test,

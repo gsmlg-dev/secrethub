@@ -364,7 +364,7 @@ defmodule SecretHub.Core.PKI.ACME.DNSOperations do
   defp locked_result(result, _), do: result
 
   defp finish(operation, attrs, event) do
-    persist(operation, Map.merge(%{last_error: %{}, next_attempt_at: nil}, attrs), event, true)
+    persist(operation, Map.merge(%{last_error: %{}, next_attempt_at: nil}, attrs), event)
   end
 
   defp fail(operation, reason, attrs \\ %{}) do
@@ -379,21 +379,20 @@ defmodule SecretHub.Core.PKI.ACME.DNSOperations do
              },
              attrs
            ),
-           nil,
-           true
+           nil
          ) do
       {:ok, _} -> {:error, reason}
       error -> error
     end
   end
 
-  defp persist(operation, attrs, event, release_claim?) do
+  defp persist(operation, attrs, event) do
     Repo.transaction(fn ->
       current = ManagedCertificates.locked!(DNSChallengeOperation, operation.id)
       # Keep receipts even when cancellation/revision changes revoke the order's
       # publication claim. A stale claim never authorizes a second provider effect.
       attrs =
-        if release_claim? and current.claim_token == operation.claim_token,
+        if current.claim_token == operation.claim_token,
           do: Map.merge(attrs, %{claim_token: nil, claim_expires_at: nil}),
           else: attrs
 

@@ -24,7 +24,9 @@ defmodule SecretHub.Core.PKI.ACME.Keys do
     case X509.PrivateKey.from_pem(private_key_pem) do
       {:ok, key} ->
         csr =
-          X509.CSR.new(key, [], extension_request: [Extension.subject_alt_name(identifiers)])
+          X509.CSR.new(key, X509.RDNSequence.new([]),
+            extension_request: [Extension.subject_alt_name(identifiers)]
+          )
 
         der = X509.CSR.to_der(csr)
 
