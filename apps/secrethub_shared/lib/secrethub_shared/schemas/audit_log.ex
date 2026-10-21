@@ -20,6 +20,11 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
   @primary_key {:id, :id, autogenerate: true}
   @foreign_key_type :binary_id
   @hash_versions [1, 2]
+  @acme_events ~w(acme.account.created acme.account.updated acme.account.registered
+    acme.provider.created acme.provider.updated acme.certificate.configured
+    acme.certificate.updated acme.issuance.requested acme.order.cancelled acme.order.failed
+    acme.certificate.published acme.revocation.requested acme.revocation.confirmed
+    acme.dns.intent acme.dns.prepared acme.dns.presented acme.dns.propagated acme.dns.cleanup acme.dns.cleaned)
   @upgrade_event_types [
     "system.upgrade_gate_verified",
     "system.upgrade_stale_node_acknowledged"
@@ -405,6 +410,25 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "system.runtime_server_certificate_issued",
       "system.upgrade_gate_verified",
       "system.upgrade_stale_node_acknowledged",
+      "acme.account.created",
+      "acme.account.updated",
+      "acme.account.registered",
+      "acme.provider.created",
+      "acme.provider.updated",
+      "acme.certificate.configured",
+      "acme.certificate.updated",
+      "acme.issuance.requested",
+      "acme.order.cancelled",
+      "acme.order.failed",
+      "acme.certificate.published",
+      "acme.revocation.requested",
+      "acme.revocation.confirmed",
+      "acme.dns.presented",
+      "acme.dns.intent",
+      "acme.dns.prepared",
+      "acme.dns.propagated",
+      "acme.dns.cleanup",
+      "acme.dns.cleaned",
       # Rate limiting events
       "rate_limit.exceeded",
       # Client Auth PKI events
@@ -446,6 +470,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
 
     v2_supported_event_types =
       @upgrade_event_types ++
+        @acme_events ++
         @client_auth_pki_event_types ++
         ["access.observed", "access.retention_checkpoint"] ++ HumanAuditEvidence.events()
 
