@@ -45,19 +45,42 @@ defmodule SecretHub.Core.HumanAccess.PostgreSQLBackend do
   end
 
   defp execute(mount, fun) do
-    task =
+    %{pid: pid, ref: ref} =
       Task.Supervisor.async_nolink(SecretHub.Core.HumanAccess.BackendSupervisor, fn ->
         execute_connection(mount, fun)
       end)
 
-    case Task.yield(task, 10_000) || Task.shutdown(task, :brutal_kill) do
-      {:ok, result} -> result
-      _ -> {:error, :backend_unavailable}
+    # Consume the documented task messages directly: OTP 28 Dialyzer rejects the
+    # opaque Task.ref() returned by Elixir 1.18's Task.Supervisor in Task.yield/2.
+    receive do
+      {^ref, result} ->
+        Process.demonitor(ref, [:flush])
+        result
+
+      {:DOWN, ^ref, :process, ^pid, _reason} ->
+        {:error, :backend_unavailable}
+    after
+      10_000 -> shutdown_backend(pid, ref)
     end
   rescue
     _ -> {:error, :backend_unavailable}
   catch
     :exit, _ -> {:error, :backend_unavailable}
+  end
+
+  defp shutdown_backend(pid, ref) do
+    Process.exit(pid, :kill)
+
+    receive do
+      {:DOWN, ^ref, :process, ^pid, _reason} ->
+        # A reply can race the deadline. Wait for termination before draining it,
+        # preserving Task.shutdown/2 semantics without leaving task messages.
+        receive do
+          {^ref, result} -> result
+        after
+          0 -> {:error, :backend_unavailable}
+        end
+    end
   end
 
   defp execute_connection(mount, fun) do

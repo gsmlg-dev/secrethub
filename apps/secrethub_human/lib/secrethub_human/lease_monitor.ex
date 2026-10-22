@@ -9,9 +9,7 @@ defmodule SecretHub.Human.LeaseMonitor do
     Accounts.cleanup_refresh_evidence()
     Metrics.emit()
 
-    case SecretHub.Access.cleanup_expired() do
-      {:ok, _} -> :ok
-      {:error, _} -> {:error, :core_unavailable}
-    end
+    {:ok, _} = SecretHub.Access.cleanup_expired()
+    :ok
   end
 end

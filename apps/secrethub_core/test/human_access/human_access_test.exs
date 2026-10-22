@@ -1110,6 +1110,39 @@ defmodule SecretHub.Core.HumanAccessTest do
       else: :ok
   end
 
+  test "missing backend supervisor fails closed without killing its caller", ctx do
+    assert :ok =
+             Supervisor.terminate_child(
+               SecretHub.Core.Supervisor,
+               SecretHub.Core.HumanAccess.BackendSupervisor
+             )
+
+    try do
+      owner = self()
+
+      {caller, monitor} =
+        spawn_monitor(fn ->
+          result =
+            PostgreSQLBackend.renew(
+              ctx.mounts["postgres-test"],
+              "human_" <> String.duplicate("a", 32),
+              DateTime.add(DateTime.utc_now(), 120)
+            )
+
+          send(owner, {:backend_result, self(), result})
+        end)
+
+      assert_receive {:backend_result, ^caller, {:error, :backend_unavailable}}, 1000
+      assert_receive {:DOWN, ^monitor, :process, ^caller, :normal}, 1000
+    after
+      {:ok, _pid} =
+        Supervisor.restart_child(
+          SecretHub.Core.Supervisor,
+          SecretHub.Core.HumanAccess.BackendSupervisor
+        )
+    end
+  end
+
   @tag :human_recovery_deadline
   test "backend task enforces its own deadline after caller death", ctx do
     grant(ctx)

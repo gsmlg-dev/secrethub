@@ -12,17 +12,20 @@ defmodule SecretHub.Agent.Cache do
   @cache_hits_counter :cache_hits_total
   @cache_misses_counter :cache_misses_total
 
+  @type key :: String.t() | {String.t(), String.t(), String.t()}
+
   defmodule CacheEntry do
     @moduledoc false
     @derive {Inspect, except: [:data]}
     defstruct [:secret_path, :data, :fetched_at, :expires_at, :version, :revision, :engine_type]
 
     @type t :: %__MODULE__{
-            secret_path: String.t(),
-            data: map(),
+            secret_path: SecretHub.Agent.Cache.key(),
+            data: term(),
             fetched_at: DateTime.t(),
             expires_at: DateTime.t(),
             version: integer(),
+            revision: integer() | nil,
             engine_type: atom() | nil
           }
   end
@@ -41,7 +44,7 @@ defmodule SecretHub.Agent.Cache do
 
   Returns `{:ok, data}` if found and not expired, `{:error, :not_found}` otherwise.
   """
-  @spec get(String.t()) :: {:ok, map()} | {:error, :not_found | :expired}
+  @spec get(key()) :: {:ok, term()} | {:error, :not_found | :expired}
   def get(secret_path) do
     GenServer.call(__MODULE__, {:get, secret_path})
   end
@@ -55,7 +58,7 @@ defmodule SecretHub.Agent.Cache do
   - `:version` - Secret version number
   - `:engine_type` - Secret engine type (:postgresql, :redis, :aws_sts, etc.)
   """
-  @spec put(String.t(), map(), keyword()) :: :ok
+  @spec put(key(), term(), keyword()) :: :ok
   def put(secret_path, data, opts \\ []) do
     GenServer.cast(__MODULE__, {:put, secret_path, data, opts})
   end
@@ -63,7 +66,7 @@ defmodule SecretHub.Agent.Cache do
   @doc """
   Invalidate a secret in cache.
   """
-  @spec invalidate(String.t()) :: :ok
+  @spec invalidate(key()) :: :ok
   def invalidate(secret_path) do
     GenServer.cast(__MODULE__, {:invalidate, secret_path})
   end
@@ -87,7 +90,7 @@ defmodule SecretHub.Agent.Cache do
   @doc """
   Legacy fallback entrypoint. Offline release is disabled.
   """
-  @spec get_with_fallback(String.t()) :: {:ok, map()} | {:error, :not_found}
+  @spec get_with_fallback(key()) :: {:ok, term()} | {:error, :not_found}
   def get_with_fallback(secret_path) do
     GenServer.call(__MODULE__, {:get_with_fallback, secret_path})
   end
@@ -95,6 +98,9 @@ defmodule SecretHub.Agent.Cache do
   def invalidate_path(path, revision),
     do: GenServer.cast(__MODULE__, {:invalidate_path, path, revision})
 
+  @spec get_entry(key()) ::
+          {:ok, %{data: term(), version: integer(), revision: integer() | nil}}
+          | {:error, :not_found}
   def get_entry(key), do: GenServer.call(__MODULE__, {:get_entry, key})
 
   @impl true
