@@ -490,6 +490,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
+        id: image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -510,6 +511,15 @@ jobs:
             SECRET_HUB_GIT_REF=${{ needs.prepare-release.outputs.tag }}
             SECRET_HUB_GIT_SHA=${{ needs.prepare-release.outputs.release_sha }}
             SECRET_HUB_BUILD_TIME=${{ needs.prepare-release.outputs.build_time }}
+
+      - name: Verify packaged Core trust offline
+        if: ${{ matrix.image != 'agent' }}
+        shell: bash
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}/${{ matrix.image }}@${{ steps.image.outputs.digest }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare-release.outputs.release_sha }}
+        run: bash scripts/verify-pki-trust-image.sh "$IMAGE" "$RELEASE_TAG" "$RELEASE_SHA"
 
   create-release:
     name: Create GitHub Release

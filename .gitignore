@@ -98,6 +98,9 @@ Thumbs.db
 priv/cert/*.pem
 priv/cert/*.key
 *.pem
+# Pinned public staging-chain roots are required source/release assets.
+!/apps/secrethub_core/priv/pki/letsencrypt-stg-root-x1.pem
+!/apps/secrethub_core/priv/pki/letsencrypt-stg-root-x2.pem
 *.key
 *.p12
 *.jks
