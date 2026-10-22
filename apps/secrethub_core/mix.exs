@@ -25,7 +25,7 @@ defmodule SecretHub.Core.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :ssh, :public_key],
+      extra_applications: [:logger, :ssh, :public_key, :xmerl, :inets],
       mod: {SecretHub.Core.Application, []}
     ]
   end
@@ -36,6 +36,11 @@ defmodule SecretHub.Core.MixProject do
       {:ecto_sql, "~> 3.12"},
       {:postgrex, "~> 0.19"},
       {:jason, "~> 1.4"},
+      {:castore, "~> 1.0"},
+      {:req, "~> 0.7"},
+      {:jose, "~> 1.11"},
+      {:aws_signature, "~> 0.4"},
+      {:idna, "~> 7.1"},
       {:oban, "~> 2.18"},
       {:crontab, "~> 1.1"},
       {:redix, "~> 1.5"},

@@ -35,6 +35,12 @@ defmodule SecretHub.Core.AuthorizationVersionsTest do
              AuthorizationVersions.resolve_binding("application:" <> Ecto.UUID.generate())
   end
 
+  test "binding resolution rejects non-binary inputs" do
+    for value <- [nil, 123, %{}, []] do
+      assert {:error, :missing_subject} = AuthorizationVersions.resolve_binding(value)
+    end
+  end
+
   test "bump locks and rollback do not retain subject changes" do
     {:ok, agent} = Agents.register_agent(%{agent_id: "rollback-agent", name: "Rollback Agent"})
     subject = "agent:" <> agent.id

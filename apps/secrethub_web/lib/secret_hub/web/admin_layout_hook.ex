@@ -59,6 +59,8 @@ defmodule SecretHub.Web.AdminLayoutHook do
   end
 
   @pki_nav_paths [
+    {"/admin/pki/trust-stores", :pki_public_trust},
+    {"/admin/pki/acme", :pki_acme},
     {"/admin/pki/certificates/issue", :pki_certificates_issue},
     {"/admin/pki/certificates", :pki_certificates},
     {"/admin/pki/csr/upload", :pki_csr_upload},
@@ -110,6 +112,8 @@ defmodule SecretHub.Web.AdminLayoutHook do
     ssh_access: "SSH Access",
     agents: "Agent Monitoring",
     pki_overview: "PKI Overview",
+    pki_public_trust: "Public Trust",
+    pki_acme: "Public Server Certificates",
     pki_ca_list: "PKI CA List",
     pki_certificates: "PKI Certificate List",
     pki_certificates_issue: "Issue PKI Certificate",

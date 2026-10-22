@@ -228,7 +228,5 @@ defmodule SecretHub.Core.AuthorizationVersions do
   defp subject_order("application:" <> id), do: {1, id}
 
   defp valid_uuid?(id),
-    do:
-      is_binary(id) and
-        Regex.match?(~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/, id)
+    do: Regex.match?(~r/\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/, id)
 end

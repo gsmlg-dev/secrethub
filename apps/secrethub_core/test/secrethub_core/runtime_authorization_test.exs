@@ -183,6 +183,95 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
     assert {:ok, :valid} = Audit.verify_chain()
   end
 
+  test "managed certificate quarantine is enforced before cache not-modified approval", ctx do
+    alias SecretHub.Core.PKI.ManagedCertificates, as: Managed
+
+    alias SecretHub.Shared.Schemas.{
+      AcmeAccount,
+      AcmeOrder,
+      ManagedCertificate,
+      ManagedCertificateVersion
+    }
+
+    {:ok, oban} =
+      Oban.start_link(
+        name: SecretHub.Core.Oban,
+        repo: Repo,
+        get_dynamic_repo: fn -> :runtime_authorization_fixture end,
+        testing: :disabled,
+        queues: false,
+        plugins: false
+      )
+
+    Process.unlink(oban)
+    on_exit(fn -> if Process.alive?(oban), do: Supervisor.stop(oban) end)
+
+    account =
+      Repo.insert!(%AcmeAccount{
+        name: "Cache test",
+        environment: "staging",
+        directory_url: "https://acme-staging-v02.api.letsencrypt.org/directory",
+        terms_url: "https://example.com/terms",
+        terms_accepted_at: Managed.now(),
+        encrypted_key: "encrypted-fixture"
+      })
+
+    resource =
+      Repo.insert!(%ManagedCertificate{
+        slug: "cache-test",
+        account_id: account.id,
+        identifiers: ["example.com"],
+        bindings: []
+      })
+
+    order =
+      Repo.insert!(%AcmeOrder{
+        managed_certificate_id: resource.id,
+        request_id: "cache",
+        request_digest: "cache",
+        configuration_revision: 1,
+        identifiers: ["example.com"],
+        bindings: [],
+        account_snapshot: %{},
+        deadline_at: DateTime.add(Managed.now(), 3600)
+      })
+
+    version =
+      Repo.insert!(%ManagedCertificateVersion{
+        managed_certificate_id: resource.id,
+        order_id: order.id,
+        publication_sequence: 1,
+        environment: "staging",
+        fingerprint: String.duplicate("a", 64),
+        certificate_pem: "public fixture",
+        fullchain_pem: "public fixture",
+        identifiers: ["example.com"],
+        not_before: DateTime.add(Managed.now(), -60),
+        not_after: DateTime.add(Managed.now(), 3600),
+        key_policy: "ec_p256",
+        output_secret_id: ctx.secret.id,
+        secret_version_number: 1
+      })
+
+    Repo.update!(
+      Ecto.Changeset.change(resource,
+        output_secret_id: ctx.secret.id,
+        current_version_id: version.id
+      )
+    )
+
+    assert {:ok, %{revision: revision}} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path)
+
+    assert {:ok, %{not_modified: true}} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, revision)
+
+    assert {:ok, _} = Managed.request_revocation(version.id)
+
+    assert {:error, :certificate_quarantined} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, revision)
+  end
+
   def failing_exporter(_, _, _, _), do: raise("test exporter unavailable")
 
   test "correlates independently checked decisions and cache access without counting delivery",

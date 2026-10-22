@@ -21,6 +21,7 @@ defmodule SecretHub.Core.Secrets do
 
   alias Ecto.Multi
   alias SecretHub.Core.{Audit, Policies, Repo}
+  alias SecretHub.Core.PKI.ManagedCertificates
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.{Policy, Secret, SecretRotator, SecretVersion}
@@ -240,6 +241,12 @@ defmodule SecretHub.Core.Secrets do
   end
 
   defp update_secret_locked(secret_id, attrs, opts) do
+    if ManagedCertificates.owned_output?(secret_id),
+      do: {:error, :managed_certificate_output},
+      else: update_unmanaged_secret_locked(secret_id, attrs, opts)
+  end
+
+  defp update_unmanaged_secret_locked(secret_id, attrs, opts) do
     created_by = Keyword.get(opts, :created_by, "system")
     change_description = Keyword.get(opts, :change_description, "Secret updated")
     attrs = normalize_secret_attrs(attrs, :update)
@@ -321,12 +328,16 @@ defmodule SecretHub.Core.Secrets do
   end
 
   defp delete_secret_locked(secret_id) do
-    case Repo.get(Secret, secret_id) do
-      nil ->
-        {:error, "Secret not found"}
+    if ManagedCertificates.owned_output?(secret_id) do
+      {:error, :managed_certificate_output}
+    else
+      case Repo.get(Secret, secret_id) do
+        nil ->
+          {:error, "Secret not found"}
 
-      secret ->
-        Repo.delete(secret)
+        secret ->
+          Repo.delete(secret)
+      end
     end
   end
 
@@ -407,6 +418,7 @@ defmodule SecretHub.Core.Secrets do
   @spec read_decrypted(String.t()) :: {:ok, map(), Secret.t()} | {:error, term()}
   def read_decrypted(secret_path) do
     with {:ok, secret} <- get_secret_by_path(secret_path),
+         :ok <- ManagedCertificates.check_delivery(secret.id, secret.version),
          {:ok, master_key} <- SealState.get_master_key(),
          {:ok, decrypted_data} <- decrypt_secret_data(secret.encrypted_data, master_key) do
       {:ok, decrypted_data, secret}
@@ -439,6 +451,7 @@ defmodule SecretHub.Core.Secrets do
 
     with {:ok, policy} <- Policies.evaluate_access(entity_id, secret_path, "read", context),
          {:ok, secret} <- get_secret_by_path(secret_path),
+         :ok <- ManagedCertificates.check_delivery(secret.id, secret.version),
          {:ok, master_key} <- SealState.get_master_key(),
          {:ok, decrypted_data} <- decrypt_secret_data(secret.encrypted_data, master_key) do
       response_time = System.monotonic_time(:millisecond) - start_time
@@ -767,6 +780,74 @@ defmodule SecretHub.Core.Secrets do
     repo.insert(version)
   end
 
+  @doc false
+  def write_managed_output_locked(resource, encrypted_data) do
+    unless Repo.in_transaction?(), do: raise(ArgumentError, "caller-owned transaction required")
+    Repo.query!("SELECT set_config('secrethub.acme_publication', 'on', true)")
+
+    if resource.output_secret_id do
+      secret =
+        Repo.one!(
+          from(s in Secret, where: s.id == ^resource.output_secret_id, lock: "FOR UPDATE")
+        )
+
+      with {:ok, _} <-
+             archive_current_version(Repo, secret, "acme", "Managed certificate publication") do
+        secret
+        |> Ecto.Changeset.change(
+          encrypted_data: encrypted_data,
+          version: secret.version + 1,
+          version_count: secret.version_count + 1,
+          last_version_at: DateTime.utc_now() |> DateTime.truncate(:second),
+          status: "active"
+        )
+        |> Repo.update()
+      end
+    else
+      attrs = %{
+        "name" => "ACME " <> resource.slug,
+        "secret_path" => "pki.acme." <> resource.slug,
+        "secret_type" => "static",
+        "engine_type" => "static",
+        "encrypted_data" => encrypted_data,
+        "rotation_enabled" => false,
+        "ttl_seconds" => 0
+      }
+
+      with {:ok, template} <- ensure_rotator_template(attrs, @manual_rotator_slug),
+           {:ok, secret} <- Repo.insert(Secret.changeset(%Secret{}, attrs)),
+           {:ok, rotator} <-
+             Repo.insert(
+               SecretRotator.changeset(%SecretRotator{}, default_rotator_attrs(secret, template))
+             ),
+           do: Repo.update(Secret.changeset(secret, %{"rotator_id" => rotator.id}))
+    end
+  end
+
+  @doc "Resolve current or historical material without substituting a newer generation."
+  def read_exact_material(secret_id, number) do
+    with {:ok, secret} <- get_secret(secret_id),
+         :ok <- ManagedCertificates.check_delivery(secret_id, number),
+         encrypted when is_binary(encrypted) <-
+           if(secret.version == number,
+             do: secret.encrypted_data,
+             else:
+               Repo.one(
+                 from(v in SecretVersion,
+                   where: v.secret_id == ^secret_id and v.version_number == ^number,
+                   select: v.encrypted_data
+                 )
+               )
+           ),
+         {:ok, master_key} <- SealState.get_master_key(),
+         {:ok, data} <- decrypt_secret_data(encrypted, master_key) do
+      {:ok, data}
+    else
+      nil -> {:error, :version_not_found}
+      error -> error
+    end
+  end
+
   @doc """
   Lists all versions of a secret, ordered by version number (newest first).
   """
@@ -878,7 +959,11 @@ defmodule SecretHub.Core.Secrets do
         # Keep recent versions (by index)
         # Keep versions newer than cutoff
         index < keep_versions ||
-          DateTime.compare(version.archived_at, cutoff_date) == :gt
+          DateTime.compare(version.archived_at, cutoff_date) == :gt ||
+          ManagedCertificates.retained_material?(
+            secret_id,
+            version.version_number
+          )
       end)
 
     # Delete old versions

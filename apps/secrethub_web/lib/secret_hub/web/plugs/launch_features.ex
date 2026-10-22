@@ -4,6 +4,10 @@ defmodule SecretHub.Web.Plugs.LaunchFeatures do
   alias SecretHub.Shared.LaunchProfile
 
   @paths [
+    {"/admin/pki/trust-stores", :public_trust},
+    {"/admin/api/pki/trust-stores", :public_trust},
+    {"/admin/pki/acme", :acme},
+    {"/admin/api/pki/acme", :acme},
     {"/v1/secrets/dynamic", :dynamic_secrets},
     {"/v1/sys/leases", :dynamic_secrets},
     {"/admin/dynamic", :dynamic_secrets},
@@ -38,7 +42,7 @@ defmodule SecretHub.Web.Plugs.LaunchFeatures do
           do: feature
       end)
 
-    if is_nil(feature) or LaunchProfile.enabled?(feature) do
+    if is_nil(feature) or LaunchProfile.enabled?(feature) or lifecycle_recovery?(conn) do
       conn
     else
       conn
@@ -52,5 +56,21 @@ defmodule SecretHub.Web.Plugs.LaunchFeatures do
     do: LaunchProfile.enabled?(:dynamic_secrets)
 
   def allowed_view?(view) when view in @rotation_views, do: LaunchProfile.enabled?(:rotation)
+  def allowed_view?(SecretHub.Web.TrustStoresLive), do: LaunchProfile.enabled?(:public_trust)
+  # Existing material and recovery obligations remain inspectable when issuance is disabled.
+  def allowed_view?(SecretHub.Web.AcmeLive), do: true
   def allowed_view?(_view), do: true
+
+  defp lifecycle_recovery?(%{method: "GET", request_path: path}),
+    do:
+      path == "/admin/pki/acme" or String.starts_with?(path, "/admin/pki/acme/") or
+        path == "/admin/api/pki/acme" or String.starts_with?(path, "/admin/api/pki/acme/")
+
+  defp lifecycle_recovery?(%{
+         method: "POST",
+         path_info: ["admin", "api", "pki", "acme", kind, _id, action]
+       }),
+       do: {kind, action} in [{"orders", "cancel"}, {"versions", "revoke"}, {"cleanup", "retry"}]
+
+  defp lifecycle_recovery?(_), do: false
 end

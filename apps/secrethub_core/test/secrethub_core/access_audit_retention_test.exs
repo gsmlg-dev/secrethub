@@ -121,10 +121,13 @@ defmodule SecretHub.Core.AccessAuditRetentionTest do
 
     assert {:ok, :valid} = Audit.verify_chain()
     assert {:ok, %{observations: 0, requests: 0}} = AccessAudit.prune(enabled: true)
-    path = Application.app_dir(:secrethub_core, "priv/repo/migrations")
+
+    migrations = [
+      {20_261_020_000_002, SecretHub.Core.Repo.Migrations.CreateAccessAuditRetention}
+    ]
 
     assert_raise Postgrex.Error, fn ->
-      Ecto.Migrator.run(Repo, path, :down, step: 1, log: false)
+      Ecto.Migrator.run(Repo, migrations, :down, step: 1, log: false)
     end
 
     assert {:ok, :valid} = Audit.verify_chain()

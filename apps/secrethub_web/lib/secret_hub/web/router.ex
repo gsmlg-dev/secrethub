@@ -108,6 +108,8 @@ defmodule SecretHub.Web.Router do
     pipe_through :admin_browser
 
     get "/", AdminPageController, :index
+    get "/pki/trust-stores/:id/pem", AcmeController, :trust_bundle
+    get "/pki/acme/versions/:id/export", AcmeController, :export_pem
 
     # All admin LiveViews use the admin layout and hook
     live_session :admin,
@@ -131,6 +133,8 @@ defmodule SecretHub.Web.Router do
       live "/policies/:id/simulate", PolicySimulatorLive, :show
       live "/audit", AuditLogLive, :index
       live "/pki", PKIManagementLive, :index
+      live "/pki/trust-stores", TrustStoresLive, :index
+      live "/pki/acme", AcmeLive, :index
       live "/pki/ca", PKIManagementLive, :cas
       live "/pki/ca/new", PKIManagementLive, :new_ca
       live "/pki/ca/:ca_id", PKIManagementLive, :ca_show
@@ -178,6 +182,23 @@ defmodule SecretHub.Web.Router do
     pipe_through :admin_api
 
     post "/pki/runtime-server-certificate", RuntimeServerCertificateController, :create
+    get "/pki/trust-stores", AcmeController, :trust_stores
+    get "/pki/trust-stores/:id", AcmeController, :trust_store
+    get "/pki/trust-stores/:id/pem", AcmeController, :trust_bundle
+    get "/pki/acme", AcmeController, :index
+    post "/pki/acme/providers", AcmeController, :create_provider
+    patch "/pki/acme/providers/:id", AcmeController, :update_provider
+    post "/pki/acme/accounts", AcmeController, :create_account
+    patch "/pki/acme/accounts/:id", AcmeController, :update_account
+    post "/pki/acme/accounts/:id/register", AcmeController, :register_account
+    post "/pki/acme/certificates", AcmeController, :create_managed
+    get "/pki/acme/certificates/:id", AcmeController, :show
+    patch "/pki/acme/certificates/:id", AcmeController, :update_managed
+    post "/pki/acme/certificates/:id/issue", AcmeController, :issue
+    post "/pki/acme/orders/:id/cancel", AcmeController, :cancel
+    post "/pki/acme/cleanup/:id/retry", AcmeController, :retry_cleanup
+    post "/pki/acme/versions/:id/revoke", AcmeController, :revoke
+    get "/pki/acme/versions/:id/export", AcmeController, :export
     get "/dashboard/stats", AdminDashboardController, :system_stats
     get "/dashboard/agents", AdminDashboardController, :connected_agents
     get "/dashboard/secrets", AdminDashboardController, :secret_stats

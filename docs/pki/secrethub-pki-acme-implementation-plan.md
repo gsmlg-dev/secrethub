@@ -1,5 +1,9 @@
 # SecretHub PKI: Mozilla Trust and ACME Implementation Plan
 
+Implementation and delivery results are recorded in the
+[execution evidence](secrethub-pki-acme-execution.md); operator procedures are in
+the [managed public certificate guide](managed-public-certificates.md).
+
 **Status:** Proposed implementation handoff; no implementation or live certificate issuance was performed while preparing this plan.  
 **Prepared:** 2026-10-22 (Asia/Shanghai)  
 **Repository:** [gsmlg-dev/secrethub](https://github.com/gsmlg-dev/secrethub)  

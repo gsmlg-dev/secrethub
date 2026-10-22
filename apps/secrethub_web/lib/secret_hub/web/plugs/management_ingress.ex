@@ -54,7 +54,7 @@ defmodule SecretHub.Web.Plugs.ManagementIngress do
         case endpoint.config(:check_origin) do
           :conn ->
             origin ==
-              URI.to_string(%URI{
+              to_string(%URI{
                 scheme: Atom.to_string(conn.scheme),
                 host: conn.host,
                 port: conn.port

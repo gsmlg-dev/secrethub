@@ -24,6 +24,16 @@ config :secrethub_core,
   ecto_repos: [SecretHub.Core.Repo],
   cluster_node_freshness_timeout_seconds: 30
 
+config :secrethub_core, SecretHub.Core.Oban,
+  name: SecretHub.Core.Oban,
+  repo: SecretHub.Core.Repo,
+  queues: [acme: 4, acme_cleanup: 2],
+  shutdown_grace_period: 15_000,
+  plugins: [
+    {Oban.Plugins.Pruner, max_age: 604_800},
+    {Oban.Plugins.Cron, crontab: [{"* * * * *", SecretHub.Core.PKI.ACME.Reconciler}]}
+  ]
+
 config :secrethub_human,
   env: config_env(),
   enabled: true,

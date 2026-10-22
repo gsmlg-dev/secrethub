@@ -40,6 +40,27 @@ To cut a release, run `.github/workflows/release.yml` with:
 
 The workflow bumps versions, pushes the release commit, builds artifacts/images, publishes the CLI package, tags the release, and creates GitHub release notes. It requires the repository secret `HEX_API_KEY` to publish the CLI package.
 
+## Public trust and managed certificates
+
+Core packages Mozilla-derived public roots for offline inspection/export and runs
+managed Let's Encrypt DNS-01 orders through its own named Oban instance. Apply
+the Core migrations before starting a binary containing this feature: they add
+Oban schema version 14 and the dedicated ACME tables and retention guards.
+Back up PostgreSQL together with Vault recovery material before upgrading.
+
+Follow the [managed public certificate guide](pki/managed-public-certificates.md)
+for explicit account terms acceptance, encrypted Cloudflare/Route 53 credential
+references, public zones, renewal, cleanup and exact-version exports. Set
+`SECRET_HUB_ACME_ENABLED=false` to stop new issuance/publication while allowing
+existing cleanup and pending revocation to finish. Public-root inspection needs
+neither network access nor an unsealed Vault; account/key operations need Vault.
+
+Deploy the single combined PEM through the existing authorized Agent secret
+read/sink path, then arrange and verify application adoption. Public roots and
+server certificates do not change internal machine/client authentication. See
+the [execution evidence](pki/secrethub-pki-acme-execution.md) for tested behavior,
+live-provider qualification and publication status before rollout.
+
 ## Prerequisites
 
 - PostgreSQL 16 for Core, unless using the standalone image
