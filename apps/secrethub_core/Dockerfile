@@ -87,7 +87,7 @@ ENTRYPOINT ["bin/secrethub_core"]
 
 # Labels for orchestration
 LABEL maintainer="SecretHub Development Team" \
-      version="1.0.0-rc.23" \
+      version="1.0.0-rc.24" \
       description="SecretHub Core Service - Enterprise secrets management platform" \
       org.opencontainers.image.source="https://github.com/secrethub/secrethub" \
       org.opencontainers.image.licenses="MIT"
