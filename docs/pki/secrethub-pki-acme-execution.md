@@ -272,15 +272,53 @@ After the final source passes required branch checks, integrate PR #18, dispatch
 the existing release workflow, and verify the tag, all eight archives, the three
 multi-architecture image manifests and CLI Hex package. The workflow owns the
 version bump; production deployment and live DNS mutation are outside delivery.
-If `v1.0.0-rc.21` is still latest, the dispatch is:
+The initial rc.22 attempt was cancelled during artifact qualification, as recorded
+below. The corrected delivery uses rc.23:
 
 ```sh
 gh workflow run release.yml --repo gsmlg-dev/secrethub --ref main \
-  -f version=1.0.0-rc.22 -f git-rev=main
+  -f version=1.0.0-rc.23 -f git-rev=main
 ```
 
 Recheck the latest version and integrated commit immediately before dispatch.
 Release remains distinct from production deployment or application adoption.
+
+### Published-container qualification and source packaging repair
+
+PR #18 merged as `65e255a94b454d1cb412baf7e12688a46e6d3ad7`; its tree
+matches the tested branch head. The merge independently passed CI, Test
+(2,055 tests, zero failures, four skipped and 50 excluded), and E2E. Release
+workflow [39728524133](https://github.com/gsmlg-dev/secrethub/actions/runs/39728524133)
+prepared `4898507e46c62740c69910f38473153fe5ec43a4` for rc.22, changing only
+versions. Its eight archives built, but the published standalone image failed
+the offline trust probe with `:staging_trust_unavailable`.
+
+The staging PEMs existed only as Git-ignored files in the implementation
+worktree. Thus the preceding local-release evidence did not establish that
+a clean source checkout contained the staging assets. Inspection of the actual
+image confirmed that the manifest/notice and 118-root public bundle were present,
+but both staging PEMs were absent. The initial publication is **not accepted**.
+
+The workflow was cancelled before Hex, tag/release creation or `latest`
+promotion. Preliminary rc.22 OCI bytes remain historical failed evidence; the
+corrected delivery uses rc.23. The repair explicitly tracks only the two pinned
+public roots, verifies their manifest hashes and adds exact Git ignore
+exceptions. A required image probe now runs for both Core variants before the
+workflow can publish Hex, create a release or promote `latest`. It pulls an
+immutable digest, checks version/revision/source labels and evaluates the
+existing trust probe offline with read-only mounts, without starting services.
+
+Original failure evidence is retained in
+`/tmp/secrethub-acme-published-oci-rc22/` and
+`/tmp/secrethub-acme-published-oci-public-inspection.log`. The clean Docker-context
+reproduction failed before adding the missing assets and the corrected context
+contains both exact manifest-hashed PEMs. An initial hypothesis that Docker's
+root-level `*.pem` pattern excluded these nested files was disproved; Docker
+ignore rules are unchanged. Read-only mounts supplying just the missing roots
+make the original failed image pass the full probe, establishing the cause
+without treating that diagnostic as release acceptance. Final clean-checkout,
+image, archive and remote-gate results
+are recorded in the repair PR and release notes linked from the delivery report.
 
 ## Operational evidence
 

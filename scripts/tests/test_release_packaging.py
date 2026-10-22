@@ -1,8 +1,11 @@
 """Release packaging contracts; no publication, containers, or runtime secrets."""
 from pathlib import Path
+import hashlib
+import json
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import tempfile
 import unittest
@@ -11,6 +14,103 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ReleasePackagingTest(unittest.TestCase):
+    def test_pinned_staging_roots_are_present_with_manifest_checksums(self):
+        directory = ROOT / "apps/secrethub_core/priv/pki"
+        manifest = json.loads((directory / "letsencrypt-staging-manifest.json").read_text())
+        self.assertTrue(manifest["roots"], "Staging root manifest must not be empty")
+        for root in manifest["roots"]:
+            with self.subTest(root=root["file"]):
+                path = directory / root["file"]
+                self.assertEqual(path.parent, directory)
+                self.assertTrue(path.is_file(), f"Missing pinned staging root: {path}")
+                pem = path.read_bytes()
+                self.assertEqual(hashlib.sha256(pem).hexdigest(), root["pem_sha256"])
+                self.assertEqual(pem.count(b"-----BEGIN CERTIFICATE-----"), 1)
+                der = ssl.PEM_cert_to_DER_cert(pem.decode("ascii"))
+                self.assertEqual(hashlib.sha256(der).hexdigest(), root["der_sha256"])
+
+    def test_image_trust_guard_gates_publication(self):
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        images = workflow.split("  build-docker-images:\n", 1)[1].split("  create-release:\n", 1)[0]
+        self.assertIn("scripts/verify-pki-trust-image.sh", images)
+        guard = images.split("      - name: Verify packaged Core trust offline\n", 1)[1]
+        self.assertIn("matrix.image != 'agent'", guard)
+        self.assertNotIn("continue-on-error", guard)
+        self.assertIn("steps.image.outputs.digest", guard)
+        self.assertIn("needs.prepare-release.outputs.tag", guard)
+        self.assertIn("needs.prepare-release.outputs.release_sha", guard)
+        for job in ["publish-cli-hex", "create-release"]:
+            section = workflow.split("  " + job + ":\n", 1)[1].split("\n    steps:", 1)[0]
+            self.assertIn("      - build-docker-images\n", section)
+            self.assertNotIn("always()", section)
+
+    def image_guard(self, profile="core-standalone", failure=None):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory)
+            stub = fixture / "docker"
+            stub.write_text('''#!/usr/bin/env python3
+import base64, json, os, sys
+args = sys.argv[1:]
+with open(os.environ["DOCKER_LOG"], "a") as log:
+    log.write(json.dumps(args) + "\\n")
+if args[:2] == ["image", "inspect"]:
+    print(json.dumps([{"Architecture": "amd64", "Os": "linux", "Config": {"Labels": {
+        "org.opencontainers.image.version": "wrong" if os.environ.get("FAILURE") == "version" else "v1.0.0-rc.22",
+        "org.opencontainers.image.revision": "a" * 40,
+        "org.opencontainers.image.source": "https://github.com/gsmlg-dev/secrethub"}}}]))
+elif args[0] == "run":
+    assert os.environ["SECRET_KEY_BASE"] != "must-not-inherit"
+    assert len(base64.b64decode(os.environ["SECRET_KEY_BASE"])) == 64
+    assert len(base64.b64decode(os.environ["AUDIT_HMAC_KEY"])) == 32
+    if os.environ.get("FAILURE") == "probe":
+        print(":staging_trust_unavailable", file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps({"result": "PASS", "services_started": False, "release": "1.0.0-rc.22"}))
+''')
+            stub.chmod(0o755)
+            environment = dict(os.environ, PATH=f"{fixture}{os.pathsep}{os.environ['PATH']}",
+                               DOCKER_LOG=str(fixture / "docker.log"), FAILURE=failure or "",
+                               SECRET_KEY_BASE="must-not-inherit", AUDIT_HMAC_KEY="must-not-inherit")
+            reference = f"ghcr.io/gsmlg-dev/secrethub/{profile}@sha256:" + "b" * 64
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/verify-pki-trust-image.sh"), reference,
+                 "v1.0.0-rc.22", "a" * 40], env=environment, text=True, capture_output=True,
+            )
+            calls = [json.loads(line) for line in (fixture / "docker.log").read_text().splitlines()]
+            return result, calls, reference
+
+    def test_image_trust_guard_runs_only_isolated_eval_of_digest_pulled_image(self):
+        result, calls, reference = self.image_guard()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(calls[0], ["pull", "--platform", "linux/amd64", reference])
+        run = next(call for call in calls if call[0] == "run")
+        for argument in ["--network=none", "--read-only", "--cap-drop=ALL",
+                         "--security-opt=no-new-privileges", "--no-healthcheck"]:
+            self.assertIn(argument, run)
+        self.assertIn("/data:ro,noexec,nosuid,size=1m", run)
+        self.assertEqual(run[run.index("--entrypoint") + 1], "/app/bin/secrethub_core")
+        self.assertEqual(run[-3:], [reference, "eval", 'Code.eval_file("/qualification/probe.exs")'])
+        self.assertTrue(any("/qualification/probe.exs,readonly" in arg for arg in run))
+        self.assertNotIn("must-not-inherit", result.stdout + result.stderr + str(calls))
+
+    def test_image_trust_guard_rejects_wrong_version_before_eval(self):
+        result, calls, _ = self.image_guard(failure="version")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any(call[0] == "run" for call in calls))
+
+    def test_core_image_guard_does_not_add_a_data_volume(self):
+        result, calls, _ = self.image_guard(profile="core")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        run = next(call for call in calls if call[0] == "run")
+        self.assertFalse(any(argument.startswith("/data:") for argument in run))
+
+    def test_image_trust_guard_propagates_probe_failure_and_removes_owned_container(self):
+        result, calls, _ = self.image_guard(failure="probe")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(":staging_trust_unavailable", result.stderr)
+        run = next(call for call in calls if call[0] == "run")
+        self.assertIn(["rm", "--force", run[run.index("--name") + 1]], calls)
+
     def write_app(self, release, name, version):
         path = release / "lib" / f"{name}-{version}" / "ebin" / f"{name}.app"
         path.parent.mkdir(parents=True, exist_ok=True)
