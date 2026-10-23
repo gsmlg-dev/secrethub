@@ -170,6 +170,31 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
     refute inspect(log.event_data) =~ "private-runtime-value"
   end
 
+  test "explicit formats travel outside application data and format changes advance revisions",
+       ctx do
+    data = %{"value" => "application-value", "region" => "application-region"}
+
+    assert {:ok, _} =
+             Secrets.update_secret(ctx.secret.id, %{
+               value_format: "structured",
+               secret_data: data
+             })
+
+    assert {:ok, %{value: ^data, value_format: "structured", revision: revision}} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path)
+
+    assert {:ok, %{not_modified: true, value_format: "structured", revision: ^revision}} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, revision)
+
+    assert {:ok, _} =
+             Secrets.update_secret(ctx.secret.id, %{value_format: "text", value: "  exact\n"})
+
+    assert {:ok, %{value: %{"value" => "  exact\n"}, value_format: "text", revision: changed}} =
+             RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, revision)
+
+    assert changed > revision
+  end
+
   test "a detached failing metrics handler leaves checked authorization and signed evidence intact",
        ctx do
     event = [:secrethub, :access_audit, :authorization, :result]

@@ -28,6 +28,31 @@ defmodule SecretHub.CLI.AgentClientTest do
     end
   end
 
+  @tag :tmp_dir
+  test "structured application keys survive the single UDS envelope unwrap", %{tmp_dir: dir} do
+    path = Path.join(System.tmp_dir!(), "sh-cli-#{System.unique_integer([:positive])}.sock")
+    on_exit(fn -> File.rm(path) end)
+    material = AgentSocketFixture.material(dir)
+
+    value = %{
+      "value" => "application-value",
+      "data" => %{"format" => "custom"},
+      "region" => "test"
+    }
+
+    server = AgentSocketFixture.start(path, self(), material, value)
+    assert_receive :agent_socket_ready
+
+    assert {:ok, ^value} =
+             AgentClient.get_secret("prod.app.config",
+               socket_path: path,
+               certificate_path: material.certificate_path,
+               private_key_path: material.private_key_path
+             )
+
+    Task.await(server, 5000)
+  end
+
   test "certificate alone cannot connect without an application private key" do
     assert {:error, "Missing required agent private key"} =
              AgentClient.get_secret("prod.db.password",

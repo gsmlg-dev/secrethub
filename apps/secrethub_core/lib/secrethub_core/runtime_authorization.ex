@@ -92,11 +92,23 @@ defmodule SecretHub.Core.RuntimeAuthorization do
                  ),
                :ok <- ManagedCertificates.check_delivery(secret.id) do
             if revision.revision == known_revision do
-              {:ok, %{not_modified: true, revision: revision.revision, version: secret.version}}
+              {:ok,
+               %{
+                 not_modified: true,
+                 revision: revision.revision,
+                 version: secret.version,
+                 value_format: secret.value_format
+               }}
             else
               case Secrets.read_decrypted(normalized) do
                 {:ok, value, _} ->
-                  {:ok, %{value: value, revision: revision.revision, version: secret.version}}
+                  {:ok,
+                   %{
+                     value: value,
+                     revision: revision.revision,
+                     version: secret.version,
+                     value_format: secret.value_format
+                   }}
 
                 {:error, reason} ->
                   {:error, normalize_read_error(reason)}

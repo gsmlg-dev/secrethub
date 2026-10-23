@@ -1,7 +1,7 @@
 # Explicit Secret Value Formats
 
 Date: 2026-10-23
-Status: Draft for user approval. Implementation has not started.
+Status: Implemented and source-qualified on 2026-10-23 after user approval. Live schema rollout remains an operator step.
 Repository baseline: `main` at `a01a1c72ede2` (`v1.0.0-rc.24`).
 
 ## User intent

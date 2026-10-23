@@ -22,6 +22,7 @@ defmodule SecretHub.Core.Secrets do
   alias Ecto.Multi
   alias SecretHub.Core.{Audit, Policies, Repo}
   alias SecretHub.Core.PKI.ManagedCertificates
+  alias SecretHub.Core.Secrets.ValueFormat
   alias SecretHub.Core.Vault.SealState
   alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.{Policy, Secret, SecretRotator, SecretVersion}
@@ -162,13 +163,23 @@ defmodule SecretHub.Core.Secrets do
   def create_secret(attrs) do
     attrs = normalize_secret_attrs(attrs, :create)
 
+    secret_data =
+      if attrs["value_format"], do: attrs["secret_data"], else: attrs["secret_data"] || %{}
+
     with {:ok, master_key} <- SealState.get_master_key(),
          {:ok, rotator_template} <- ensure_rotator_template(attrs, @manual_rotator_slug),
-         {:ok, encrypted_data} <- encrypt_secret_data(attrs["secret_data"] || %{}, master_key) do
+         :ok <- ValueFormat.validate(secret_data, attrs["value_format"]),
+         {:ok, encrypted_data} <- encrypt_secret_data(secret_data, master_key) do
       attrs = Map.put(attrs, "encrypted_data", encrypted_data)
 
       Multi.new()
-      |> Multi.insert(:secret, Secret.changeset(%Secret{}, Map.delete(attrs, "rotator_id")))
+      |> Multi.insert(
+        :secret,
+        Secret.changeset(
+          %Secret{},
+          Map.drop(attrs, ["rotator_id", "secret_data", "field_operations", "value"])
+        )
+      )
       |> Multi.insert(:rotator, fn %{secret: secret} ->
         secret
         |> default_rotator_attrs(rotator_template)
@@ -204,7 +215,7 @@ defmodule SecretHub.Core.Secrets do
       end
     else
       {:error, reason} ->
-        Logger.error("Failed to create secret", reason: inspect(reason))
+        Logger.error("Failed to create secret")
         {:error, reason}
     end
   end
@@ -251,14 +262,15 @@ defmodule SecretHub.Core.Secrets do
     change_description = Keyword.get(opts, :change_description, "Secret updated")
     attrs = normalize_secret_attrs(attrs, :update)
 
-    case Repo.get(Secret, secret_id) do
+    case Repo.one(from(s in Secret, where: s.id == ^secret_id, lock: "FOR UPDATE")) do
       nil ->
         {:error, "Secret not found"}
 
       secret ->
         with {:ok, rotator_id} <- resolve_rotator_for_update(secret, attrs, opts),
              {:ok, master_key} <- SealState.get_master_key(),
-             {:ok, encrypted_attrs} <- maybe_encrypt_secret_data(attrs, master_key) do
+             {:ok, prepared_attrs} <- prepare_value_update(secret, attrs, master_key, opts),
+             {:ok, encrypted_attrs} <- maybe_encrypt_secret_data(prepared_attrs, master_key) do
           encrypted_attrs = put_rotator_id(encrypted_attrs, rotator_id)
 
           Multi.new()
@@ -273,7 +285,10 @@ defmodule SecretHub.Core.Secrets do
               |> Map.put("last_version_at", DateTime.utc_now() |> DateTime.truncate(:second))
               |> Map.put("last_rotated_at", DateTime.utc_now() |> DateTime.truncate(:second))
 
-            Secret.changeset(secret, attrs_with_version)
+            Secret.changeset(
+              secret,
+              Map.drop(attrs_with_version, ["secret_data", "field_operations", "value"])
+            )
           end)
           |> Repo.transaction()
           |> case do
@@ -302,10 +317,7 @@ defmodule SecretHub.Core.Secrets do
               {:ok, updated_secret}
 
             {:error, _step, reason, _changes} ->
-              Logger.error("Failed to update secret",
-                secret_id: secret_id,
-                reason: inspect(reason)
-              )
+              Logger.error("Failed to update secret", secret_id: secret_id)
 
               {:error, reason}
           end
@@ -581,7 +593,8 @@ defmodule SecretHub.Core.Secrets do
         attrs
 
       Map.has_key?(attrs, "value") ->
-        Map.put(attrs, "secret_data", %{"value" => Map.get(attrs, "value") || ""})
+        value = if attrs["value_format"] == "text", do: attrs["value"], else: attrs["value"] || ""
+        Map.put(attrs, "secret_data", %{"value" => value})
 
       true ->
         attrs
@@ -593,7 +606,8 @@ defmodule SecretHub.Core.Secrets do
       Map.has_key?(attrs, "secret_data") ->
         attrs
 
-      not blank?(Map.get(attrs, "value")) ->
+      (attrs["value_format"] == "text" and Map.has_key?(attrs, "value")) or
+          not blank?(Map.get(attrs, "value")) ->
         Map.put(attrs, "secret_data", %{"value" => Map.get(attrs, "value")})
 
       true ->
@@ -709,6 +723,90 @@ defmodule SecretHub.Core.Secrets do
     Map.put(attrs, "rotator_id", rotator_id)
   end
 
+  defp prepare_value_update(secret, attrs, master_key, opts) do
+    format = Map.get(attrs, "value_format", secret.value_format)
+    replacement? = Map.has_key?(attrs, "secret_data") or Map.has_key?(attrs, "encrypted_data")
+
+    with :ok <- validate_format_update(secret.value_format, format, replacement?, opts) do
+      if Map.has_key?(attrs, "field_operations"),
+        do: prepare_field_update(secret, attrs, format, master_key, opts, replacement?),
+        else: prepare_payload_update(secret, attrs, format, master_key)
+    end
+  end
+
+  defp validate_format_update(current_format, format, replacement?, opts) do
+    cond do
+      format not in [nil, "text", "structured"] ->
+        {:error, :invalid_value_format}
+
+      is_nil(format) and not is_nil(current_format) and
+          not Keyword.get(opts, :restore_value_format, false) ->
+        {:error, :invalid_value_format}
+
+      not is_nil(current_format) and format != current_format and not replacement? ->
+        {:error, :format_change_requires_replacement}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp prepare_payload_update(secret, attrs, format, master_key) do
+    cond do
+      Map.has_key?(attrs, "secret_data") ->
+        with :ok <- ValueFormat.validate(attrs["secret_data"], format), do: {:ok, attrs}
+
+      Map.has_key?(attrs, "encrypted_data") ->
+        with {:ok, data} <- decrypt_secret_data(attrs["encrypted_data"], master_key),
+             :ok <- ValueFormat.validate(data, format),
+             do: {:ok, attrs}
+
+      format != secret.value_format ->
+        with {:ok, data} <- decrypt_secret_data(secret.encrypted_data, master_key),
+             :ok <- ValueFormat.validate(data, format),
+             do: {:ok, attrs}
+
+      true ->
+        {:ok, attrs}
+    end
+  end
+
+  defp prepare_field_update(secret, attrs, format, master_key, opts, replacement?) do
+    expected = Keyword.get(opts, :expected_version)
+
+    cond do
+      is_nil(expected) ->
+        {:error, :expected_version_required}
+
+      expected != secret.version ->
+        {:error, :stale_version}
+
+      format != "structured" or replacement? ->
+        {:error, :invalid_field_operations}
+
+      true ->
+        with {:ok, data} <- decrypt_secret_data(secret.encrypted_data, master_key),
+             {:ok, final} <- ValueFormat.apply_field_operations(data, attrs["field_operations"]),
+             :ok <- ValueFormat.validate(final, format) do
+          {:ok, put_changed_data(attrs, data, final)}
+        end
+    end
+  end
+
+  defp put_changed_data(attrs, original, final) when original == final, do: attrs
+  defp put_changed_data(attrs, _original, final), do: Map.put(attrs, "secret_data", final)
+
+  @doc "Return field names and JSON kinds without exposing stored values."
+  def field_descriptors(secret_id) do
+    with {:ok, secret} <- get_secret(secret_id),
+         :ok <- ManagedCertificates.check_delivery(secret.id, secret.version),
+         {:ok, master_key} <- SealState.get_master_key(),
+         {:ok, data} <- decrypt_secret_data(secret.encrypted_data, master_key),
+         :ok <- ValueFormat.validate(data, "structured") do
+      {:ok, %{version: secret.version, fields: ValueFormat.descriptors(data)}}
+    end
+  end
+
   defp maybe_encrypt_secret_data(attrs, master_key) do
     case Map.fetch(attrs, "secret_data") do
       :error ->
@@ -796,6 +894,7 @@ defmodule SecretHub.Core.Secrets do
         secret
         |> Ecto.Changeset.change(
           encrypted_data: encrypted_data,
+          value_format: "structured",
           version: secret.version + 1,
           version_count: secret.version_count + 1,
           last_version_at: DateTime.utc_now() |> DateTime.truncate(:second),
@@ -810,6 +909,7 @@ defmodule SecretHub.Core.Secrets do
         "secret_type" => "static",
         "engine_type" => "static",
         "encrypted_data" => encrypted_data,
+        "value_format" => "structured",
         "rotation_enabled" => false,
         "ttl_seconds" => 0
       }
@@ -826,22 +926,28 @@ defmodule SecretHub.Core.Secrets do
 
   @doc "Resolve current or historical material without substituting a newer generation."
   def read_exact_material(secret_id, number) do
+    with {:ok, data, _format} <- read_exact_material_with_format(secret_id, number),
+         do: {:ok, data}
+  end
+
+  @doc "Read the selected version with the format belonging to its ciphertext."
+  def read_exact_material_with_format(secret_id, number) do
     with {:ok, secret} <- get_secret(secret_id),
          :ok <- ManagedCertificates.check_delivery(secret_id, number),
-         encrypted when is_binary(encrypted) <-
+         {encrypted, format} when is_binary(encrypted) <-
            if(secret.version == number,
-             do: secret.encrypted_data,
+             do: {secret.encrypted_data, secret.value_format},
              else:
                Repo.one(
                  from(v in SecretVersion,
                    where: v.secret_id == ^secret_id and v.version_number == ^number,
-                   select: v.encrypted_data
+                   select: {v.encrypted_data, v.value_format}
                  )
                )
            ),
          {:ok, master_key} <- SealState.get_master_key(),
          {:ok, data} <- decrypt_secret_data(encrypted, master_key) do
-      {:ok, data}
+      {:ok, data, format}
     else
       nil -> {:error, :version_not_found}
       error -> error
@@ -891,6 +997,7 @@ defmodule SecretHub.Core.Secrets do
       # Update with the old version's data
       attrs = %{
         "encrypted_data" => target_version.encrypted_data,
+        "value_format" => target_version.value_format,
         "metadata" => target_version.metadata,
         "description" => target_version.description
       }
@@ -899,7 +1006,8 @@ defmodule SecretHub.Core.Secrets do
 
       update_secret(secret_id, attrs,
         created_by: created_by,
-        change_description: change_description
+        change_description: change_description,
+        restore_value_format: true
       )
     end
   end
@@ -918,6 +1026,7 @@ defmodule SecretHub.Core.Secrets do
          {:ok, v_b} <- get_secret_version(secret_id, version_b) do
       comparison = %{
         version_numbers: {v_a.version_number, v_b.version_number},
+        value_format: {v_a.value_format, v_b.value_format},
         changed_at: {v_a.archived_at, v_b.archived_at},
         metadata_diff: compare_maps(v_a.metadata || %{}, v_b.metadata || %{}),
         data_size_diff: SecretVersion.data_size(v_b) - SecretVersion.data_size(v_a),

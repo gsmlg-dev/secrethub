@@ -17,7 +17,16 @@ defmodule SecretHub.Agent.Cache do
   defmodule CacheEntry do
     @moduledoc false
     @derive {Inspect, except: [:data]}
-    defstruct [:secret_path, :data, :fetched_at, :expires_at, :version, :revision, :engine_type]
+    defstruct [
+      :secret_path,
+      :data,
+      :fetched_at,
+      :expires_at,
+      :version,
+      :revision,
+      :engine_type,
+      :value_format
+    ]
 
     @type t :: %__MODULE__{
             secret_path: SecretHub.Agent.Cache.key(),
@@ -26,7 +35,8 @@ defmodule SecretHub.Agent.Cache do
             expires_at: DateTime.t(),
             version: integer(),
             revision: integer() | nil,
-            engine_type: atom() | nil
+            engine_type: atom() | nil,
+            value_format: String.t() | nil
           }
   end
 
@@ -56,6 +66,7 @@ defmodule SecretHub.Agent.Cache do
 
   - `:ttl` - TTL in seconds (default: configured TTL)
   - `:version` - Secret version number
+  - `:value_format` - Stored value format ("text", "structured", or nil for legacy)
   - `:engine_type` - Secret engine type (:postgresql, :redis, :aws_sts, etc.)
   """
   @spec put(key(), term(), keyword()) :: :ok
@@ -99,7 +110,13 @@ defmodule SecretHub.Agent.Cache do
     do: GenServer.cast(__MODULE__, {:invalidate_path, path, revision})
 
   @spec get_entry(key()) ::
-          {:ok, %{data: term(), version: integer(), revision: integer() | nil}}
+          {:ok,
+           %{
+             data: term(),
+             version: integer(),
+             revision: integer() | nil,
+             value_format: String.t() | nil
+           }}
           | {:error, :not_found}
   def get_entry(key), do: GenServer.call(__MODULE__, {:get_entry, key})
 
@@ -149,7 +166,7 @@ defmodule SecretHub.Agent.Cache do
 
     result =
       if entry && not expired?(entry),
-        do: {:ok, Map.take(entry, [:data, :version, :revision])},
+        do: {:ok, Map.take(entry, [:data, :version, :revision, :value_format])},
         else: {:error, :not_found}
 
     {:reply, result, state}
@@ -207,7 +224,8 @@ defmodule SecretHub.Agent.Cache do
       expires_at: DateTime.add(DateTime.utc_now(), ttl, :second),
       version: version,
       revision: Keyword.get(opts, :revision),
-      engine_type: engine_type
+      engine_type: engine_type,
+      value_format: Keyword.get(opts, :value_format)
     }
 
     minimum_revision = Map.get(state.revision_floors, cache_path(secret_path), 0)

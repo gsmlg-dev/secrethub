@@ -21,6 +21,7 @@ defmodule SecretHub.Web.SecretManagementLive do
       |> assign(:rotators, rotators)
       |> assign(:policies, policies)
       |> assign(:selected_secret, nil)
+      |> assign(:secret_editor, %{version: nil, fields: []})
       |> assign(:show_form, false)
       |> assign(:form_mode, :create)
       |> assign(:filter_rotator, "all")
@@ -60,6 +61,8 @@ defmodule SecretHub.Web.SecretManagementLive do
         |> assign(:vault_status, status)
         |> assign(:show_form, true)
         |> assign(:form_mode, :create)
+        |> assign(:selected_secret, nil)
+        |> assign(:secret_editor, %{version: nil, fields: []})
         |> assign(:form_changeset, changeset_for_secret(%Secret{}, socket.assigns.rotators))
 
       {:noreply, socket}
@@ -74,17 +77,28 @@ defmodule SecretHub.Web.SecretManagementLive do
       {:noreply, vault_unavailable_socket(socket, status, :update)}
     else
       secret = Enum.find(socket.assigns.secrets, &(&1.id == secret_id))
-      changeset = changeset_for_secret(secret, socket.assigns.rotators)
 
-      socket =
-        socket
-        |> assign(:vault_status, status)
-        |> assign(:show_form, true)
-        |> assign(:form_mode, :edit)
-        |> assign(:selected_secret, secret)
-        |> assign(:form_changeset, changeset)
+      case load_secret_editor(secret) do
+        {:ok, editor} ->
+          socket =
+            socket
+            |> assign(:vault_status, status)
+            |> assign(:show_form, true)
+            |> assign(:form_mode, :edit)
+            |> assign(:selected_secret, secret)
+            |> assign(:secret_editor, editor)
+            |> assign(:form_changeset, changeset_for_secret(secret, socket.assigns.rotators))
 
-      {:noreply, socket}
+          {:noreply, socket}
+
+        {:error, _reason} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Unable to open the value editor. Check that the Vault is unsealed and try again."
+           )}
+      end
     end
   end
 
@@ -269,6 +283,7 @@ defmodule SecretHub.Web.SecretManagementLive do
           secret={@selected_secret}
           rotators={@rotators}
           policies={@policies}
+          editor={@secret_editor}
           return_to="/admin/secrets"
         />
       <% end %>
@@ -311,6 +326,7 @@ defmodule SecretHub.Web.SecretManagementLive do
                   <td class="px-6 py-4 whitespace-nowrap">
                     <div class="text-sm font-medium text-on-surface">{secret.name}</div>
                     <div class="text-sm text-on-surface-variant">{secret.description}</div>
+                    <.dm_badge>{value_format_label(secret.value_format)}</.dm_badge>
                   </td>
                   <td class="px-6 py-4 whitespace-nowrap">
                     <code class="text-sm bg-surface-container px-1 py-0.5 rounded">
@@ -441,8 +457,9 @@ defmodule SecretHub.Web.SecretManagementLive do
            "Vault is not initialized. Initialize and unseal the vault before creating secrets."
          )}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to create secret: #{inspect(reason)}")}
+      {:error, _reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Failed to create secret. Check the value format and fields.")}
     end
   end
 
@@ -457,13 +474,19 @@ defmodule SecretHub.Web.SecretManagementLive do
   end
 
   defp update_secret_when_unsealed(socket, secret_id, secret_params, status) do
-    secret_params = normalize_secret_form_params(secret_params, socket.assigns.rotators)
+    secret_params =
+      secret_params
+      |> Map.put("secret_type", to_string(socket.assigns.selected_secret.secret_type))
+      |> Map.put("engine_type", socket.assigns.selected_secret.engine_type)
+      |> normalize_secret_form_params(socket.assigns.rotators)
+
     policy_ids = selected_policy_ids(secret_params)
 
     with {:ok, updated_secret} <-
            Secrets.update_secret(secret_id, secret_params,
              created_by: "admin-web",
              change_description: "Updated manually in web UI",
+             expected_version: socket.assigns.secret_editor.version,
              via_rotator_id: selected_rotator_id(secret_params, socket.assigns.rotators)
            ),
          {:ok, _secret_with_policies} <-
@@ -507,8 +530,17 @@ defmodule SecretHub.Web.SecretManagementLive do
            "Vault is not initialized. Initialize and unseal the vault before updating secrets."
          )}
 
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Failed to update secret: #{inspect(reason)}")}
+      {:error, :stale_version} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "This secret changed since this editor was opened. Close and reopen it before saving."
+         )}
+
+      {:error, _reason} ->
+        {:noreply,
+         put_flash(socket, :error, "Failed to update secret. Check the value format and fields.")}
     end
   end
 
@@ -524,6 +556,10 @@ defmodule SecretHub.Web.SecretManagementLive do
       id: secret.id,
       name: secret.name,
       description: secret.description,
+      value_format: secret.value_format,
+      version: secret.version,
+      secret_type: secret.secret_type,
+      engine_type: secret.engine_type,
       path: secret.secret_path,
       ttl_seconds: ttl_seconds(secret),
       rotator_id: secret.rotator_id,
@@ -535,6 +571,20 @@ defmodule SecretHub.Web.SecretManagementLive do
       updated_at: secret.updated_at
     }
   end
+
+  defp load_secret_editor(nil), do: {:error, :not_found}
+
+  defp load_secret_editor(%{secret_type: :dynamic} = secret),
+    do: {:ok, %{version: secret.version, fields: []}}
+
+  defp load_secret_editor(%{value_format: "text"} = secret),
+    do: {:ok, %{version: secret.version, fields: []}}
+
+  defp load_secret_editor(secret), do: Secrets.field_descriptors(secret.id)
+
+  defp value_format_label("text"), do: "Text"
+  defp value_format_label("structured"), do: "Structured data"
+  defp value_format_label(_), do: "Format not specified"
 
   defp fetch_rotators do
     Secrets.list_rotators()
@@ -611,8 +661,9 @@ defmodule SecretHub.Web.SecretManagementLive do
       rotator_id: get_field(secret, :rotator_id, default_rotator_id(rotators)),
       ttl_seconds: get_field(secret, :ttl_seconds, 0),
       policies: get_field(secret, :policy_ids, []),
-      engine_type: "static",
-      secret_type: :static
+      engine_type: get_field(secret, :engine_type, "static"),
+      secret_type: get_field(secret, :secret_type, :static),
+      value_format: Map.get(secret, :value_format)
     }
   end
 

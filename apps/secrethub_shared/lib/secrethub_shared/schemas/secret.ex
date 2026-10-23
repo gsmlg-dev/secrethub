@@ -26,6 +26,7 @@ defmodule SecretHub.Shared.Schemas.Secret do
     field(:secret_type, Ecto.Enum, values: [:static, :dynamic])
     field(:engine_type, :string, default: "static")
     field(:encrypted_data, :binary, redact: true)
+    field(:value_format, :string)
     field(:version, :integer, default: 1)
     field(:metadata, :map, default: %{})
     field(:description, :string)
@@ -67,6 +68,7 @@ defmodule SecretHub.Shared.Schemas.Secret do
       :secret_type,
       :engine_type,
       :encrypted_data,
+      :value_format,
       :version,
       :metadata,
       :description,
@@ -86,6 +88,8 @@ defmodule SecretHub.Shared.Schemas.Secret do
       message: "must contain only letters, numbers, spaces, hyphens, and underscores"
     )
     |> validate_length(:name, min: 1, max: 100)
+    |> validate_inclusion(:value_format, ["text", "structured"])
+    |> check_constraint(:value_format, name: :secrets_value_format)
     |> validate_inclusion(:secret_type, [:static, :dynamic])
     |> validate_inclusion(:engine_type, ["static", "postgresql", "redis", "aws", "gcp"])
     |> validate_number(:ttl_seconds, greater_than_or_equal_to: 0)

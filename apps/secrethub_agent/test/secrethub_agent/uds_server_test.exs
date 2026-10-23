@@ -242,6 +242,117 @@ defmodule SecretHub.Agent.UDSServerTest do
     assert {:error, :not_found} = Cache.get_entry(cache_key)
   end
 
+  test "structured fields survive fresh and revision-validated cached delivery", %{socket: socket} do
+    value = %{
+      "value" => "application-value",
+      "region" => "application-region",
+      "data" => %{"value" => [1, true]},
+      "format" => "application-format",
+      "value_format" => "application-value-format"
+    }
+
+    start_supervised!(
+      {SecretHub.Agent.UDSCoreFixture,
+       responses: [
+         {:ok,
+          %{"value" => value, "value_format" => "structured", "version" => 3, "revision" => 5}},
+         {:ok, %{"not_modified" => true, "version" => 3, "revision" => 5}}
+       ],
+       owner: self()}
+    )
+
+    {key, pem, app_id} = certificate_fixture()
+
+    challenge =
+      request(socket, "authenticate", %{auth_version: 2, certificate: Base.encode64(pem)})["data"]
+
+    assert request(socket, "authenticate_proof", proof_params(challenge, key))["status"] == "ok"
+    cache_key = {app_id, challenge["certificate_fingerprint"], "prod.db.password"}
+
+    assert request(socket, "get_secret", %{path: "prod.db.password"})["data"] == %{
+             "value" => value,
+             "version" => 3,
+             "revision" => 5
+           }
+
+    assert_receive {:core_request, _, nil}
+
+    assert {:ok, %{data: ^value, value_format: "structured", revision: 5}} =
+             Cache.get_entry(cache_key)
+
+    assert {:ok, ^value} = Cache.get(cache_key)
+    assert request(socket, "get_secret", %{path: "prod.db.password"})["data"]["value"] == value
+    assert_receive {:core_request, _, 5}
+  end
+
+  test "explicit Text preserves empty strings, whitespace and JSON-looking text", %{
+    socket: socket
+  } do
+    values = ["", "  token\n", ~s({"access_key_id":"still-text"})]
+
+    start_supervised!(
+      {SecretHub.Agent.UDSCoreFixture,
+       responses:
+         Enum.map(values, fn value ->
+           {:ok,
+            %{
+              "value" => %{"value" => value},
+              "value_format" => "text",
+              "version" => 1,
+              "revision" => 1
+            }}
+         end),
+       owner: self()}
+    )
+
+    {key, pem, _} = certificate_fixture()
+
+    challenge =
+      request(socket, "authenticate", %{auth_version: 2, certificate: Base.encode64(pem)})["data"]
+
+    assert request(socket, "authenticate_proof", proof_params(challenge, key))["status"] == "ok"
+
+    for value <- values do
+      assert request(socket, "get_secret", %{path: "prod.db.password"})["data"]["value"] == value
+    end
+  end
+
+  test "unknown formats and malformed Text do not reinterpret application data", %{socket: socket} do
+    start_supervised!(
+      {SecretHub.Agent.UDSCoreFixture,
+       responses: [
+         {:ok,
+          %{
+            "value" => %{"value" => "private"},
+            "value_format" => "unknown",
+            "version" => 1,
+            "revision" => 1
+          }},
+         {:ok,
+          %{
+            "value" => %{"value" => "private", "sibling" => "preserve"},
+            "value_format" => "text",
+            "version" => 1,
+            "revision" => 1
+          }}
+       ],
+       owner: self()}
+    )
+
+    {key, pem, _} = certificate_fixture()
+
+    challenge =
+      request(socket, "authenticate", %{auth_version: 2, certificate: Base.encode64(pem)})["data"]
+
+    assert request(socket, "authenticate_proof", proof_params(challenge, key))["status"] == "ok"
+
+    for _ <- 1..2 do
+      response = request(socket, "get_secret", %{path: "prod.db.password"})
+      assert error(response) == "UNAVAILABLE"
+      refute Jason.encode!(response) =~ "private"
+    end
+  end
+
   test "other application cache entries cannot influence Core request or delivery", %{
     socket: socket
   } do

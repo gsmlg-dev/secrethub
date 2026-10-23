@@ -20,8 +20,9 @@ defmodule SecretHub.Shared.Schemas.SecretVersion do
 
   schema "secret_versions" do
     belongs_to(:secret, Secret)
+    field(:value_format, :string)
     field(:version_number, :integer)
-    field(:encrypted_data, :binary)
+    field(:encrypted_data, :binary, redact: true)
     field(:metadata, :map)
     field(:description, :string)
     field(:created_by, :string)
@@ -40,6 +41,7 @@ defmodule SecretHub.Shared.Schemas.SecretVersion do
       :secret_id,
       :version_number,
       :encrypted_data,
+      :value_format,
       :metadata,
       :description,
       :created_by,
@@ -47,6 +49,8 @@ defmodule SecretHub.Shared.Schemas.SecretVersion do
       :archived_at
     ])
     |> validate_required([:secret_id, :version_number, :encrypted_data, :archived_at])
+    |> validate_inclusion(:value_format, ["text", "structured"])
+    |> check_constraint(:value_format, name: :secret_versions_value_format)
     |> validate_number(:version_number, greater_than: 0)
     |> unique_constraint([:secret_id, :version_number])
     |> foreign_key_constraint(:secret_id)
@@ -60,6 +64,7 @@ defmodule SecretHub.Shared.Schemas.SecretVersion do
       secret_id: secret.id,
       version_number: secret.version,
       encrypted_data: secret.encrypted_data,
+      value_format: secret.value_format,
       metadata: secret.metadata || %{},
       description: secret.description,
       created_by: created_by,

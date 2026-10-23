@@ -38,13 +38,19 @@ defmodule SecretHub.Web.SecretApiController do
 
       # Check policy allows write/create
       with :ok <- check_policy(conn, vault_path, "create"),
-           {:ok, data} <- validate_data_param(params["data"]) do
-        do_create_or_update(conn, path, secret_path, data)
+           {:ok, format} <- validate_value_format(params["value_format"]),
+           {:ok, data} <- validate_data_param(params["data"], format) do
+        do_create_or_update(conn, path, secret_path, data, format)
       else
         {:error, :invalid_data} ->
           conn
           |> put_status(:bad_request)
           |> json(%{error: "Missing or empty 'data' field"})
+
+        {:error, :invalid_value_format} ->
+          conn
+          |> put_status(:bad_request)
+          |> json(%{error: "Value format must be 'text' or 'structured'"})
 
         {:error, _reason} ->
           forbidden_response(conn)
@@ -168,21 +174,29 @@ defmodule SecretHub.Web.SecretApiController do
 
   # Private helpers — create_or_update
 
-  defp validate_data_param(data) when is_map(data) and map_size(data) > 0, do: {:ok, data}
-  defp validate_data_param(_data), do: {:error, :invalid_data}
+  defp validate_value_format(format) when format in [nil, "text", "structured"], do: {:ok, format}
+  defp validate_value_format(_), do: {:error, :invalid_value_format}
 
-  defp do_create_or_update(conn, path, secret_path, data) do
+  defp validate_data_param(data, format)
+       when is_map(data) and (map_size(data) > 0 or format == "structured"),
+       do: {:ok, data}
+
+  defp validate_data_param(_, _), do: {:error, :invalid_data}
+
+  defp do_create_or_update(conn, path, secret_path, data, format) do
     case Secrets.get_secret_by_path(secret_path) do
       {:ok, existing} ->
-        update_existing_secret(conn, existing, data)
+        update_existing_secret(conn, existing, data, format)
 
       {:error, _} ->
-        create_new_secret(conn, path, secret_path, data)
+        create_new_secret(conn, path, secret_path, data, format)
     end
   end
 
-  defp update_existing_secret(conn, existing, data) do
-    case Secrets.update_secret(existing.id, %{"secret_data" => data},
+  defp update_existing_secret(conn, existing, data, format) do
+    attrs = put_value_format(%{"secret_data" => data}, format)
+
+    case Secrets.update_secret(existing.id, attrs,
            created_by: current_actor_id(conn),
            change_description: "Updated via API",
            via_rotator_slug: "api"
@@ -191,13 +205,11 @@ defmodule SecretHub.Web.SecretApiController do
         json(conn, %{version: updated.version})
 
       {:error, reason} ->
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: inspect(reason)})
+        write_error(conn, reason)
     end
   end
 
-  defp create_new_secret(conn, path, secret_path, data) do
+  defp create_new_secret(conn, path, secret_path, data, format) do
     name =
       path
       |> String.split("/")
@@ -216,20 +228,31 @@ defmodule SecretHub.Web.SecretApiController do
       "created_by" => current_actor_id(conn)
     }
 
-    case Secrets.create_secret(attrs) do
+    case Secrets.create_secret(put_value_format(attrs, format)) do
       {:ok, secret} ->
         json(conn, %{version: secret.version || 1})
 
       {:error, reason} ->
-        Logger.error("Secret creation failed",
-          reason: inspect(reason),
-          path: secret_path
-        )
+        Logger.error("Secret creation failed", path: secret_path)
 
-        conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{error: inspect(reason)})
+        write_error(conn, reason)
     end
+  end
+
+  defp put_value_format(attrs, nil), do: attrs
+  defp put_value_format(attrs, format), do: Map.put(attrs, "value_format", format)
+
+  defp write_error(conn, reason) do
+    message =
+      case reason do
+        :invalid_text_value -> "Text requires exactly one string-valued 'value' field"
+        :invalid_structured_value -> "Structured data must be a JSON object"
+        :invalid_value_format -> "Value format must be 'text' or 'structured'"
+        :format_change_requires_replacement -> "Changing value format requires a replacement"
+        _ -> "Invalid secret attributes"
+      end
+
+    conn |> put_status(:unprocessable_entity) |> json(%{error: message})
   end
 
   # Private helpers — read
@@ -324,6 +347,7 @@ defmodule SecretHub.Web.SecretApiController do
             data: data,
             metadata: %{
               version: secret.version || 1,
+              value_format: secret.value_format,
               created_time: secret.inserted_at,
               updated_time: secret.updated_at
             }
@@ -425,6 +449,7 @@ defmodule SecretHub.Web.SecretApiController do
           },
           created_time: secret.inserted_at,
           updated_time: secret.updated_at,
+          value_format: secret.value_format,
           current_version: secret.version || 1
         })
 
@@ -541,7 +566,7 @@ defmodule SecretHub.Web.SecretApiController do
   defp read_specific_version(secret_path, version_str) do
     with {version_num, ""} <- Integer.parse(version_str),
          {:ok, secret} <- Secrets.get_secret_by_path(secret_path),
-         {:ok, data} <- Secrets.read_exact_material(secret.id, version_num) do
+         {:ok, data, format} <- Secrets.read_exact_material_with_format(secret.id, version_num) do
       created_time =
         if secret.version == version_num do
           secret.updated_at
@@ -558,7 +583,7 @@ defmodule SecretHub.Web.SecretApiController do
         version: version_num,
         body: %{
           data: data,
-          metadata: %{version: version_num, created_time: created_time}
+          metadata: %{version: version_num, value_format: format, created_time: created_time}
         }
       }
     else

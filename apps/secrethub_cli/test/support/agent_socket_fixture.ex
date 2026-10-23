@@ -14,7 +14,7 @@ defmodule SecretHub.CLI.AgentSocketFixture do
     }
   end
 
-  def start(path, owner, material) do
+  def start(path, owner, material, value \\ "from-agent") do
     Task.async(fn ->
       {:ok, listener} =
         :gen_tcp.listen(0, [
@@ -97,7 +97,7 @@ defmodule SecretHub.CLI.AgentSocketFixture do
       send_json(socket, %{
         request_id: request["request_id"],
         status: "ok",
-        data: %{value: "from-agent", version: 7, revision: 10}
+        data: %{value: value, version: 7, revision: 10}
       })
 
       :gen_tcp.close(socket)

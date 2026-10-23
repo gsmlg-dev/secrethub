@@ -538,34 +538,54 @@ defmodule SecretHub.Agent.UDSServer do
 
   defp core_event_id(_), do: nil
 
-  defp read_result(result, cached, key) do
-    case result do
-      {:ok, %{"not_modified" => true, "revision" => revision}} ->
-        case cached do
-          {:ok, %{revision: ^revision} = entry} ->
-            {:ok, %{value: secret_value(entry.data), version: entry.version, revision: revision}}
-
-          _ ->
-            {:error, "UNAVAILABLE"}
-        end
-
-      {:ok, %{"value" => value, "version" => version, "revision" => revision}}
-      when is_integer(version) and is_integer(revision) ->
-        Cache.put(key, value, version: version, revision: revision)
-        {:ok, %{value: secret_value(value), version: version, revision: revision}}
-
-      {:error, %{"reason" => code}} when is_binary(code) ->
-        Cache.invalidate(key)
-        {:error, public_code(code)}
-
-      _ ->
-        Cache.invalidate(key)
-        {:error, "UNAVAILABLE"}
+  defp read_result({:ok, %{"not_modified" => true, "revision" => revision}}, cached, key) do
+    with {:ok, %{revision: ^revision} = entry} <- cached,
+         {:ok, value} <- secret_value(entry.data, Map.get(entry, :value_format)) do
+      {:ok, %{value: value, version: entry.version, revision: revision}}
+    else
+      _ -> unavailable_read(key)
     end
   end
 
-  defp secret_value(%{"value" => value}), do: value
-  defp secret_value(value), do: value
+  defp read_result(
+         {:ok, %{"value" => value, "version" => version, "revision" => revision} = response},
+         _cached,
+         key
+       )
+       when is_integer(version) and is_integer(revision) do
+    format = response["value_format"]
+
+    case secret_value(value, format) do
+      {:ok, payload} ->
+        Cache.put(key, value, version: version, revision: revision, value_format: format)
+        {:ok, %{value: payload, version: version, revision: revision}}
+
+      :error ->
+        unavailable_read(key)
+    end
+  end
+
+  defp read_result({:error, %{"reason" => code}}, _cached, key) when is_binary(code) do
+    Cache.invalidate(key)
+    {:error, public_code(code)}
+  end
+
+  defp read_result(_, _cached, key), do: unavailable_read(key)
+
+  defp unavailable_read(key) do
+    Cache.invalidate(key)
+    {:error, "UNAVAILABLE"}
+  end
+
+  defp secret_value(value, "structured") when is_map(value), do: {:ok, value}
+
+  defp secret_value(%{"value" => value} = data, "text")
+       when map_size(data) == 1 and is_binary(value),
+       do: {:ok, value}
+
+  defp secret_value(%{"value" => value}, nil), do: {:ok, value}
+  defp secret_value(value, nil), do: {:ok, value}
+  defp secret_value(_, _), do: :error
 
   defp decode_base64(value) when is_binary(value), do: Base.decode64(value)
   defp decode_base64(_), do: :error
