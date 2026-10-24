@@ -42,6 +42,15 @@ defmodule SecretHub.MixProject do
       # Required by Phoenix LiveView tests; must include :dev since devenv sets MIX_ENV=dev
       {:lazy_html, ">= 0.1.0", only: [:dev, :test]},
 
+      # Build dependency: GitHub redirect headers exceed the default download limit.
+      # Remove the pin when https://github.com/philss/rustler_precompiled/pull/113 ships.
+      {:rustler_precompiled,
+       github: "philss/rustler_precompiled",
+       ref: "cf068f79a8912370ff89fd584678acc3f94d3b13",
+       depth: 1,
+       override: true,
+       runtime: false},
+
       # Shared utilities
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.2"},
