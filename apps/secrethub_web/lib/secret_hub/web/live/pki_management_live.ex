@@ -7,7 +7,7 @@ defmodule SecretHub.Web.PKIManagementLive do
 
   require Logger
 
-  alias SecretHub.Core.PKI.{CA, Events}
+  alias SecretHub.Core.PKI.{CA, Events, ManagedCertificates}
   alias SecretHub.Core.Vault.SealState
 
   @remove_confirmation_text "I know remove certificate will break everything, I'm sure I want remove it"
@@ -20,7 +20,7 @@ defmodule SecretHub.Web.PKIManagementLive do
     total_shares: nil
   }
 
-  @cert_type_filters ~w(all root_ca intermediate_ca agent_client app_client admin_client)
+  @cert_type_filters ~w(all root_ca intermediate_ca agent_client app_client admin_client acme_server)
   @issue_cert_types ~w(agent_client app_client admin_client)
 
   @impl true
@@ -28,6 +28,7 @@ defmodule SecretHub.Web.PKIManagementLive do
     socket =
       socket
       |> assign(:certificates, [])
+      |> assign(:published_certificates, [])
       |> assign(:filtered_certificates, [])
       |> assign(:ca_certificates, [])
       |> assign(:stats, empty_stats())
@@ -55,6 +56,7 @@ defmodule SecretHub.Web.PKIManagementLive do
   @impl true
   def handle_params(params, _uri, socket) do
     certificates = list_certificates()
+    published_certificates = published_certificates(socket.assigns.live_action)
     event_stats = get_event_stats()
     active_section = section_for(socket.assigns.live_action)
     filter_type = normalize_filter_type(Map.get(params, "type", socket.assigns.filter_type))
@@ -69,9 +71,10 @@ defmodule SecretHub.Web.PKIManagementLive do
     socket =
       socket
       |> assign(:certificates, certificates)
+      |> assign(:published_certificates, published_certificates)
       |> assign(
         :filtered_certificates,
-        filtered_certificates(certificates, filter_type, search_query)
+        filtered_certificates(certificates ++ published_certificates, filter_type, search_query)
       )
       |> assign(:ca_certificates, ca_certificates(certificates))
       |> assign(:stats, get_pki_stats(certificates, event_stats))
@@ -223,7 +226,7 @@ defmodule SecretHub.Web.PKIManagementLive do
      |> assign(
        :filtered_certificates,
        filtered_certificates(
-         socket.assigns.certificates,
+         socket.assigns.certificates ++ socket.assigns.published_certificates,
          filter_type,
          socket.assigns.search_query
        )
@@ -237,7 +240,11 @@ defmodule SecretHub.Web.PKIManagementLive do
      |> assign(:search_query, query)
      |> assign(
        :filtered_certificates,
-       filtered_certificates(socket.assigns.certificates, socket.assigns.filter_type, query)
+       filtered_certificates(
+         socket.assigns.certificates ++ socket.assigns.published_certificates,
+         socket.assigns.filter_type,
+         query
+       )
      )}
   end
 
@@ -528,7 +535,8 @@ defmodule SecretHub.Web.PKIManagementLive do
                 {"Intermediate CA", "intermediate_ca"},
                 {"Agent Client", "agent_client"},
                 {"App Client", "app_client"},
-                {"Admin Client", "admin_client"}
+                {"Admin Client", "admin_client"},
+                {"ACME Server", "acme_server"}
               ]}
             />
           </form>
@@ -538,7 +546,7 @@ defmodule SecretHub.Web.PKIManagementLive do
               name="query"
               label="Search"
               value={@search_query}
-              placeholder="Common name or serial"
+              placeholder="Name, DNS name, serial or fingerprint"
             />
           </form>
         </div>
@@ -559,11 +567,31 @@ defmodule SecretHub.Web.PKIManagementLive do
         <.dm_table data={@certificates} compact hover>
           <:col :let={cert} label="Certificate">
             <div class="font-medium text-on-surface">{cert.common_name}</div>
-            <div class="font-mono text-xs text-on-surface-variant">
+            <div
+              :if={cert.cert_type != :acme_server}
+              class="font-mono text-xs text-on-surface-variant"
+            >
               {short_serial(cert.serial_number)}
             </div>
+            <div
+              :if={cert.cert_type == :acme_server}
+              class="space-y-1 text-xs text-on-surface-variant"
+            >
+              <div>{Enum.join(cert.identifiers, ", ")}</div>
+              <div class="font-mono break-all">Fingerprint: {cert.fingerprint}</div>
+              <div>
+                Version {cert.publication_sequence} · {if cert.current,
+                  do: "Current",
+                  else: "Historical"}
+              </div>
+            </div>
           </:col>
-          <:col :let={cert} label="Type">{format_cert_type(cert.cert_type)}</:col>
+          <:col :let={cert} label="Type">
+            {format_cert_type(cert.cert_type)}
+            <.dm_badge :if={cert.cert_type == :acme_server} variant="neutral" size="sm" soft>
+              {cert.environment}
+            </.dm_badge>
+          </:col>
           <:col :let={cert} label="Status">
             <.dm_badge variant={status_badge_variant(cert)} size="sm" soft>
               {status_text(cert)}
@@ -572,41 +600,50 @@ defmodule SecretHub.Web.PKIManagementLive do
           <:col :let={cert} label="Expires">Expires: {format_expiry(cert.valid_until)}</:col>
           <:col :let={cert} label="Actions">
             <div class="flex flex-wrap gap-2">
-              <button
-                type="button"
-                phx-click="view_certificate"
-                phx-value-cert_id={cert.id}
-                class="inline-flex items-center gap-1 rounded border border-outline-variant px-2 py-1 text-xs text-on-surface"
-              >
-                <.dm_mdi name="eye-outline" class="h-4 w-4" /> View Details
-              </button>
-              <%= if is_client_auth_cert?(cert) do %>
+              <%= if cert.cert_type == :acme_server do %>
                 <.link
-                  navigate={~p"/admin/pki/client-auth"}
+                  navigate={~p"/admin/pki/acme"}
                   class="inline-flex items-center gap-1 rounded border border-primary px-2 py-1 text-xs text-primary"
                 >
-                  <.dm_mdi name="shield-key-outline" class="h-4 w-4" /> Client Auth PKI
+                  Manage ACME certificate
                 </.link>
               <% else %>
-                <%= if !cert.revoked and cert.cert_type not in [:root_ca, :intermediate_ca] do %>
-                  <button
-                    type="button"
-                    phx-click="revoke_certificate"
-                    phx-value-cert_id={cert.id}
-                    data-confirm="Are you sure you want to revoke this certificate?"
-                    class="inline-flex items-center gap-1 rounded border border-error px-2 py-1 text-xs text-error"
-                  >
-                    <.dm_mdi name="cancel" class="h-4 w-4" /> Revoke
-                  </button>
-                <% end %>
                 <button
                   type="button"
-                  phx-click="request_remove_certificate"
+                  phx-click="view_certificate"
                   phx-value-cert_id={cert.id}
-                  class="inline-flex items-center gap-1 rounded border border-error px-2 py-1 text-xs text-error"
+                  class="inline-flex items-center gap-1 rounded border border-outline-variant px-2 py-1 text-xs text-on-surface"
                 >
-                  <.dm_mdi name="trash-can-outline" class="h-4 w-4" /> Remove
+                  <.dm_mdi name="eye-outline" class="h-4 w-4" /> View Details
                 </button>
+                <%= if is_client_auth_cert?(cert) do %>
+                  <.link
+                    navigate={~p"/admin/pki/client-auth"}
+                    class="inline-flex items-center gap-1 rounded border border-primary px-2 py-1 text-xs text-primary"
+                  >
+                    <.dm_mdi name="shield-key-outline" class="h-4 w-4" /> Client Auth PKI
+                  </.link>
+                <% else %>
+                  <%= if !cert.revoked and cert.cert_type not in [:root_ca, :intermediate_ca] do %>
+                    <button
+                      type="button"
+                      phx-click="revoke_certificate"
+                      phx-value-cert_id={cert.id}
+                      data-confirm="Are you sure you want to revoke this certificate?"
+                      class="inline-flex items-center gap-1 rounded border border-error px-2 py-1 text-xs text-error"
+                    >
+                      <.dm_mdi name="cancel" class="h-4 w-4" /> Revoke
+                    </button>
+                  <% end %>
+                  <button
+                    type="button"
+                    phx-click="request_remove_certificate"
+                    phx-value-cert_id={cert.id}
+                    class="inline-flex items-center gap-1 rounded border border-error px-2 py-1 text-xs text-error"
+                  >
+                    <.dm_mdi name="trash-can-outline" class="h-4 w-4" /> Remove
+                  </button>
+                <% end %>
               <% end %>
             </div>
           </:col>
@@ -1236,13 +1273,19 @@ defmodule SecretHub.Web.PKIManagementLive do
 
   defp reload_pki(socket) do
     certificates = list_certificates()
+    published_certificates = published_certificates(socket.assigns.live_action)
     event_stats = get_event_stats()
 
     socket
     |> assign(:certificates, certificates)
+    |> assign(:published_certificates, published_certificates)
     |> assign(
       :filtered_certificates,
-      filtered_certificates(certificates, socket.assigns.filter_type, socket.assigns.search_query)
+      filtered_certificates(
+        certificates ++ published_certificates,
+        socket.assigns.filter_type,
+        socket.assigns.search_query
+      )
     )
     |> assign(:ca_certificates, ca_certificates(certificates))
     |> assign(:stats, get_pki_stats(certificates, event_stats))
@@ -1260,6 +1303,19 @@ defmodule SecretHub.Web.PKIManagementLive do
       {:desc, DateTime}
     )
   end
+
+  defp published_certificates(action) when action in [:certificates, :search] do
+    Enum.map(ManagedCertificates.list_published_certificates(), fn version ->
+      Map.merge(version, %{
+        cert_type: :acme_server,
+        common_name: version.name || version.slug,
+        serial_number: nil,
+        valid_until: version.not_after
+      })
+    end)
+  end
+
+  defp published_certificates(_action), do: []
 
   defp get_event_stats do
     case Events.get_stats() do
@@ -1419,7 +1475,10 @@ defmodule SecretHub.Web.PKIManagementLive do
     Enum.filter(certs, fn cert ->
       String.contains?(String.downcase(cert.common_name || ""), normalized_query) or
         String.contains?(String.downcase(cert.serial_number || ""), normalized_query) or
-        String.contains?(String.downcase(cert.fingerprint || ""), normalized_query)
+        String.contains?(String.downcase(cert.fingerprint || ""), normalized_query) or
+        Enum.any?(Map.get(cert, :identifiers, []), fn identifier ->
+          String.contains?(String.downcase(identifier), normalized_query)
+        end)
     end)
   end
 
@@ -1532,6 +1591,7 @@ defmodule SecretHub.Web.PKIManagementLive do
   defp format_cert_type(:agent_client), do: "Agent Client"
   defp format_cert_type(:app_client), do: "App Client"
   defp format_cert_type(:admin_client), do: "Admin Client"
+  defp format_cert_type(:acme_server), do: "ACME Server"
   defp format_cert_type(type), do: to_string(type)
 
   defp format_ca_error("Vault is sealed") do
@@ -1541,8 +1601,21 @@ defmodule SecretHub.Web.PKIManagementLive do
   defp format_ca_error(reason) when is_binary(reason), do: reason
   defp format_ca_error(reason), do: inspect(reason)
 
+  defp status_text(%{cert_type: :acme_server, revocation_state: "confirmed"}), do: "Revoked"
+
+  defp status_text(%{cert_type: :acme_server, quarantined_at: timestamp})
+       when not is_nil(timestamp),
+       do: "Quarantined"
+
   defp status_text(%{revoked: true}), do: "Revoked"
   defp status_text(cert), do: if(expired?(cert), do: "Expired", else: "Active")
+
+  defp status_badge_variant(%{cert_type: :acme_server, revocation_state: "confirmed"}),
+    do: "error"
+
+  defp status_badge_variant(%{cert_type: :acme_server, quarantined_at: timestamp})
+       when not is_nil(timestamp),
+       do: "error"
 
   defp status_badge_variant(%{revoked: true}), do: "error"
   defp status_badge_variant(cert), do: if(expired?(cert), do: "warning", else: "success")

@@ -165,6 +165,12 @@ version, then checks its embedded ID and fingerprint. Lists/details omit private
 keys; protected private exports use `Cache-Control: no-store`. Staging output is
 marked staging and remains untrusted by production clients.
 
+`/admin/pki/certificates` lists published ACME versions alongside internal CA
+certificates, with their DNS names, environment, current/historical marker,
+validity and status. Unissued definitions are absent; expired, quarantined and
+revoked versions remain visible. Use an ACME row's management link to open
+`/admin/pki/acme` for its lifecycle actions.
+
 For Agent delivery, read the structured secret through the existing authorized
 runtime path and render `combined_pem` to **one sink file** with restrictive
 permissions. Existing sink behavior is the delivery boundary. This release does

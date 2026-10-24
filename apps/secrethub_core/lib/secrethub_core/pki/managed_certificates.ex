@@ -60,6 +60,35 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
   end
 
   def list_managed, do: Repo.all(from(m in ManagedCertificate, order_by: m.slug))
+
+  @doc "Lists published certificate metadata without loading PEM or encrypted material."
+  def list_published_certificates do
+    Repo.all(
+      from(v in ManagedCertificateVersion,
+        join: m in ManagedCertificate,
+        on: m.id == v.managed_certificate_id,
+        order_by: [desc: v.inserted_at, desc: v.publication_sequence],
+        select: %{
+          id: v.id,
+          managed_certificate_id: m.id,
+          name: m.name,
+          slug: m.slug,
+          publication_sequence: v.publication_sequence,
+          environment: v.environment,
+          fingerprint: v.fingerprint,
+          identifiers: v.identifiers,
+          not_before: v.not_before,
+          not_after: v.not_after,
+          key_policy: v.key_policy,
+          inserted_at: v.inserted_at,
+          quarantined_at: v.quarantined_at,
+          revocation_state: v.revocation_state,
+          current: coalesce(m.current_version_id == v.id, false)
+        }
+      )
+    )
+  end
+
   def get_managed(id), do: fetch(ManagedCertificate, id)
   def get_order(id), do: fetch(AcmeOrder, id)
   def get_version(id), do: fetch(ManagedCertificateVersion, id)
