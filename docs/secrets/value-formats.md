@@ -14,6 +14,11 @@ The Secret management modal offers Text or Structured data for stored values.
 Structured field rows accept string values, including empty strings. Newly added
 or renamed fields need nonblank, unique names. Names are case-sensitive.
 
+Create or edit a Secret using the list's action buttons. Configure its rotation
+separately from `/admin/rotators`: **Configure** opens a modal while the list or
+read-only detail remains visible. Cancel or Escape discards unsaved rotation
+settings; validation errors remain visible inside the modal.
+
 Saved values are hidden when editing. Text defaults to **Keep current value**;
 choose **Replace value** to enter a replacement, including an empty string.
 Structured fields also default to keeping their saved values. Renaming a field

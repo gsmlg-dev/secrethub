@@ -129,6 +129,44 @@ Cache.put(key, data, version: version, revision: revision, value_format: format)
 
 Completion means reviewed implementation plus passing focused verification. Source qualification does not imply a live migration, service restart, or release.
 
+## Subsequent authorized development rollout — 2026-10-23
+
+The user subsequently requested continued development on `main`, button-opened
+modal forms for related configuration, and a restart of all devenv processes.
+That request authorizes this development restart and supersedes the earlier
+no-restart restriction for this follow-up.
+
+ACME account, managed certificate, and Rotator configuration forms now open from
+list/detail action buttons. They retain failed input with an error inside the
+modal, discard edits on Cancel/Escape, and close after a successful save. The
+existing DNS provider modal uses the shared native-dialog hook.
+
+The final focused Web run passed **28 tests with zero failures**
+(`/tmp/secrethub-modal-forms-tests.log`). Explicit-file formatting, compilation
+with `--warnings-as-errors`, strict Credo on both changed LiveViews, and Bun/CSS
+builds passed. An independent review's Rotator error-visibility finding was fixed
+and re-reviewed before completion.
+
+PostgreSQL, Core, and Agent were stopped and started through devenv and all
+reported ready. Core's normal startup applied migration `20261023000001`.
+Existing counts remained one Secret, zero Secret versions, and one Vault
+configuration; the existing Secret remains unclassified. Secret ciphertext and
+the complete Vault configuration fingerprints matched before and after restart.
+Core's HTTP listener changed from PID `1214802` to `2555400`.
+
+Live browser checks covered modal open/cancel/Escape/reset, retained managed SAN
+inputs when adding a binding, typing focus across periodic refresh, DNS Secret
+path completion metadata, and the Rotator list remaining visible. Public Trust
+displayed all 118 roots without pagination. These checks saved no test records
+or credentials and reported no browser console errors on the checked pages.
+Vault remains initialized and sealed after restart; database and background-job
+checks pass. Secret decryption, live DNS discovery, and issuance require normal
+operator unsealing. No recovery material was changed or used to bypass sealing.
+
+Runtime evidence is in `/tmp/secrethub-modal-runtime-{before,after}.json`,
+`/tmp/secrethub-modal-database-after.log`, and
+`/tmp/secrethub-modal-processes-after.log`.
+
 ## Verification evidence — 2026-10-23
 
 Implemented and reviewed on `main`, preserving the earlier DNS-provider and

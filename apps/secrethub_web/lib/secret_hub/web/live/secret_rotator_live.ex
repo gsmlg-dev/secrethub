@@ -14,6 +14,7 @@ defmodule SecretHub.Web.SecretRotatorLive do
      |> assign(:rotators, [])
      |> assign(:engines, [])
      |> assign(:selected_rotator, nil)
+     |> close_rotator_modal()
      |> load_rotators()
      |> load_engines()}
   end
@@ -22,7 +23,7 @@ defmodule SecretHub.Web.SecretRotatorLive do
   def handle_params(%{"id" => id}, _url, socket) do
     case Secrets.get_secret_rotator(id) do
       {:ok, rotator} ->
-        {:noreply, assign(socket, :selected_rotator, rotator)}
+        {:noreply, socket |> assign(:selected_rotator, rotator) |> close_rotator_modal()}
 
       {:error, :not_found} ->
         {:noreply,
@@ -34,12 +35,35 @@ defmodule SecretHub.Web.SecretRotatorLive do
 
   @impl true
   def handle_params(_params, _url, socket) do
-    {:noreply, assign(socket, :selected_rotator, nil)}
+    {:noreply, socket |> assign(:selected_rotator, nil) |> close_rotator_modal()}
   end
 
   @impl true
   def handle_event("view_rotator", %{"id" => id}, socket) do
-    {:noreply, push_patch(socket, to: ~p"/admin/rotators/#{id}")}
+    case Secrets.get_secret_rotator(id) do
+      {:ok, rotator} ->
+        {:noreply,
+         socket
+         |> assign(:editing_rotator, rotator)
+         |> assign(:rotator_error, nil)
+         |> assign(:rotator_params, rotator_params(rotator))}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Rotator not found")}
+    end
+  end
+
+  @impl true
+  def handle_event("close_rotator_modal", _params, socket) do
+    {:noreply, close_rotator_modal(socket)}
+  end
+
+  @impl true
+  def handle_event("change_rotator", %{"rotator" => params}, socket) do
+    {:noreply,
+     socket
+     |> assign(:rotator_params, Map.merge(socket.assigns.rotator_params, params))
+     |> assign(:rotator_error, nil)}
   end
 
   @impl true
@@ -54,7 +78,7 @@ defmodule SecretHub.Web.SecretRotatorLive do
 
   @impl true
   def handle_event("save_rotator", %{"rotator" => params}, socket) do
-    rotator = socket.assigns.selected_rotator
+    rotator = socket.assigns.editing_rotator
     attrs = normalize_rotator_params(params)
 
     case Secrets.update_secret_rotator(rotator, attrs) do
@@ -64,12 +88,18 @@ defmodule SecretHub.Web.SecretRotatorLive do
         {:noreply,
          socket
          |> put_flash(:info, "Rotator updated")
-         |> assign(:selected_rotator, updated)
+         |> refresh_selected_rotator(updated)
+         |> close_rotator_modal()
          |> load_rotators()}
 
       {:error, changeset} ->
+        error = "Failed to update rotator: #{format_errors(changeset)}"
+
         {:noreply,
-         put_flash(socket, :error, "Failed to update rotator: #{format_errors(changeset)}")}
+         socket
+         |> assign(:rotator_params, Map.put_new(params, "enabled", "false"))
+         |> assign(:rotator_error, error)
+         |> put_flash(:error, error)}
     end
   end
 
@@ -87,10 +117,24 @@ defmodule SecretHub.Web.SecretRotatorLive do
       </div>
 
       <%= if @selected_rotator do %>
-        <.rotator_detail rotator={@selected_rotator} engines={@engines} />
+        <.rotator_detail rotator={@selected_rotator} />
       <% else %>
         <.rotator_table rotators={@rotators} />
       <% end %>
+
+      <.dm_modal
+        :if={@editing_rotator}
+        id="rotator-modal"
+        size="lg"
+        phx-hook="FormModal"
+        data-close-event="close_rotator_modal"
+      >
+        <:title>Configure {@editing_rotator.name}</:title>
+        <:body>
+          <p :if={@rotator_error} role="alert" class="mb-4 text-error">{@rotator_error}</p>
+          <.rotator_form engines={@engines} params={@rotator_params} />
+        </:body>
+      </.dm_modal>
     </div>
     """
   end
@@ -101,6 +145,28 @@ defmodule SecretHub.Web.SecretRotatorLive do
 
   defp load_engines(socket) do
     assign(socket, :engines, EngineConfigurations.list_configurations())
+  end
+
+  defp close_rotator_modal(socket) do
+    socket
+    |> assign(:editing_rotator, nil)
+    |> assign(:rotator_params, %{})
+    |> assign(:rotator_error, nil)
+  end
+
+  defp refresh_selected_rotator(%{assigns: %{selected_rotator: nil}} = socket, _updated),
+    do: socket
+
+  defp refresh_selected_rotator(socket, updated),
+    do: assign(socket, :selected_rotator, updated)
+
+  defp rotator_params(rotator) do
+    %{
+      "trigger_mode" => to_string(rotator.trigger_mode || :manual),
+      "engine_configuration_id" => rotator.engine_configuration_id || "",
+      "schedule_cron" => rotator.schedule_cron || "",
+      "enabled" => to_string(rotator.enabled)
+    }
   end
 
   defp rotator_table(assigns) do
@@ -215,69 +281,89 @@ defmodule SecretHub.Web.SecretRotatorLive do
         </div>
       </dl>
 
-      <form phx-submit="save_rotator" class="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <div>
-          <label for="rotator_trigger_mode" class="block text-sm font-medium text-on-surface">
-            Trigger Mode
-          </label>
-          <select
-            id="rotator_trigger_mode"
-            name="rotator[trigger_mode]"
-            class="select select-bordered mt-1 w-full"
-          >
-            <option value="manual" selected={@rotator.trigger_mode in [nil, :manual]}>Manual</option>
-            <option value="scheduled" selected={@rotator.trigger_mode == :scheduled}>
-              Scheduled
-            </option>
-          </select>
-        </div>
-
-        <div>
-          <label for="rotator_engine" class="block text-sm font-medium text-on-surface">Engine</label>
-          <select
-            id="rotator_engine"
-            name="rotator[engine_configuration_id]"
-            class="select select-bordered mt-1 w-full"
-          >
-            <option value="">Manual Web UI</option>
-            <%= for engine <- @engines do %>
-              <option value={engine.id} selected={@rotator.engine_configuration_id == engine.id}>
-                {engine.name}
-              </option>
-            <% end %>
-          </select>
-        </div>
-
-        <div>
-          <label for="rotator_schedule" class="block text-sm font-medium text-on-surface">
-            Cron Schedule
-          </label>
-          <input
-            id="rotator_schedule"
-            name="rotator[schedule_cron]"
-            value={@rotator.schedule_cron || ""}
-            class="input input-bordered mt-1 w-full font-mono text-sm"
-            placeholder="0 2 * * 0"
-          />
-        </div>
-
-        <div class="flex items-end">
-          <label class="flex items-center gap-2 text-sm text-on-surface">
-            <input
-              type="checkbox"
-              name="rotator[enabled]"
-              value="true"
-              checked={@rotator.enabled}
-              class="checkbox checkbox-primary"
-            /> Enabled
-          </label>
-        </div>
-
-        <div class="sm:col-span-2 flex justify-end">
-          <button type="submit" class="btn btn-primary">Save Rotator</button>
-        </div>
-      </form>
+      <button
+        type="button"
+        phx-click="view_rotator"
+        phx-value-id={@rotator.id}
+        class="btn btn-primary mt-8"
+      >
+        Configure
+      </button>
     </div>
+    """
+  end
+
+  defp rotator_form(assigns) do
+    ~H"""
+    <form
+      id="rotator-form"
+      phx-change="change_rotator"
+      phx-submit="save_rotator"
+      class="grid grid-cols-1 gap-5 sm:grid-cols-2"
+    >
+      <div>
+        <label for="rotator_trigger_mode" class="block text-sm font-medium text-on-surface">
+          Trigger Mode
+        </label>
+        <select
+          id="rotator_trigger_mode"
+          name="rotator[trigger_mode]"
+          class="select select-bordered mt-1 w-full"
+        >
+          <option value="manual" selected={@params["trigger_mode"] == "manual"}>Manual</option>
+          <option value="scheduled" selected={@params["trigger_mode"] == "scheduled"}>
+            Scheduled
+          </option>
+        </select>
+      </div>
+
+      <div>
+        <label for="rotator_engine" class="block text-sm font-medium text-on-surface">Engine</label>
+        <select
+          id="rotator_engine"
+          name="rotator[engine_configuration_id]"
+          class="select select-bordered mt-1 w-full"
+        >
+          <option value="">Manual Web UI</option>
+          <%= for engine <- @engines do %>
+            <option value={engine.id} selected={@params["engine_configuration_id"] == engine.id}>
+              {engine.name}
+            </option>
+          <% end %>
+        </select>
+      </div>
+
+      <div>
+        <label for="rotator_schedule" class="block text-sm font-medium text-on-surface">
+          Cron Schedule
+        </label>
+        <input
+          id="rotator_schedule"
+          name="rotator[schedule_cron]"
+          value={@params["schedule_cron"] || ""}
+          class="input input-bordered mt-1 w-full font-mono text-sm"
+          placeholder="0 2 * * 0"
+        />
+      </div>
+
+      <div class="flex items-end">
+        <label class="flex items-center gap-2 text-sm text-on-surface">
+          <input type="hidden" name="rotator[enabled]" value="false" />
+          <input
+            type="checkbox"
+            name="rotator[enabled]"
+            value="true"
+            checked={@params["enabled"] == "true"}
+            class="checkbox checkbox-primary"
+          /> Enabled
+        </label>
+      </div>
+
+      <div class="sm:col-span-2 flex justify-end gap-3">
+        <button type="button" phx-click="close_rotator_modal" class="btn btn-ghost">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Rotator</button>
+      </div>
+    </form>
     """
   end
 
