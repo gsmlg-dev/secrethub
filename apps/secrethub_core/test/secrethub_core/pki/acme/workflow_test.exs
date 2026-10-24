@@ -52,6 +52,7 @@ defmodule SecretHub.Core.PKI.ACME.WorkflowTest do
     {:ok, _} = SealState.unseal(b)
     root_key = X509.PrivateKey.new_ec(:secp256r1)
     root = X509.Certificate.self_signed(root_key, "/CN=workflow-test-root", template: :root_ca)
+    ari_start = DateTime.add(ManagedCertificates.now(), 86_400)
 
     {:ok, remote} =
       Agent.start_link(fn ->
@@ -62,6 +63,10 @@ defmodule SecretHub.Core.PKI.ACME.WorkflowTest do
           certificate: nil,
           orders: 0,
           finalizations: 0,
+          ari_window: %{
+            "start" => DateTime.to_iso8601(ari_start),
+            "end" => DateTime.to_iso8601(DateTime.add(ari_start, 86_400))
+          },
           revoked: false
         }
       end)
@@ -568,11 +573,8 @@ defmodule SecretHub.Core.PKI.ACME.WorkflowTest do
 
   defp acme_fixture(remote, _, _, "/certificate", _), do: raw(Agent.get(remote, & &1.certificate))
 
-  defp acme_fixture(_, _, _, "/ari/" <> _, _) do
-    response(%{
-      "suggestedWindow" => %{"start" => "2026-10-23T00:00:00Z", "end" => "2026-10-24T00:00:00Z"}
-    })
-  end
+  defp acme_fixture(remote, _, _, "/ari/" <> _, _),
+    do: response(%{"suggestedWindow" => Agent.get(remote, & &1.ari_window)})
 
   defp acme_fixture(remote, _, _, "/revoke", _) do
     Agent.update(remote, &%{&1 | revoked: true})
