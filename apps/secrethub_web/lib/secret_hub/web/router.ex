@@ -135,6 +135,7 @@ defmodule SecretHub.Web.Router do
       live "/pki", PKIManagementLive, :index
       live "/pki/trust-stores", TrustStoresLive, :index
       live "/pki/acme", AcmeLive, :index
+      live "/pki/acme/dns-providers", AcmeLive, :dns_providers
       live "/pki/ca", PKIManagementLive, :cas
       live "/pki/ca/new", PKIManagementLive, :new_ca
       live "/pki/ca/:ca_id", PKIManagementLive, :ca_show

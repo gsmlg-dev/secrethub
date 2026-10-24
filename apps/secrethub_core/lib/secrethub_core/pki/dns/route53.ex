@@ -11,6 +11,67 @@ defmodule SecretHub.Core.PKI.DNS.Route53 do
   @base "https://route53.amazonaws.com/2013-04-01"
   @max_pages 20
 
+  def list_zones(credentials, opts \\ []),
+    do: hosted_zones(credentials, nil, MapSet.new(), 1, [], opts)
+
+  defp hosted_zones(_, _, _, page, _, _) when page > @max_pages,
+    do: {:error, :pagination_limit}
+
+  defp hosted_zones(credentials, marker, seen, page, acc, opts) do
+    params =
+      if marker, do: %{"maxitems" => "100", "marker" => marker}, else: %{"maxitems" => "100"}
+
+    with {:ok, xml} <-
+           api(:get, "/hostedzone?" <> URI.encode_query(params), "", credentials, opts),
+         true <- length(:xmerl_xpath.string(~c"/ListHostedZonesResponse/HostedZones", xml)) == 1,
+         {:ok, found} <- public_hosted_zones(xml) do
+      all = Enum.reverse(found, acc)
+      truncated = text(xml, ~c"/ListHostedZonesResponse/IsTruncated/text()")
+      next = text(xml, ~c"/ListHostedZonesResponse/NextMarker/text()")
+
+      cond do
+        truncated == "false" ->
+          {:ok, Enum.reverse(all)}
+
+        truncated == "true" and next != "" and not MapSet.member?(seen, next) ->
+          hosted_zones(credentials, next, MapSet.put(seen, next), page + 1, all, opts)
+
+        true ->
+          {:error, :invalid_provider_response}
+      end
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :invalid_provider_response}
+    end
+  end
+
+  defp public_hosted_zones(xml) do
+    :xmerl_xpath.string(~c"/ListHostedZonesResponse/HostedZones/HostedZone", xml)
+    |> Enum.reject(&(text(&1, ~c"./Config/PrivateZone/text()") == "true"))
+    |> Enum.reduce_while({:ok, []}, fn node, {:ok, acc} ->
+      with "false" <- text(node, ~c"./Config/PrivateZone/text()"),
+           {:ok, zone} <- discovered_zone(node) do
+        {:cont, {:ok, [zone | acc]}}
+      else
+        _ -> {:halt, {:error, :invalid_provider_response}}
+      end
+    end)
+    |> case do
+      {:ok, zones} -> {:ok, Enum.reverse(zones)}
+      error -> error
+    end
+  end
+
+  defp discovered_zone(node) do
+    with "/hostedzone/" <> id when id != "" <- text(node, ~c"./Id/text()"),
+         {:ok, name} <- Names.normalize_identifier(text(node, ~c"./Name/text()")),
+         false <- String.starts_with?(name, "*.") do
+      {:ok, %{"zone_id" => id, "zone_name" => name}}
+    else
+      _ -> {:error, :invalid_provider_response}
+    end
+  end
+
   def validate_zone(config, credentials, opts \\ []) do
     with {:ok, xml} <- api(:get, zone_path(config), "", credentials, opts),
          :ok <- public_zone(text(xml, ~c"//HostedZone/Config/PrivateZone/text()")),

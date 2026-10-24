@@ -21,7 +21,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
   @foreign_key_type :binary_id
   @hash_versions [1, 2]
   @acme_events ~w(acme.account.created acme.account.updated acme.account.registered
-    acme.provider.created acme.provider.updated acme.certificate.configured
+    acme.provider.created acme.provider.updated acme.provider.zones_discovered acme.certificate.configured
     acme.certificate.updated acme.issuance.requested acme.order.cancelled acme.order.failed
     acme.certificate.published acme.revocation.requested acme.revocation.confirmed
     acme.dns.intent acme.dns.prepared acme.dns.presented acme.dns.propagated acme.dns.cleanup acme.dns.cleaned)
@@ -415,6 +415,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "acme.account.registered",
       "acme.provider.created",
       "acme.provider.updated",
+      "acme.provider.zones_discovered",
       "acme.certificate.configured",
       "acme.certificate.updated",
       "acme.issuance.requested",

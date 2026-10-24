@@ -9,6 +9,9 @@ defmodule SecretHub.Core.PKI.DNS do
   def effective_owner(owner, binding, opts \\ []), do: Names.effective_owner(owner, binding, opts)
   def propagated?(owner, values, opts \\ []), do: Propagation.check(owner, values, opts)
 
+  def list_zones(config, credentials, opts \\ []),
+    do: dispatch(config, :list_zones, [credentials, opts])
+
   def validate_zone(config, credentials, opts \\ []),
     do: dispatch(config, :validate_zone, [config, credentials, opts])
 

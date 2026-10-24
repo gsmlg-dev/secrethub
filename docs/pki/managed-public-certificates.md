@@ -52,17 +52,36 @@ pinned profile; they never enter production HTTPS or internal identity trust.
 ## Account and provider setup
 
 Use `/admin/pki/acme` (or `/admin/api/pki/acme/*`). Choose production or staging
-explicitly, supply contact addresses and the current directory's terms URL,
-then explicitly accept those terms. A changed terms URL fails closed until the
-operator accepts it. Account keys are distinct from leaf keys and are encrypted
+explicitly and supply contact addresses. The account modal loads the current
+Terms of Service from that environment's official ACME directory and shows a
+link to the actual agreement. Review it and explicitly check acceptance; opening
+the modal, changing environments, or retrying a failed lookup clears acceptance.
+The form cannot submit until the current agreement has loaded. Confirming an
+update saves the exact displayed agreement and queues registration for enabled
+accounts, making an existing waiting retry due immediately.
+A changed terms URL fails closed until the operator accepts it again. API
+callers continue to supply the agreement URL with explicit acceptance.
+Account keys are distinct from leaf keys and are encrypted
 with existing Vault primitives. Account-key rollover is outside this version.
+
+The page shows existing accounts and managed certificates. Use **Add ACME
+account**, **Add managed certificate**, or a row's edit action to open its form
+in a modal. Failed validation keeps the entered values and displays the error
+inside the modal. Cancel or Escape discards unsaved changes; a successful save
+closes the modal and refreshes the list.
 
 First store provider credentials in an existing encrypted static secret:
 
 | Provider | Secret data | Required access |
 | --- | --- | --- |
-| Cloudflare | `api_token` | Zone Read and DNS Edit on each explicitly selected public zone |
-| Route 53 | `access_key_id`, `secret_access_key`, optional `session_token` | `route53:GetHostedZone`, `route53:ListResourceRecordSets`, `route53:ChangeResourceRecordSets` on selected zones, plus `route53:GetChange` on change IDs |
+| Cloudflare | Scalar API token from the ordinary Secret **Value** form, or structured `api_token` / `token` | Zone Read and DNS Edit on each explicitly selected public zone |
+| Route 53 | `access_key_id`, `secret_access_key`, optional `session_token` | `route53:GetHostedZone`, `route53:ListResourceRecordSets`, `route53:ChangeResourceRecordSets` on selected zones, plus `route53:GetChange` on change IDs and `route53:ListHostedZones` on `*` for zone discovery |
+
+For Cloudflare, paste the API token directly into the ordinary Secret **Value**
+field; no JSON or secret conversion is needed. Existing structured credential
+secrets containing `api_token` or `token` remain supported. This scalar-token
+compatibility applies only to Cloudflare; Route 53 requires its structured AWS
+credential fields listed above.
 
 For Route 53, constrain changes with IAM condition keys for TXT type, normalized
 challenge names and CREATE/DELETE actions. The adapter preserves whole supported
@@ -75,9 +94,33 @@ Alternatively select Route 53's explicit `aws_environment` mode, using
 Core's environment. This version does not discover instance-role/container/SSO
 credentials. Do not put credentials in provider JSON, job arguments or metadata.
 
-Configure explicit `zone_id`/canonical `zone_name` entries, then bind certificate
-identifiers to a provider and zone. A binding's optional `suffix` selects the
-longest label-boundary match. Equal matches are rejected. Names are normalized
+Open `/admin/pki/acme/dns-providers` to see configured providers. Add or edit a
+provider in its modal form. Select the credential **secret path** using autocomplete
+from existing encrypted static secrets; SecretHub retains its UUID reference
+internally. The secret values remain on Core and are never sent to the form.
+Selecting credentials loads available public zones from the provider API. Choose
+the allowed zones from that list; zone IDs and names are filled automatically.
+Cloudflare lists active zones, and Route 53 excludes private hosted zones. Discovery
+only reads provider metadata and does not create DNS records. Credential or DNS
+service changes require reloading and selecting the matching zones.
+
+The management API continues to accept `credential_secret_id` UUIDs and also
+accepts `credential_secret_path`. An explicit path resolves to that stored secret;
+an unknown path fails instead of falling back to a previously submitted UUID.
+API callers configure explicit `zone_id`/canonical `zone_name` entries.
+The certificate modal at `/admin/pki/acme` needs only **ACME account**, **Name**,
+**Leaf key**, **DNS names** and **Zone**. Name is a display name, so values such as
+`gsmlg.net` or names containing spaces and Unicode are supported. New names must
+be unique and at most 255 Unicode codepoints. Selecting a Zone determines the
+provider and matching DNS suffix automatically; every DNS name must belong to
+that Zone. Saving a definition does not request issuance.
+
+The management API retains advanced bindings for certificates spanning multiple
+zones or using CNAME delegation. Editing a certificate in the modal preserves its
+existing bindings unless a different Zone is explicitly selected. For a
+certificate spanning multiple zones, leave **Keep current zones** selected to
+preserve those bindings. A binding's optional
+`suffix` selects the longest label-boundary match. Equal matches are rejected. Names are normalized
 for IDNA, case and trailing dots. Wildcard and apex can share one TXT owner;
 different SANs may use different providers. Inbound HTTP/TLS and public A/AAAA
 records are unnecessary for DNS-01.
@@ -95,8 +138,14 @@ provider is supported and retains its old binding for cleanup.
 
 ## Issuance, renewal and delivery
 
-Create a managed definition with a stable slug, normalized identifiers, account,
-bindings and EC P-256 or RSA-2048 policy. Issue with a unique stable request ID.
+Create a managed definition using the five-field modal. SecretHub generates its
+stable internal slug automatically and displays the Name in lists and details.
+Renaming a certificate preserves its internal slug and output secret path. Legacy
+definitions display their existing slug until named. The API accepts a `name`
+with an automatically generated slug, and still accepts explicit `slug` values
+for existing integrations; slugs use lowercase letters and digits separated by
+hyphens. The account and slug remain immutable after creation. Issue with a
+unique stable request ID.
 Replaying the same request reuses its order; changing its desired revision under
 that ID is rejected. Progress and redacted errors are durable and visible. One
 leaf key/CSR is retained across retries. A lost order-create response without a

@@ -229,6 +229,116 @@ defmodule SecretHub.Core.PKI.DNS.CloudflareTest do
              )
   end
 
+  test "discovers all active zones across pages through the provider dispatcher" do
+    parent = self()
+
+    transport = fn :get, url, headers, "", _ ->
+      assert URI.parse(url).path == "/client/v4/zones"
+      assert {"authorization", "Bearer fixture-token"} in headers
+      query = URI.decode_query(URI.parse(url).query)
+      send(parent, {:list_zones_query, query})
+
+      case query["page"] do
+        "1" ->
+          response(%{
+            "result" => [
+              zone_entry("first", "EXAMPLE.COM."),
+              zone_entry("pending", "pending.com", "pending")
+            ],
+            "result_info" => %{"page" => 1, "total_pages" => 2}
+          })
+
+        "2" ->
+          response(%{
+            "result" => [zone_entry("second", "second.com")],
+            "result_info" => %{"page" => 2, "total_pages" => 2}
+          })
+      end
+    end
+
+    assert {:ok,
+            [
+              %{"zone_id" => "first", "zone_name" => "example.com"},
+              %{"zone_id" => "second", "zone_name" => "second.com"}
+            ]} =
+             SecretHub.Core.PKI.DNS.list_zones(%{"provider" => "cloudflare"}, @credentials,
+               transport: transport
+             )
+
+    assert_received {:list_zones_query, %{"page" => "1", "per_page" => "50"}}
+    assert_received {:list_zones_query, %{"page" => "2", "per_page" => "50"}}
+  end
+
+  test "zone discovery accepts the standard secret value as the API token" do
+    transport = fn :get, url, headers, "", _opts ->
+      assert URI.parse(url).path == "/client/v4/zones"
+      assert {"authorization", "Bearer fixture-token"} in headers
+      response(%{"result" => [zone_entry("zone-1", "example.com")]})
+    end
+
+    assert {:ok, [%{"zone_id" => "zone-1", "zone_name" => "example.com"}]} =
+             Cloudflare.list_zones(%{"value" => "fixture-token"}, transport: transport)
+  end
+
+  test "zone discovery rejects malformed results and pagination" do
+    for result <- [
+          nil,
+          "bad",
+          [42],
+          [zone_entry("", "example.com")],
+          [zone_entry("id", "*.example.com")],
+          [zone_entry("id", "invalid")]
+        ] do
+      assert {:error, :invalid_provider_response} =
+               Cloudflare.list_zones(@credentials,
+                 transport: fn :get, _, _, _, _ -> response(%{"result" => result}) end
+               )
+    end
+
+    for info <- [
+          "bad",
+          %{"page" => 2, "total_pages" => 2},
+          %{"total_pages" => "2"},
+          %{"total_pages" => 0}
+        ] do
+      assert {:error, :invalid_provider_response} =
+               Cloudflare.list_zones(@credentials,
+                 transport: fn :get, _, _, _, _ ->
+                   response(%{"result" => [], "result_info" => info})
+                 end
+               )
+    end
+
+    assert {:error, :pagination_limit} =
+             Cloudflare.list_zones(@credentials,
+               transport: fn :get, _, _, _, _ ->
+                 response(%{"result" => [], "result_info" => %{"total_pages" => 21}})
+               end
+             )
+  end
+
+  test "zone discovery returns credential and authentication errors without remote bodies" do
+    assert {:error, :credentials_unavailable} =
+             Cloudflare.list_zones(%{},
+               transport: fn _, _, _, _, _ ->
+                 flunk("missing credentials must not make requests")
+               end
+             )
+
+    assert {:error, %{reason: :authentication, status: 403}} =
+             Cloudflare.list_zones(@credentials,
+               transport: fn :get, _, _, _, _ ->
+                 {:ok, %{status: 403, headers: %{}, body: "fixture-token"}}
+               end
+             )
+
+    assert {:error, :unsupported_provider} =
+             SecretHub.Core.PKI.DNS.list_zones(%{"provider" => "unknown"}, @credentials)
+  end
+
+  defp zone_entry(id, name, status \\ "active"),
+    do: %{"id" => id, "name" => name, "status" => status}
+
   defp record(id),
     do: %{
       "id" => id,

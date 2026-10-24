@@ -57,6 +57,20 @@ const Hooks = {
   ...DuskmoonHooks,
   AdminSidebar,
   AdminSidebarNavigation,
+  FormModal: {
+    mounted() {
+      this.handleClose = () => this.pushEvent(this.el.dataset.closeEvent, {})
+      this.el.addEventListener("close", this.handleClose)
+      if (!this.el.open) this.el.showModal()
+    },
+    updated() {
+      if (!this.el.open) this.el.showModal()
+    },
+    destroyed() {
+      this.el.removeEventListener("close", this.handleClose)
+      if (this.el.open) this.el.close()
+    }
+  },
   PreserveFormValues: {
     mounted() {
       this.captureValues = () => {

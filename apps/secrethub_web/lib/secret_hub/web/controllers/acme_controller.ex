@@ -6,7 +6,7 @@ defmodule SecretHub.Web.AcmeController do
 
   @account_fields ~w(id name environment directory_url contact terms_url terms_accepted_at account_url status enabled last_error inserted_at updated_at)a
   @provider_fields ~w(id name provider credential_mode credential_secret_id zones enabled inserted_at updated_at)a
-  @managed_fields ~w(id slug account_id identifiers bindings key_policy configuration_revision publication_sequence enabled current_version_id output_secret_id next_renewal_at last_error inserted_at updated_at)a
+  @managed_fields ~w(id name slug account_id identifiers bindings key_policy configuration_revision publication_sequence enabled current_version_id output_secret_id next_renewal_at last_error inserted_at updated_at)a
   @version_fields ~w(id managed_certificate_id order_id publication_sequence environment fingerprint certificate_pem chain_pem fullchain_pem identifiers not_before not_after key_policy output_secret_id secret_version_number ari renewal_due_at ari_refresh_at quarantined_at revocation_state revocation_reason revocation_next_attempt_at revocation_error inserted_at)a
   @order_fields ~w(id managed_certificate_id request_id configuration_revision expected_prior_version_id state phase identifiers remote_url remote_status next_attempt_at deadline_at attempts uncertain_creates last_error inserted_at updated_at)a
   @cleanup_fields ~w(id order_id authorization_id provider_id original_owner owner state cleanup_status next_attempt_at last_error inserted_at updated_at)a

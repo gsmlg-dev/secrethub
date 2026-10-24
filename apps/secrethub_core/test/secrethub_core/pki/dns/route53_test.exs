@@ -249,6 +249,107 @@ defmodule SecretHub.Core.PKI.DNS.Route53Test do
     end
   end
 
+  test "discovers public hosted zones across signed marker pages" do
+    transport = fn :get, url, headers, "", _ ->
+      assert URI.parse(url).path == "/2013-04-01/hostedzone"
+      assert {"x-amz-security-token", "fixture-session"} in headers
+
+      assert Enum.any?(headers, fn {key, value} ->
+               key == "authorization" and String.contains?(value, "Credential=AKIDEXAMPLE/")
+             end)
+
+      case URI.decode_query(URI.parse(url).query)["marker"] do
+        nil ->
+          hosted_zones(
+            hosted_zone("FIRST", "EXAMPLE.COM.") <> hosted_zone("PRIVATE", "private.com.", true),
+            "true",
+            "next/marker"
+          )
+
+        "next/marker" ->
+          hosted_zones(hosted_zone("SECOND", "second.com."))
+      end
+    end
+
+    assert {:ok,
+            [
+              %{"zone_id" => "FIRST", "zone_name" => "example.com"},
+              %{"zone_id" => "SECOND", "zone_name" => "second.com"}
+            ]} =
+             SecretHub.Core.PKI.DNS.list_zones(%{"provider" => "route53"}, @credentials,
+               transport: transport
+             )
+  end
+
+  test "hosted zone discovery rejects incomplete, malformed and unsafe XML" do
+    for body <- [
+          "<ListHostedZonesResponse><HostedZones/></ListHostedZonesResponse>",
+          "<OtherResponse><HostedZones/><IsTruncated>false</IsTruncated></OtherResponse>",
+          "<ListHostedZonesResponse><IsTruncated>false</IsTruncated></ListHostedZonesResponse>",
+          "<!DOCTYPE root [<!ENTITY token 'fixture-secret'>]><ListHostedZonesResponse/>",
+          "<ListHostedZonesResponse>",
+          "<ListHostedZonesResponse><HostedZones/><IsTruncated>true</IsTruncated></ListHostedZonesResponse>"
+        ] do
+      assert {:error, :invalid_provider_response} =
+               Route53.list_zones(@credentials,
+                 transport: fn :get, _, _, _, _ -> response(body) end
+               )
+    end
+
+    for node <- [
+          hosted_zone("", "example.com."),
+          hosted_zone("ID", "invalid"),
+          hosted_zone("ID", "*.example.com."),
+          "<HostedZone><Id>/hostedzone/ID</Id><Name>example.com.</Name></HostedZone>"
+        ] do
+      assert {:error, :invalid_provider_response} =
+               Route53.list_zones(@credentials,
+                 transport: fn :get, _, _, _, _ -> hosted_zones(node) end
+               )
+    end
+  end
+
+  test "hosted zone discovery rejects repeated markers and bounds pagination" do
+    assert {:error, :invalid_provider_response} =
+             Route53.list_zones(@credentials,
+               transport: fn :get, _, _, _, _ -> hosted_zones("", "true", "repeated") end
+             )
+
+    assert {:error, :pagination_limit} =
+             Route53.list_zones(@credentials,
+               transport: fn :get, url, _, _, _ ->
+                 current = URI.decode_query(URI.parse(url).query)["marker"] || "0"
+                 hosted_zones("", "true", Integer.to_string(String.to_integer(current) + 1))
+               end
+             )
+  end
+
+  test "hosted zone discovery redacts authentication failures and checks credentials" do
+    assert {:error, :credentials_unavailable} =
+             Route53.list_zones(%{},
+               transport: fn _, _, _, _, _ ->
+                 flunk("missing credentials must not make requests")
+               end
+             )
+
+    assert {:error, %{reason: :authentication, status: 403}} =
+             Route53.list_zones(@credentials,
+               transport: fn :get, _, _, _, _ ->
+                 {:ok, %{status: 403, headers: %{}, body: "fixture-secret fixture-session"}}
+               end
+             )
+  end
+
+  defp hosted_zone(id, name, private \\ false),
+    do:
+      "<HostedZone><Id>/hostedzone/#{id}</Id><Name>#{name}</Name><Config><PrivateZone>#{private}</PrivateZone></Config></HostedZone>"
+
+  defp hosted_zones(zones, truncated \\ "false", marker \\ ""),
+    do:
+      response(
+        "<ListHostedZonesResponse><HostedZones>#{zones}</HostedZones><IsTruncated>#{truncated}</IsTruncated><NextMarker>#{marker}</NextMarker></ListHostedZonesResponse>"
+      )
+
   defp response(body), do: {:ok, %{status: 200, headers: %{}, body: body}}
 
   defp zone(private \\ false),

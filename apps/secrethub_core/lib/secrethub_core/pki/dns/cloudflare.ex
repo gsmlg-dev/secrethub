@@ -4,6 +4,72 @@ defmodule SecretHub.Core.PKI.DNS.Cloudflare do
   @base "https://api.cloudflare.com/client/v4"
   @max_pages 20
 
+  def list_zones(credentials, opts \\ []), do: zones(credentials, 1, [], opts)
+
+  defp zones(credentials, page, acc, opts) do
+    query = URI.encode_query(%{"page" => page, "per_page" => 50})
+
+    with {:ok, %{"result" => entries} = response} when is_list(entries) <-
+           api(:get, "/zones?" <> query, nil, credentials, opts),
+         {:ok, found} <- active_zones(entries),
+         {:ok, pages} <- zone_page_count(response["result_info"], page) do
+      all = Enum.reverse(found, acc)
+
+      if page < pages,
+        do: zones(credentials, page + 1, all, opts),
+        else: {:ok, Enum.reverse(all)}
+    else
+      {:error, _} = error -> error
+      _ -> {:error, :invalid_provider_response}
+    end
+  end
+
+  defp active_zones(entries) do
+    Enum.reduce_while(entries, {:ok, []}, fn
+      %{"id" => id, "name" => name, "status" => status}, {:ok, acc}
+      when is_binary(id) and id != "" and is_binary(status) ->
+        case Names.normalize_identifier(name) do
+          {:ok, "*." <> _} ->
+            {:halt, {:error, :invalid_provider_response}}
+
+          {:ok, normalized} when status == "active" ->
+            {:cont, {:ok, [%{"zone_id" => id, "zone_name" => normalized} | acc]}}
+
+          {:ok, _} ->
+            {:cont, {:ok, acc}}
+
+          _ ->
+            {:halt, {:error, :invalid_provider_response}}
+        end
+
+      _, _ ->
+        {:halt, {:error, :invalid_provider_response}}
+    end)
+    |> case do
+      {:ok, zones} -> {:ok, Enum.reverse(zones)}
+      error -> error
+    end
+  end
+
+  defp zone_page_count(nil, 1), do: {:ok, 1}
+
+  defp zone_page_count(info, page) when is_map(info) do
+    pages = info["total_pages"]
+
+    cond do
+      not is_integer(pages) or pages < page or Map.get(info, "page", page) != page ->
+        {:error, :invalid_provider_response}
+
+      pages > @max_pages ->
+        {:error, :pagination_limit}
+
+      true ->
+        {:ok, pages}
+    end
+  end
+
+  defp zone_page_count(_, _), do: {:error, :invalid_provider_response}
+
   def validate_zone(config, credentials, opts \\ []) do
     with {:ok, %{"result" => zone}} when is_map(zone) <-
            api(:get, zone_path(config), nil, credentials, opts),
@@ -255,7 +321,7 @@ defmodule SecretHub.Core.PKI.DNS.Cloudflare do
   defp zone_path(config), do: "/zones/" <> URI.encode_www_form(config["zone_id"])
 
   defp api(method, path, body, credentials, opts) do
-    case credentials["api_token"] || credentials["token"] do
+    case credentials["api_token"] || credentials["token"] || credentials["value"] do
       token when is_binary(token) and token != "" ->
         authenticated_request(method, path, body, token, opts)
 

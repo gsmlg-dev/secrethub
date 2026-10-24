@@ -3,8 +3,10 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
   alias Ecto.Changeset
   alias SecretHub.Core.Audit
   alias SecretHub.Core.AuthorizationVersions
+  alias SecretHub.Core.PKI.ACME.Client
   alias SecretHub.Core.PKI.ACME.Keys
   alias SecretHub.Core.PKI.ACME.Worker
+  alias SecretHub.Core.PKI.DNS
   alias SecretHub.Core.PKI.DNS.Names
   alias SecretHub.Core.Repo
   alias SecretHub.Core.Secrets
@@ -17,6 +19,7 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
   alias SecretHub.Shared.Schemas.DNSProvider
   alias SecretHub.Shared.Schemas.ManagedCertificate
   alias SecretHub.Shared.Schemas.ManagedCertificateVersion
+  alias SecretHub.Shared.Schemas.Secret
   import Ecto.Query
 
   @terminal ["published", "failed", "cancelled"]
@@ -28,6 +31,34 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
   def now, do: DateTime.utc_now() |> DateTime.truncate(:second)
   def list_accounts, do: Repo.all(from(a in AcmeAccount, order_by: a.inserted_at))
   def list_providers, do: Repo.all(from(p in DNSProvider, order_by: p.name))
+  @doc "Lists credential secret paths without loading encrypted or plaintext values."
+  def credential_secret_options do
+    if LaunchProfile.enabled?(:acme), do: Repo.all(credential_secrets_query()), else: []
+  end
+
+  @doc "Reads available public zones using the selected stored credential reference."
+  def discover_provider_zones(attrs, opts \\ []) do
+    attrs = Map.put_new(attrs, "credential_mode", "secret")
+
+    with :ok <- LaunchProfile.check(:acme),
+         :ok <- discovery_configuration(attrs),
+         {:ok, config} <- resolve_provider_reference(attrs),
+         :ok <- provider_credentials(config),
+         {:ok, credentials} <- discovery_credentials(config),
+         {:ok, zones} <- DNS.list_zones(config, credentials, opts) do
+      transaction(fn ->
+        audit!("acme.provider.zones_discovered", config["credential_secret_id"], %{
+          provider: config["provider"],
+          zone_count: length(zones)
+        })
+
+        zones
+      end)
+    else
+      {:error, reason} -> {:error, discovery_error(reason)}
+    end
+  end
+
   def list_managed, do: Repo.all(from(m in ManagedCertificate, order_by: m.slug))
   def get_managed(id), do: fetch(ManagedCertificate, id)
   def get_order(id), do: fetch(AcmeOrder, id)
@@ -62,6 +93,22 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
         )
       )
 
+  @doc "Reads the current service agreement from a supported environment's ACME directory."
+  def discover_account_terms(environment, opts \\ []) do
+    with :ok <- LaunchProfile.check(:acme),
+         directory when is_binary(directory) <- @directories[environment],
+         {:ok, metadata} <- Client.directory(directory, opts),
+         %{"meta" => %{"termsOfService" => url}} when is_binary(url) <- metadata,
+         %URI{scheme: "https", host: host, userinfo: nil, fragment: nil} when is_binary(host) <-
+           URI.parse(url) do
+      {:ok, url}
+    else
+      nil -> {:error, :unsupported_environment}
+      {:error, _} = error -> error
+      _ -> {:error, :terms_unavailable}
+    end
+  end
+
   def create_account(attrs) do
     with :ok <- LaunchProfile.check(:acme),
          true <- attrs["terms_accepted"] == true,
@@ -94,8 +141,13 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
       account = locked!(AcmeAccount, id)
       changes = Map.take(attrs, ~w(enabled))
 
+      accepting_terms = attrs["terms_accepted"] == true and is_binary(attrs["terms_url"])
+
+      if accepting_terms and not LaunchProfile.enabled?(:acme),
+        do: Repo.rollback(:feature_unavailable)
+
       changes =
-        if attrs["terms_accepted"] == true and is_binary(attrs["terms_url"]) do
+        if accepting_terms do
           Map.merge(changes, %{"terms_url" => attrs["terms_url"], "terms_accepted_at" => now()})
         else
           changes
@@ -103,13 +155,18 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
 
       account = update!(AcmeAccount.changeset(account, changes))
       audit!("acme.account.updated", id)
+      if accepting_terms and account.enabled, do: enqueue_account_registration!(id)
       account
     end)
   end
 
   def register_account(id) do
     with :ok <- LaunchProfile.check(:acme), {:ok, %{enabled: true}} <- fetch(AcmeAccount, id) do
-      enqueue(%{"account_id" => id})
+      transaction(fn ->
+        account = locked!(AcmeAccount, id)
+        account.enabled or Repo.rollback(:disabled)
+        enqueue_account_registration!(id)
+      end)
     else
       {:ok, _} -> {:error, :disabled}
       error -> error
@@ -117,7 +174,9 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
   end
 
   def create_provider(attrs) do
-    with :ok <- LaunchProfile.check(:acme), :ok <- provider_configuration(attrs) do
+    with :ok <- LaunchProfile.check(:acme),
+         {:ok, attrs} <- resolve_provider_reference(attrs),
+         :ok <- provider_configuration(attrs) do
       transaction(fn ->
         provider =
           insert!(
@@ -139,7 +198,12 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
   def update_provider(id, attrs) do
     transaction(fn ->
       provider = locked!(DNSProvider, id)
-      attrs = Map.take(attrs, ~w(name credential_mode credential_secret_id zones enabled))
+
+      attrs =
+        Map.take(
+          attrs,
+          ~w(name credential_mode credential_secret_id credential_secret_path zones enabled)
+        )
 
       if Map.keys(attrs) -- ~w(name enabled) != [] and provider_obligations?(id),
         do: Repo.rollback(:outstanding_obligations)
@@ -150,18 +214,30 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
         |> Map.new(fn {k, v} -> {to_string(k), v} end)
         |> Map.merge(attrs)
 
+      candidate =
+        case resolve_provider_reference(candidate) do
+          {:ok, candidate} -> candidate
+          {:error, reason} -> Repo.rollback(reason)
+        end
+
       case provider_configuration(candidate) do
         :ok -> :ok
         {:error, reason} -> Repo.rollback(reason)
       end
 
-      updated = update!(DNSProvider.changeset(provider, attrs))
+      changes = Map.take(candidate, ~w(name credential_mode credential_secret_id zones enabled))
+      updated = update!(DNSProvider.changeset(provider, changes))
       audit!("acme.provider.updated", id)
       updated
     end)
   end
 
   def create_managed(attrs) do
+    attrs =
+      if Map.has_key?(attrs, "name"),
+        do: Map.put_new_lazy(attrs, "slug", fn -> "cert-" <> Ecto.UUID.generate() end),
+        else: attrs
+
     with :ok <- LaunchProfile.check(:acme),
          {:ok, names} <- normalize_identifiers(attrs["identifiers"]),
          {:ok, account} <- fetch(AcmeAccount, attrs["account_id"]),
@@ -171,7 +247,7 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
           insert!(
             ManagedCertificate.changeset(
               %ManagedCertificate{},
-              Map.take(attrs, ~w(slug key_policy enabled))
+              Map.take(attrs, ~w(name slug key_policy enabled))
               |> Map.merge(%{
                 "account_id" => account.id,
                 "identifiers" => names,
@@ -189,7 +265,7 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
   def update_managed(id, attrs) do
     transaction(fn ->
       resource = locked!(ManagedCertificate, id)
-      attrs = Map.take(attrs, ~w(identifiers bindings key_policy enabled))
+      attrs = Map.take(attrs, ~w(name identifiers bindings key_policy enabled))
 
       names =
         case normalize_identifiers(attrs["identifiers"] || resource.identifiers) do
@@ -453,6 +529,38 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
          do: {:ok, data}
   end
 
+  defp enqueue_account_registration!(id) do
+    args = %{"account_id" => id}
+    worker = Oban.Worker.to_string(Worker)
+
+    job =
+      Repo.one(
+        from(j in Oban.Job,
+          where:
+            j.worker == ^worker and j.args == ^args and
+              j.state in ["available", "executing", "scheduled", "retryable"],
+          order_by: [
+            asc: fragment("CASE WHEN ? IN ('available', 'executing') THEN 0 ELSE 1 END", j.state),
+            asc: j.id
+          ],
+          limit: 1,
+          lock: "FOR UPDATE"
+        )
+      )
+
+    case job do
+      nil ->
+        enqueue!(args)
+
+      %{state: state} when state in ["scheduled", "retryable"] ->
+        :ok = Oban.retry_job(SecretHub.Core.Oban, job)
+        Repo.get!(Oban.Job, job.id)
+
+      job ->
+        job
+    end
+  end
+
   def enqueue(args, kind \\ :progress) do
     module = if kind == :cleanup, do: SecretHub.Core.PKI.ACME.CleanupWorker, else: Worker
     Oban.insert(SecretHub.Core.Oban, module.new(args))
@@ -504,6 +612,76 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
   end
 
   defp fetch(_, _), do: {:error, :invalid_id}
+
+  defp credential_secrets_query do
+    from(s in Secret,
+      where:
+        s.secret_type == :static and s.engine_type == "static" and s.status == "active" and
+          not is_nil(s.encrypted_data),
+      order_by: s.secret_path,
+      select: %{id: s.id, secret_path: s.secret_path}
+    )
+  end
+
+  defp resolve_provider_reference(%{"credential_mode" => "aws_environment"} = attrs),
+    do:
+      {:ok, attrs |> Map.delete("credential_secret_path") |> Map.put("credential_secret_id", nil)}
+
+  defp resolve_provider_reference(%{"credential_secret_path" => path} = attrs)
+       when is_binary(path) and path != "" do
+    case Repo.one(where(credential_secrets_query(), [s], s.secret_path == ^path)) do
+      %{id: id} ->
+        {:ok,
+         attrs |> Map.delete("credential_secret_path") |> Map.put("credential_secret_id", id)}
+
+      nil ->
+        {:error, :credential_secret_not_found}
+    end
+  end
+
+  defp resolve_provider_reference(%{"credential_secret_path" => _}),
+    do: {:error, :credential_reference_required}
+
+  defp resolve_provider_reference(attrs), do: {:ok, attrs}
+
+  defp discovery_configuration(%{"provider" => provider, "credential_mode" => mode}) do
+    cond do
+      provider not in ~w(cloudflare route53) -> {:error, :unsupported_provider}
+      mode not in ~w(secret aws_environment) -> {:error, :unsupported_credential_mode}
+      true -> :ok
+    end
+  end
+
+  defp discovery_configuration(_), do: {:error, :unsupported_provider}
+
+  defp discovery_credentials(config) do
+    credentials(config)
+  catch
+    :exit, _ -> {:error, :vault_unavailable}
+  end
+
+  defp discovery_error(%{reason: reason}), do: discovery_error(reason)
+
+  defp discovery_error(reason)
+       when reason in [
+              :feature_unavailable,
+              :unsupported_provider,
+              :unsupported_credential_mode,
+              :credential_reference_required,
+              :credential_secret_not_found,
+              :credentials_unavailable,
+              :sealed,
+              :not_initialized,
+              :vault_unavailable,
+              :authentication,
+              :throttled,
+              :provider_unavailable,
+              :invalid_provider_response,
+              :pagination_limit
+            ],
+       do: reason
+
+  defp discovery_error(_), do: :zone_discovery_failed
 
   defp provider_configuration(attrs) do
     allowed =
