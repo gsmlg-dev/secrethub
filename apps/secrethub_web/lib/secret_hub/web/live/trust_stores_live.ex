@@ -3,16 +3,12 @@ defmodule SecretHub.Web.TrustStoresLive do
   use SecretHub.Web, :live_view
   alias SecretHub.Core.PKI.TrustStores
 
-  @page_size 25
-
   @impl true
   def mount(_params, _session, socket) do
     socket =
       assign(socket,
         page_title: "Public trust",
         query: "",
-        page: 1,
-        pages: 1,
         roots: [],
         all_roots: [],
         matches: 0,
@@ -36,18 +32,7 @@ defmodule SecretHub.Web.TrustStoresLive do
 
   @impl true
   def handle_event("search", %{"query" => query}, socket),
-    do:
-      {:noreply, socket |> assign(query: String.slice(query, 0, 200), page: 1) |> filter_roots()}
-
-  def handle_event("page", %{"page" => page}, socket) do
-    page =
-      case Integer.parse(page) do
-        {number, ""} -> number
-        _ -> 1
-      end
-
-    {:noreply, socket |> assign(page: max(1, min(page, socket.assigns.pages))) |> filter_roots()}
-  end
+    do: {:noreply, socket |> assign(query: String.slice(query, 0, 200)) |> filter_roots()}
 
   defp filter_roots(socket) do
     query = String.downcase(socket.assigns.query)
@@ -60,12 +45,9 @@ defmodule SecretHub.Web.TrustStoresLive do
         )
       end)
 
-    count = length(matching)
-
     assign(socket,
-      roots: Enum.slice(matching, (socket.assigns.page - 1) * @page_size, @page_size),
-      matches: count,
-      pages: max(1, ceil(count / @page_size))
+      roots: matching,
+      matches: length(matching)
     )
   end
 
@@ -127,7 +109,7 @@ defmodule SecretHub.Web.TrustStoresLive do
         />
       </.form>
       <p class="text-sm text-on-surface-variant">
-        {@matches} matching roots · page {@page} of {@pages}
+        {@matches} matching roots
       </p>
       <div class="overflow-x-auto">
         <.dm_table data={@roots} compact zebra>
@@ -143,19 +125,6 @@ defmodule SecretHub.Web.TrustStoresLive do
             <code class="text-xs break-all">{root.fingerprint_sha256}</code>
           </:col>
         </.dm_table>
-      </div>
-      <div class="flex gap-3">
-        <.dm_btn variant="outline" phx-click="page" phx-value-page={@page - 1} disabled={@page <= 1}>
-          Previous
-        </.dm_btn>
-        <.dm_btn
-          variant="outline"
-          phx-click="page"
-          phx-value-page={@page + 1}
-          disabled={@page >= @pages}
-        >
-          Next
-        </.dm_btn>
       </div>
     </div>
     """
