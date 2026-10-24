@@ -12,7 +12,7 @@ defmodule SecretHub.Core.PKI.DNS.Route53 do
   @max_pages 20
 
   def list_zones(credentials, opts \\ []),
-    do: hosted_zones(credentials, nil, MapSet.new(), 1, [], opts)
+    do: hosted_zones(credentials, nil, [], 1, [], opts)
 
   defp hosted_zones(_, _, _, page, _, _) when page > @max_pages,
     do: {:error, :pagination_limit}
@@ -33,8 +33,8 @@ defmodule SecretHub.Core.PKI.DNS.Route53 do
         truncated == "false" ->
           {:ok, Enum.reverse(all)}
 
-        truncated == "true" and next != "" and not MapSet.member?(seen, next) ->
-          hosted_zones(credentials, next, MapSet.put(seen, next), page + 1, all, opts)
+        truncated == "true" and next != "" and next not in seen ->
+          hosted_zones(credentials, next, [next | seen], page + 1, all, opts)
 
         true ->
           {:error, :invalid_provider_response}
