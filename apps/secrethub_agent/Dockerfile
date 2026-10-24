@@ -78,7 +78,7 @@ ENTRYPOINT ["bin/secrethub_agent"]
 
 # Labels for orchestration
 LABEL maintainer="SecretHub Development Team" \
-      version="1.0.0-rc.24" \
+      version="1.0.0-rc.25" \
       description="SecretHub Agent - Daemon for secure secret delivery to applications" \
       org.opencontainers.image.source="https://github.com/secrethub/secrethub" \
       org.opencontainers.image.licenses="MIT"
