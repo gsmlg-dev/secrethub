@@ -236,13 +236,13 @@ printf '{application, %s, [{vsn, "1.0.0-rc.15"}]}.\\n' "$2" > "$target/lib/$2-1.
         self.assertIn("standalone", notes)
         self.assertNotIn("docker run", notes)
 
-    def test_core_latest_is_promoted_after_successful_release(self):
+    def test_all_image_latest_tags_are_promoted_after_successful_release(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         concurrency = workflow.split("concurrency:\n", 1)[1].split("\nenv:", 1)[0]
         self.assertNotIn("github.ref", concurrency)
         self.assertIn("cancel-in-progress: false", concurrency)
-        self.assertTrue("  publish-core-latest:\n" in workflow, "Core latest promotion is missing")
-        build, promotion = workflow.split("  publish-core-latest:", 1)
+        self.assertTrue("  publish-images-latest:\n" in workflow, "Image latest promotion is missing")
+        build, promotion = workflow.split("  publish-images-latest:", 1)
         images = build.split("  build-docker-images:", 1)[1].split("  create-release:", 1)[0]
         self.assertNotIn(":latest", images)
         self.assertIn("      - create-release\n", promotion)
@@ -250,14 +250,20 @@ printf '{application, %s, [{vsn, "1.0.0-rc.15"}]}.\\n' "$2" > "$target/lib/$2-1.
         self.assertNotIn("always()", promotion)
         self.assertNotIn("prerelease", promotion)
         self.assertIn("packages: write", promotion)
+        self.assertIn("fail-fast: false", promotion)
+        matrix_images = re.search(r"(?m)^        image: \[([^\]]+)\]$", promotion)
+        self.assertIsNotNone(matrix_images, "Image promotion matrix is missing")
+        self.assertEqual(
+            {image.strip() for image in matrix_images.group(1).split(",")},
+            {"core", "core-standalone", "agent"},
+        )
         self.assertIn(
-            'SOURCE: ghcr.io/${{ github.repository }}/core:${{ needs.prepare-release.outputs.tag }}',
+            'SOURCE: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ needs.prepare-release.outputs.tag }}',
             promotion,
         )
-        self.assertIn('TARGET: ghcr.io/${{ github.repository }}/core:latest', promotion)
+        self.assertIn('TARGET: ghcr.io/${{ github.repository }}/${{ matrix.image }}:latest', promotion)
         self.assertIn('imagetools create --tag "$TARGET" "$SOURCE"', promotion)
         self.assertIn('cmp source-manifest.json latest-manifest.json', promotion)
-        self.assertNotIn("/agent:latest", promotion)
 
     def test_embedded_shell_scripts_parse(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()

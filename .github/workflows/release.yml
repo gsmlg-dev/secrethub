@@ -637,10 +637,11 @@ jobs:
           - \`ghcr.io/${REPOSITORY}/core-standalone:${RELEASE_TAG}\`
           - \`ghcr.io/${REPOSITORY}/agent:${RELEASE_TAG}\`
 
-          After all release jobs succeed, \`ghcr.io/${REPOSITORY}/core:latest\`
-          is promoted to the same multi-platform image as the versioned Core tag,
-          including supported prereleases. The promotion verifies that both tags
-          have identical manifests. Updating this tag does not deploy the image,
+          After release creation succeeds, the \`:latest\` tags for \`core\`,
+          \`core-standalone\`, and \`agent\` are promoted to the same multi-platform
+          images as their corresponding versioned tags, including prereleases.
+          Each promotion verifies that both tags have identical manifests.
+          Updating these tags does not deploy the images,
           run migrations, or alter existing Vault data.
 
           ## Upgrade and deployment requirements
@@ -746,8 +747,8 @@ jobs:
             echo "- Docker images: core, core-standalone, agent"
           } >> "$GITHUB_STEP_SUMMARY"
 
-  publish-core-latest:
-    name: Promote Supported Core Image
+  publish-images-latest:
+    name: Promote Docker Image (${{ matrix.image }})
     runs-on: ubuntu-24.04
     needs:
       - prepare-release
@@ -755,6 +756,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [core, core-standalone, agent]
 
     steps:
       - name: Set up Docker Buildx
@@ -767,11 +772,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Promote and verify Core latest manifest
+      - name: Promote and verify latest manifest
         shell: bash
         env:
-          SOURCE: ghcr.io/${{ github.repository }}/core:${{ needs.prepare-release.outputs.tag }}
-          TARGET: ghcr.io/${{ github.repository }}/core:latest
+          SOURCE: ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ needs.prepare-release.outputs.tag }}
+          TARGET: ghcr.io/${{ github.repository }}/${{ matrix.image }}:latest
         run: |
           set -euo pipefail
 
