@@ -7,7 +7,9 @@ defmodule SecretHub.Core.PrelaunchRuntimeConfigTest do
   setup do
     keys =
       @keys ++
-        ~w(SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS_FILE)
+        ~w(SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS_FILE
+          SECRET_HUB_AGENT_ENDPOINT_CERT_PATH SECRET_HUB_AGENT_ENDPOINT_KEY_PATH
+          SECRET_HUB_AGENT_ENDPOINT_CA_CERT_PATH HUMAN_ENABLED)
 
     saved = Map.new(keys, &{&1, System.get_env(&1)})
     for key <- keys, do: System.delete_env(key)
@@ -39,6 +41,45 @@ defmodule SecretHub.Core.PrelaunchRuntimeConfigTest do
         env: :prod,
         target: :host
       )
+
+  test "production Core configuration passes all runtime preflight checks" do
+    checks = "core" |> read() |> runtime_checks()
+
+    assert checks.features
+    assert Enum.all?(checks, fn {_check, passed} -> passed end)
+  end
+
+  @tag :tmp_dir
+  test "production Core preflight accepts the enabled Agent TLS listener", %{tmp_dir: dir} do
+    paths = for name <- ["cert.pem", "key.pem", "ca.pem"], do: Path.join(dir, name)
+    Enum.each(paths, &File.write!(&1, "test material"))
+    [cert, key, ca] = paths
+
+    System.put_env(%{
+      "SECRET_HUB_AGENT_ENDPOINT_SERVER" => "true",
+      "SECRET_HUB_AGENT_ENDPOINT_CERT_PATH" => cert,
+      "SECRET_HUB_AGENT_ENDPOINT_KEY_PATH" => key,
+      "SECRET_HUB_AGENT_ENDPOINT_CA_CERT_PATH" => ca
+    })
+
+    checks = "core" |> read() |> runtime_checks()
+
+    assert checks.features
+    assert checks.agent_mtls
+    assert Enum.all?(checks, fn {_check, passed} -> passed end)
+  end
+
+  test "production Core preflight rejects incomplete and unsupported feature selections" do
+    config = read("core")
+    features = config[:secrethub_core][:enabled_features]
+
+    for invalid <- [nil, [], features -- [:acme], features ++ [:dynamic_secrets]] do
+      checks = config |> put_in([:secrethub_core, :enabled_features], invalid) |> runtime_checks()
+
+      refute checks.features
+      assert Enum.all?(Map.delete(checks, :features), fn {_check, passed} -> passed end)
+    end
+  end
 
   test "management uses a private transport and independent canonical public origin" do
     config = read("core")
@@ -145,5 +186,22 @@ defmodule SecretHub.Core.PrelaunchRuntimeConfigTest do
 
     assert transport[:cacertfile] == "/fixture/enrollment-ca.pem"
     assert transport[:verify] == :verify_peer
+  end
+
+  defp runtime_checks(config) do
+    saved =
+      for {app, options} <- config, {key, _value} <- options do
+        {app, key, Application.fetch_env(app, key)}
+      end
+
+    try do
+      Application.put_all_env(config)
+      SecretHub.Core.Preflight.runtime_checks()
+    after
+      Enum.each(saved, fn
+        {app, key, {:ok, value}} -> Application.put_env(app, key, value)
+        {app, key, :error} -> Application.delete_env(app, key)
+      end)
+    end
   end
 end

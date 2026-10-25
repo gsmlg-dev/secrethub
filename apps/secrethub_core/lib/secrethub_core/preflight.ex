@@ -46,7 +46,9 @@ defmodule SecretHub.Core.Preflight do
           (agent[:server] == true and agent[:http] in [nil, false] and
              tls_files_readable?(agent[:https])),
       human_disabled: not Application.get_env(:secrethub_human, :enabled, false),
-      features: Keyword.get(config, :enabled_features) == [:static_secrets, :client_auth_pki],
+      features:
+        Keyword.get(config, :enabled_features) ==
+          [:static_secrets, :client_auth_pki, :public_trust, :acme],
       temporary_directory: writable_tmp?()
     }
   rescue
