@@ -394,17 +394,21 @@ Login with AppRole credentials:
 
 ```bash
 secrethub login --role-id "$ROLE_ID" --secret-id "$SECRET_ID"
+secrethub secret get prod.db.password --server https://core.example.com --format json
+```
+
+Read through the local Agent without application credentials or CLI login:
+
+```bash
 secrethub secret get prod.db.password --format json
 ```
 
-Read through a local Agent socket:
-
-```bash
-secrethub secret get prod.db.password \
-  --agent-socket /var/run/secrethub/agent.sock \
-  --agent-cert /path/to/app-client.pem \
-  --format json
-```
+The default socket is `/var/run/secrethub/agent.sock`. Override it with
+`--agent-socket PATH` or `SECRET_HUB_AGENT_SOCKET_PATH`; the explicit option
+takes precedence. Callers need the Agent UID or root to access its `0600`
+socket and share the Agent's Core-authorized permissions. See
+[local Agent secrets](user-guides/local-agent-secrets.md) for startup scripts,
+SDK integration and password changes.
 
 ## Upgrade
 

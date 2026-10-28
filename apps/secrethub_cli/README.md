@@ -34,7 +34,24 @@ sudo cp secrethub /usr/local/bin/
 
 ## Quick Start
 
-### Authentication
+### Read from the local Agent
+
+```sh
+secrethub secret get prod.db.password --format json
+```
+
+Local reads need no application certificate, private key or CLI login. The
+socket defaults to `/var/run/secrethub/agent.sock`; `--agent-socket PATH` overrides
+`SECRET_HUB_AGENT_SOCKET_PATH`, which overrides that default. Callers need the
+Agent UID or root to access its `0600` socket and share the Agent's permissions.
+An unavailable Agent never triggers a Core HTTP fallback. See the
+[local Agent guide](../../docs/user-guides/local-agent-secrets.md) for startup
+scripts, the local protocol and password changes.
+
+### Authentication for Core API operations
+
+Creating/updating secrets and other Core API operations retain token
+authentication. To explicitly read from Core, supply `--server URL` to `secret get`.
 
 ```bash
 # Login with AppRole credentials
@@ -280,7 +297,9 @@ All commands support these global options:
 
 - `-h, --help` - Show help message
 - `-v, --version` - Show version information
-- `-s, --server <url>` - SecretHub server URL (default: http://localhost:4000)
+- `-s, --server <url>` - For `secret get`, explicitly select a token-authenticated Core HTTP read
+- `--agent-socket <path>` - Optional local socket override (default: `/var/run/secrethub/agent.sock`)
+- `--agent-cert <path>` and `--agent-key <path>` - Optional complete application credentials for the existing auth-v2 path
 - `-f, --format <format>` - Output format: json, table, or yaml (default: table)
 - `-q, --quiet` - Suppress non-error output
 - `--verbose` - Show detailed output
@@ -361,6 +380,11 @@ You can edit this file directly or use the `config` commands.
 - `SECRETHUB_SERVER` - Override server URL
 - `SECRETHUB_TOKEN` - Provide authentication token
 - `SECRETHUB_FORMAT` - Set default output format
+- `SECRET_HUB_AGENT_SOCKET_PATH` - Default local Agent socket when `--agent-socket` is omitted
+
+`secret get --server URL` cannot be combined with Agent-specific options.
+Partial or invalid application credentials fail without switching to local
+Agent permissions.
 
 Example:
 
@@ -407,9 +431,10 @@ secrethub logout
 
 ```bash
 #!/bin/bash
+set -euo pipefail
 
 # Get database password for automation
-DB_PASSWORD=$(secrethub secret get prod.db.password --format json | jq -r '.value')
+DB_PASSWORD=$(secrethub secret get prod.db.password --format json | jq -er '.value')
 
 # Use in connection string
 psql "postgresql://user:${DB_PASSWORD}@localhost/mydb"
@@ -418,10 +443,11 @@ psql "postgresql://user:${DB_PASSWORD}@localhost/mydb"
 ### Pipeline Integration
 
 ```bash
-# In CI/CD pipeline
-export SECRETHUB_TOKEN="${CI_SECRETHUB_TOKEN}"
-API_KEY=$(secrethub secret get prod.api.key --quiet --format json | jq -r '.value')
-echo "::set-output name=api_key::${API_KEY}"
+# With an enrolled and authorized local Agent accessible to the runner
+set -euo pipefail
+API_KEY=$(secrethub secret get prod.api.key --format json | jq -er '.value')
+export API_KEY
+# Run the pipeline step that consumes API_KEY.
 ```
 
 ## Development

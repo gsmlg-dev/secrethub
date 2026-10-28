@@ -50,6 +50,7 @@ Welcome to the SecretHub documentation. This guide provides comprehensive inform
 - [Security Verification Checklist](./testing/security-verification-checklist.md) - Pre-launch security checks
 
 ### User Guides
+- [Local Agent Secrets](./user-guides/local-agent-secrets.md) - Local reads, default socket, application startup and updates
 - [Application Policies](./user-guides/app-policies.md) - Policy-based access control for applications
 - [Dynamic Secrets](./user-guides/dynamic-secrets.md) - On-demand credential generation
 - [Templates](./guides/templates.md) - Secret injection into configuration files

@@ -2,13 +2,21 @@
 
 Date: 2026-10-20. Status: accepted for implementation by the supplied access audit plan.
 
+Amendment, 2026-10-28: the owner approved credential-free local socket reads
+sharing Agent policies. This deliberately extends the original certificate-only
+UDS assumption below. Local requests retain authenticated Agent association and
+null application identity (`unverified` / `none` in the existing event schema);
+they are not counted as verified application accesses. See the
+[local-read design](../superpowers/specs/2026-10-27-local-agent-secret-reads-design.md).
+
 ## Boundary and evidence
 
 This decision implements the static-secret read slice in `secrethub-access-audit-plan.md`, reviewed against `ebd3cab87ad6ba20a5bf61e3e6b62fe98c1a4263`. It preserves certificate identity, policy checks, Core validation of cached revisions, and the existing Caddy management boundary. It does not authorize publication, deployment, database migration on an existing service, credential changes, or changes to unrelated engines.
 
 | Enabled entry point | Identity and cache evidence | Instrumentation owner |
 | --- | --- | --- |
-| UDS `get_secret` | Connection-bound application certificate proof; every cached revision reauthorized by Core | Agent admission/attempt/release/send; Core typed authorization |
+| Local UDS `get_secret` | Socket filesystem permission and mTLS-derived Agent; Agent policies and every cached revision reauthorized by Core | Agent admission/attempt/release/send; Core Agent-scoped typed authorization |
+| Explicit application UDS `get_secret` | Connection-bound application certificate proof; every cached revision reauthorized by Core | Agent admission/attempt/release/send; Core typed authorization |
 | Trusted runtime `secret:read` with app claims | mTLS Agent plus independently resolved application certificate association | Runtime principal resolution and RuntimeAuthorization |
 | Trusted runtime legacy `secret:read` | mTLS Agent only; available only below floor 2 outside single_operator | AgentRuntimeChannel legacy read |
 | Token HTTP `/v1/secret/data/*path`, latest and historical | Validated Agent/AppRole token and policies; no application identity | SecretApiController read boundary |

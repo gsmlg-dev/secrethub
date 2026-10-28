@@ -1,5 +1,24 @@
 # Static runtime authorization and cutover
 
+## Agent-scoped local reads
+
+The negotiated `local_socket_read_v1` capability enables `secret:read_local`
+from the Agent's private Unix socket without application credentials. Core
+derives the Agent and certificate from trusted socket assigns and rejects
+caller-supplied identity. Under global epoch and Agent subject/entity locks,
+it revalidates the current Agent/certificate and evaluates the canonical Agent
+policy subject. Typed authorization state, durable Vault readiness, exact
+cached revisions, managed-certificate delivery and checked audits are required.
+
+Local reads share Agent permissions. They carry no application ID and use the
+existing audit representation `identity_status=unverified`, `attribution=none`;
+this describes absent application attribution, while Agent identity is bound
+to mTLS. They remain associated with that Agent without adding verified
+application access counts. Legacy and application-authentication floor checks
+remain in force on their respective paths.
+
+## Application-certificate reads
+
 Application reads derive Agent identity from the authenticated Core-Agent socket,
 and derive application identity from the canonical certificate association.
 Claims never select an Agent. A durable `typed_runtime_authorization` marker is

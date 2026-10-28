@@ -132,6 +132,12 @@ responsiveness, not connection to Core or consumer convergence.
 
 ## Current limitations
 
+Local Agent static reads use the owner-only socket without application
+credentials, sharing the Agent's policies through negotiated `secret:read_local`.
+See [local Agent secrets](../user-guides/local-agent-secrets.md). This source
+change does not add SDK packages, Agent secret writes or application subscriptions;
+the historical artifact report below does not qualify the new local-read path.
+
 Agent proof authentication, fresh Core authorization and revision-scoped caching
 are implemented. The [combined candidate report](prelaunch/candidate11/acceptance-report.json)
 records scoped source regressions and actual final-artifact enrollment, static

@@ -562,4 +562,5 @@ MIT License
 - **Repository:** https://github.com/gsmlg-dev/secrethub
 - **Latest Release:** [v1.0.0-rc9](https://github.com/gsmlg-dev/secrethub/releases/tag/v1.0.0-rc9)
 - **Deployment Guide:** [docs/deploy.md](docs/deploy.md)
+- **Read Local Agent Secrets:** [docs/user-guides/local-agent-secrets.md](docs/user-guides/local-agent-secrets.md)
 - **Docker Images:** `ghcr.io/gsmlg-dev/secrethub/core` | `ghcr.io/gsmlg-dev/secrethub/core-standalone` | `ghcr.io/gsmlg-dev/secrethub/agent`

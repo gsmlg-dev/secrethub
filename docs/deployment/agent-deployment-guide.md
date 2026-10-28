@@ -209,8 +209,19 @@ readable supported host key without world access.
 Create state and bundle directories and the socket's parent before startup;
 preflight checks writeability and does not create missing directories. Use
 private directories, normally mode `0700`. The socket is mode `0600`, so
-consumers need the Agent UID or root access in addition to application
-certificate/proof authorization. Group membership alone does not grant access.
+consumers need the Agent UID or root access. Local readers share the Agent's
+Core-authorized permissions without application certificates, private keys or
+login tokens. Group membership alone does not grant socket access.
+
+The CLI defaults to `/var/run/secrethub/agent.sock`. For this guide's custom
+socket, select it explicitly or export `SECRET_HUB_AGENT_SOCKET_PATH`:
+
+```sh
+secrethub secret get prod.db.password --agent-socket /run/secrethub-agent/agent.sock
+```
+
+See [local Agent secrets](../user-guides/local-agent-secrets.md) for default
+reads, application startup and the local client protocol.
 
 Configuration loads when the release process starts. Restart after editing;
 there is no hot reload. Preserve state and bundle directories across restarts
@@ -384,4 +395,6 @@ not prove Core connectivity or authorization to read a secret.
   `connect-info.json`, its network access, certificate validity, and the
   Core-issued CA chain. Enrollment CA overrides do not change this chain.
 - **Local application cannot use the socket:** check the effective path,
-  directory/socket permissions, application certificate/proof, and Core policies.
+  directory/socket permissions, negotiated local-read capability and Agent
+  policies in Core. When explicitly using application credentials, also check
+  the certificate/proof and application policies.

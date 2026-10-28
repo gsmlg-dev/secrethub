@@ -1,8 +1,29 @@
-# Application UDS authentication and static reads
+# Local Agent reads and application UDS authentication
 
-This contract implements Tasks 5–9 of the [application authorization plan](../superpowers/plans/2026-07-16-app-pki-uds-authorization.md). Core-to-Agent transport uses mTLS. Applications connect to the Agent's owner-only Unix socket and prove possession of their certificate's private key using a signed challenge.
+Core-to-Agent transport uses mTLS. Local callers connect to the Agent's
+owner-only Unix socket and share the Agent's Core-authorized policies. They
+need no application certificate, private key or CLI login:
 
-## Authentication
+```sh
+secrethub secret get prod.db.password --format json
+```
+
+The optional `--agent-socket` overrides `SECRET_HUB_AGENT_SOCKET_PATH`, then the
+default `/var/run/secrethub/agent.sock`. Socket mode `0600` restricts connections
+to the Agent UID and root. See the [local application guide](../user-guides/local-agent-secrets.md).
+
+Local requests use direct newline JSON `get_secret`; the Agent forwards them
+through the separately negotiated `local_socket_read_v1` / `secret:read_local`
+runtime contract. Core derives the Agent from mTLS, checks Agent policies,
+Vault readiness, revisions and audit persistence on every delivery. Local
+observations have an Agent ID and no verified application attribution. This
+path does not lower the persisted application-authentication floor or enable
+old bare `secret:read` requests.
+
+Existing callers that explicitly select application certificate/key credentials
+retain Tasks 5–9 of the [application authorization plan](../superpowers/plans/2026-07-16-app-pki-uds-authorization.md), described below.
+
+## Explicit application authentication
 
 The socket is mode `0600`, accepts newline JSON frames up to 64 KiB, and allows one outstanding challenge per connection. Trust starts unavailable until the persisted Core CA chain is loaded or enrollment commits it. Certificates require canonical application UUID CN, organization `SecretHub Applications`, exact URI SAN `urn:secrethub:app:<uuid>`, and explicit `clientAuth`. Chain validity and certificate expiry are checked before a challenge is issued.
 
@@ -18,7 +39,7 @@ lp("secrethub-uds-auth") || lp(<<2>>) || lp(signature_algorithm)
 
 `lp` prefixes bytes with their unsigned big-endian 32-bit length. Algorithms are `rsa-pss-sha256` (SHA256, MGF1 SHA256, salt length 32) and `ecdsa-sha256` (DER signature). `authenticate_proof` echoes version, connection ID, challenge ID, algorithm, and padded Base64 signature. Proof failure, expiry, replay, or reauthentication closes the connection. Three failed certificate attempts also close it. Secret requests require successful proof.
 
-The CLI requires both files:
+To explicitly use application authentication, the CLI requires both files:
 
 ```sh
 secrethub secret get prod.db.password \
@@ -26,7 +47,11 @@ secrethub secret get prod.db.password \
   --agent-cert ./app.pem --agent-key ./app-key.pem
 ```
 
-## Core authorization and cache
+An authentication exchange fixes that connection to application authentication;
+pending/failed proof and partial/invalid CLI credentials cannot fall back to
+shared local permissions.
+
+## Application Core authorization and cache
 
 Every static read sends `path`, proof-derived `app_id`, `certificate_fingerprint`, `local_auth_version`, and optional `known_revision` over `agent:runtime`. Core derives the Agent from its trusted socket certificate, resolves the current app/certificate association, and checks separate Agent and application policy gates. Multiple applications can share an Agent.
 
