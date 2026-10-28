@@ -587,6 +587,18 @@ jobs:
 
           ## Changes
 
+          - Local CLI secret reads now share the Agent's permissions without
+            application certificates, private keys, or CLI login. Run
+            \`secrethub secret get PATH --format json\`; the optional
+            \`--agent-socket\` overrides \`SECRET_HUB_AGENT_SOCKET_PATH\`, then
+            \`/var/run/secrethub/agent.sock\`. The socket remains owner-only.
+            Core-Agent mTLS, Agent policies, current cache authorization, and
+            durable audit checks remain required. Explicit application
+            certificate/key pairs retain their existing authentication path.
+            See the [local Agent guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/user-guides/local-agent-secrets.md).
+          - Use an explicit \`--server URL\` for a token-authenticated Core HTTP
+            secret read. It cannot be combined with Agent-specific options;
+            local failures never switch transports automatically.
           - Static-secret access now records signed Core decisions and durable
             Agent observations. The protected \`/admin/audit\` page shows persisted
             application request totals, timelines, provenance, and reporting health.
@@ -653,6 +665,12 @@ jobs:
           remains disabled by default and has no automatic deletion scheduler.
           Older Agents provide partial evidence; review reporting health before
           interpreting an empty result as inactivity.
+
+          Credential-free local reads require both Core and Agent to support
+          \`local_socket_read_v1\`, an Agent read policy, and the existing verified
+          \`typed_runtime_authorization\` gate. This release does not lower the
+          application authentication floor. Follow the local Agent guide to
+          verify the preflight gate before using the new read path.
 
           This release defaults to the restricted single-operator profile. Read the
           [runtime contract](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/security/runtime-contract.md)
