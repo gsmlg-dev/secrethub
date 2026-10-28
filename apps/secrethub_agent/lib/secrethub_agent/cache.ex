@@ -1,5 +1,5 @@
 defmodule SecretHub.Agent.Cache do
-  @moduledoc "Application-scoped static cache. Every UDS release requires fresh Core authorization of its exact revision."
+  @moduledoc "Principal-scoped static cache. Every UDS release requires fresh Core authorization of its exact revision."
 
   use GenServer
   require Logger
@@ -12,7 +12,8 @@ defmodule SecretHub.Agent.Cache do
   @cache_hits_counter :cache_hits_total
   @cache_misses_counter :cache_misses_total
 
-  @type key :: String.t() | {String.t(), String.t(), String.t()}
+  @type key ::
+          String.t() | {String.t(), String.t(), String.t()} | {:local, String.t(), String.t()}
 
   defmodule CacheEntry do
     @moduledoc false

@@ -67,7 +67,13 @@ defmodule SecretHub.Core.UpgradeGates do
       normalized =
         capabilities
         |> Enum.filter(
-          &(&1 in ["uds_auth_v2", "ssh_lookup_v1", "ssh_signing_v1", "access_audit_v1"])
+          &(&1 in [
+              "uds_auth_v2",
+              "ssh_lookup_v1",
+              "ssh_signing_v1",
+              "access_audit_v1",
+              "local_socket_read_v1"
+            ])
         )
         |> Enum.uniq()
         |> Enum.sort()

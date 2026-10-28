@@ -17,6 +17,38 @@ defmodule SecretHub.Core.RuntimePrincipal do
     :local_auth_version
   ]
 
+  @doc "Resolves only the Agent identity supplied by the trusted runtime socket."
+  def resolve_agent_runtime_principal(identity, correlation \\ %{})
+
+  def resolve_agent_runtime_principal(identity, correlation) when is_map(identity) do
+    result =
+      with agent_public_id when is_binary(agent_public_id) <- identity[:agent_id],
+           certificate_id when is_binary(certificate_id) <- identity[:certificate_id],
+           :ok <- Agents.authorize_runtime(agent_public_id, certificate_id),
+           %Agent{} = agent <- Repo.get_by(Agent, agent_id: agent_public_id),
+           %Certificate{} = certificate <- Repo.get(Certificate, certificate_id),
+           true <- certificate.entity_type == "agent",
+           true <- live?(certificate.valid_from, certificate.valid_until) do
+        {:ok,
+         %__MODULE__{
+           agent_id: agent.id,
+           agent_public_id: agent.agent_id,
+           agent_certificate_id: certificate.id
+         }}
+      else
+        {:error, :certificate_revoked} -> {:error, :revoked}
+        {:error, :certificate_expired} -> {:error, :expired}
+        _ -> {:error, :invalid_agent}
+      end
+
+    case result do
+      {:ok, _} -> result
+      {:error, reason} -> record_denial(identity, nil, reason, correlation)
+    end
+  end
+
+  def resolve_agent_runtime_principal(_, _), do: {:error, :invalid_principal}
+
   def resolve_runtime_principal(identity, app_claim, fingerprint, correlation \\ %{})
 
   def resolve_runtime_principal(identity, app_claim, fingerprint, correlation)

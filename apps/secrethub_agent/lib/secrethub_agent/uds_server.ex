@@ -1,5 +1,5 @@
 defmodule SecretHub.Agent.UDSServer do
-  @moduledoc "Owner-only newline UDS with connection-bound app private-key proof and Core-authorized reads."
+  @moduledoc "Owner-only newline UDS with Agent-scoped local reads or explicit application private-key proof."
   use GenServer
   alias SecretHub.Agent.AccessAudit.Journal
   alias SecretHub.Agent.{Cache, CertVerifier, Connection, IdentityStore, UDSAuth}
@@ -11,8 +11,8 @@ defmodule SecretHub.Agent.UDSServer do
   def get_stats, do: GenServer.call(__MODULE__, :get_stats)
   def shutdown, do: GenServer.call(__MODULE__, :shutdown)
 
-  def configure_runtime(agent_id, floor),
-    do: GenServer.call(__MODULE__, {:configure_runtime, agent_id, floor})
+  def configure_runtime(agent_id, floor, capabilities \\ []),
+    do: GenServer.call(__MODULE__, {:configure_runtime, agent_id, floor, capabilities})
 
   @impl true
   def init(opts) do
@@ -31,6 +31,7 @@ defmodule SecretHub.Agent.UDSServer do
            ]),
          :ok <- File.chmod(path, 0o600) do
       {agent_id, floor} = persisted_runtime(Keyword.get(opts, :state_dir))
+      GenServer.cast(Connection, {:sync_uds_runtime, self()})
       send(self(), :accept)
 
       {:ok,
@@ -39,6 +40,7 @@ defmodule SecretHub.Agent.UDSServer do
          listener: listener,
          agent_id: agent_id,
          minimum_uds_auth_version: floor,
+         local_socket_read_capable: false,
          connections: %{},
          max_connections: Keyword.get(opts, :max_connections, 100),
          connection_timeout: Keyword.get(opts, :connection_timeout, 30_000),
@@ -61,22 +63,37 @@ defmodule SecretHub.Agent.UDSServer do
   def handle_call(:get_stats, _from, state), do: {:reply, {:ok, state.stats}, state}
   def handle_call(:shutdown, _from, state), do: {:stop, :normal, :ok, state}
 
-  def handle_call({:configure_runtime, agent_id, floor}, _from, state)
-      when is_binary(agent_id) and floor in [1, 2] do
+  def handle_call({:configure_runtime, agent_id, floor, capabilities}, _from, state)
+      when is_binary(agent_id) and floor in [1, 2] and is_list(capabilities) do
+    {:reply, :ok, apply_runtime(state, agent_id, floor, capabilities)}
+  end
+
+  defp apply_runtime(state, agent_id, floor, capabilities) do
     floor = max(floor, state.minimum_uds_auth_version)
-    state = %{state | agent_id: agent_id, minimum_uds_auth_version: floor}
+    local? = "local_socket_read_v1" in capabilities
 
-    state =
-      Enum.reduce(state.connections, state, fn {socket, connection}, acc ->
-        if connection.auth_version < floor and connection.auth_state == :authenticated,
-          do: close_connection(acc, socket),
-          else: acc
-      end)
+    state = %{
+      state
+      | agent_id: agent_id,
+        minimum_uds_auth_version: floor,
+        local_socket_read_capable: local?
+    }
 
-    {:reply, :ok, state}
+    Enum.reduce(state.connections, state, fn {socket, connection}, acc ->
+      if (connection.auth_version < floor and connection.auth_state == :authenticated) or
+           (connection.auth_state == :local and
+              (not local? or connection.local_agent_id != agent_id)),
+         do: close_connection(acc, socket),
+         else: acc
+    end)
   end
 
   @impl true
+  def handle_info({:configure_runtime, agent_id, floor, capabilities}, state)
+      when is_binary(agent_id) and floor in [1, 2] and is_list(capabilities) do
+    {:noreply, apply_runtime(state, agent_id, floor, capabilities)}
+  end
+
   def handle_info(:accept, state) do
     next =
       case :gen_tcp.accept(state.listener, 50) do
@@ -95,6 +112,7 @@ defmodule SecretHub.Agent.UDSServer do
             auth_state: :unauthenticated,
             auth_version: 0,
             principal: nil,
+            local_agent_id: nil,
             challenge: nil,
             attempts: 0,
             timer: timer
@@ -135,7 +153,7 @@ defmodule SecretHub.Agent.UDSServer do
 
   def handle_info({:authentication_timeout, socket}, state) do
     case state.connections[socket] do
-      %{auth_state: :authenticated} ->
+      %{auth_state: auth_state} when auth_state in [:authenticated, :local] ->
         {:noreply, state}
 
       nil ->
@@ -201,9 +219,12 @@ defmodule SecretHub.Agent.UDSServer do
          id,
          "authenticate",
          params,
-         %{auth_state: :unauthenticated} = connection,
+         %{auth_state: auth_state} = connection,
          state
-       ) do
+       )
+       when auth_state in [:unauthenticated, :application] do
+    connection = %{connection | auth_state: :application}
+    state = put_in(state, [:connections, socket], connection)
     version = params["auth_version"]
 
     cond do
@@ -274,6 +295,26 @@ defmodule SecretHub.Agent.UDSServer do
          state
        ) do
     audited_read(socket, id, params, connection, state)
+  end
+
+  defp dispatch(socket, id, "get_secret", params, %{auth_state: auth_state} = connection, state)
+       when auth_state in [:unauthenticated, :local] do
+    cond do
+      is_nil(state.agent_id) ->
+        audited_reject(socket, id, params, state, "ENROLLMENT_IN_PROGRESS", "invalid_identity")
+
+      not state.local_socket_read_capable ->
+        audited_reject(socket, id, params, state, "INCOMPATIBLE_VERSION", "incompatible_version")
+
+      Enum.any?(Map.keys(params), &(&1 not in ["path", "client_correlation_id"])) ->
+        audited_reject(socket, id, params, state, "FORBIDDEN", "invalid_request")
+
+      true ->
+        connection = %{connection | auth_state: :local, local_agent_id: state.agent_id}
+        Process.cancel_timer(connection.timer)
+        state = put_in(state, [:connections, socket], connection)
+        audited_read(socket, id, params, connection, state)
+    end
   end
 
   defp dispatch(socket, id, "get_secret", params, _connection, state) do
@@ -492,16 +533,19 @@ defmodule SecretHub.Agent.UDSServer do
     {outcome, audit_reason(code)}
   end
 
+  defp read_secret(path, %{auth_state: :local} = connection, timeout, audit)
+       when is_binary(path) and path != "" do
+    key = {:local, connection.local_agent_id, path}
+    correlation = %{audit_request_id: audit.request_id, audit_attempt_id: audit.attempt_id}
+
+    authorized_read(key, fn revision ->
+      Connection.get_static_secret_local(Connection, path, revision, correlation, timeout)
+    end)
+  end
+
   defp read_secret(path, connection, timeout, audit) when is_binary(path) and path != "" do
     principal = connection.principal
     key = {principal.app_id, principal.canonical_fingerprint, path}
-    cached = Cache.get_entry(key)
-
-    revision =
-      case cached do
-        {:ok, entry} -> entry.revision
-        _ -> nil
-      end
 
     claims = %{
       app_id: principal.app_id,
@@ -511,7 +555,23 @@ defmodule SecretHub.Agent.UDSServer do
       audit_attempt_id: audit.attempt_id
     }
 
-    result = Connection.get_static_secret_for_app(Connection, path, claims, revision, timeout)
+    authorized_read(key, fn revision ->
+      Connection.get_static_secret_for_app(Connection, path, claims, revision, timeout)
+    end)
+  end
+
+  defp read_secret(_, _, _, _), do: {:error, "FORBIDDEN", nil, {"denied", "invalid_path"}}
+
+  defp authorized_read(key, request) do
+    cached = Cache.get_entry(key)
+
+    revision =
+      case cached do
+        {:ok, entry} -> entry.revision
+        _ -> nil
+      end
+
+    result = request.(revision)
 
     cache_status =
       case cached do
@@ -526,8 +586,6 @@ defmodule SecretHub.Agent.UDSServer do
   catch
     :exit, _ -> {:error, "UNAVAILABLE", nil, {"error", "core_unavailable"}}
   end
-
-  defp read_secret(_, _, _, _), do: {:error, "FORBIDDEN", nil, {"denied", "invalid_path"}}
 
   defp core_event_id({status, %{"audit_event_id" => id}}) when status in [:ok, :error] do
     case Ecto.UUID.cast(id) do

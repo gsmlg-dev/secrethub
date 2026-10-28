@@ -83,6 +83,7 @@ defmodule SecretHub.Agent.Connection do
 
   @doc false
   def runtime_event(:get_static_secret), do: "secret:read"
+  def runtime_event(:get_static_secret_local), do: "secret:read_local"
   def runtime_event(:get_dynamic_secret), do: "secret:read"
   def runtime_event(:renew_lease), do: "secret:lease_renew"
   def runtime_event(:heartbeat), do: "agent:heartbeat"
@@ -135,6 +136,11 @@ defmodule SecretHub.Agent.Connection do
           {:ok, map()} | {:error, term()}
   def get_static_secret(server \\ __MODULE__, path, timeout \\ 5000) do
     GenServer.call(server, {:get_static_secret, path}, timeout)
+  end
+
+  @doc "Requests a static secret using only the authenticated Agent's permissions."
+  def get_static_secret_local(server, path, known_revision, correlation, timeout) do
+    GenServer.call(server, {:get_static_secret_local, path, known_revision, correlation}, timeout)
   end
 
   @doc """
@@ -238,6 +244,7 @@ defmodule SecretHub.Agent.Connection do
       minimum_uds_auth_version: 1,
       ssh_capabilities: [],
       access_audit_capable: false,
+      local_socket_read_capable: false,
       core_url: core_url,
       cert_pem: cert_pem,
       private_key: private_key,
@@ -351,6 +358,25 @@ defmodule SecretHub.Agent.Connection do
   end
 
   @impl true
+  def handle_call({:get_static_secret_local, path, revision, correlation}, from, state) do
+    cond do
+      state.connection_status != :connected ->
+        {:reply, {:error, :not_connected}, state}
+
+      not Map.get(state, :local_socket_read_capable, false) ->
+        {:reply, {:error, %{"reason" => "INCOMPATIBLE_VERSION"}}, state}
+
+      true ->
+        send_request(state, from, runtime_event(:get_static_secret_local), %{
+          "path" => path,
+          "known_revision" => revision,
+          "audit_request_id" => Map.get(correlation, :audit_request_id),
+          "audit_attempt_id" => Map.get(correlation, :audit_attempt_id)
+        })
+    end
+  end
+
+  @impl true
   def handle_call({:get_static_secret_for_app, path, claims, revision}, from, state) do
     if state.connection_status == :connected do
       payload = %{
@@ -430,6 +456,23 @@ defmodule SecretHub.Agent.Connection do
   @impl true
   def handle_call(:status, _from, state) do
     {:reply, state.connection_status, state}
+  end
+
+  @impl true
+  def handle_cast({:sync_uds_runtime, server}, state) when is_pid(server) do
+    if state.connection_status == :connected do
+      capabilities =
+        if Map.get(state, :local_socket_read_capable, false),
+          do: ["local_socket_read_v1"],
+          else: []
+
+      send(
+        server,
+        {:configure_runtime, state.agent_id, state.minimum_uds_auth_version, capabilities}
+      )
+    end
+
+    {:noreply, state}
   end
 
   # Application-level heartbeat interval; also acts as a liveness watchdog
@@ -687,6 +730,7 @@ defmodule SecretHub.Agent.Connection do
         ssh_capabilities: [],
         access_audit_capable: false
     }
+    |> Map.put(:local_socket_read_capable, false)
   end
 
   defp connect_to_core(state) do
@@ -848,12 +892,24 @@ defmodule SecretHub.Agent.Connection do
 
     with true <- floor in [1, 2],
          {:ok, persisted} <- persist_auth_floor(state, floor) do
+      local? =
+        if Map.has_key?(payload, "runtime_capabilities") or
+             Map.has_key?(payload, :runtime_capabilities) do
+          "local_socket_read_v1" in negotiated_ssh_capabilities(["local_socket_read_v1"], payload)
+        else
+          Map.get(state, :local_socket_read_capable, false)
+        end
+
+      capabilities = if local?, do: ["local_socket_read_v1"], else: []
       if Process.whereis(Cache), do: Cache.clear()
 
       if Process.whereis(UDSServer),
-        do: UDSServer.configure_runtime(state.agent_id, persisted)
+        do: UDSServer.configure_runtime(state.agent_id, persisted, capabilities)
 
-      {:ok, Map.put(state, :minimum_uds_auth_version, persisted)}
+      {:ok,
+       state
+       |> Map.put(:minimum_uds_auth_version, persisted)
+       |> Map.put(:local_socket_read_capable, local?)}
     else
       _ -> {:error, :trusted_state_unavailable}
     end
@@ -872,7 +928,11 @@ defmodule SecretHub.Agent.Connection do
 
   defp join_payload(state) do
     %{
-      "runtime_capabilities" => ["uds_auth_v2", "access_audit_v1" | ssh_capabilities()],
+      "runtime_capabilities" => [
+        "uds_auth_v2",
+        "access_audit_v1",
+        "local_socket_read_v1" | ssh_capabilities()
+      ],
       "agent_id" => state.agent_id,
       "name" => state.agent_id,
       "hostname" => local_hostname(),

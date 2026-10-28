@@ -42,7 +42,13 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
         payload
         |> Map.get("runtime_capabilities", [])
         |> Enum.filter(
-          &(&1 in ["uds_auth_v2", "ssh_lookup_v1", "ssh_signing_v1", "access_audit_v1"])
+          &(&1 in [
+              "uds_auth_v2",
+              "ssh_lookup_v1",
+              "ssh_signing_v1",
+              "access_audit_v1",
+              "local_socket_read_v1"
+            ])
         )
         |> Enum.uniq()
         |> Enum.sort()
@@ -111,6 +117,28 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
       # operational failure and the exception type to the server log.
       Logger.error("Access audit ingestion failed (#{inspect(error.__struct__)})")
       {:reply, {:error, %{reason: "audit_unavailable"}}, socket}
+  end
+
+  def handle_in("secret:read_local", payload, socket) do
+    with_runtime_authorized(socket, fn ->
+      allowed = ~w(path known_revision audit_request_id audit_attempt_id)
+
+      cond do
+        "local_socket_read_v1" not in (socket.assigns[:runtime_capabilities] || []) ->
+          rejected_read_reply(socket, nil, audit_correlation(payload), :incompatible_version)
+
+        not is_map(payload) or Enum.any?(Map.keys(payload), &(&1 not in allowed)) ->
+          rejected_read_reply(socket, nil, audit_correlation(payload), :invalid_request)
+
+        not is_binary(payload["path"]) or payload["path"] == "" ->
+          rejected_read_reply(socket, nil, audit_correlation(payload), :invalid_request)
+
+        true ->
+          local_read_reply(socket, payload)
+      end
+    end)
+  rescue
+    _ -> {:reply, {:error, %{reason: "UNAVAILABLE"}}, socket}
   end
 
   def handle_in("secret:read", %{"path" => secret_path} = payload, socket)
@@ -316,6 +344,25 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
     |> case do
       {:ok, :ok} -> :ok
       {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp local_read_reply(socket, payload) do
+    identity = %{agent_id: socket.assigns.agent_id, certificate_id: socket.assigns.certificate_id}
+    correlation = audit_correlation(payload)
+
+    with {:ok, principal} <-
+           RuntimePrincipal.resolve_agent_runtime_principal(identity, correlation),
+         {:ok, result} <-
+           RuntimeAuthorization.authorize_agent_static_read(
+             principal,
+             payload["path"],
+             payload["known_revision"],
+             correlation
+           ) do
+      {:reply, {:ok, result}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, application_failure(reason)}, socket}
     end
   end
 

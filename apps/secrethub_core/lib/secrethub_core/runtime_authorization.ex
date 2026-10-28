@@ -3,6 +3,7 @@ defmodule SecretHub.Core.RuntimeAuthorization do
   import Ecto.Query
 
   alias SecretHub.Core.PKI.ManagedCertificates
+  alias SecretHub.Core.Vault.SealState
 
   alias SecretHub.Core.{
     AccessAudit,
@@ -23,7 +24,8 @@ defmodule SecretHub.Core.RuntimeAuthorization do
     Certificate,
     Policy,
     Secret,
-    SecretPathRevision
+    SecretPathRevision,
+    UpgradeGate
   }
 
   alias SecretHub.Shared.Schemas.Application, as: App
@@ -78,42 +80,8 @@ defmodule SecretHub.Core.RuntimeAuthorization do
                    current.certificate_id == principal.certificate_id,
                :ok <- authorize_subject("agent:" <> current.agent_id, normalized),
                :ok <- authorize_subject("application:" <> current.application_id, normalized),
-               {:ok, _key} <- SecretHub.Core.Vault.SealState.get_master_key(),
-               %SecretPathRevision{} = revision <-
-                 Repo.one(
-                   from(r in SecretPathRevision,
-                     where: r.secret_path == ^normalized,
-                     lock: "FOR SHARE"
-                   )
-                 ),
-               %Secret{secret_type: :static} = secret <-
-                 Repo.one(
-                   from(s in Secret, where: s.secret_path == ^normalized, lock: "FOR SHARE")
-                 ),
-               :ok <- ManagedCertificates.check_delivery(secret.id) do
-            if revision.revision == known_revision do
-              {:ok,
-               %{
-                 not_modified: true,
-                 revision: revision.revision,
-                 version: secret.version,
-                 value_format: secret.value_format
-               }}
-            else
-              case Secrets.read_decrypted(normalized) do
-                {:ok, value, _} ->
-                  {:ok,
-                   %{
-                     value: value,
-                     revision: revision.revision,
-                     version: secret.version,
-                     value_format: secret.value_format
-                   }}
-
-                {:error, reason} ->
-                  {:error, normalize_read_error(reason)}
-              end
-            end
+               {:ok, result} <- read_static_secret(normalized, known_revision) do
+            {:ok, result}
           else
             nil -> {:error, :not_found}
             false -> {:error, :invalid_principal}
@@ -147,6 +115,118 @@ defmodule SecretHub.Core.RuntimeAuthorization do
   end
 
   def authorize_static_read(_, _, _, _), do: {:error, :invalid_principal}
+
+  @doc "Authorizes local socket reads against the current authenticated Agent alone."
+  def authorize_agent_static_read(principal, path, known_revision \\ nil, correlation \\ %{})
+
+  def authorize_agent_static_read(
+        %RuntimePrincipal{
+          application_id: nil,
+          certificate_id: nil,
+          agent_id: agent_id,
+          agent_certificate_id: certificate_id
+        } = principal,
+        path,
+        known_revision,
+        correlation
+      )
+      when is_binary(agent_id) and is_binary(certificate_id) do
+    context = audit_context(correlation)
+
+    with {:ok, normalized} <- PolicyEvaluator.normalize_runtime_path(path),
+         true <- is_nil(known_revision) or (is_integer(known_revision) and known_revision > 0) do
+      Repo.transaction(fn ->
+        AuthorizationVersions.lock_agent_for_share(Repo, principal.agent_id)
+        Repo.one(from(a in Agent, where: a.id == ^principal.agent_id, lock: "FOR SHARE"))
+
+        Repo.one(
+          from(c in Certificate,
+            where: c.id == ^principal.agent_certificate_id,
+            lock: "FOR SHARE"
+          )
+        )
+
+        outcome = locked_agent_read_outcome(principal, normalized, known_revision, context)
+
+        event_id = audit!(principal, normalized, outcome, context)
+        audited_result(outcome, event_id)
+      end)
+      |> case do
+        {:ok, result} -> result
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      false -> audit_rejected_read(principal, :invalid_revision, context)
+      {:error, reason} -> audit_rejected_read(principal, reason, context)
+    end
+  rescue
+    _ in [DBConnection.ConnectionError, Postgrex.Error] -> {:error, :audit_unavailable}
+  catch
+    :exit, _ -> {:error, :audit_unavailable}
+  end
+
+  def authorize_agent_static_read(_, _, _, _), do: {:error, :invalid_principal}
+
+  defp audited_result({:ok, result}, event_id),
+    do: {:ok, Map.put(result, :audit_event_id, event_id)}
+
+  defp audited_result({:error, _} = outcome, _event_id), do: outcome
+
+  defp locked_agent_read_outcome(principal, path, known_revision, context) do
+    identity = %{
+      agent_id: principal.agent_public_id,
+      certificate_id: principal.agent_certificate_id
+    }
+
+    with %UpgradeGate{} <- Repo.get_by(UpgradeGate, name: "typed_runtime_authorization"),
+         {:ok, current} <-
+           RuntimePrincipal.resolve_agent_runtime_principal(
+             identity,
+             Map.take(context, [:request_id, :attempt_id])
+           ),
+         true <- current.agent_id == principal.agent_id,
+         :ok <- authorize_subject("agent:" <> current.agent_id, path),
+         {:ok, result} <- read_static_secret(path, known_revision) do
+      {:ok, result}
+    else
+      nil -> {:error, :authorization_unavailable}
+      false -> {:error, :invalid_principal}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp read_static_secret(path, known_revision) do
+    with {:ok, _key} <- SealState.get_master_key(),
+         %SecretPathRevision{} = revision <-
+           Repo.one(
+             from(r in SecretPathRevision, where: r.secret_path == ^path, lock: "FOR SHARE")
+           ),
+         %Secret{secret_type: :static} = secret <-
+           Repo.one(from(s in Secret, where: s.secret_path == ^path, lock: "FOR SHARE")),
+         :ok <- ManagedCertificates.check_delivery(secret.id) do
+      metadata = %{
+        revision: revision.revision,
+        version: secret.version,
+        value_format: secret.value_format
+      }
+
+      if revision.revision == known_revision do
+        {:ok, Map.put(metadata, :not_modified, true)}
+      else
+        decrypted_static_secret(path, metadata)
+      end
+    else
+      {:error, reason} -> {:error, reason}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp decrypted_static_secret(path, metadata) do
+    case Secrets.read_decrypted(path) do
+      {:ok, value, _} -> {:ok, Map.put(metadata, :value, value)}
+      {:error, reason} -> {:error, normalize_read_error(reason)}
+    end
+  end
 
   defp audit_rejected_read(principal, reason, context) do
     Repo.transaction(fn ->
@@ -255,10 +335,12 @@ defmodule SecretHub.Core.RuntimeAuthorization do
       )
     end
 
+    {actor_type, actor_id} = audit_actor(principal)
+
     attrs = %{
       event_type: "secret.accessed",
-      actor_type: "application",
-      actor_id: principal.application_id,
+      actor_type: actor_type,
+      actor_id: actor_id,
       agent_id: principal.agent_public_id,
       access_granted: granted,
       event_data: %{
@@ -273,6 +355,12 @@ defmodule SecretHub.Core.RuntimeAuthorization do
       _ -> Repo.rollback(:audit_unavailable)
     end
   end
+
+  defp audit_actor(%RuntimePrincipal{application_id: nil, agent_public_id: agent_id}),
+    do: {"agent", agent_id}
+
+  defp audit_actor(%RuntimePrincipal{application_id: application_id}),
+    do: {"application", application_id}
 
   defp identity_evidence(principal, true),
     do: %{

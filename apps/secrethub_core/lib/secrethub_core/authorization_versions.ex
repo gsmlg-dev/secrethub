@@ -27,6 +27,15 @@ defmodule SecretHub.Core.AuthorizationVersions do
       else: repo.rollback(:authorization_unavailable)
   end
 
+  def lock_agent_for_share(repo, agent_id) do
+    epoch = repo.one(from(e in AuthorizationEpoch, where: e.id == 1, lock: "FOR SHARE"))
+    agent = lock_subject(repo, "agent:" <> agent_id, "FOR SHARE")
+
+    if epoch && agent,
+      do: %{global: epoch.version, agent: agent.version},
+      else: repo.rollback(:authorization_unavailable)
+  end
+
   def bump_subjects(repo, subjects) do
     lock_global(repo)
 

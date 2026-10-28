@@ -108,6 +108,346 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
     }
   end
 
+  test "local Agent reads need no application grant and keep unverified Agent audit attribution",
+       ctx do
+    app_policy =
+      Repo.get_by!(SecretHub.Shared.Schemas.Policy, name: "runtime-application:" <> ctx.app.id)
+
+    assert {:ok, _} = Policies.delete_policy(app_policy.id)
+    assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+    assert principal.application_id == nil
+    assert principal.certificate_id == nil
+    correlation = %{request_id: Ecto.UUID.generate(), attempt_id: Ecto.UUID.generate()}
+
+    assert {:ok, %{value: %{"value" => "private-runtime-value"}, revision: revision, version: 1}} =
+             RuntimeAuthorization.authorize_agent_static_read(
+               principal,
+               ctx.path,
+               nil,
+               correlation
+             )
+
+    assert {:ok, %{not_modified: true, revision: ^revision}} =
+             RuntimeAuthorization.authorize_agent_static_read(
+               principal,
+               ctx.path,
+               revision,
+               correlation
+             )
+
+    assert {:ok, %{value: _, revision: ^revision}} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision + 1)
+
+    assert {:ok, events} =
+             AccessAudit.timeline("agent:" <> ctx.agent.agent_id, correlation.request_id)
+
+    assert Enum.count(events, &(&1.envelope["phase"] == "core_access")) == 2
+
+    assert Enum.all?(events, fn event ->
+             event.envelope["application_id"] == nil and
+               event.envelope["identity_status"] == "unverified" and
+               event.envelope["attribution"] == "none" and
+               event.envelope["agent_id"] == ctx.agent.agent_id
+           end)
+
+    assert Repo.exists?(
+             from(a in AuditLog,
+               where:
+                 a.actor_type == "agent" and a.actor_id == ^ctx.agent.agent_id and
+                   a.access_granted
+             )
+           )
+
+    refute inspect(events) =~ "private-runtime-value"
+  end
+
+  test "local reads retain the durable floor and work under single_operator", ctx do
+    previous = Application.get_env(:secrethub_core, :launch_profile)
+    Application.put_env(:secrethub_core, :launch_profile, :single_operator)
+    on_exit(fn -> Application.put_env(:secrethub_core, :launch_profile, previous) end)
+
+    Repo.update_all(SecretHub.Shared.Schemas.AuthorizationEpoch,
+      set: [minimum_uds_auth_version: 2]
+    )
+
+    assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+    assert {:ok, _} = RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+    assert UpgradeGates.minimum_uds_auth_version() == 2
+
+    assert {:error, :incompatible_version} =
+             RuntimeAuthorization.authorize_static_read(
+               %{ctx.principal | local_auth_version: 1},
+               ctx.path
+             )
+  end
+
+  @tag :cutover
+  test "local reads require the existing typed authorization gate", ctx do
+    assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+    assert {:error, :authorization_unavailable} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+  end
+
+  test "local cached reads recheck Agent policies, explicit deny and malformed applicable policies",
+       ctx do
+    assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+    assert {:ok, %{revision: revision}} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+
+    policy = Repo.get_by!(SecretHub.Shared.Schemas.Policy, name: "runtime-agent:" <> ctx.agent.id)
+    assert {:ok, _} = Policies.delete_policy(policy.id)
+
+    assert {:error, :permission_denied} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+
+    assert {:ok, _} =
+             Policies.create_policy(%{
+               name: "local-allow",
+               entity_bindings: ["agent:" <> ctx.agent.id],
+               policy_document: %{
+                 "version" => "1.0",
+                 "allowed_secrets" => ["**"],
+                 "allowed_operations" => ["read"]
+               }
+             })
+
+    assert {:ok, deny} =
+             Policies.create_policy(%{
+               name: "local-deny",
+               deny_policy: true,
+               entity_bindings: ["agent:" <> ctx.agent.id],
+               policy_document: %{
+                 "version" => "1.0",
+                 "allowed_secrets" => ["**"],
+                 "allowed_operations" => ["read"]
+               }
+             })
+
+    assert {:error, :permission_denied} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+
+    Repo.update!(
+      Ecto.Changeset.change(deny,
+        policy_document: Map.put(deny.policy_document, "conditions", %{"unknown" => true})
+      )
+    )
+
+    assert {:error, :permission_denied} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+  end
+
+  test "local cached reads revalidate current Agent and runtime certificate binding", ctx do
+    assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+    assert {:ok, %{revision: revision}} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+
+    certificate = Repo.get!(SecretHub.Shared.Schemas.Certificate, ctx.identity.certificate_id)
+    Repo.update!(Ecto.Changeset.change(certificate, revoked: true))
+
+    assert {:error, _} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+
+    Repo.update!(
+      Ecto.Changeset.change(Repo.get!(SecretHub.Shared.Schemas.Certificate, certificate.id),
+        revoked: false,
+        entity_id: "other-agent"
+      )
+    )
+
+    assert {:error, _} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+
+    Repo.update!(
+      Ecto.Changeset.change(Repo.get!(SecretHub.Shared.Schemas.Certificate, certificate.id),
+        entity_id: ctx.agent.agent_id
+      )
+    )
+
+    current = Repo.get!(SecretHub.Shared.Schemas.Certificate, certificate.id)
+
+    Repo.update!(
+      Ecto.Changeset.change(current,
+        valid_until: DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -60, :second)
+      )
+    )
+
+    assert {:error, :expired} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+    assert {:error, _} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+
+    Repo.update!(
+      Ecto.Changeset.change(
+        Repo.get!(SecretHub.Shared.Schemas.Certificate, certificate.id),
+        valid_until: current.valid_until
+      )
+    )
+
+    for status <- [:suspended, :revoked] do
+      Repo.update!(Ecto.Changeset.change(Repo.get!(Agent, ctx.agent.id), status: status))
+
+      assert {:error, _} =
+               RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+    end
+  end
+
+  test "local reads refuse missing authorization state without creating it", ctx do
+    assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+    subject = "agent:" <> ctx.agent.id
+
+    Repo.delete_all(
+      from(s in SecretHub.Shared.Schemas.AuthorizationSubjectVersion,
+        where: s.subject == ^subject
+      )
+    )
+
+    assert {:error, :authorization_unavailable} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+
+    refute Repo.get(SecretHub.Shared.Schemas.AuthorizationSubjectVersion, subject)
+  end
+
+  test "local cached reads fail closed on sealed Vault or audit storage failure", ctx do
+    assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+    assert {:ok, %{revision: revision}} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+
+    stop_supervised!(SealState)
+    start_supervised!({SealState, repo: VaultRepo})
+    await_state(:sealed)
+
+    assert {:error, :sealed} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+
+    Repo.query!("ALTER TABLE access_audit_events RENAME TO access_audit_events_unavailable", [])
+
+    for known_revision <- [nil, revision] do
+      assert {:error, :audit_unavailable} =
+               RuntimeAuthorization.authorize_agent_static_read(
+                 principal,
+                 ctx.path,
+                 known_revision
+               )
+    end
+  end
+
+  test "local fresh and exact cached reads require successful audit commit", ctx do
+    assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+    assert {:ok, %{revision: revision}} =
+             RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+
+    Repo.query!("ALTER TABLE access_audit_events RENAME TO access_audit_events_unavailable", [])
+
+    for known_revision <- [nil, revision] do
+      assert {:error, :audit_unavailable} =
+               RuntimeAuthorization.authorize_agent_static_read(
+                 principal,
+                 ctx.path,
+                 known_revision
+               )
+    end
+  end
+
+  for mutation <- [:agent, :policy, :certificate] do
+    @tag local_mutation: mutation
+    test "local #{mutation} writer committed first is observed by a waiting reader", ctx do
+      assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+      assert {:ok, %{revision: revision}} =
+               RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+
+      parent = self()
+
+      writer =
+        db_task(:writer, fn ->
+          AuthorizationVersions.lock_global()
+          send(parent, :local_writer_locked)
+
+          receive do
+            :commit_local_writer -> mutate_local(ctx)
+          after
+            5_000 -> flunk("local writer release missing")
+          end
+        end)
+
+      assert_receive {:backend, :writer, _}, 2_000
+      assert_receive :local_writer_locked, 2_000
+
+      reader =
+        db_task(:reader, fn ->
+          RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path, revision)
+        end)
+
+      assert_receive {:backend, :reader, reader_pid}, 2_000
+      await_lock(reader_pid)
+      send(writer.pid, :commit_local_writer)
+      assert {:ok, _} = Task.await(writer, 10_000)
+      assert {:ok, {:error, _}} = Task.await(reader, 10_000)
+    end
+
+    @tag local_mutation: mutation
+    test "local #{mutation} writer waits for an authorized read to commit", ctx do
+      assert {:ok, principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+      Repo.checkout(fn ->
+        Repo.query!("SELECT pg_advisory_lock(hashtextextended($1::text, 0))", [
+          "secrethub:audit-log-append:v1"
+        ])
+
+        try do
+          reader =
+            db_task(:reader, fn ->
+              RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+            end)
+
+          assert_receive {:backend, :reader, reader_pid}, 2_000
+          await_lock(reader_pid)
+          writer = db_task(:writer, fn -> mutate_local(ctx) end)
+          assert_receive {:backend, :writer, writer_pid}, 2_000
+          await_lock(writer_pid)
+
+          assert Repo.query!("SELECT $1 = ANY(pg_blocking_pids($2))", [reader_pid, writer_pid]).rows ==
+                   [[true]]
+
+          Repo.query!("SELECT pg_advisory_unlock(hashtextextended($1::text, 0))", [
+            "secrethub:audit-log-append:v1"
+          ])
+
+          assert {:ok, {:ok, %{value: %{"value" => "private-runtime-value"}}}} =
+                   Task.await(reader, 10_000)
+
+          assert {:ok, _} = Task.await(writer, 10_000)
+
+          assert {:error, _} =
+                   RuntimeAuthorization.authorize_agent_static_read(principal, ctx.path)
+        after
+          Repo.query!("SELECT pg_advisory_unlock_all()")
+        end
+      end)
+    end
+  end
+
+  defp mutate_local(%{local_mutation: :agent} = ctx), do: mutate(Map.put(ctx, :mutation, :agent))
+
+  defp mutate_local(%{local_mutation: :policy} = ctx) do
+    policy = Repo.get_by!(SecretHub.Shared.Schemas.Policy, name: "runtime-agent:" <> ctx.agent.id)
+    Policies.delete_policy(policy.id)
+  end
+
+  defp mutate_local(%{local_mutation: :certificate} = ctx) do
+    Repo.update!(
+      Ecto.Changeset.change(
+        Repo.get!(SecretHub.Shared.Schemas.Certificate, ctx.identity.certificate_id),
+        revoked: true
+      )
+    )
+  end
+
   test "Core derives the app and rejects wrong claims and runtime certificate identity", ctx do
     assert {:error, :invalid_application} =
              RuntimePrincipal.resolve_runtime_principal(
@@ -291,10 +631,18 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
     assert {:ok, %{not_modified: true}} =
              RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, revision)
 
+    assert {:ok, local_principal} = RuntimePrincipal.resolve_agent_runtime_principal(ctx.identity)
+
+    assert {:ok, %{not_modified: true}} =
+             RuntimeAuthorization.authorize_agent_static_read(local_principal, ctx.path, revision)
+
     assert {:ok, _} = Managed.request_revocation(version.id)
 
     assert {:error, :certificate_quarantined} =
              RuntimeAuthorization.authorize_static_read(ctx.principal, ctx.path, revision)
+
+    assert {:error, :certificate_quarantined} =
+             RuntimeAuthorization.authorize_agent_static_read(local_principal, ctx.path, revision)
   end
 
   def failing_exporter(_, _, _, _), do: raise("test exporter unavailable")

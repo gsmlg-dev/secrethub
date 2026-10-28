@@ -27,15 +27,26 @@ defmodule SecretHub.Agent.ConnectionProtocolTest do
       on_runtime_accepted: callback
     }
 
-    payload = %{"minimum_uds_auth_version" => 2}
+    payload = %{
+      "minimum_uds_auth_version" => 2,
+      "runtime_capabilities" => ["uds_auth_v2", "local_socket_read_v1"]
+    }
+
     assert {:ok, next} = Connection.accept_runtime_floor(state, payload)
+    assert next.local_socket_read_capable
     Connection.notify_runtime_accepted(next, payload)
 
     assert_receive {:persisted_at_acceptance,
                     {:ok, %{identity: %{"minimum_uds_auth_version" => 2}}}}
 
-    assert {:ok, %{minimum_uds_auth_version: 2}} =
+    assert {:ok, %{minimum_uds_auth_version: 2, local_socket_read_capable: true}} =
              Connection.accept_runtime_floor(next, %{"minimum_uds_auth_version" => 1})
+
+    assert {:ok, %{minimum_uds_auth_version: 2, local_socket_read_capable: false}} =
+             Connection.accept_runtime_floor(next, %{
+               "minimum_uds_auth_version" => 2,
+               "runtime_capabilities" => ["uds_auth_v2"]
+             })
 
     assert :ok = IdentityStore.write(dir, material)
 
@@ -77,9 +88,57 @@ defmodule SecretHub.Agent.ConnectionProtocolTest do
 
   test "uses the server runtime event vocabulary" do
     assert Connection.runtime_event(:get_static_secret) == "secret:read"
+    assert Connection.runtime_event(:get_static_secret_local) == "secret:read_local"
     assert Connection.runtime_event(:get_dynamic_secret) == "secret:read"
     assert Connection.runtime_event(:renew_lease) == "secret:lease_renew"
     assert Connection.runtime_event(:heartbeat) == "agent:heartbeat"
+  end
+
+  @tag :local_socket_read
+  test "UDS synchronization shares only current connected runtime state" do
+    state = %{
+      connection_status: :connected,
+      agent_id: "agent-current",
+      minimum_uds_auth_version: 2,
+      local_socket_read_capable: true
+    }
+
+    assert {:noreply, ^state} = Connection.handle_cast({:sync_uds_runtime, self()}, state)
+    assert_receive {:configure_runtime, "agent-current", 2, ["local_socket_read_v1"]}
+
+    state = %{state | local_socket_read_capable: false}
+    assert {:noreply, ^state} = Connection.handle_cast({:sync_uds_runtime, self()}, state)
+    assert_receive {:configure_runtime, "agent-current", 2, []}
+
+    for status <- [:connecting, :disconnected] do
+      state = %{state | connection_status: status, local_socket_read_capable: true}
+      assert {:noreply, ^state} = Connection.handle_cast({:sync_uds_runtime, self()}, state)
+    end
+
+    refute_receive {:configure_runtime, _, _, _}
+  end
+
+  @tag :local_socket_read
+  test "local reads refuse absent capability or a disconnected Core" do
+    state = %{connection_status: :connected, local_socket_read_capable: false}
+
+    assert {:reply, {:error, %{"reason" => "INCOMPATIBLE_VERSION"}}, ^state} =
+             Connection.handle_call(
+               {:get_static_secret_local, "prod.db.password", nil, %{}},
+               nil,
+               state
+             )
+
+    for status <- [:connecting, :disconnected] do
+      state = %{connection_status: status, local_socket_read_capable: true}
+
+      assert {:reply, {:error, :not_connected}, ^state} =
+               Connection.handle_call(
+                 {:get_static_secret_local, "prod.db.password", nil, %{}},
+                 nil,
+                 state
+               )
+    end
   end
 
   test "older Core capability absence never uploads or acknowledges pending evidence" do

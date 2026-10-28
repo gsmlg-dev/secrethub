@@ -31,6 +31,10 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
     capabilities: %{"templates" => true}
   }
 
+  setup_all do
+    RuntimeDatabaseFixture.prepare_template()
+  end
+
   setup do
     ensure_current_audit_partition!()
     start_supervised!({ConnectionManager, name: ConnectionManager})
@@ -237,6 +241,85 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
     assert_reply(ref, :error, %{reason: "INCOMPATIBLE_VERSION"}, 2_000)
   end
 
+  @tag local_socket_read: true, timeout: 180_000
+  test "local capability authorizes Agent-only reads at floor 2 without application attribution",
+       fixture do
+    ctx = application_runtime_fixture!(["uds_auth_v2", "local_socket_read_v1"], fixture)
+    assert "local_socket_read_v1" in ctx.socket.assigns.runtime_capabilities
+    assert "local_socket_read_v1" in Agents.get_agent(ctx.agent.agent_id).runtime_capabilities
+    assert {:ok, _} = Policies.delete_policy(ctx.app_policy.id)
+    previous = Application.get_env(:secrethub_core, :launch_profile)
+    Application.put_env(:secrethub_core, :launch_profile, :single_operator)
+    on_exit(fn -> Application.put_env(:secrethub_core, :launch_profile, previous) end)
+
+    Repo.update_all(SecretHub.Shared.Schemas.AuthorizationEpoch,
+      set: [minimum_uds_auth_version: 2]
+    )
+
+    request_id = Ecto.UUID.generate()
+
+    payload = %{
+      "path" => ctx.path,
+      "audit_request_id" => request_id,
+      "audit_attempt_id" => Ecto.UUID.generate()
+    }
+
+    ref = push(ctx.socket, "secret:read_local", payload)
+
+    assert_reply(
+      ref,
+      :ok,
+      %{value: %{"value" => "app-runtime-private"}, revision: revision, audit_event_id: _},
+      2_000
+    )
+
+    ref = push(ctx.socket, "secret:read_local", Map.put(payload, "known_revision", revision))
+    assert_reply(ref, :ok, %{not_modified: true, revision: ^revision}, 2_000)
+    assert {:ok, events} = AccessAudit.timeline("agent:" <> ctx.agent.agent_id, request_id)
+
+    assert Enum.all?(
+             events,
+             &(&1.envelope["application_id"] == nil and
+                 &1.envelope["identity_status"] == "unverified" and
+                 &1.envelope["attribution"] == "none")
+           )
+
+    ref = push(ctx.socket, "secret:read", %{"path" => ctx.path})
+    assert_reply(ref, :error, %{reason: "INCOMPATIBLE_VERSION"}, 2_000)
+    assert UpgradeGates.minimum_uds_auth_version() == 2
+  end
+
+  @tag local_socket_read: true, timeout: 180_000
+  test "local operation rejects an unnegotiated capability", fixture do
+    ctx = application_runtime_fixture!(["uds_auth_v2"], fixture)
+    ref = push(ctx.socket, "secret:read_local", %{"path" => ctx.path})
+    assert_reply(ref, :error, %{reason: "INCOMPATIBLE_VERSION"}, 2_000)
+  end
+
+  @tag local_socket_read: true, timeout: 180_000
+  test "local operation rejects payload identity claims and malformed reads", fixture do
+    %{socket: socket} =
+      ctx =
+      application_runtime_fixture!(["uds_auth_v2", "local_socket_read_v1"], fixture)
+
+    for {key, value} <- [
+          {"agent_id", "spoofed"},
+          {"certificate_id", Ecto.UUID.generate()},
+          {"app_id", ctx.app.id},
+          {"certificate_fingerprint", ctx.certificate.canonical_fingerprint},
+          {"local_auth_version", 2},
+          {"application_id", ctx.app.id}
+        ] do
+      ref = push(socket, "secret:read_local", %{"path" => ctx.path, key => value})
+      assert_reply(ref, :error, %{reason: "FORBIDDEN"}, 2_000)
+    end
+
+    for payload <- [%{}, %{"path" => ""}, %{"path" => ctx.path, "known_revision" => "1"}] do
+      ref = push(socket, "secret:read_local", payload)
+      assert_reply(ref, :error, %{reason: "FORBIDDEN"}, 2_000)
+    end
+  end
+
   test "application read preserves exact revision and rejects app claims or independent policy denial" do
     %{socket: socket, app: app, certificate: certificate, path: path, app_policy: policy} =
       application_runtime_fixture!()
@@ -275,6 +358,115 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
     assert {:ok, _} = Policies.delete_policy(policy.id)
     ref = push(socket, "secret:read", payload)
     assert_reply(ref, :error, %{reason: "FORBIDDEN"}, 2_000)
+  end
+
+  @tag :tmp_dir
+  @tag local_socket_read: true, timeout: 180_000
+  test "credential-free CLI reads cross real UDS and trusted Core with Agent-only audit",
+       fixture do
+    alias SecretHub.Agent.{Cache, UDSServer}
+
+    ctx =
+      application_runtime_fixture!(
+        ["uds_auth_v2", "access_audit_v1", "local_socket_read_v1"],
+        fixture
+      )
+
+    assert {:ok, _} = Policies.delete_policy(ctx.app_policy.id)
+    previous = Application.get_env(:secrethub_core, :launch_profile)
+    Application.put_env(:secrethub_core, :launch_profile, :single_operator)
+    on_exit(fn -> Application.put_env(:secrethub_core, :launch_profile, previous) end)
+
+    Repo.update_all(SecretHub.Shared.Schemas.AuthorizationEpoch,
+      set: [minimum_uds_auth_version: 2]
+    )
+
+    start_supervised!({Journal, state_dir: fixture.tmp_dir})
+    start_supervised!(Cache)
+
+    socket_path =
+      Path.join(System.tmp_dir!(), "sh-local-core-#{System.unique_integer([:positive])}.sock")
+
+    on_exit(fn -> File.rm(socket_path) end)
+    start_supervised!({UDSServer, socket_path: socket_path, request_timeout: 20_000})
+    assert :ok = UDSServer.configure_runtime(ctx.agent.agent_id, 2, ["local_socket_read_v1"])
+    start_supervised!({SecretHub.Web.AccessAuditRuntimeBridge, owner: self()})
+    namespace = "agent:" <> ctx.agent.agent_id
+
+    Enum.reduce([:fresh, :cached, :denied], nil, fn mode, known_revision ->
+      if mode == :denied, do: assert({:ok, _} = Policies.delete_policy(ctx.agent_policy.id))
+
+      client =
+        Task.async(fn ->
+          SecretHub.CLI.AgentClient.get_secret(ctx.path,
+            socket_path: socket_path,
+            timeout: 20_000
+          )
+        end)
+
+      assert_receive {:local_runtime_read, from, read_path, ^known_revision, correlation}, 5_000
+      assert read_path == ctx.path
+      assert Enum.sort(Map.keys(correlation)) == [:audit_attempt_id, :audit_request_id]
+
+      payload =
+        audit_wire(correlation)
+        |> Map.put("path", read_path)
+        |> Map.put("known_revision", known_revision)
+
+      ref = push(ctx.socket, "secret:read_local", payload)
+
+      revision =
+        if mode == :denied do
+          assert_reply(ref, :error, %{reason: "FORBIDDEN"} = response, 5_000)
+          GenServer.reply(from, {:error, audit_wire(response)})
+          assert {:error, "FORBIDDEN"} = Task.await(client, 20_000)
+          assert {:error, :not_found} = Cache.get_entry({:local, ctx.agent.agent_id, ctx.path})
+          known_revision
+        else
+          assert_reply(ref, :ok, response, 5_000)
+          if mode == :cached, do: assert(response.not_modified)
+          GenServer.reply(from, {:ok, audit_wire(response)})
+          assert {:ok, %{"value" => "app-runtime-private"}} = Task.await(client, 20_000)
+          response.revision
+        end
+
+      await_audit_agent_phases!(if(mode == :denied, do: 3, else: 4))
+      assert {:ok, events} = Journal.batch()
+
+      assert Enum.all?(events, fn event ->
+               event["agent_id"] == ctx.agent.agent_id and event["application_id"] == nil and
+                 event["identity_status"] == "unverified" and event["attribution"] == "none"
+             end)
+
+      refute Jason.encode!(events) =~ "app-runtime-private"
+      ref = push(ctx.socket, "audit:batch", %{"events" => events})
+      assert_reply(ref, :ok, ack, 5_000)
+      assert :ok = Journal.acknowledge(ack.accepted ++ ack.duplicates)
+      assert {:ok, timeline} = AccessAudit.timeline(namespace, correlation.audit_request_id)
+      assert length(timeline) == if(mode == :denied, do: 4, else: 6)
+
+      assert Enum.all?(timeline, fn event ->
+               event.envelope["agent_id"] == ctx.agent.agent_id and
+                 event.envelope["application_id"] == nil
+             end)
+
+      assert {:ok, rebuilt} = AccessAudit.rebuild_request(namespace, correlation.audit_request_id)
+      assert rebuilt.agent_id == ctx.agent.agent_id
+      assert rebuilt.application_id == nil
+      revision
+    end)
+
+    assert {:ok, %{requests: 3, success: 2, denied: 1, unverified: 3, incomplete: 0}} =
+             AccessAudit.summary(%{agent_id: ctx.agent.agent_id})
+
+    assert {:ok, %{requests: 0}} = AccessAudit.summary(%{application_id: ctx.app.id})
+    assert {:ok, []} = AccessAudit.applications(%{agent_id: ctx.agent.agent_id})
+    assert UpgradeGates.minimum_uds_auth_version() == 2
+
+    refute File.read!(Path.join(fixture.tmp_dir, "access-audit/observations.wal")) =~
+             "app-runtime-private"
+
+    assert {:ok, :valid} = Audit.verify_chain()
   end
 
   @tag :tmp_dir
@@ -716,8 +908,8 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
     end
   end
 
-  defp application_runtime_fixture!(capabilities \\ ["uds_auth_v2"]) do
-    :ok = RuntimeDatabaseFixture.setup()
+  defp application_runtime_fixture!(capabilities \\ ["uds_auth_v2"], fixture \\ %{}) do
+    :ok = RuntimeDatabaseFixture.setup(fixture)
     ensure_current_audit_partition!()
     restart_seal_state!()
     unseal_vault!()
@@ -785,6 +977,7 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
       app: app,
       certificate: certificate,
       path: path,
+      agent_policy: List.first(policies),
       app_policy: List.last(policies)
     }
   end
@@ -1236,6 +1429,11 @@ defmodule SecretHub.Web.AccessAuditRuntimeBridge do
 
   def handle_call({:get_static_secret_for_app, path, claims, revision}, from, owner) do
     send(owner, {:audit_runtime_read, from, path, claims, revision})
+    {:noreply, owner}
+  end
+
+  def handle_call({:get_static_secret_local, path, revision, correlation}, from, owner) do
+    send(owner, {:local_runtime_read, from, path, revision, correlation})
     {:noreply, owner}
   end
 end
