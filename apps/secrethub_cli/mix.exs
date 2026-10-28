@@ -4,7 +4,7 @@ defmodule SecretHub.CLI.MixProject do
   def project do
     [
       app: :secrethub_cli,
-      version: "1.0.0-rc.27",
+      version: "1.0.0-rc.28",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       test_coverage: [summary: [threshold: 0]],
