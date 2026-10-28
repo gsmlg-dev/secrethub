@@ -401,7 +401,12 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
     assert {_output, 0} =
              run_cli(["login", "--role-id", role_id, "--secret-id", secret_id], home_dir)
 
-    assert {output, 0} = run_cli(["secret", "get", cli_path, "--format", "json"], home_dir)
+    assert {output, 0} =
+             run_cli(
+               ["secret", "get", cli_path, "--server", server_url, "--format", "json"],
+               home_dir
+             )
+
     expected_value = secret_data["value"]
     assert %{"value" => ^expected_value} = Jason.decode!(output)
   end
@@ -493,6 +498,16 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
 
     assert {:ok, _} = UpgradeGates.verify_typed_runtime_authorization(actor_id: "operator:e2e")
     home_dir = Path.join(tmp_dir, "cli-home")
+    expected_value = secret_data["value"]
+
+    assert {local_output, 0} =
+             run_cli(
+               ["secret", "get", secret_path, "--agent-socket", socket_path, "--format", "json"],
+               home_dir
+             )
+
+    assert %{"value" => ^expected_value} = Jason.decode!(local_output)
+    assert {:ok, %{auth_successes: 0, auth_failures: 0}} = UDSServer.get_stats()
 
     assert {output, 0} =
              run_cli(
@@ -512,7 +527,6 @@ defmodule SecretHub.E2E.CoreAgentFlowTest do
                home_dir
              )
 
-    expected_value = secret_data["value"]
     assert %{"value" => ^expected_value} = Jason.decode!(output)
     assert {:ok, %{auth_successes: 1, auth_failures: 0}} = UDSServer.get_stats()
 
