@@ -122,6 +122,25 @@ defmodule SecretHub.CLITest do
       assert {:ok, {:secret, :get, "prod.db.password", []}, _opts} = CLI.parse_args(args)
     end
 
+    test "preserves explicit Agent options for secret get" do
+      assert {:ok, {:secret, :get, "prod.db.password", []}, opts} =
+               CLI.parse_args([
+                 "secret",
+                 "get",
+                 "prod.db.password",
+                 "--agent-socket",
+                 "/run/custom/agent.sock",
+                 "--agent-cert",
+                 "app.crt",
+                 "--agent-key",
+                 "app.key"
+               ])
+
+      assert opts[:agent_socket] == "/run/custom/agent.sock"
+      assert opts[:agent_cert] == "app.crt"
+      assert opts[:agent_key] == "app.key"
+    end
+
     test "parses secret create command" do
       args = ["secret", "create", "test.secret", "--value", "secret123"]
       assert {:ok, {:secret, :create, "test.secret", []}, opts} = CLI.parse_args(args)

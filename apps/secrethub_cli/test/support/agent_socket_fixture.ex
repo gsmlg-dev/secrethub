@@ -1,4 +1,41 @@
 defmodule SecretHub.CLI.AgentSocketFixture do
+  def start_local(path, owner, response \\ {:ok, "from-agent"}) do
+    Task.async(fn ->
+      {:ok, listener} =
+        :gen_tcp.listen(0, [
+          :binary,
+          ifaddr: {:local, to_charlist(path)},
+          packet: :line,
+          active: false
+        ])
+
+      try do
+        send(owner, :agent_socket_ready)
+        {:ok, socket} = :gen_tcp.accept(listener, 5000)
+
+        try do
+          request = receive_json(socket)
+          send(owner, {:local_request, request})
+
+          envelope =
+            case response do
+              {:ok, value} ->
+                %{status: "ok", data: %{value: value, version: 7, revision: 10}}
+
+              {:error, code} ->
+                %{status: "error", error: %{code: code}}
+            end
+
+          send_json(socket, Map.put(envelope, :request_id, request["request_id"]))
+        after
+          :gen_tcp.close(socket)
+        end
+      after
+        :gen_tcp.close(listener)
+      end
+    end)
+  end
+
   def material(dir, key \\ X509.PrivateKey.new_rsa(2048)) do
     pem = X509.Certificate.self_signed(key, "/CN=consumer") |> X509.Certificate.to_pem()
     cert_path = Path.join(dir, "app.crt")

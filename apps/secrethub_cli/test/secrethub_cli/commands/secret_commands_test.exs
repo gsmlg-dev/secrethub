@@ -107,12 +107,14 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
       Task.await(server, 5_000)
     end
 
-    test "requires authentication" do
+    test "requires authentication for an explicit Core read" do
       Config.clear_auth()
 
       output =
         capture_io(:stderr, fn ->
-          result = SecretCommands.execute(:get, "test.secret", [], [])
+          result =
+            SecretCommands.execute(:get, "test.secret", [], server: "http://localhost:4000")
+
           assert {:error, :not_authenticated} = result
         end)
 

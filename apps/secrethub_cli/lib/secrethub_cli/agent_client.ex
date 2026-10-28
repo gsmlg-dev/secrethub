@@ -1,16 +1,19 @@
 defmodule SecretHub.CLI.AgentClient do
-  @moduledoc "Client for the owner-protected Agent UDS auth-v2 protocol."
+  @moduledoc "Client for local Agent secret reads and optional application auth-v2."
   @timeout 5_000
+  @default_socket_path "/var/run/secrethub/agent.sock"
+
+  @doc "Returns the Agent socket selected by the environment or the standard default."
+  def default_socket_path do
+    System.get_env("SECRET_HUB_AGENT_SOCKET_PATH", @default_socket_path)
+  end
 
   def get_secret(path, opts) do
     timeout = Keyword.get(opts, :timeout, @timeout)
+    opts = Keyword.put_new(opts, :socket_path, default_socket_path())
 
     with {:ok, socket_path} <- required(opts, :socket_path, "agent socket path"),
-         {:ok, certificate_path} <- required(opts, :certificate_path, "agent certificate"),
-         {:ok, key_path} <- required(opts, :private_key_path, "agent private key"),
-         {:ok, pem} <- File.read(certificate_path),
-         {:ok, private_pem} <- File.read(key_path),
-         {:ok, key} <- decode_private_key(private_pem),
+         {:ok, authentication} <- authentication_material(opts),
          {:ok, socket} <-
            :gen_tcp.connect(
              {:local, to_charlist(socket_path)},
@@ -19,7 +22,7 @@ defmodule SecretHub.CLI.AgentClient do
              timeout
            ) do
       try do
-        with :ok <- authenticate(socket, pem, key, timeout),
+        with :ok <- authenticate_if_requested(socket, authentication, timeout),
              {:ok, data} <- request(socket, "get_secret", %{path: path}, timeout) do
           {:ok, normalize_secret(data)}
         end
@@ -31,6 +34,25 @@ defmodule SecretHub.CLI.AgentClient do
       _ -> {:error, "Agent connection or key material unavailable"}
     end
   end
+
+  defp authentication_material(opts) do
+    if Keyword.has_key?(opts, :certificate_path) or Keyword.has_key?(opts, :private_key_path) do
+      with {:ok, certificate_path} <- required(opts, :certificate_path, "agent certificate"),
+           {:ok, key_path} <- required(opts, :private_key_path, "agent private key"),
+           {:ok, pem} <- File.read(certificate_path),
+           {:ok, private_pem} <- File.read(key_path),
+           {:ok, key} <- decode_private_key(private_pem) do
+        {:ok, {pem, key}}
+      end
+    else
+      {:ok, :local}
+    end
+  end
+
+  defp authenticate_if_requested(_socket, :local, _timeout), do: :ok
+
+  defp authenticate_if_requested(socket, {pem, key}, timeout),
+    do: authenticate(socket, pem, key, timeout)
 
   defp authenticate(socket, pem, key, timeout) do
     with {:ok, data} <-

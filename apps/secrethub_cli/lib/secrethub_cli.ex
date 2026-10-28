@@ -16,7 +16,7 @@ defmodule SecretHub.CLI do
 
   ### Secrets Management
   - `secret list` - List all secrets
-  - `secret get <path>` - Get a secret value
+  - `secret get <path>` - Read a secret from the local Agent (or explicit `--server`)
   - `secret create <path>` - Create a new secret
   - `secret update <path>` - Update an existing secret
   - `secret delete <path>` - Delete a secret
@@ -45,6 +45,9 @@ defmodule SecretHub.CLI do
   ## Global Options
 
   - `--server <url>` - SecretHub server URL (default: http://localhost:4000)
+  - `--agent-socket <path>` - Override the local Agent socket for `secret get`
+    (default: `SECRET_HUB_AGENT_SOCKET_PATH`, then `/var/run/secrethub/agent.sock`)
+  - `--agent-cert <path>` and `--agent-key <path>` - Use application auth-v2 for Agent reads
   - `--format <json|table|yaml>` - Output format (default: table)
   - `--quiet` - Suppress non-error output
   - `--verbose` - Show detailed output
@@ -264,7 +267,7 @@ defmodule SecretHub.CLI do
 
         Secrets:
           secret list              List all secrets
-          secret get <path>        Get a secret value
+          secret get <path>        Read a secret from the local Agent
           secret create <path>     Create a new secret
           secret update <path>     Update a secret
           secret delete <path>     Delete a secret
@@ -297,19 +300,26 @@ defmodule SecretHub.CLI do
     GLOBAL OPTIONS:
         -h, --help               Show this help message
         -v, --version            Show version
-        -s, --server <url>       Server URL
+        -s, --server <url>       Server URL; selects Core HTTP for secret get
         -f, --format <format>    Output format (json|table|yaml)
         -q, --quiet              Suppress output
         --verbose                Detailed output
-        --agent-socket <path>    Local Agent Unix socket for secret get
-        --agent-cert <path>      App certificate PEM for Agent auth
-        --agent-key <path>       Matching private key PEM for Agent proof
+        --agent-socket <path>    Override Agent socket for secret get
+                                Default: SECRET_HUB_AGENT_SOCKET_PATH,
+                                then /var/run/secrethub/agent.sock
+        --agent-cert <path>      Optional app certificate PEM (requires --agent-key)
+        --agent-key <path>       Optional matching private key (requires --agent-cert)
+
+    Local Agent reads require socket access, with no CLI login or app credentials.
+    --server cannot be combined with Agent options. Transport errors do not fall back.
 
     EXAMPLES:
         secrethub login
         secrethub login --role-id <id> --secret-id <secret>
         secrethub renew
         secrethub secret get prod.db.password
+        secrethub secret get prod.db.password --agent-socket /run/custom/agent.sock
+        secrethub secret get prod.db.password --server https://core.example.com
         secrethub secret get prod.db.password --agent-socket /var/run/secrethub/agent.sock --agent-cert ./app.pem --agent-key ./app-key.pem
         secrethub policy create --from-template business_hours
         secrethub agent list

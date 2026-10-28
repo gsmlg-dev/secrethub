@@ -78,16 +78,26 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
   ## Private API Functions
 
   defp get_secret_for_cli(path, opts) do
-    if agent_socket = Keyword.get(opts, :agent_socket) do
-      AgentClient.get_secret(path,
-        socket_path: agent_socket,
-        certificate_path: Keyword.get(opts, :agent_cert),
-        private_key_path: Keyword.get(opts, :agent_key)
-      )
-    else
-      with {:ok, _token} <- Auth.ensure_authenticated() do
-        get_secret(path, opts)
-      end
+    agent_options = Keyword.take(opts, [:agent_socket, :agent_cert, :agent_key])
+
+    case {Keyword.has_key?(opts, :server), agent_options} do
+      {true, [_ | _]} ->
+        {:error, "Cannot combine --server with Agent options"}
+
+      {true, []} ->
+        with {:ok, _token} <- Auth.ensure_authenticated() do
+          get_secret(path, opts)
+        end
+
+      {false, _} ->
+        client_options =
+          Enum.map(agent_options, fn
+            {:agent_socket, value} -> {:socket_path, value}
+            {:agent_cert, value} -> {:certificate_path, value}
+            {:agent_key, value} -> {:private_key_path, value}
+          end)
+
+        AgentClient.get_secret(path, client_options)
     end
   end
 
@@ -113,8 +123,8 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
     end
   end
 
-  defp get_secret(path, _opts) do
-    server = Config.get_server_url()
+  defp get_secret(path, opts) do
+    server = Keyword.fetch!(opts, :server)
     url = "#{server}/v1/secret/data/#{vault_path(path)}"
     headers = Auth.vault_headers()
 
