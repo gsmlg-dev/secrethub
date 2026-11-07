@@ -39,8 +39,11 @@ defmodule SecretHub.Web.Endpoint do
   # Code reloading can be explicitly enabled under the
   # :code_reloader configuration of your endpoint.
   if code_reloading? do
-    socket "/phoenix/live_reload/socket", Phoenix.LiveReloader.Socket
-    plug Phoenix.LiveReloader
+    if Application.compile_env(:secrethub_web, [__MODULE__, :live_reload_enabled], false) do
+      socket "/phoenix/live_reload/socket", Phoenix.LiveReloader.Socket
+      plug Phoenix.LiveReloader
+    end
+
     plug Phoenix.CodeReloader
   end
 

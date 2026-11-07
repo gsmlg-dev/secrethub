@@ -121,6 +121,7 @@ config :secrethub_web, SecretHub.Web.Endpoint,
   development_direct_access: true,
   check_origin: :conn,
   code_reloader: true,
+  live_reload_enabled: live_reload_enabled?,
   debug_errors: true,
   secret_key_base: "vAPoEmgczs3B5WPFpsHw8tV5a+VV79FjDI7umvmAt1YdlBvpz1J9sXW+/mb5Tj5A",
   watchers: [
