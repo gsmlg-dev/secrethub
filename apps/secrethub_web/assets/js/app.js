@@ -9,12 +9,12 @@
 //
 //     import "../vendor/some-package.js"
 //
-// Alternatively, you can `npm install some-package --prefix assets` and import
+// Alternatively, run `mix npm.install some-package` and import
 // them using a path starting with the package name:
 //
 //     import "some-package"
 //
-// If you have dependencies that try to import CSS, bun will generate a separate `app.css` file.
+// DuskmoonBundler emits imported CSS alongside the production JavaScript bundle.
 // To load it, simply add a second `<link>` to your `root.html.heex` file.
 
 // Include phoenix_html to handle method=PUT/DELETE in forms and buttons.

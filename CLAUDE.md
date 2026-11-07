@@ -20,7 +20,7 @@ This project uses **devenv** (devenv.sh) with Nix for reproducible development e
 ```bash
 devenv shell          # Enter devenv shell (or use direnv for automatic activation)
 db-setup              # Create database, run migrations, seed data
-assets-install        # Install frontend dependencies (Bun + Tailwind)
+assets-install        # Install frontend dependencies (mix npm.install)
 ```
 
 ### Essential Commands
@@ -95,9 +95,10 @@ apps/
 - All migrations must be created in `apps/secrethub_core/`
 
 ### Frontend Assets
-- **Bun** for JavaScript bundling (not npm/esbuild)
-- **Tailwind CSS v4** — both bun and tailwindcss are Nix-managed binaries; devenv exports `MIX_BUN_PATH` and `MIX_TAILWIND_PATH` so the Mix hex packages use them
-- Build assets with `assets-build` (runs `mix bun secrethub_web`); install deps with `assets-install` (bun workspaces)
+- **DuskmoonBundler** builds JavaScript and Tailwind CSS v4 with a named `secrethub_web` profile and serves development modules with HMR
+- Install workspace dependencies from the umbrella root with `assets-install` (`mix npm.install`); commit the generated `package-lock.json` and use `mix npm.ci` for frozen installs
+- Build assets with `assets-build` (`mix duskmoon_bundler.build secrethub_web --tailwind`); production builds then run `mix phx.digest --no-compile`
+- `duskmoon_bundler_runtime` resolves production manifests inside the installed web OTP app; the development/build toolchain is excluded from releases
 - **`@duskmoon-dev/core`** — TailwindCSS plugin (CSS/design tokens only)
 - **`phoenix_duskmoon`** — Phoenix component module (Elixir/HEEx components, `dm_*` prefix)
 - **Heroicons** for icons

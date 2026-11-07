@@ -74,10 +74,6 @@ if System.get_env("SECRET_HUB_AGENT_ENDPOINT_SERVER") in ~w(true 1) do
     agent_trusted_endpoint: "wss://#{agent_host}:#{agent_port}/agent/socket/websocket"
 end
 
-# Asset tool paths (MIX_BUN_PATH, MIX_TAILWIND_PATH) are configured
-# in config.exs via System.get_env so they apply at compile time
-# when mix bun/tailwind tasks run.
-
 if config_env() == :prod do
   alias SecretHub.Shared.{RuntimeConfig, RuntimeSecrets}
 

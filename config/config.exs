@@ -119,37 +119,32 @@ config :secrethub_web,
 # at the `config/runtime.exs`.
 config :secrethub_web, SecretHub.Web.Mailer, adapter: Swoosh.Adapters.Local
 
-# Configure Bun (JavaScript bundler)
-# MIX_BUN_PATH env var (set by devenv) overrides the downloaded binary
-config :bun,
-  version: "1.3.3",
-  path: System.get_env("MIX_BUN_PATH"),
-  secrethub_web: [
-    args:
-      ~w(build assets/js/app.js --outdir=priv/static/assets/js --external /fonts/* --external /images/*),
-    cd: Path.expand("../apps/secrethub_web", __DIR__),
-    env: %{
-      "NODE_PATH" =>
-        [Path.expand("../deps", __DIR__), System.get_env("NODE_PATH")]
-        |> Enum.reject(&is_nil/1)
-        |> Enum.join(":")
-    }
-  ]
+# Build paths work from both the umbrella and the web Mix project.
+web_assets = Path.expand("../apps/secrethub_web/assets", __DIR__)
+web_lib = Path.expand("../apps/secrethub_web/lib", __DIR__)
 
-# Configure Tailwind CSS v4
-# MIX_TAILWIND_PATH env var (set by devenv) overrides the downloaded binary
-config :tailwind,
-  version: "4.1.7",
-  path:
-    System.get_env("MIX_TAILWIND_PATH") ||
-      Path.expand("../apps/secrethub_web/node_modules/.bin/tailwindcss", __DIR__),
-  secrethub_web: [
-    args: ~w(
-      --input=assets/css/app.css
-      --output=priv/static/assets/css/app.css
-    ),
-    cd: Path.expand("../apps/secrethub_web", __DIR__)
-  ]
+config :duskmoon_bundler, :secrethub_web,
+  root: web_assets,
+  entry: Path.join(web_assets, "js/app.js"),
+  outdir: Path.expand("../apps/secrethub_web/priv/static/assets", __DIR__),
+  sourcemap: false,
+  format: :esm,
+  resolve_dirs: [Path.expand("../deps", __DIR__)],
+  tailwind: [
+    css: Path.join(web_assets, "css/app.css"),
+    sources: [
+      %{base: web_lib, pattern: "**/*.{ex,heex}"},
+      %{base: web_assets, pattern: "**/*.{css,js}"},
+      %{
+        base: Path.expand("../deps/phoenix_duskmoon/lib", __DIR__),
+        pattern: "**/*.{ex,heex}"
+      }
+    ]
+  ],
+  server: [prefix: "/assets", watch_dirs: [web_lib, web_assets]]
+
+# Resolve manifests within the installed OTP app, independent of the build host.
+config :duskmoon_bundler_runtime, :secrethub_web, outdir: "priv/static/assets"
 
 # Redact sensitive request, channel, and LiveView event parameters in logs.
 config :phoenix, :filter_parameters, [

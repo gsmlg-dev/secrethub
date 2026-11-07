@@ -15,6 +15,16 @@ defmodule SecretHub.Web.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  if code_reloading? do
+    # Tailwind's watcher writes compiled CSS; source JS and vendor modules use HMR.
+    plug Plug.Static,
+      at: "/assets/css",
+      from: {:secrethub_web, "priv/static/assets/css"},
+      gzip: false
+
+    plug DuskmoonBundler.DevServer, profile: :secrethub_web
+  end
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),

@@ -152,6 +152,11 @@ SecretHub implements a **two-tier architecture** with a central Core service and
 
 - **devenv:** [Install from devenv.sh](https://devenv.sh/getting-started/)
 - **direnv (optional):** [Install from direnv.net](https://direnv.net/)
+- **GNU frontend builds:** Ubuntu 26.04 with glibc 2.43 or newer, as required by
+  [DuskmoonBundler's native compiler contract](https://github.com/duskmoon-dev/duskmoon-bundler/issues/9#issuecomment-6396025627).
+  The current local Nix environment has glibc 2.42, which cannot load the
+  published Vize GNU compiler; entering `devenv shell` does not resolve that ABI
+  limitation. See [Nix asset build requirements](nix/README.md).
 
 ### Installation
 
@@ -163,12 +168,21 @@ cd secrethub
 # Activate devenv (or use direnv allow)
 devenv shell
 
-# Install frontend dependencies
+# Install frontend workspace dependencies through Mix
 assets-install
 
 # Start PostgreSQL, Core, and Agent
 devenv processes up
 ```
+
+`assets-install` runs `mix npm.install` from the umbrella root. Commit
+`package-lock.json`; CI and release builds use `mix npm.ci` to enforce it.
+`assets-build` runs `mix duskmoon_bundler.build secrethub_web --tailwind`.
+Development serves modules through DuskmoonBundler with HMR; production layouts
+resolve hashed assets through `duskmoon_bundler_runtime` manifests.
+Core GNU release archives build on the documented GitHub-hosted
+[`ubuntu-26.04` and `ubuntu-26.04-arm` runners](https://github.com/actions/runner-images#available-images),
+so deployment hosts must support that GNU runtime baseline.
 
 HTTP callers use `http_fetch 1.0.0-rc.8`, and the Agent uses
 `http_web_socket 1.0.0-rc.8` through Phoenix Socket Client's public transport.

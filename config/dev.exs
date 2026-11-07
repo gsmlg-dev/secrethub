@@ -120,12 +120,11 @@ config :secrethub_web, SecretHub.Web.Endpoint,
   http: [ip: {0, 0, 0, 0}, port: core_port],
   development_direct_access: true,
   check_origin: :conn,
-  code_reloader: live_reload_enabled?,
+  code_reloader: true,
   debug_errors: true,
   secret_key_base: "vAPoEmgczs3B5WPFpsHw8tV5a+VV79FjDI7umvmAt1YdlBvpz1J9sXW+/mb5Tj5A",
   watchers: [
-    tailwind: {Tailwind, :install_and_run, [:secrethub_web, ~w(--watch)]},
-    bun: {Bun, :install_and_run, [:secrethub_web, ~w(--sourcemap=inline --watch)]}
+    duskmoon_bundler: {Mix.Tasks.DuskmoonBundler.Dev, :run, [~w(secrethub_web --tailwind)]}
   ]
 
 # ## SSL Support

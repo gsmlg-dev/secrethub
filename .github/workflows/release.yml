@@ -194,10 +194,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # DuskmoonBundler's GNU native compiler requires Ubuntu 26.04 (upstream #9).
           - target: linux-amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - target: linux-arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
 
     steps:
       - name: Checkout release commit
@@ -211,21 +212,17 @@ jobs:
           elixir-version: ${{ env.ELIXIR_VERSION }}
           otp-version: ${{ env.OTP_VERSION }}
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.13
-
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
           path: |
             deps
             _build
+            node_modules
             apps/secrethub_web/node_modules
-          key: ${{ runner.os }}-${{ runner.arch }}-mix-core-prod-${{ hashFiles('**/mix.lock', 'bun.lock', '**/package.json') }}
+          key: ${{ matrix.runner }}-${{ runner.arch }}-mix-core-prod-${{ hashFiles('**/mix.lock', 'package-lock.json', '**/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-mix-core-prod-
+            ${{ matrix.runner }}-${{ runner.arch }}-mix-core-prod-
 
       - name: Install dependencies
         shell: bash
@@ -233,7 +230,7 @@ jobs:
           mix local.hex --force
           mix local.rebar --force
           mix deps.get --only prod
-          bun install --frozen-lockfile --ignore-scripts
+          mix npm.ci
 
       - name: Compile application
         run: mix compile --warnings-as-errors
@@ -242,10 +239,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd apps/secrethub_web
-          bun ./node_modules/@tailwindcss/cli/dist/index.mjs --input=assets/css/app.css --output=priv/static/assets/css/app.css --minify
-          bun build assets/js/app.js --outdir=priv/static/assets/js --external '/fonts/*' --external '/images/*' --minify
-          cd ../..
+          mix duskmoon_bundler.build secrethub_web --tailwind
           mix phx.digest --no-compile
 
       - name: Build Core release
@@ -324,6 +318,7 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-mix-agent-prod-
 
       - name: Install dependencies
+        working-directory: apps/secrethub_agent
         shell: bash
         run: |
           mix local.hex --force
@@ -331,6 +326,7 @@ jobs:
           mix deps.get --only prod
 
       - name: Compile application
+        working-directory: apps/secrethub_agent
         run: mix compile
 
       - name: Build Agent release
@@ -340,7 +336,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf _build/prod/rel/secrethub_agent
-          mix release secrethub_agent
+          mix release secrethub_agent --no-compile --no-deps-check
           elixir scripts/verify_release_versions.exs _build/prod/rel/secrethub_agent "$RELEASE_VERSION"
 
       - name: Check Agent configuration commands (Unix)
@@ -435,9 +431,11 @@ jobs:
 
             mix local.hex --force
             mix local.rebar --force
+            cd apps/secrethub_agent
             mix deps.get --only prod
             mix compile
-            mix release secrethub_agent
+            cd ../..
+            mix release secrethub_agent --no-compile --no-deps-check
             elixir scripts/verify_release_versions.exs _build/prod/rel/secrethub_agent "${RELEASE_TAG#v}"
             agent_config_file="$(mktemp)"
             trap 'rm -f "$agent_config_file"' EXIT
@@ -587,48 +585,25 @@ jobs:
 
           ## Changes
 
-          - Local CLI secret reads now share the Agent's permissions without
-            application certificates, private keys, or CLI login. Run
-            \`secrethub secret get PATH --format json\`; the optional
-            \`--agent-socket\` overrides \`SECRET_HUB_AGENT_SOCKET_PATH\`, then
-            \`/var/run/secrethub/agent.sock\`. The socket remains owner-only.
-            Core-Agent mTLS, Agent policies, current cache authorization, and
-            durable audit checks remain required. Explicit application
-            certificate/key pairs retain their existing authentication path.
-            See the [local Agent guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/user-guides/local-agent-secrets.md).
-          - Use an explicit \`--server URL\` for a token-authenticated Core HTTP
-            secret read. It cannot be combined with Agent-specific options;
-            local failures never switch transports automatically.
-          - Static-secret access now records signed Core decisions and durable
-            Agent observations. The protected \`/admin/audit\` page shows persisted
-            application request totals, timelines, provenance, and reporting health.
-            Agent observations survive restart and upload with idempotent replay.
-            See the [access audit operations guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/operations/access-audit.md)
-            and [qualification report](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/operations/access-audit-qualification-2026-10-20.md).
-          - Agent releases accept a TOML configuration file and provide offline
-            \`config generate\` and \`config validate [file]\` commands. See the
-            [Agent configuration guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/deployment/agent-deployment-guide.md).
-          - Agent enrollment reports the running Agent package version instead of
-            a hard-coded version.
-          - The admin sidebar can collapse to icons and remembers its state;
-            version details remain available in the sidebar header.
-          - Operators can recover a sealed legacy Vault through a protected HTML
-            form at \`/vault/recover\`. Recovery requires a preserved database
-            backup and the original shares, authenticates existing ciphertext,
-            and keeps the Vault sealed after issuing replacement v4 shares.
-            Save those shares before leaving the response page; they are returned
-            only once. Initialization, unseal, and management pages link to
-            recovery when required.
-
-          ## LiveView behind HTTPS proxies
-
-          Fixes [#11](https://github.com/${REPOSITORY}/issues/11): WebSocket and
-          longpoll accept explicitly configured public HTTPS origins over the
-          private HTTP backend. Set \`SECRET_HUB_MANAGEMENT_ORIGIN\` to the
-          canonical public origin and optionally set
-          \`SECRET_HUB_MANAGEMENT_ALLOWED_ORIGINS\` to a comma-separated list of
-          additional exact HTTPS origins. Caddy must enforce mTLS on every listed
-          hostname. Unrelated origins remain rejected; origin checking is enabled.
+          - HTTP clients now use \`http_fetch 1.0.0-rc.8\`. Agent WebSockets
+            use \`http_web_socket 1.0.0-rc.8\` through the public Phoenix Socket
+            Client transport; Req, websocket_client, and the custom transport
+            have been removed. Real Core-Agent mTLS and both TLS 1.2 and TLS 1.3
+            trust/hostname regressions passed with this package cohort.
+          - Core and Human persistent jobs now use \`Styx 0.1.1\`. Existing Oban
+            v14 jobs are preserved by an explicit database migration. Back up
+            the database and read the
+            [Styx migration guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/styx-migration.md)
+            before upgrading. Job processing remains subject to the configured
+            launch profile and feature gates.
+          - DuskmoonBundler 10.1.2 replaces the Bun and Tailwind Mix packages.
+            Production assets use relocated runtime manifests; build-only
+            dependencies are excluded from packaged applications. Agent archive
+            builds compile only the Agent dependency graph, including on Windows.
+          - Hex dependencies and the shared HTTP release cohort are refreshed.
+            Bandit remains in use while Gaoxy's explicit dual-stack listener
+            prerequisite is unresolved; see
+            [the migration status](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/agents/gaoxy-migration-preflight.md).
 
           ## Artifacts
 

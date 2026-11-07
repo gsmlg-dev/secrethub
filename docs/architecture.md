@@ -548,8 +548,8 @@ to Core-2           established
 
 ### Frontend
 - **UI Framework:** Phoenix LiveView
-- **CSS:** Tailwind CSS 4.1
-- **JavaScript:** Bun (bundler)
+- **CSS:** Tailwind CSS v4 via DuskmoonBundler
+- **JavaScript:** DuskmoonBundler (native builds and development HMR)
 - **Icons:** Heroicons
 
 ### Security

@@ -1,0 +1,170 @@
+{
+  "x86_64-linux": [
+    {
+      "name": "liboxc_ex_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_ex_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "b229dd6b593f9b93e0f52dfb1f1835d0e5396f279ff55a80bb44b51e83967df1"
+    },
+    {
+      "name": "liboxc_fmt_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_fmt_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "97bad089465cc7897efe490d8da2d864c3c0a0b20552d82f02f4fe6a10d51be5"
+    },
+    {
+      "name": "liboxc_lint_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_lint_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "ca60280d6aee6ff766e6ef81fdd4b3a33dac2a395a333372eafbb79749650400"
+    },
+    {
+      "name": "liboxide_ex_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxide_ex_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "d42decc6f3c323147671fd593299f4d579a82180158f90ff1ff4a135de8e554f"
+    },
+    {
+      "name": "libvize_ex_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/libvize_ex_nif-v10.1.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "59d4d444f76e343ca1f81e6d95509efdaceff03cde9dcf73eb33f9f01798a990"
+    },
+    {
+      "name": "Elixir.QuickBEAM.Native-v10.1.2-x86_64-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/Elixir.QuickBEAM.Native-v10.1.2-x86_64-linux-gnu.so.tar.gz",
+      "sha256": "f87edbf05feec4fd32cb61911469912db5053658aefb5baa00568b59ba602138"
+    },
+    {
+      "name": "libmdex_native_nif-v0.3.1-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/leandrocp/mdex_native/releases/download/v0.3.1/libmdex_native_nif-v0.3.1-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "9a5ae57c9ee192c21c121832ce102aa9817087d26522582fd44dd16b6add5110"
+    },
+    {
+      "name": "lazy_html-nif-2.16-x86_64-linux-gnu-0.1.14.tar.gz",
+      "url": "https://github.com/dashbitco/lazy_html/releases/download/v0.1.14/lazy_html-nif-2.16-x86_64-linux-gnu-0.1.14.tar.gz",
+      "sha256": "83765c77deddb91b9b81d96e8b60ab38d0060650f9d4b6753d483f204ab627d7"
+    }
+  ],
+  "aarch64-linux": [
+    {
+      "name": "liboxc_ex_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_ex_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "fc45ab7c897ff6f0be1ffb03fdd2c7e728898bebfeecb8ebc94e84d5c9d38db4"
+    },
+    {
+      "name": "liboxc_fmt_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_fmt_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "aca28064435a477b4e34996139858b586ae0f157f4566a1a2b362c9f71c3a2e5"
+    },
+    {
+      "name": "liboxc_lint_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_lint_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "662a5cab47a0c92af187b810b831004cc3a0852c307ce46d291388ba83e3950d"
+    },
+    {
+      "name": "liboxide_ex_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxide_ex_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "4ab3c3609f1e62835e44f854b8706527f52eb3127455efc8be8a3fb89bab27e6"
+    },
+    {
+      "name": "libvize_ex_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/libvize_ex_nif-v10.1.2-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "00e9d485f151b7b9cd8edcd62d29c17f13aaae4068008746d8ef7d7ae8f3a13c"
+    },
+    {
+      "name": "Elixir.QuickBEAM.Native-v10.1.2-aarch64-linux-gnu.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/Elixir.QuickBEAM.Native-v10.1.2-aarch64-linux-gnu.so.tar.gz",
+      "sha256": "cdc6ae942d8c05b52c280cfbd341135e5427f80e456e424480766fcd321d085c"
+    },
+    {
+      "name": "libmdex_native_nif-v0.3.1-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "url": "https://github.com/leandrocp/mdex_native/releases/download/v0.3.1/libmdex_native_nif-v0.3.1-nif-2.15-aarch64-unknown-linux-gnu.so.tar.gz",
+      "sha256": "d627646d37a9260959ebf9db45a10eafbf70570f007e647bfc6376b22025b909"
+    },
+    {
+      "name": "lazy_html-nif-2.16-aarch64-linux-gnu-0.1.14.tar.gz",
+      "url": "https://github.com/dashbitco/lazy_html/releases/download/v0.1.14/lazy_html-nif-2.16-aarch64-linux-gnu-0.1.14.tar.gz",
+      "sha256": "f3eb4ab1bbcfcc75222de2fbc1ed960e6fdb08159f22cdff340ad056e40dadea"
+    }
+  ],
+  "x86_64-darwin": [
+    {
+      "name": "liboxc_ex_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_ex_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "sha256": "a97ad10c4e05a1c25f9381fc3945f7125db6e183a66daf3a584d7da1ed3a057a"
+    },
+    {
+      "name": "liboxc_fmt_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_fmt_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "sha256": "455600b82d3c8051895efc67c6d11264985c642242f9359db4fe723138012a20"
+    },
+    {
+      "name": "liboxc_lint_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_lint_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "sha256": "59c57740af3a71b4eb7d5a0c5b0b6bd099b16bb4f801a5738cd325d23a344463"
+    },
+    {
+      "name": "liboxide_ex_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxide_ex_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "sha256": "bbe8e064a7952e6f6707a30ce0cea7da2b4e1ac047a3cca36a634b0baf27d48e"
+    },
+    {
+      "name": "libvize_ex_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/libvize_ex_nif-v10.1.2-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "sha256": "e6ffb2a968e91425f6ea75bbb6aa0b33969853fca533948868e0c88c8d755ab2"
+    },
+    {
+      "name": "Elixir.QuickBEAM.Native-v10.1.2-x86_64-macos-none.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/Elixir.QuickBEAM.Native-v10.1.2-x86_64-macos-none.so.tar.gz",
+      "sha256": "37f24abc62b394c955f5e1f59dbd8c8cf12217e044f9d19929dfac8da3ab130f"
+    },
+    {
+      "name": "libmdex_native_nif-v0.3.1-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/leandrocp/mdex_native/releases/download/v0.3.1/libmdex_native_nif-v0.3.1-nif-2.15-x86_64-apple-darwin.so.tar.gz",
+      "sha256": "7a49a9717b9696662efc4d2492d0c7df2aa1900184e8dd3387fcd3a4959dc89b"
+    },
+    {
+      "name": "lazy_html-nif-2.16-x86_64-apple-darwin-0.1.14.tar.gz",
+      "url": "https://github.com/dashbitco/lazy_html/releases/download/v0.1.14/lazy_html-nif-2.16-x86_64-apple-darwin-0.1.14.tar.gz",
+      "sha256": "d4824884841c96af904ebd43e25863ec2f6ead69a06a1931db55fa79669779f6"
+    }
+  ],
+  "aarch64-darwin": [
+    {
+      "name": "liboxc_ex_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_ex_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "sha256": "cbc83c523dfb7022e4a707f7d254405c29d53903391d7da4d5021ddd3ed3a72b"
+    },
+    {
+      "name": "liboxc_fmt_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_fmt_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "sha256": "cf8bf83704c7af5859e5931753c919e9eb35efc4e8905e9f853427a4d676fc3f"
+    },
+    {
+      "name": "liboxc_lint_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxc_lint_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "sha256": "67b54f675a06a41e14d34acc2b2ca0e819eccad26268bf741218043c5b5f5a70"
+    },
+    {
+      "name": "liboxide_ex_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/liboxide_ex_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "sha256": "0d486e5f7f49ae3085483315e5229f7d169d603530b7462c44d66992b3b29e21"
+    },
+    {
+      "name": "libvize_ex_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/libvize_ex_nif-v10.1.2-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "sha256": "a2f9ccc8bad9e6267d422b84523a5f5eee78c7f48f60a4b0b4da6b4b84db945c"
+    },
+    {
+      "name": "Elixir.QuickBEAM.Native-v10.1.2-aarch64-macos-none.so.tar.gz",
+      "url": "https://github.com/duskmoon-dev/duskmoon-bundler/releases/download/v10.1.2/Elixir.QuickBEAM.Native-v10.1.2-aarch64-macos-none.so.tar.gz",
+      "sha256": "e2f72722e239c128d0ceff2e23eab47cb6fd9d81eeb6217a5c7d02cb1a2e7583"
+    },
+    {
+      "name": "libmdex_native_nif-v0.3.1-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "url": "https://github.com/leandrocp/mdex_native/releases/download/v0.3.1/libmdex_native_nif-v0.3.1-nif-2.15-aarch64-apple-darwin.so.tar.gz",
+      "sha256": "cd97e781da545357b3c9666b4c778d093efa8a89ed3b761ed1d11a3f28f3cc54"
+    },
+    {
+      "name": "lazy_html-nif-2.16-aarch64-apple-darwin-0.1.14.tar.gz",
+      "url": "https://github.com/dashbitco/lazy_html/releases/download/v0.1.14/lazy_html-nif-2.16-aarch64-apple-darwin-0.1.14.tar.gz",
+      "sha256": "b485904e96bc8d3de826fdd73fafa1c22b7a9addbac504f74c0110ca3152b8f2"
+    }
+  ]
+}

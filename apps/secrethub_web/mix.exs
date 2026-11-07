@@ -51,11 +51,11 @@ defmodule SecretHub.Web.MixProject do
        only: :dev, runtime: System.find_executable("inotifywait") != nil},
       {:phoenix_live_view, "~> 1.2"},
       {:phoenix_ecto, "~> 4.6"},
-      {:lazy_html, ">= 0.1.0", only: :test},
+      {:lazy_html, ">= 0.1.0"},
       {:phoenix_live_dashboard, "~> 0.9.1"},
-      {:bun, "~> 2.0", runtime: Mix.env() == :dev},
-      {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
-      {:phoenix_duskmoon, "~> 10.0.3"},
+      {:duskmoon_bundler_runtime, "~> 10.1"},
+      {:duskmoon_bundler, "~> 10.1", runtime: Mix.env() == :dev},
+      {:phoenix_duskmoon, "~> 10.1.0"},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",
@@ -89,12 +89,11 @@ defmodule SecretHub.Web.MixProject do
   defp aliases do
     [
       setup: ["deps.get", "assets.setup", "assets.build"],
-      "assets.setup": ["tailwind.install --if-missing", "bun.install --if-missing"],
-      "assets.build": ["tailwind secrethub_web", "bun secrethub_web"],
+      "assets.setup": ["npm.install"],
+      "assets.build": ["duskmoon_bundler.build secrethub_web --tailwind"],
       "assets.deploy": [
         "phx.digest.clean",
-        "tailwind secrethub_web --minify",
-        "bun secrethub_web --minify",
+        "duskmoon_bundler.build secrethub_web --tailwind",
         "phx.digest"
       ],
       precommit: ["compile --warning-as-errors", "deps.unlock --unused", "format", "test"],

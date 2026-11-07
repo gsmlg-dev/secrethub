@@ -7,7 +7,11 @@
     <.live_title default="SecretHub">
       {assigns[:page_title]}
     </.live_title>
-    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <link
+      phx-track-static
+      rel="stylesheet"
+      href={DuskmoonBundler.static_path(@conn, "/assets/css/app.css", profile: :secrethub_web)}
+    />
     <script>
       // Set theme before page loads to prevent flash
       (function() {
@@ -19,7 +23,12 @@
         }
       })();
     </script>
-    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    <script
+      defer
+      phx-track-static
+      type="module"
+      src={DuskmoonBundler.static_path(@conn, "/assets/js/app.js", profile: :secrethub_web)}
+    >
     </script>
   </head>
   <body class="bg-surface text-on-surface">

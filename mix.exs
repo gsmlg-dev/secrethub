@@ -25,8 +25,8 @@ defmodule SecretHub.MixProject do
         "coveralls.html": :test
       ],
 
-      # Phoenix code reloader listener (required for Phoenix 1.8+)
-      listeners: [Phoenix.CodeReloader]
+      # The reloader is only available in builds that include the web app.
+      listeners: if(Mix.env() == :dev, do: [Phoenix.CodeReloader], else: [])
     ]
   end
 
@@ -39,8 +39,8 @@ defmodule SecretHub.MixProject do
       {:ex_doc, "~> 0.31", runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:mix_test_watch, "~> 1.1", only: [:dev, :test], runtime: false},
-      # Required by Phoenix LiveView tests; must include :dev since devenv sets MIX_ENV=dev
-      {:lazy_html, ">= 0.1.0", only: [:dev, :test]},
+      # Used by LiveView tests and the asset bundler.
+      {:lazy_html, ">= 0.1.0"},
 
       # Shared utilities
       {:jason, "~> 1.4"},
@@ -54,7 +54,7 @@ defmodule SecretHub.MixProject do
   defp aliases do
     [
       # Setup
-      setup: ["deps.get", "cmd cd apps/secrethub_web/assets && bun install"],
+      setup: ["deps.get", "npm.install"],
       "agent.run": &run_agent/1,
 
       # Testing
@@ -65,12 +65,7 @@ defmodule SecretHub.MixProject do
       lint: ["credo --strict"],
 
       # Assets
-      "assets.deploy": [
-        "phx.digest.clean",
-        "tailwind secrethub_web --minify",
-        "bun secrethub_web --minify",
-        "phx.digest"
-      ],
+      "assets.deploy": ["cmd --app secrethub_web mix assets.deploy"],
 
       # Database
       "ecto.setup": ["ecto.create", "ecto.migrate", "run apps/secrethub_core/priv/repo/seeds.exs"],

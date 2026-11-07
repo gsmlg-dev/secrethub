@@ -203,16 +203,21 @@ printf '{application, %s, [{vsn, "1.0.0-rc.15"}]}.\\n' "$2" > "$target/lib/$2-1.
         core = workflow.split("  build-core-release:", 1)[1].split("  build-agent-release:", 1)[0]
         self.assertNotIn("mix assets.deploy", core)
         self.assertNotIn("BUILD_SECRET_KEY_BASE", workflow)
-        self.assertIn("bun install --frozen-lockfile --ignore-scripts", core)
-        self.assertIn("@tailwindcss/cli/dist/index.mjs", core)
-        self.assertIn("bun build assets/js/app.js", core)
+        self.assertIn("mix npm.ci", core)
+        self.assertIn("mix duskmoon_bundler.build secrethub_web --tailwind", core)
+        self.assertIn("'package-lock.json'", core)
+        self.assertNotIn("bun install", core)
+        self.assertNotIn("setup-bun", core)
         self.assertIn("mix phx.digest --no-compile", core)
 
     def test_standalone_assembly_does_not_need_deployment_secrets(self):
         dockerfile = (ROOT / "Dockerfile.core-standalone").read_text()
         builder = dockerfile.split(" AS runtime", 1)[0]
         self.assertIn("COPY rel ./rel", builder)
-        self.assertIn("bun install --frozen-lockfile --ignore-scripts", builder)
+        self.assertIn("COPY package.json package-lock.json ./", builder)
+        self.assertIn("mix npm.ci", builder)
+        self.assertIn("mix duskmoon_bundler.build secrethub_web --tailwind", builder)
+        self.assertNotIn("oven/bun", builder)
         self.assertIn("mix phx.digest --no-compile", builder)
         self.assertNotIn("mix assets.", builder)
         self.assertNotIn("DATABASE_URL=", builder)

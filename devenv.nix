@@ -22,8 +22,6 @@ in
     # For testing AWS integrations locally
     awscli2
 
-    # Frontend build tools (NixOS-compatible binaries)
-    tailwindcss_4
   ] ++ lib.optionals pkgs.stdenv.isLinux [
     inotify-tools
   ];
@@ -31,11 +29,6 @@ in
   # Language configuration
   languages.elixir.enable = true;
   languages.elixir.package = pkgs-stable.beam.packages.erlang_28.elixir_1_18;
-
-  # JavaScript / Bun
-  languages.javascript.enable = true;
-  languages.javascript.bun.enable = true;
-  languages.javascript.bun.package = pkgs-stable.bun;
 
   processes.core = {
     after = [ "devenv:processes:postgres" ];
@@ -129,10 +122,6 @@ in
     # Database URLs (using Unix domain socket for security and performance)
     DATABASE_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_dev?host=${config.devenv.root}/.devenv/state/postgres";
     DATABASE_TEST_URL = "postgresql://secrethub:secrethub_dev_password@/secrethub_test?host=${config.devenv.root}/.devenv/state/postgres";
-
-    # Asset tooling — tells Mix hex packages to use Nix-managed binaries
-    MIX_BUN_PATH = lib.getExe pkgs-stable.bun;
-    MIX_TAILWIND_PATH = lib.getExe pkgs-stable.tailwindcss_4;
 
     # Application
     MIX_ENV = "dev";
@@ -229,13 +218,13 @@ in
       mix ecto.migrate -r SecretHub.Human.Repo
     '';
     
-    # Asset management (using Bun workspaces)
+    # Asset management (DuskmoonBundler and duskmoon_npm workspaces)
     assets-install.exec = ''
-      bun install
+      mix npm.install
     '';
 
     assets-build.exec = ''
-      mix bun secrethub_web
+      mix duskmoon_bundler.build secrethub_web --tailwind
     '';
     
     # Testing (MIX_ENV must be overridden since devenv sets it to "dev")
@@ -285,12 +274,12 @@ in
        • Elixir 1.18
        • Erlang/OTP 28
        • PostgreSQL 16
-       • Bun (JavaScript runtime)
+       • DuskmoonBundler (Mix asset toolchain)
 
     🚀 Quick commands:
        • db-setup         → Create and migrate database
        • db-reset         → Reset database
-       • assets-install   → Install frontend dependencies (Bun)
+       • assets-install   → Install frontend dependencies (mix npm.install)
        • assets-build     → Build frontend assets
        • devenv processes up → Start postgres, core, and agent
        • test-all         → Run all tests
@@ -310,7 +299,7 @@ in
     fi
     
     # Check if assets dependencies are installed
-    if [ ! -d "apps/secrethub_web/node_modules" ]; then
+    if [ ! -d "node_modules" ]; then
       echo "📦 Frontend dependencies not installed. Run: assets-install"
       echo ""
     fi
