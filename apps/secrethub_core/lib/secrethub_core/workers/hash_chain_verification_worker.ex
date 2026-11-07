@@ -1,6 +1,6 @@
 defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
   @moduledoc """
-  Oban worker for verifying audit log hash chain integrity.
+  Styx worker for verifying audit log hash chain integrity.
 
   This worker periodically verifies that the hash chain in audit logs
   has not been tampered with. Each audit log contains a hash of its
@@ -17,10 +17,10 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
   ## Example
 
       # Schedule verification
-      HashChainVerificationWorker.new() |> Oban.insert()
+      HashChainVerificationWorker.new() |> Styx.insert()
   """
 
-  use Oban.Worker,
+  use Styx.Worker,
     queue: :verification,
     max_attempts: 1,
     priority: 2
@@ -33,8 +33,8 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
   @batch_size 1000
   @verification_start_offset_days 1
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
+  @impl Styx.Worker
+  def perform(%Styx.Job{args: args}) do
     batch_size = Map.get(args, "batch_size", @batch_size)
     start_offset_days = Map.get(args, "start_offset_days", @verification_start_offset_days)
 
@@ -68,7 +68,7 @@ defmodule SecretHub.Core.Workers.HashChainVerificationWorker do
   def verify_range(from_id, to_id) do
     %{from_id: from_id, to_id: to_id}
     |> new()
-    |> Oban.insert()
+    |> Styx.insert()
   end
 
   defp fetch_logs_for_verification(batch_size, start_offset_days) do

@@ -30,7 +30,7 @@ defmodule SecretHub.Human.Audit do
     row = Repo.insert!(%Event{event_type: event, actor_id: actor_id, metadata: data})
     job = AuditDelivery.new(%{"event_id" => row.id})
 
-    case Oban.insert(SecretHub.Human.Oban, job) do
+    case Styx.insert(SecretHub.Human.Styx, job) do
       {:ok, _} -> row.id
       {:error, _} -> Repo.rollback(:audit_unavailable)
     end

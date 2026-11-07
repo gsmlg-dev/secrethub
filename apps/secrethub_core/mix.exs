@@ -41,7 +41,7 @@ defmodule SecretHub.Core.MixProject do
       {:jose, "~> 1.11"},
       {:aws_signature, "~> 0.4"},
       {:idna, "~> 7.1"},
-      {:oban, "~> 2.18"},
+      {:styx, "~> 0.1.1"},
       {:crontab, "~> 1.1"},
       {:redix, "~> 1.5"},
       {:phoenix, "~> 1.8"},

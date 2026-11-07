@@ -83,7 +83,7 @@ defmodule SecretHub.Core.Application do
 
   defp job_children do
     if runtime_environment?() do
-      [{Oban, Application.fetch_env!(:secrethub_core, SecretHub.Core.Oban)}]
+      [{Styx, Application.fetch_env!(:secrethub_core, SecretHub.Core.Styx)}]
     else
       []
     end

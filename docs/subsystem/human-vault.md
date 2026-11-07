@@ -384,7 +384,7 @@ Credential values must never be stored in:
 
 * Ecto tables
 * Phoenix sessions
-* Oban arguments
+* Styx arguments
 * Telemetry metadata
 * Audit metadata
 * Application logs
@@ -1004,7 +1004,7 @@ The implementation must:
 * Avoid direct Repo access from Web modules
 * Avoid global mutable state
 * Use supervisors for lifecycle ownership
-* Use Tasks or Oban only for bounded asynchronous work
+* Use Tasks or Styx only for bounded asynchronous work
 * Preserve existing SecretHub behavior
 * Add no circular umbrella dependencies
 * Keep Core independent from Human

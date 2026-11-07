@@ -314,7 +314,7 @@ defmodule SecretHub.Web.SecretManagementE2ETest do
   describe "E2E: Secret rotation" do
     test "static secret rotation updates external system", %{conn: _conn, token: _token} do
       # This would test the static secret rotation flow
-      # Requires Oban job execution
+      # Requires Styx job execution
 
       # Step 1: Create static secret with rotation config
       # Step 2: Trigger rotation job

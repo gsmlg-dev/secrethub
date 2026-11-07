@@ -9,7 +9,7 @@ defmodule SecretHub.Core.PKI.ACME.PebbleTest do
   @moduletag timeout: 120_000
 
   test "real native TLS/JWS DNS-01 issuance, ARI replacement, revocation and TXT cleanup" do
-    Application.ensure_all_started(:req)
+    Application.ensure_all_started(:http_fetch)
     tls_pem = File.read!(System.fetch_env!("SECRETHUB_PEBBLE_TLS_CERT"))
     [{:Certificate, tls_root, :not_encrypted}] = :public_key.pem_decode(tls_pem)
     opts = [test_mode: true, test_cacerts: [tls_root]]

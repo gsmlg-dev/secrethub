@@ -1,5 +1,5 @@
 defmodule SecretHub.Human.Repo.Migrations.CreateHumanJobs do
   use Ecto.Migration
-  def up, do: Oban.Migration.up()
-  def down, do: Oban.Migration.down(version: 1)
+  def up, do: SecretHub.Core.Repo.StyxMigration.install(prefix())
+  def down, do: SecretHub.Core.Repo.StyxMigration.uninstall(prefix())
 end

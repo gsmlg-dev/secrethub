@@ -13,9 +13,9 @@ defmodule SecretHub.Core.PKI.ACME.CoreRuntimeTest do
     :ok
   end
 
-  test "the named Core Oban executes durable queued work after its instance restarts" do
-    configured = Application.fetch_env!(:secrethub_core, SecretHub.Core.Oban)
-    assert configured[:name] == SecretHub.Core.Oban
+  test "the named Core Styx executes durable queued work after its instance restarts" do
+    configured = Application.fetch_env!(:secrethub_core, SecretHub.Core.Styx)
+    assert configured[:name] == SecretHub.Core.Styx
     assert configured[:repo] == Repo
 
     opts =
@@ -27,16 +27,16 @@ defmodule SecretHub.Core.PKI.ACME.CoreRuntimeTest do
         queues: [acme: [limit: 1, paused: true]]
       )
 
-    {:ok, first} = Oban.start_link(opts)
+    {:ok, first} = Styx.start_link(opts)
     Process.unlink(first)
-    {:ok, job} = Oban.insert(SecretHub.Core.Oban, Reconciler.new(%{}))
-    assert Repo.get!(Oban.Job, job.id).state == "available"
+    {:ok, job} = Styx.insert(SecretHub.Core.Styx, Reconciler.new(%{}))
+    assert Repo.get!(Styx.Job, job.id).state == "available"
     Supervisor.stop(first)
-    {:ok, second} = Oban.start_link(Keyword.put(opts, :queues, acme: 1))
+    {:ok, second} = Styx.start_link(Keyword.put(opts, :queues, acme: 1))
     Process.unlink(second)
     on_exit(fn -> if Process.alive?(second), do: Supervisor.stop(second) end)
-    assert eventually(fn -> Repo.get!(Oban.Job, job.id).state == "completed" end)
-    refute Process.whereis(SecretHub.Human.Oban)
+    assert eventually(fn -> Repo.get!(Styx.Job, job.id).state == "completed" end)
+    refute Process.whereis(SecretHub.Human.Styx)
   end
 
   defp eventually(fun, attempts \\ 100)

@@ -3,7 +3,7 @@ import Config
 # Set test environment flag
 config :secrethub_core, env: :test
 
-config :secrethub_core, SecretHub.Core.Oban,
+config :secrethub_core, SecretHub.Core.Styx,
   testing: :manual,
   queues: false,
   plugins: false
@@ -148,7 +148,7 @@ human_db_config =
 
 config :secrethub_human, SecretHub.Human.Repo, human_db_config
 
-config :secrethub_human, Oban, testing: :manual, queues: false, plugins: false
+config :secrethub_human, Styx, testing: :manual, queues: false, plugins: false
 
 config :secrethub_human, SecretHub.HumanWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4667],

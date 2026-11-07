@@ -163,28 +163,28 @@ defmodule SecretHub.Core.Shutdown do
   defp maybe_wait_for_jobs(_state, false), do: :ok
 
   defp maybe_wait_for_jobs(state, true) do
-    # Check if Oban is running
-    if Code.ensure_loaded?(Oban) && Oban.whereis(SecretHub.Core.Oban) do
+    # Check if Styx is running
+    if Code.ensure_loaded?(Styx) && Styx.whereis(SecretHub.Core.Styx) do
       Logger.info("Waiting for background jobs to complete...")
-      wait_for_oban_jobs(state)
+      wait_for_styx_jobs(state)
     else
       :ok
     end
   end
 
-  defp wait_for_oban_jobs(state) do
-    # Oban graceful shutdown:
+  defp wait_for_styx_jobs(state) do
+    # Styx graceful shutdown:
     # 1. Stop accepting new jobs
     # 2. Wait for executing jobs to finish (or timeout)
-    # The Oban supervisor will handle this automatically when it receives shutdown signal
+    # The Styx supervisor will handle this automatically when it receives shutdown signal
     # We just need to give it time
 
     if time_remaining(state) <= 0 do
       Logger.warning("Timeout reached while waiting for background jobs")
       {:error, :timeout}
     else
-      # Check if Oban has active jobs
-      case get_oban_status() do
+      # Check if Styx has active jobs
+      case get_styx_status() do
         {:ok, 0} ->
           Logger.info("All background jobs completed")
           :ok
@@ -192,7 +192,7 @@ defmodule SecretHub.Core.Shutdown do
         {:ok, count} when count > 0 ->
           Logger.debug("Waiting for #{count} background jobs to complete...")
           Process.sleep(@drain_check_interval_ms)
-          wait_for_oban_jobs(state)
+          wait_for_styx_jobs(state)
 
         {:error, _} ->
           # If we can't determine job status, wait a bit and continue
@@ -269,12 +269,12 @@ defmodule SecretHub.Core.Shutdown do
     0
   end
 
-  defp get_oban_status do
-    if Code.ensure_loaded?(Oban) and Oban.whereis(SecretHub.Core.Oban) do
+  defp get_styx_status do
+    if Code.ensure_loaded?(Styx) and Styx.whereis(SecretHub.Core.Styx) do
       import Ecto.Query
 
       count =
-        SecretHub.Core.Repo.aggregate(from(j in Oban.Job, where: j.state == "executing"), :count)
+        SecretHub.Core.Repo.aggregate(from(j in Styx.Job, where: j.state == "executing"), :count)
 
       {:ok, count}
     else

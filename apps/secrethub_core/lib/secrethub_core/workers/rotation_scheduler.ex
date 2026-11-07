@@ -1,6 +1,6 @@
 defmodule SecretHub.Core.Workers.RotationScheduler do
   @moduledoc """
-  Oban worker that periodically checks for due rotations and schedules them.
+  Styx worker that periodically checks for due rotations and schedules them.
 
   This worker runs on a cron schedule (typically every 5 minutes) and:
   1. Queries all enabled rotation schedules
@@ -9,12 +9,12 @@ defmodule SecretHub.Core.Workers.RotationScheduler do
 
   ## Configuration
 
-  The worker is configured to run every 5 minutes using Oban's cron plugin.
-  This can be adjusted in the Oban configuration:
+  The worker is configured to run every 5 minutes using Styx's cron plugin.
+  This can be adjusted in the Styx configuration:
 
-      config :secrethub_core, Oban,
+      config :secrethub_core, Styx,
         plugins: [
-          {Oban.Plugins.Cron,
+          {Styx.Plugins.Cron,
            crontab: [
              {"*/5 * * * *", SecretHub.Core.Workers.RotationScheduler}
            ]}
@@ -30,10 +30,10 @@ defmodule SecretHub.Core.Workers.RotationScheduler do
   ## Example Configuration
 
       # In config/config.exs
-      config :secrethub_core, Oban,
+      config :secrethub_core, Styx,
         repo: SecretHub.Core.Repo,
         plugins: [
-          {Oban.Plugins.Cron,
+          {Styx.Plugins.Cron,
            crontab: [
              # Check for due rotations every 5 minutes
              {"*/5 * * * *", SecretHub.Core.Workers.RotationScheduler},
@@ -47,7 +47,7 @@ defmodule SecretHub.Core.Workers.RotationScheduler do
         ]
   """
 
-  use Oban.Worker,
+  use Styx.Worker,
     queue: :rotation,
     max_attempts: 1,
     unique: [period: 60, states: :incomplete]
@@ -56,7 +56,7 @@ defmodule SecretHub.Core.Workers.RotationScheduler do
 
   alias SecretHub.Core.Workers.RotationWorker
 
-  @impl Oban.Worker
+  @impl Styx.Worker
   def perform(job) do
     case SecretHub.Shared.LaunchProfile.check(:rotation) do
       :ok -> do_perform(job)
@@ -64,7 +64,7 @@ defmodule SecretHub.Core.Workers.RotationScheduler do
     end
   end
 
-  defp do_perform(%Oban.Job{}) do
+  defp do_perform(%Styx.Job{}) do
     Logger.info("Starting rotation scheduler check")
 
     start_time = System.monotonic_time(:millisecond)

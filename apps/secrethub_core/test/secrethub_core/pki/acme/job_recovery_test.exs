@@ -25,9 +25,9 @@ defmodule SecretHub.Core.PKI.ACME.JobRecoveryTest do
     if pid = Process.whereis(SealState), do: GenServer.stop(pid, :normal)
     RuntimeDatabaseFixture.setup(tags)
 
-    {:ok, oban} =
-      Oban.start_link(
-        name: SecretHub.Core.Oban,
+    {:ok, styx} =
+      Styx.start_link(
+        name: SecretHub.Core.Styx,
         repo: Repo,
         get_dynamic_repo: fn -> :runtime_authorization_fixture end,
         testing: :disabled,
@@ -35,8 +35,8 @@ defmodule SecretHub.Core.PKI.ACME.JobRecoveryTest do
         plugins: false
       )
 
-    Process.unlink(oban)
-    on_exit(fn -> if Process.alive?(oban), do: Supervisor.stop(oban) end)
+    Process.unlink(styx)
+    on_exit(fn -> if Process.alive?(styx), do: Supervisor.stop(styx) end)
     start_supervised!({SealState, repo: RuntimeDatabaseFixture.VaultRepo}, restart: :temporary)
     await_vault_state(:not_initialized)
     {:ok, [a, b | _]} = SealState.initialize(3, 2)
@@ -100,7 +100,7 @@ defmodule SecretHub.Core.PKI.ACME.JobRecoveryTest do
            )
 
     assert Repo.exists?(
-             from(j in Oban.Job,
+             from(j in Styx.Job,
                where: fragment("?->>'renewal_info_id'", j.args) == ^ari.id
              )
            )
@@ -205,7 +205,7 @@ defmodule SecretHub.Core.PKI.ACME.JobRecoveryTest do
     )
 
     assert {:error, %{"code" => "terms_changed"}} =
-             Worker.perform(%Oban.Job{args: %{"account_id" => account.id}})
+             Worker.perform(%Styx.Job{args: %{"account_id" => account.id}})
 
     assert Repo.get!(AcmeAccount, account.id).last_error == %{"code" => "terms_changed"}
   end
@@ -219,7 +219,7 @@ defmodule SecretHub.Core.PKI.ACME.JobRecoveryTest do
     )
 
     assert {:error, %{"code" => "vault_unavailable"}} =
-             Worker.perform(%Oban.Job{args: %{"account_id" => account.id}})
+             Worker.perform(%Styx.Job{args: %{"account_id" => account.id}})
 
     assert Repo.get!(AcmeAccount, account.id).last_error == %{"code" => "vault_unavailable"}
   end
@@ -240,7 +240,7 @@ defmodule SecretHub.Core.PKI.ACME.JobRecoveryTest do
     end
 
     Application.put_env(:secrethub_core, :acme_adapter_options, transport: transport)
-    assert {:error, _} = Worker.perform(%Oban.Job{args: %{"account_id" => account.id}})
+    assert {:error, _} = Worker.perform(%Styx.Job{args: %{"account_id" => account.id}})
     current = Repo.get!(AcmeAccount, account.id)
     assert current.status == "valid"
     assert current.account_url == "https://ca.test/recovered"
@@ -259,7 +259,7 @@ defmodule SecretHub.Core.PKI.ACME.JobRecoveryTest do
   end
 
   defp renewal_info_enqueued?(id) do
-    Repo.exists?(from(j in Oban.Job, where: fragment("?->>'renewal_info_id'", j.args) == ^id))
+    Repo.exists?(from(j in Styx.Job, where: fragment("?->>'renewal_info_id'", j.args) == ^id))
   end
 
   defp material(c, renewal_due, ari_due, version_attrs \\ []) do

@@ -38,7 +38,7 @@ defmodule SecretHub.Human.VaultConcurrencyTest do
           )
         )
 
-      Repo.delete_all(from(j in Oban.Job, where: fragment("?->>'event_id'", j.args) in ^ids))
+      Repo.delete_all(from(j in Styx.Job, where: fragment("?->>'event_id'", j.args) in ^ids))
       Repo.delete_all(from(e in SecretHub.Human.Audit.Event, where: e.id in ^ids))
       Repo.delete_all(from(u in SecretHub.Human.Schemas.User, where: u.id == ^user.id))
       GenServer.stop(dynamic_repo)

@@ -54,7 +54,7 @@ defmodule SecretHub.MixProject do
       # Shared utilities
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.2"},
-      {:oban, "~> 2.18"},
+      {:styx, "~> 0.1.1"},
       {:crontab, "~> 1.1"},
       {:sweet_xml, "~> 0.7"}
     ]

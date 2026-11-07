@@ -24,14 +24,14 @@ config :secrethub_core,
   ecto_repos: [SecretHub.Core.Repo],
   cluster_node_freshness_timeout_seconds: 30
 
-config :secrethub_core, SecretHub.Core.Oban,
-  name: SecretHub.Core.Oban,
+config :secrethub_core, SecretHub.Core.Styx,
+  name: SecretHub.Core.Styx,
   repo: SecretHub.Core.Repo,
   queues: [acme: 4, acme_cleanup: 2],
   shutdown_grace_period: 15_000,
   plugins: [
-    {Oban.Plugins.Pruner, max_age: 604_800},
-    {Oban.Plugins.Cron, crontab: [{"* * * * *", SecretHub.Core.PKI.ACME.Reconciler}]}
+    {Styx.Plugins.Pruner, max_age: 604_800},
+    {Styx.Plugins.Cron, crontab: [{"* * * * *", SecretHub.Core.PKI.ACME.Reconciler}]}
   ]
 
 config :secrethub_human,
@@ -48,13 +48,13 @@ config :secrethub_human, SecretHub.HumanWeb.Endpoint,
   render_errors: [formats: [json: SecretHub.HumanWeb.ErrorJSON], layout: false],
   pubsub_server: SecretHub.Human.PubSub
 
-config :secrethub_human, Oban,
-  name: SecretHub.Human.Oban,
+config :secrethub_human, Styx,
+  name: SecretHub.Human.Styx,
   repo: SecretHub.Human.Repo,
   queues: [human_audit: 5],
   plugins: [
-    {Oban.Plugins.Pruner, max_age: 604_800},
-    {Oban.Plugins.Cron,
+    {Styx.Plugins.Pruner, max_age: 604_800},
+    {Styx.Plugins.Cron,
      crontab: [
        {"* * * * *", SecretHub.Human.LeaseMonitor},
        {"0 * * * *", SecretHub.Human.Attachments.Cleanup}

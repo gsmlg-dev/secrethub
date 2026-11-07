@@ -560,11 +560,11 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
 
   defp enqueue_account_registration!(id) do
     args = %{"account_id" => id}
-    worker = Oban.Worker.to_string(Worker)
+    worker = Styx.Worker.to_string(Worker)
 
     job =
       Repo.one(
-        from(j in Oban.Job,
+        from(j in Styx.Job,
           where:
             j.worker == ^worker and j.args == ^args and
               j.state in ["available", "executing", "scheduled", "retryable"],
@@ -582,8 +582,8 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
         enqueue!(args)
 
       %{state: state} when state in ["scheduled", "retryable"] ->
-        :ok = Oban.retry_job(SecretHub.Core.Oban, job)
-        Repo.get!(Oban.Job, job.id)
+        :ok = Styx.retry_job(SecretHub.Core.Styx, job)
+        Repo.get!(Styx.Job, job.id)
 
       job ->
         job
@@ -592,7 +592,7 @@ defmodule SecretHub.Core.PKI.ManagedCertificates do
 
   def enqueue(args, kind \\ :progress) do
     module = if kind == :cleanup, do: SecretHub.Core.PKI.ACME.CleanupWorker, else: Worker
-    Oban.insert(SecretHub.Core.Oban, module.new(args))
+    Styx.insert(SecretHub.Core.Styx, module.new(args))
   end
 
   defp enqueue!(args, kind \\ :progress) do

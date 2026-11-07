@@ -500,9 +500,9 @@ This checklist verifies that all security controls implemented during Week 29 (S
 
 - [ ] **Static secret rotation scheduled**
   ```bash
-  # Check Oban scheduled jobs
+  # Check Styx scheduled jobs
   psql $DATABASE_URL -c "
-    SELECT * FROM oban_jobs
+    SELECT * FROM styx_jobs
     WHERE worker = 'SecretHub.Workers.RotationWorker'
     AND state = 'scheduled'
     LIMIT 5;

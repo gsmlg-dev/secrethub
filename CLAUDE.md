@@ -125,8 +125,8 @@ Full design in `docs/agents/trusted-agent-connection.md` (supersedes older AppRo
 - Local dev: `mix agent.run` starts an agent against Core. Env vars: `SECRET_HUB_AGENT_CORE_URL` (default `https://localhost:4664`), `SECRET_HUB_AGENT_STATE_DIR` (default `priv/cert`), `SECRET_HUB_AGENT_HOST_KEY_PATH` (auto-generates a dev RSA key if unset).
 
 ### Background Jobs
-- **Oban** for persistent background tasks (secret rotation, lease cleanup)
-- New background jobs must integrate with Oban configuration
+- **Styx** for persistent background tasks (secret rotation, lease cleanup)
+- New background jobs must integrate with the Core or Human Styx instance
 
 ### Audit Logging
 - All operations must be logged to the audit subsystem
@@ -135,7 +135,7 @@ Full design in `docs/agents/trusted-agent-connection.md` (supersedes older AppRo
 ### Secret Engines
 Located in `apps/secrethub_core/lib/secrethub_core/engines/`:
 - **Dynamic engines**: Generate temporary credentials (PostgreSQL, Redis, AWS STS) - integrate with Lease Manager
-- **Static engines**: Rotate long-lived credentials - integrate with Oban scheduler
+- **Static engines**: Rotate long-lived credentials - integrate with Styx scheduler
 
 ### REST API Routes
 - `/v1/sys/*` - System operations (init, seal/unseal, health) - no auth required

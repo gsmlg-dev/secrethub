@@ -105,7 +105,7 @@ defmodule SecretHub.Human.Attachments do
           })
         )
 
-        check!(Oban.insert(SecretHub.Human.Oban, Cleanup.new(%{})))
+        check!(Styx.insert(SecretHub.Human.Styx, Cleanup.new(%{})))
         row.id
       end)
 

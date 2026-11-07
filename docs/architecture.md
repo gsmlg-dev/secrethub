@@ -544,7 +544,7 @@ to Core-2           established
 - **HTTP Server:** Bandit (HTTP/2 + WebSocket)
 - **Database:** PostgreSQL 16
 - **Cache:** ETS (in-memory), Redis (optional for multi-node)
-- **Job Queue:** Oban
+- **Job Queue:** Styx
 
 ### Frontend
 - **UI Framework:** Phoenix LiveView

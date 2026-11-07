@@ -204,7 +204,7 @@ defmodule SecretHub.Human.OrganizationsTest do
 
     jobs =
       Repo.all(
-        from(j in Oban.Job, where: j.worker == "SecretHub.Human.Organizations.RevokeMembership")
+        from(j in Styx.Job, where: j.worker == "SecretHub.Human.Organizations.RevokeMembership")
       )
 
     assert [%{args: %{"organization_id" => id, "subject_id" => subject}}] = jobs

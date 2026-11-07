@@ -23,9 +23,9 @@ defmodule SecretHub.Core.PKI.ManagedCertificatesTest do
     if pid = Process.whereis(SealState), do: GenServer.stop(pid, :normal)
     RuntimeDatabaseFixture.setup(tags)
 
-    {:ok, oban} =
-      Oban.start_link(
-        name: SecretHub.Core.Oban,
+    {:ok, styx} =
+      Styx.start_link(
+        name: SecretHub.Core.Styx,
         repo: Repo,
         get_dynamic_repo: fn -> :runtime_authorization_fixture end,
         testing: :disabled,
@@ -33,8 +33,8 @@ defmodule SecretHub.Core.PKI.ManagedCertificatesTest do
         plugins: false
       )
 
-    Process.unlink(oban)
-    on_exit(fn -> if Process.alive?(oban), do: Supervisor.stop(oban) end)
+    Process.unlink(styx)
+    on_exit(fn -> if Process.alive?(styx), do: Supervisor.stop(styx) end)
     start_supervised!({SealState, repo: RuntimeDatabaseFixture.VaultRepo}, restart: :temporary)
     await_vault_state(:not_initialized)
     {:ok, [a, b | _]} = SealState.initialize(3, 2)
@@ -311,25 +311,25 @@ defmodule SecretHub.Core.PKI.ManagedCertificatesTest do
 
   test "fresh accepted account terms atomically queue registration while availability edits do not" do
     assert {:ok, account} = Managed.create_account(account_attrs())
-    Repo.delete_all(Oban.Job)
+    Repo.delete_all(Styx.Job)
     terms = "https://letsencrypt.org/documents/current-test-agreement.pdf"
 
     assert {:ok, updated} =
              Managed.update_account(account.id, %{"terms_url" => terms, "terms_accepted" => true})
 
     assert updated.terms_url == terms
-    assert [%Oban.Job{args: %{"account_id" => id}, state: "available"}] = Repo.all(Oban.Job)
+    assert [%Styx.Job{args: %{"account_id" => id}, state: "available"}] = Repo.all(Styx.Job)
     assert id == account.id
-    Repo.delete_all(Oban.Job)
+    Repo.delete_all(Styx.Job)
     assert {:ok, _} = Managed.update_account(account.id, %{"enabled" => false})
-    assert Repo.all(Oban.Job) == []
+    assert Repo.all(Styx.Job) == []
     assert {:ok, _} = Managed.update_account(account.id, %{"enabled" => true})
-    assert Repo.all(Oban.Job) == []
+    assert Repo.all(Styx.Job) == []
   end
 
   test "confirmed account terms make an existing registration retry due without duplicating jobs" do
     assert {:ok, account} = Managed.create_account(account_attrs())
-    [job] = Repo.all(Oban.Job)
+    [job] = Repo.all(Styx.Job)
 
     for state <- ["scheduled", "retryable"] do
       Repo.update!(
@@ -346,8 +346,8 @@ defmodule SecretHub.Core.PKI.ManagedCertificatesTest do
                  "terms_accepted" => true
                })
 
-      assert [%Oban.Job{id: id, state: "available", scheduled_at: scheduled_at}] =
-               Repo.all(Oban.Job)
+      assert [%Styx.Job{id: id, state: "available", scheduled_at: scheduled_at}] =
+               Repo.all(Styx.Job)
 
       assert id == job.id
       assert DateTime.compare(scheduled_at, DateTime.utc_now()) != :gt
@@ -362,7 +362,7 @@ defmodule SecretHub.Core.PKI.ManagedCertificatesTest do
       )
 
       assert {:ok, _} = Managed.register_account(account.id)
-      assert [%Oban.Job{id: id, state: ^state}] = Repo.all(Oban.Job)
+      assert [%Styx.Job{id: id, state: ^state}] = Repo.all(Styx.Job)
       assert id == job.id
     end
   end

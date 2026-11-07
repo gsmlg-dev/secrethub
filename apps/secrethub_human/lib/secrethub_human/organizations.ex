@@ -469,7 +469,7 @@ defmodule SecretHub.Human.Organizations do
   defp removable_member!(_acting, _member), do: :ok
 
   defp enqueue_revocation!(job) do
-    case Oban.insert(SecretHub.Human.Oban, job) do
+    case Styx.insert(SecretHub.Human.Styx, job) do
       {:ok, _} -> :ok
       {:error, _} -> Repo.rollback(:revocation_unavailable)
     end

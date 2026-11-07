@@ -27,7 +27,7 @@ defmodule SecretHub.Human.AuditDeliveryTest do
              Audit.record("human.login.failed", %{id: subject}, %{reason: "invalid_credentials"})
 
     assert [%{args: %{"event_id" => ^id}}] =
-             Oban.Testing.all_enqueued(repo: Repo) |> Enum.filter(&(&1.args["event_id"] == id))
+             Styx.Testing.all_enqueued(repo: Repo) |> Enum.filter(&(&1.args["event_id"] == id))
 
     assert :ok = Audit.deliver(id)
     assert :ok = Audit.deliver(id)
@@ -55,14 +55,14 @@ defmodule SecretHub.Human.AuditDeliveryTest do
 
   test "secret-shaped data is rejected before an outbox or job is inserted" do
     before_events = Repo.aggregate(Event, :count)
-    before_jobs = Oban.Testing.all_enqueued(repo: Repo) |> Enum.map(& &1.id) |> Enum.sort()
+    before_jobs = Styx.Testing.all_enqueued(repo: Repo) |> Enum.map(& &1.id) |> Enum.sort()
 
     assert {:error, :invalid_evidence} =
              Audit.record("human.login.failed", nil, %{password: "secret"})
 
     assert Repo.aggregate(Event, :count) == before_events
 
-    assert Oban.Testing.all_enqueued(repo: Repo) |> Enum.map(& &1.id) |> Enum.sort() ==
+    assert Styx.Testing.all_enqueued(repo: Repo) |> Enum.map(& &1.id) |> Enum.sort() ==
              before_jobs
   end
 end

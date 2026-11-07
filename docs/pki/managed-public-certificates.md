@@ -8,8 +8,9 @@ identity trust are separate; public certificates do not authorize machines.
 ## Installation and configuration
 
 Run the normal Core release migration command before starting the new binary.
-The two new Core migrations install Oban schema version 14 and the dedicated
-ACME tables, ownership constraints and retention guards. Back up PostgreSQL and
+The Core migrations install Styx schema version 1 and the dedicated
+ACME tables, ownership constraints and retention guards. Existing Oban v14 queues
+use the [data-preserving Styx transition](../styx-migration.md). Back up PostgreSQL and
 Vault recovery material first. No existing internal CA is imported or replaced.
 ACME retention guards intentionally require a coordinated retention migration
 before rolling the database backwards; restoring an old binary alone does not
@@ -17,15 +18,15 @@ remove them.
 
 The supported Core profile includes `public_trust` and `acme`. Set
 `SECRET_HUB_ACME_ENABLED=false` to stop new issuance and publication. Named
-`SecretHub.Core.Oban` runs bounded `acme` and `acme_cleanup` queues and a minute
-reconciler; Human's Oban instance remains separate. Creating/registering an
+`SecretHub.Core.Styx` runs bounded `acme` and `acme_cleanup` queues and a minute
+reconciler; Human's Styx instance remains separate. Creating/registering an
 account contacts the CA; DNS changes begin when a managed issuance order runs.
 DNS cleanup and pending revocations continue while issuance is disabled. Keep
 their old credential references, Vault access and outbound connectivity available.
 
 The Vault must be unsealed to create/use encrypted account keys, pending leaf
 keys and credential secrets. Public trust inspection/export works while sealed,
-without a database or network. Queue state survives restart; do not purge Oban
+without a database or network. Queue state survives restart; do not purge Styx
 or ACME tables to recover a failed attempt.
 
 ## Public roots

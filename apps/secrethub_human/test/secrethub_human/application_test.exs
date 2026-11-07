@@ -24,7 +24,7 @@ defmodule SecretHub.Human.ApplicationTest do
                id: SecretHub.Human.RefreshRateLimiter
              ),
              SecretHub.Human.RevealStore,
-             {Oban, Application.fetch_env!(:secrethub_human, Oban)},
+             {Styx, Application.fetch_env!(:secrethub_human, Styx)},
              {Phoenix.PubSub, name: SecretHub.Human.PubSub},
              SecretHub.HumanWeb.Endpoint
            ]
@@ -52,7 +52,7 @@ defmodule SecretHub.Human.ApplicationTest do
                id: SecretHub.Human.RefreshRateLimiter
              ),
              SecretHub.Human.RevealStore,
-             {Oban, Application.fetch_env!(:secrethub_human, Oban)},
+             {Styx, Application.fetch_env!(:secrethub_human, Styx)},
              {Phoenix.PubSub, name: SecretHub.Human.PubSub},
              SecretHub.HumanWeb.Endpoint
            ]

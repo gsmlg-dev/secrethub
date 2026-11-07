@@ -60,7 +60,7 @@ defmodule SecretHub.Core.LaunchProfileTest do
              SecretHub.Core.Workers.RotationWorker.schedule_rotation(rotator)
 
     assert {:discard, :feature_unavailable} =
-             SecretHub.Core.Workers.RotationWorker.perform(%Oban.Job{
+             SecretHub.Core.Workers.RotationWorker.perform(%Styx.Job{
                args: %{"rotator_id" => rotator.id}
              })
   end

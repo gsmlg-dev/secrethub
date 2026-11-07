@@ -1,7 +1,7 @@
 # SecretHub Human
 
 Human owns accounts, devices, sessions, client-encrypted vault data, organizations, collections,
-attachments, its PostgreSQL Repo, Phoenix Endpoint and Oban instance. It calls only the public
+attachments, its PostgreSQL Repo, Phoenix Endpoint and Styx instance. It calls only the public
 `SecretHub.Access` Core boundary. Core management remains behind Caddy mTLS; Human authentication
 is separate and does not add a Core admin login.
 
@@ -116,7 +116,7 @@ an isolated Human-only release.
 
 ## Database and storage lifecycle
 
-Migrate **both Repos before starting the enabled application**: Human Oban validates its tables
+Migrate **both Repos before starting the enabled application**: Human Styx validates its tables
 at startup. Development databases are `secrethub_dev` and `secrethub_human_dev`; test databases are
 `secrethub_test` and `secrethub_human_test`, with `MIX_TEST_PARTITION` suffixes for isolated fixtures.
 
@@ -153,7 +153,7 @@ integration is installed by this subsystem.
 reveal store and notification PubSub. The endpoint response itself establishes listener readiness.
 `SecretHub.Human.Metrics.snapshot/0` returns aggregate session/login/item/request/denial/reveal/
 lease/approval counts. The periodic Human job emits telemetry without actor IDs or payloads and
-invokes Core lease cleanup. Human's separate Oban instance also delivers sanitized audit outbox
+invokes Core lease cleanup. Human's separate Styx instance also delivers sanitized audit outbox
 entries and performs attachment cleanup. Outbox delivery is eventual across the two databases,
 with canonical Core evidence and retry-safe event UUIDs; credentials are never job arguments.
 Human Repo SQL logging is disabled and HTTP responses are `no-store`.

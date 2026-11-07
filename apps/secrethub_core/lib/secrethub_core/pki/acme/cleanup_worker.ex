@@ -1,6 +1,6 @@
 defmodule SecretHub.Core.PKI.ACME.CleanupWorker do
   @moduledoc "Independent cleanup/revocation obligations remain runnable while issuance is disabled."
-  use Oban.Worker,
+  use Styx.Worker,
     queue: :acme_cleanup,
     max_attempts: 8,
     unique: [
@@ -15,14 +15,14 @@ defmodule SecretHub.Core.PKI.ACME.CleanupWorker do
   alias SecretHub.Shared.Schemas.DNSChallengeOperation
 
   @impl true
-  def perform(%Oban.Job{args: %{"revoke_version_id" => id}}),
+  def perform(%Styx.Job{args: %{"revoke_version_id" => id}}),
     do: Revocation.run(id, Worker.options())
 
-  def perform(%Oban.Job{args: %{"cleanup_operation_id" => id}}) do
+  def perform(%Styx.Job{args: %{"cleanup_operation_id" => id}}) do
     cleanup(Repo.get(DNSChallengeOperation, id), :operation)
   end
 
-  def perform(%Oban.Job{args: %{"cleanup_order_id" => id}}) do
+  def perform(%Styx.Job{args: %{"cleanup_order_id" => id}}) do
     Repo.one(
       from(d in DNSChallengeOperation,
         where: d.order_id == ^id and d.cleanup_status != "cleaned",

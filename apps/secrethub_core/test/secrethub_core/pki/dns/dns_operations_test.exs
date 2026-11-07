@@ -202,7 +202,7 @@ defmodule SecretHub.Core.PKI.ACME.DNSOperationsTest do
     %{order: order, authorization: authorization, opts: opts} = context
     {:ok, operation} = DNSOperations.create_intent(order, authorization, "challenge", opts)
     Repo.update!(Changeset.change(order, state: "cancelled"))
-    job = %Oban.Job{args: %{"cleanup_operation_id" => operation.id}}
+    job = %Styx.Job{args: %{"cleanup_operation_id" => operation.id}}
     assert :ok = CleanupWorker.perform(job)
     assert :ok = CleanupWorker.perform(job)
 
@@ -227,7 +227,7 @@ defmodule SecretHub.Core.PKI.ACME.DNSOperationsTest do
         intent: %{}
       })
 
-    order_job = %Oban.Job{args: %{"cleanup_order_id" => order.id}}
+    order_job = %Styx.Job{args: %{"cleanup_order_id" => order.id}}
     assert {:snooze, 1} = CleanupWorker.perform(order_job)
     assert Repo.get!(DNSChallengeOperation, operation.id).cleanup_status == "cleaned"
     assert :ok = CleanupWorker.perform(order_job)

@@ -1,6 +1,6 @@
 defmodule SecretHub.Core.PKI.ACME.Worker do
   @moduledoc "Durable bounded certificate/account progress on the named Core instance."
-  use Oban.Worker,
+  use Styx.Worker,
     queue: :acme,
     max_attempts: 8,
     unique: [
@@ -16,15 +16,15 @@ defmodule SecretHub.Core.PKI.ACME.Worker do
   alias SecretHub.Shared.Schemas.AcmeAccount
 
   @impl true
-  def perform(%Oban.Job{args: %{"order_id" => id}}), do: Workflow.step(id, options())
+  def perform(%Styx.Job{args: %{"order_id" => id}}), do: Workflow.step(id, options())
 
-  def perform(%Oban.Job{args: %{"renewal_info_id" => id}}) do
+  def perform(%Styx.Job{args: %{"renewal_info_id" => id}}) do
     with {:ok, version} <- ManagedCertificates.get_version(id),
          {:ok, _} <- RenewalScheduler.refresh(version, options()),
          do: :ok
   end
 
-  def perform(%Oban.Job{args: %{"account_id" => id}}) do
+  def perform(%Styx.Job{args: %{"account_id" => id}}) do
     case Workflow.register_account(id, options()) do
       {:ok, _} ->
         :ok

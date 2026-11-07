@@ -558,9 +558,9 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
       ManagedCertificateVersion
     }
 
-    {:ok, oban} =
-      Oban.start_link(
-        name: SecretHub.Core.Oban,
+    {:ok, styx} =
+      Styx.start_link(
+        name: SecretHub.Core.Styx,
         repo: Repo,
         get_dynamic_repo: fn -> :runtime_authorization_fixture end,
         testing: :disabled,
@@ -568,8 +568,8 @@ defmodule SecretHub.Core.RuntimeAuthorizationTest do
         plugins: false
       )
 
-    Process.unlink(oban)
-    on_exit(fn -> if Process.alive?(oban), do: Supervisor.stop(oban) end)
+    Process.unlink(styx)
+    on_exit(fn -> if Process.alive?(styx), do: Supervisor.stop(styx) end)
 
     account =
       Repo.insert!(%AcmeAccount{

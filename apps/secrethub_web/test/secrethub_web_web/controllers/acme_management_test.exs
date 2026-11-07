@@ -12,9 +12,9 @@ defmodule SecretHub.Web.AcmeManagementTest do
     if tags[:database], do: RuntimeDatabaseFixture.setup(tags)
 
     if tags[:account_registration] do
-      {:ok, oban} =
-        Oban.start_link(
-          name: SecretHub.Core.Oban,
+      {:ok, styx} =
+        Styx.start_link(
+          name: SecretHub.Core.Styx,
           repo: SecretHub.Core.Repo,
           get_dynamic_repo: fn -> :runtime_authorization_fixture end,
           testing: :disabled,
@@ -22,8 +22,8 @@ defmodule SecretHub.Web.AcmeManagementTest do
           plugins: false
         )
 
-      Process.unlink(oban)
-      on_exit(fn -> if Process.alive?(oban), do: Supervisor.stop(oban) end)
+      Process.unlink(styx)
+      on_exit(fn -> if Process.alive?(styx), do: Supervisor.stop(styx) end)
     end
 
     {:ok, conn: build_conn()}
@@ -517,7 +517,7 @@ defmodule SecretHub.Web.AcmeManagementTest do
     assert socket.assigns.account_edit_id == nil
     assert socket.assigns.account_terms_url == nil
     assert Repo.get!(AcmeAccount, account.id).terms_url == current_terms
-    assert [%Oban.Job{args: %{"account_id" => id}}] = Repo.all(Oban.Job)
+    assert [%Styx.Job{args: %{"account_id" => id}}] = Repo.all(Styx.Job)
     assert id == account.id
 
     {:noreply, socket} = AcmeLive.handle_event("new_account", %{}, socket)

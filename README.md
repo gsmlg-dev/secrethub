@@ -24,7 +24,7 @@ These principles define the intended application and deployment design:
 |---------|-------------|
 | 🔐 **mTLS Everywhere** | Mutual TLS for all Core-Agent communications with PKI-issued certificates |
 | 🔑 **Dynamic Secrets** | Short-lived credentials for PostgreSQL, Redis, and AWS STS |
-| 🔄 **Automatic Rotation** | Oban-scheduled zero-downtime secret rotation |
+| 🔄 **Automatic Rotation** | Styx-scheduled zero-downtime secret rotation |
 | 📝 **Template Rendering** | EEx-based secret injection into configuration files |
 | 📊 **Tamper-Proof Audit** | SHA-256 hash-chained logs with HMAC signatures |
 | 🛡️ **Vault Seal/Unseal** | Shamir's Secret Sharing for master key protection |
@@ -133,7 +133,7 @@ SecretHub implements a **two-tier architecture** with a central Core service and
 
 ### Static Secrets
 - Encrypted storage with versioning
-- Oban-scheduled rotation
+- Styx-scheduled rotation
 - Template rendering support
 
 ### Dynamic Secrets
@@ -240,7 +240,7 @@ secrethub/                              # Elixir Umbrella Application
 │   │       ├── anomaly_detection.ex    # Security anomaly detection
 │   │       ├── alerting.ex             # Multi-channel alerting
 │   │       ├── lease_manager.ex        # Lease lifecycle
-│   │       └── rotation_manager.ex     # Oban-scheduled rotation
+│   │       └── rotation_manager.ex     # Styx-scheduled rotation
 │   │
 │   ├── secrethub_web/                  # Phoenix Web Layer
 │   │   └── lib/secrethub_web_web/
@@ -519,7 +519,7 @@ concurrently running Core replica.
 - [x] Secret caching with TTL and LRU eviction
 - [x] Template rendering and atomic file writes
 - [x] Lease management with auto-renewal
-- [x] Oban-scheduled secret rotation
+- [x] Styx-scheduled secret rotation
 - [x] Application management system
 - [x] Anomaly detection engine
 - [x] Multi-channel alerting (Email, Slack, PagerDuty, Opsgenie)

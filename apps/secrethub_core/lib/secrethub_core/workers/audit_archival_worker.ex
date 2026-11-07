@@ -1,6 +1,6 @@
 defmodule SecretHub.Core.Workers.AuditArchivalWorker do
   @moduledoc """
-  Oban worker for archiving old audit logs to external storage (S3/GCS).
+  Styx worker for archiving old audit logs to external storage (S3/GCS).
 
   This worker periodically archives audit logs that are older than the
   configured threshold to external storage, compresses them, computes
@@ -26,10 +26,10 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
       # Schedule an archival job
       %{config_id: config.id}
       |> AuditArchivalWorker.new()
-      |> Oban.insert()
+      |> Styx.insert()
   """
 
-  use Oban.Worker,
+  use Styx.Worker,
     queue: :archival,
     max_attempts: 2,
     priority: 3
@@ -40,8 +40,8 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
   alias SecretHub.Core.Repo
   alias SecretHub.Shared.Schemas.{AuditArchivalConfig, AuditArchivalJob}
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: %{"config_id" => config_id}}) do
+  @impl Styx.Worker
+  def perform(%Styx.Job{args: %{"config_id" => config_id}}) do
     Logger.info("Starting audit archival job", config_id: config_id)
 
     with {:ok, config} <- get_config(config_id),
@@ -79,8 +79,8 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
     end
   end
 
-  @impl Oban.Worker
-  def perform(%Oban.Job{args: args}) do
+  @impl Styx.Worker
+  def perform(%Styx.Job{args: args}) do
     Logger.error("Invalid archival job arguments", args: inspect(args))
     {:discard, :invalid_arguments}
   end
@@ -97,7 +97,7 @@ defmodule SecretHub.Core.Workers.AuditArchivalWorker do
       Enum.map(configs, fn config ->
         %{config_id: config.id}
         |> new()
-        |> Oban.insert()
+        |> Styx.insert()
       end)
 
     success_count =

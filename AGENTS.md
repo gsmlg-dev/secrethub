@@ -138,8 +138,8 @@ Full design in `docs/agents/trusted-agent-connection.md` (supersedes older AppRo
 - Local dev: `devenv processes up` starts a standalone Agent using `mix agent.run`. Inside the managed Agent process, unset `SECRET_HUB_AGENT_CORE_URL` defaults to `http://localhost:<port>` following Core's HTTP port (`PORT`, then `PHX_PORT`, then `4664`); unset `SECRET_HUB_AGENT_STATE_DIR` defaults to `$DEVENV_STATE/secrethub-agent`, and unset `SECRET_HUB_AGENT_SOCKET_PATH` defaults to `<state-dir>/agent.sock`. Explicit environment values are preserved. These defaults apply to the managed process; direct `mix agent.run` retains its `priv/cert` state directory fallback unless an environment override is supplied. The trusted mTLS runtime uses `SECRET_HUB_AGENT_ENDPOINT_HOST`/`SECRET_HUB_AGENT_ENDPOINT_PORT` (defaults `localhost:4665`). `SECRET_HUB_AGENT_HOST_KEY_PATH` can select an existing RSA/ECDSA SSH host key; otherwise a development RSA key is generated and persisted. First enrollment requires operator approval; subsequent starts reuse certificate material and reconnect.
 
 ### Background Jobs
-- **Oban** for persistent background tasks (secret rotation, lease cleanup)
-- New background jobs must integrate with Oban configuration
+- **Styx** for persistent background tasks (secret rotation, lease cleanup)
+- New background jobs must integrate with the Core or Human Styx instance
 
 ### Audit Logging
 - All operations must be logged to the audit subsystem
@@ -148,7 +148,7 @@ Full design in `docs/agents/trusted-agent-connection.md` (supersedes older AppRo
 ### Secret Engines
 Located in `apps/secrethub_core/lib/secrethub_core/engines/`:
 - **Dynamic engines**: Generate temporary credentials (PostgreSQL, Redis, AWS STS) - integrate with Lease Manager
-- **Static engines**: Rotate long-lived credentials - integrate with Oban scheduler
+- **Static engines**: Rotate long-lived credentials - integrate with Styx scheduler
 
 ### REST API Routes
 - `/v1/sys/*` - System operations (init, seal/unseal, health) - no auth required

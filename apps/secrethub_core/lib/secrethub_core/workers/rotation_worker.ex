@@ -1,6 +1,6 @@
 defmodule SecretHub.Core.Workers.RotationWorker do
   @moduledoc """
-  Oban worker for executing scheduled secret rotations.
+  Styx worker for executing scheduled secret rotations.
 
   This worker is triggered by the rotation scheduler to perform rotations
   for secrets that are due to rotate based on their cron schedule.
@@ -22,7 +22,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
       # Enqueue a rotation job
       %{rotator_id: rotator.id}
       |> RotationWorker.new()
-      |> Oban.insert()
+      |> Styx.insert()
 
   ## Retries
 
@@ -36,7 +36,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
   - Updates schedule metadata with rotation results
   """
 
-  use Oban.Worker,
+  use Styx.Worker,
     queue: :rotation,
     max_attempts: 3,
     priority: 1
@@ -46,7 +46,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
   alias SecretHub.Core.{RotationManager, Secrets}
   alias SecretHub.Shared.Schemas.{RotationSchedule, SecretRotator}
 
-  @impl Oban.Worker
+  @impl Styx.Worker
   def perform(job) do
     case SecretHub.Shared.LaunchProfile.check(:rotation) do
       :ok -> do_perform(job)
@@ -54,7 +54,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
     end
   end
 
-  defp do_perform(%Oban.Job{args: %{"rotator_id" => rotator_id}}) do
+  defp do_perform(%Styx.Job{args: %{"rotator_id" => rotator_id}}) do
     Logger.info("Starting rotator job", rotator_id: rotator_id)
 
     with {:ok, rotator} <- Secrets.get_secret_rotator(rotator_id),
@@ -93,7 +93,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
     end
   end
 
-  defp do_perform(%Oban.Job{args: %{"schedule_id" => schedule_id}}) do
+  defp do_perform(%Styx.Job{args: %{"schedule_id" => schedule_id}}) do
     Logger.info("Starting rotation job", schedule_id: schedule_id)
 
     with {:ok, schedule} <- RotationManager.get_schedule(schedule_id),
@@ -132,7 +132,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
     end
   end
 
-  defp do_perform(%Oban.Job{args: args}) do
+  defp do_perform(%Styx.Job{args: args}) do
     Logger.error("Invalid rotation job arguments", args: inspect(args))
     {:discard, :invalid_arguments}
   end
@@ -159,7 +159,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
         new(args)
       end
 
-    Oban.insert(job)
+    Styx.insert(job)
   end
 
   defp do_schedule_rotation(%RotationSchedule{} = schedule, opts) do
@@ -174,7 +174,7 @@ defmodule SecretHub.Core.Workers.RotationWorker do
         new(args)
       end
 
-    Oban.insert(job)
+    Styx.insert(job)
   end
 
   @doc """

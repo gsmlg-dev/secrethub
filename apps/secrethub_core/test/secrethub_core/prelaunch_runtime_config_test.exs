@@ -176,13 +176,13 @@ defmodule SecretHub.Core.PrelaunchRuntimeConfigTest do
     assert config[:secrethub_human] == nil
     assert config[:secrethub_agent][:launch_profile] == :single_operator
     assert config[:secrethub_agent][:enrollment_opts][:paths][:rsa] == "/fixture/host-key"
-    assert config[:secrethub_agent][:enrollment_req_options] == []
+    assert config[:secrethub_agent][:enrollment_http_options] == []
 
     System.put_env("SECRET_HUB_AGENT_ENROLLMENT_CA_PATH", "/fixture/enrollment-ca.pem")
     config = read("agent")
 
     transport =
-      config[:secrethub_agent][:enrollment_req_options][:connect_options][:transport_opts]
+      config[:secrethub_agent][:enrollment_http_options][:ssl]
 
     assert transport[:cacertfile] == "/fixture/enrollment-ca.pem"
     assert transport[:verify] == :verify_peer

@@ -43,9 +43,11 @@ The workflow bumps versions, pushes the release commit, builds artifacts/images,
 ## Public trust and managed certificates
 
 Core packages Mozilla-derived public roots for offline inspection/export and runs
-managed Let's Encrypt DNS-01 orders through its own named Oban instance. Apply
+managed Let's Encrypt DNS-01 orders through its own named Styx instance. Apply
 the Core migrations before starting a binary containing this feature: they add
-Oban schema version 14 and the dedicated ACME tables and retention guards.
+Styx schema version 1 and the dedicated ACME tables and retention guards.
+Existing Oban v14 queues use the data-preserving
+[Styx transition](styx-migration.md); stop queue producers and workers first.
 Back up PostgreSQL together with Vault recovery material before upgrading.
 
 Follow the [managed public certificate guide](pki/managed-public-certificates.md)

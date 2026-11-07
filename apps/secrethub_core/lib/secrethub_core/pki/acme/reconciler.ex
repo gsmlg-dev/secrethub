@@ -1,6 +1,6 @@
 defmodule SecretHub.Core.PKI.ACME.Reconciler do
   @moduledoc "Finds due work independently of an individual job's retry budget."
-  use Oban.Worker,
+  use Styx.Worker,
     queue: :acme,
     max_attempts: 3,
     unique: [period: 45, states: [:available, :scheduled, :executing, :retryable]]
