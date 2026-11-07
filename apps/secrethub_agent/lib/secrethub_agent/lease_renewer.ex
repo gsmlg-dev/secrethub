@@ -467,7 +467,7 @@ defmodule SecretHub.Agent.LeaseRenewer do
            timeout: 5000
          ) do
       {:ok, %HTTP.Response{status: 200, body: response_body}} ->
-        case decode_response_body(response_body) do
+        case Jason.decode(response_body) do
           {:ok, %{"lease_duration" => duration}} ->
             {:ok, duration}
 
@@ -482,9 +482,6 @@ defmodule SecretHub.Agent.LeaseRenewer do
         {:error, {:request_failed, reason}}
     end
   end
-
-  defp decode_response_body(body) when is_binary(body), do: Jason.decode(body)
-  defp decode_response_body(body), do: {:ok, body}
 
   defp calculate_backoff(retry_count) do
     # Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max)
