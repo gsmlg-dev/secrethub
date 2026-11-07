@@ -92,7 +92,7 @@ defmodule SecretHub.CLI.Commands.SecretGetTransportTest do
   end
 
   test "explicit Core URL receives the read and stored token instead of the configured server" do
-    Application.ensure_all_started(:req)
+    Application.ensure_all_started(:http_fetch)
     :ok = Config.set("server_url", "http://127.0.0.1:1")
     :ok = Config.save_auth("core-read-token", DateTime.add(DateTime.utc_now(), 3600))
     {listener, url} = http_listener()

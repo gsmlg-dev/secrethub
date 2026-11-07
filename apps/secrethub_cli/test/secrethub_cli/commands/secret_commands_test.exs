@@ -49,7 +49,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
   describe "execute/3 - list secrets" do
     test "lists all secrets successfully" do
       # Note: This test demonstrates the structure
-      # In a real implementation, we'd mock Req.get
+      # In a real implementation, we'd mock SecretHub.CLI.HTTPClient.get
       # For now, we test the function exists and handles auth
       assert is_function(&SecretCommands.execute/3)
     end
@@ -76,7 +76,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
   describe "execute/4 - get secret" do
     test "retrieves secret by path" do
       # Mock successful response
-      # In real implementation, would mock Req.get
+      # In real implementation, would mock SecretHub.CLI.HTTPClient.get
       assert is_function(&SecretCommands.execute/4)
     end
 
@@ -137,7 +137,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "creates secret with value" do
       _opts = [value: "secret123"]
 
-      # Would mock Req.post
+      # Would mock SecretHub.CLI.HTTPClient.post
       # Test structure is correct
       assert is_function(&SecretCommands.execute/4)
     end
@@ -174,7 +174,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
     test "updates existing secret" do
       _opts = [value: "newsecret"]
 
-      # Would mock Req.put
+      # Would mock SecretHub.CLI.HTTPClient.put
       assert is_function(&SecretCommands.execute/4)
     end
 
@@ -205,7 +205,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
 
   describe "execute/4 - delete secret" do
     test "deletes secret by path" do
-      # Would mock Req.delete
+      # Would mock SecretHub.CLI.HTTPClient.delete
       assert is_function(&SecretCommands.execute/4)
     end
 
@@ -229,7 +229,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
 
   describe "execute/4 - list versions" do
     test "lists secret version history" do
-      # Would mock Req.get for versions endpoint
+      # Would mock SecretHub.CLI.HTTPClient.get for versions endpoint
       assert is_function(&SecretCommands.execute/4)
     end
 
@@ -253,7 +253,7 @@ defmodule SecretHub.CLI.Commands.SecretCommandsTest do
 
   describe "execute/5 - rollback secret" do
     test "rolls back secret to specific version" do
-      # Would mock Req.post for rollback endpoint
+      # Would mock SecretHub.CLI.HTTPClient.post for rollback endpoint
       assert is_function(&SecretCommands.execute/5)
     end
 

@@ -76,7 +76,7 @@ defmodule SecretHub.Web.AgentEndpointManager do
     config =
       Application.get_env(:secrethub_web, SecretHub.Web.AgentEndpoint, [])
       |> Keyword.merge(
-        # TODO(upstream): gsmlg-dev/gaoxy#5 - verified client certificates block adapter replacement.
+        # TODO(upstream): gsmlg-dev/gaoxy#23 - explicit production dual-stack binding blocks replacement.
         adapter: Bandit.PhoenixAdapter,
         server: true,
         http: false,

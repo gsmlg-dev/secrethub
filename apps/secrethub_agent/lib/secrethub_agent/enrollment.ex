@@ -275,14 +275,14 @@ defmodule SecretHub.Agent.Enrollment do
 
   defp post_json(url, payload, headers) do
     headers = [{"content-type", "application/json"} | headers]
-    opts = enrollment_req_options(body: Jason.encode!(payload), headers: headers)
+    opts = enrollment_http_options(body: Jason.encode!(payload), headers: headers)
 
     with :ok <- verify_enrollment_request_url(url) do
-      case Req.post(url, opts) do
-        {:ok, %Req.Response{status: code, body: body}} when code in 200..299 ->
+      case request(:post, url, opts) do
+        {:ok, %HTTP.Response{status: code, body: body}} when code in 200..299 ->
           decode_json(body)
 
-        {:ok, %Req.Response{status: code, body: body}} ->
+        {:ok, %HTTP.Response{status: code, body: body}} ->
           {:error, {:http_error, code, decode_body(body)}}
 
         {:error, reason} ->
@@ -293,11 +293,11 @@ defmodule SecretHub.Agent.Enrollment do
 
   defp get_json(url, headers) do
     with :ok <- verify_enrollment_request_url(url) do
-      case Req.get(url, enrollment_req_options(headers: headers)) do
-        {:ok, %Req.Response{status: code, body: body}} when code in 200..299 ->
+      case request(:get, url, enrollment_http_options(headers: headers)) do
+        {:ok, %HTTP.Response{status: code, body: body}} when code in 200..299 ->
           decode_json(body)
 
-        {:ok, %Req.Response{status: code, body: body}} ->
+        {:ok, %HTTP.Response{status: code, body: body}} ->
           {:error, {:http_error, code, decode_body(body)}}
 
         {:error, reason} ->
@@ -343,14 +343,19 @@ defmodule SecretHub.Agent.Enrollment do
 
   defp decode_body(body), do: body
 
-  defp req_options do
-    Application.get_env(:secrethub_agent, :enrollment_req_options, [])
+  defp request(method, url, opts) do
+    {transport, options} = Keyword.pop(opts, :transport, &SecretHub.Agent.HTTPClient.request/3)
+    transport.(method, url, options)
   end
 
-  defp enrollment_req_options(opts) do
+  defp http_options do
+    Application.get_env(:secrethub_agent, :enrollment_http_options, [])
+  end
+
+  defp enrollment_http_options(opts) do
     opts
-    |> Keyword.merge(req_options())
-    |> Keyword.put(:redirect, false)
+    |> Keyword.merge(http_options())
+    |> Keyword.put(:redirect, :manual)
   end
 
   defp app_version do

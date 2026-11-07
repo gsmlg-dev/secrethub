@@ -187,7 +187,7 @@ defmodule SecretHub.CLI.Auth do
 
     headers = [{"content-type", "application/json"}]
 
-    case Req.post(url, body: body, headers: headers) do
+    case SecretHub.CLI.HTTPClient.post(url, body: body, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         parse_token_response(body)
 
@@ -203,7 +203,7 @@ defmodule SecretHub.CLI.Auth do
     url = "#{server_url}/v1/auth/approle/renew"
     headers = [{"x-vault-token", token}, {"content-type", "application/json"}]
 
-    case Req.post(url, body: Jason.encode!(%{}), headers: headers) do
+    case SecretHub.CLI.HTTPClient.post(url, body: Jason.encode!(%{}), headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         parse_token_response(body)
 
@@ -222,7 +222,7 @@ defmodule SecretHub.CLI.Auth do
     url = "#{server_url}/v1/auth/cli-access"
     headers = [{"content-type", "application/json"}]
 
-    case Req.post(url, body: Jason.encode!(metadata), headers: headers) do
+    case SecretHub.CLI.HTTPClient.post(url, body: Jason.encode!(metadata), headers: headers) do
       {:ok, %{status: 201, body: body}} ->
         parse_cli_access_request(body)
 
@@ -240,7 +240,7 @@ defmodule SecretHub.CLI.Auth do
   defp poll_cli_access_request(server_url, request_id) do
     url = "#{server_url}/v1/auth/cli-access/#{request_id}"
 
-    case Req.get(url) do
+    case SecretHub.CLI.HTTPClient.get(url) do
       {:ok, %{status: 200, body: body}} ->
         with {:ok, response} <- parse_token_response(body) do
           {:approved, response}

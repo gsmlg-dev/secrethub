@@ -26,23 +26,25 @@ defmodule SecretHub.Agent.EnrollmentTest do
 
   @tag :tmp_dir
   test "create_pending reports the running Agent version to Core", %{tmp_dir: tmp_dir} do
-    Req.Test.verify_on_exit!()
-    original_req_options = Application.get_env(:secrethub_agent, :enrollment_req_options)
+    SecretHub.Agent.HTTPTest.verify_on_exit!()
+    original_http_options = Application.get_env(:secrethub_agent, :enrollment_http_options)
 
     on_exit(fn ->
-      restore_env(:enrollment_req_options, original_req_options)
+      restore_env(:enrollment_http_options, original_http_options)
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
 
     expected_version = Mix.Project.config()[:version]
 
-    Req.Test.expect(__MODULE__, fn conn ->
+    SecretHub.Agent.HTTPTest.expect(__MODULE__, fn conn ->
       assert conn.method == "POST"
       assert conn.request_path == "/v1/agent/enrollments"
       assert %{"agent_version" => ^expected_version} = conn.body_params
 
-      Req.Test.json(conn, %{"enrollment_id" => "enrollment-1"})
+      SecretHub.Agent.HTTPTest.json(conn, %{"enrollment_id" => "enrollment-1"})
     end)
 
     host_key_path = generate_key!(tmp_dir, "ssh_host_rsa_key", "rsa")
@@ -55,17 +57,20 @@ defmodule SecretHub.Agent.EnrollmentTest do
   @tag :tmp_dir
   test "create_pending rejects insecure enrollment URLs when disabled", %{tmp_dir: tmp_dir} do
     original_allow = Application.get_env(:secrethub_agent, :allow_insecure_enrollment)
-    original_req_options = Application.get_env(:secrethub_agent, :enrollment_req_options)
+    original_http_options = Application.get_env(:secrethub_agent, :enrollment_http_options)
 
     on_exit(fn ->
       restore_env(:allow_insecure_enrollment, original_allow)
-      restore_env(:enrollment_req_options, original_req_options)
+      restore_env(:enrollment_http_options, original_http_options)
     end)
 
     Application.put_env(:secrethub_agent, :allow_insecure_enrollment, false)
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
 
-    Req.Test.stub(__MODULE__, fn _conn ->
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
+
+    SecretHub.Agent.HTTPTest.stub(__MODULE__, fn _conn ->
       flunk("insecure enrollment URL must be rejected before an HTTP request")
     end)
 
@@ -78,15 +83,17 @@ defmodule SecretHub.Agent.EnrollmentTest do
 
   @tag :tmp_dir
   test "create_pending does not follow enrollment redirects", %{tmp_dir: tmp_dir} do
-    original_req_options = Application.get_env(:secrethub_agent, :enrollment_req_options)
+    original_http_options = Application.get_env(:secrethub_agent, :enrollment_http_options)
 
     on_exit(fn ->
-      restore_env(:enrollment_req_options, original_req_options)
+      restore_env(:enrollment_http_options, original_http_options)
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
 
-    Req.Test.expect(__MODULE__, fn conn ->
+    SecretHub.Agent.HTTPTest.expect(__MODULE__, fn conn ->
       conn
       |> Plug.Conn.put_resp_header("location", "http://core.invalid/v1/agent/enrollments")
       |> Plug.Conn.resp(302, "redirect")
@@ -220,7 +227,7 @@ defmodule SecretHub.Agent.EnrollmentTest do
 
   @tag :tmp_dir
   test "submit_csr posts ssh_proof bound to the TLS CSR", %{tmp_dir: tmp_dir} do
-    Req.Test.verify_on_exit!()
+    SecretHub.Agent.HTTPTest.verify_on_exit!()
 
     host_key_path = generate_key!(tmp_dir, "ssh_host_rsa_key", "rsa")
     {:ok, host_key} = HostKey.discover(paths: [rsa: host_key_path])
@@ -235,7 +242,7 @@ defmodule SecretHub.Agent.EnrollmentTest do
       "required_csr_fields" => Map.put(required_csr_fields(), "challenge", "challenge-1")
     }
 
-    Req.Test.expect(__MODULE__, fn conn ->
+    SecretHub.Agent.HTTPTest.expect(__MODULE__, fn conn ->
       assert conn.method == "POST"
       assert conn.request_path == "/v1/agent/enrollments/enrollment-1/csr"
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer pending-token"]
@@ -254,13 +261,15 @@ defmodule SecretHub.Agent.EnrollmentTest do
                  }
                )
 
-      Req.Test.json(conn, %{"agent_id" => "agent-1"})
+      SecretHub.Agent.HTTPTest.json(conn, %{"agent_id" => "agent-1"})
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
 
     on_exit(fn ->
-      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+      Application.delete_env(:secrethub_agent, :enrollment_http_options)
     end)
 
     assert {:ok, %{"agent_id" => "agent-1"}} =
@@ -286,14 +295,16 @@ defmodule SecretHub.Agent.EnrollmentTest do
       "pending_token" => "pending-token"
     }
 
-    Req.Test.stub(__MODULE__, fn _conn ->
+    SecretHub.Agent.HTTPTest.stub(__MODULE__, fn _conn ->
       flunk("submit_csr/5 should not post without a binary non-empty challenge")
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
 
     on_exit(fn ->
-      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+      Application.delete_env(:secrethub_agent, :enrollment_http_options)
     end)
 
     for approved <- [

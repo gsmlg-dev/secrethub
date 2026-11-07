@@ -170,6 +170,13 @@ assets-install
 devenv processes up
 ```
 
+HTTP callers use `http_fetch 1.0.0-rc.8`, and the Agent uses
+`http_web_socket 1.0.0-rc.8` through Phoenix Socket Client's public transport.
+TLS 1.2 / TLS 1.3 interoperability and the real Core-Agent mTLS flows pass
+with the original verification policy. See the
+[HTTP migration status](docs/agents/http-client-migration-preflight.md).
+Bandit remains in use pending [Gaoxy's dual-stack prerequisite](docs/agents/gaoxy-migration-preflight.md).
+
 Core starts after PostgreSQL is ready, initializes missing development databases, and applies Core migrations. Agent starts after Core's liveness endpoint is available. Startup preserves existing data; the optional `db-setup` command also runs seeds and may modify existing data.
 
 For background processes, use `devenv processes up -d`. After changing process configuration, restart the manager with `devenv processes down` followed by `devenv processes up`; PostgreSQL and Agent state persist.

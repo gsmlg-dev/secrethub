@@ -37,7 +37,7 @@ defmodule SecretHub.Core.MixProject do
       {:postgrex, "~> 0.19"},
       {:jason, "~> 1.4"},
       {:castore, "~> 1.0"},
-      {:req, "~> 0.7"},
+      {:http_fetch, "~> 1.0.0-rc.8"},
       {:jose, "~> 1.11"},
       {:aws_signature, "~> 0.4"},
       {:idna, "~> 7.1"},

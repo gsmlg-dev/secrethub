@@ -218,9 +218,9 @@ mix test test/secrethub_cli/auth_test.exs:45
 - Tests are marked `async: false` where they modify shared state (config files)
 
 ### Mocking Strategy
-- **HTTP Client Mocking**: Mox is configured for mocking the Req HTTP client
+- **HTTP Client Mocking**: Mox is configured for mocking the http_fetch HTTP client
 - **Note**: The current tests define test structure but HTTP mocking is not fully implemented
-- Future enhancement: Create `SecretHub.CLI.HTTPClientBehaviour` and mock Req calls
+- Future enhancement: Create `SecretHub.CLI.HTTPClientBehaviour` and mock http_fetch calls
 
 ### Configuration Testing
 - Tests override `Application.get_env(:secrethub_cli, :config_dir)` to use temp directories
@@ -251,7 +251,7 @@ mix test test/secrethub_cli/auth_test.exs:45
 ## Future Enhancements
 
 ### 1. HTTP Client Mocking
-Create a behaviour and mock Req calls:
+Create a behaviour and mock http_fetch calls:
 
 ```elixir
 defmodule SecretHub.CLI.HTTPClientBehaviour do

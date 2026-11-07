@@ -12,7 +12,8 @@ defmodule SecretHub.Agent.Preflight do
     %{
       role: Keyword.get(config, :launch_profile) == :single_operator,
       host_key: secure_host_key?(paths),
-      enrollment_trust: valid_enrollment_trust?(Keyword.get(config, :enrollment_req_options, [])),
+      enrollment_trust:
+        valid_enrollment_trust?(Keyword.get(config, :enrollment_http_options, [])),
       state_directory: writable_directory?(state_dir),
       socket_directory: writable_directory?(directory(Keyword.get(config, :socket_path))),
       bundle_directory: writable_directory?(Keyword.get(config, :client_auth_bundle_dir)),
@@ -39,7 +40,7 @@ defmodule SecretHub.Agent.Preflight do
   end
 
   defp valid_enrollment_trust?(options) do
-    case get_in(options, [:connect_options, :transport_opts, :cacertfile]) do
+    case get_in(options, [:ssl, :cacertfile]) do
       nil ->
         true
 

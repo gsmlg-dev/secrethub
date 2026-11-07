@@ -187,13 +187,13 @@ defmodule SecretHub.Core.Alerting do
   end
 
   defp send_slack(_config, _alert) do
-    # TODO: Integrate with Req for Slack webhook delivery
+    # TODO: Integrate with http_fetch for Slack webhook delivery
     Logger.warning("Slack alert delivery not implemented")
     {:error, :not_implemented}
   end
 
   defp send_webhook(_config, _alert) do
-    # TODO: Integrate with Req for webhook delivery
+    # TODO: Integrate with http_fetch for webhook delivery
     Logger.warning("Webhook alert delivery not implemented")
     {:error, :not_implemented}
   end

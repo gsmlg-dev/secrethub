@@ -461,8 +461,12 @@ defmodule SecretHub.Agent.LeaseRenewer do
       {"Accept", "application/json"}
     ]
 
-    case Req.post(url, body: body, headers: headers, receive_timeout: 5000) do
-      {:ok, %Req.Response{status: 200, body: response_body}} ->
+    case SecretHub.Agent.HTTPClient.request(:post, url,
+           body: body,
+           headers: headers,
+           timeout: 5000
+         ) do
+      {:ok, %HTTP.Response{status: 200, body: response_body}} ->
         case decode_response_body(response_body) do
           {:ok, %{"lease_duration" => duration}} ->
             {:ok, duration}
@@ -471,7 +475,7 @@ defmodule SecretHub.Agent.LeaseRenewer do
             {:error, {:decode_error, reason}}
         end
 
-      {:ok, %Req.Response{status: status_code, body: body}} ->
+      {:ok, %HTTP.Response{status: status_code, body: body}} ->
         {:error, {:http_error, status_code, body}}
 
       {:error, reason} ->

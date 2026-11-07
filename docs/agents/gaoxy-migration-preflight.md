@@ -1,5 +1,46 @@
 # Gaoxy migration preflight
 
+## Current assessment: 2026-11-07
+
+Status: **BLOCKED_UPSTREAM** for complete Bandit replacement by published Gaoxy
+0.15.1. SecretHub continues using Bandit; no partial server migration or local
+dependency workaround is applied.
+
+The previous client-verification prerequisite,
+[gsmlg-dev/gaoxy#5](https://github.com/gsmlg-dev/gaoxy/issues/5), is closed.
+Published `gaoxy_http` 0.15.1 accepts flat Phoenix HTTPS options `verify`,
+`cacertfile`, `fail_if_no_peer_cert` and `versions`; the native backend forwards
+the client-verification settings to Hell. This source inspection does not claim
+SecretHub runtime qualification against Gaoxy.
+
+The remaining blocker is
+[gsmlg-dev/gaoxy#23](https://github.com/gsmlg-dev/gaoxy/issues/23), filed as a
+Feature with label `internal request` and severity `blocker`. Production binds
+the Agent listener to the IPv6 wildcard with `ipv6_v6only: false`, so both IPv4
+and IPv6 agents can reach the same port. Gaoxy 0.15.1 accepts `hell_options`, but
+its backend allowlist rejects that explicit transport option. A pure no-socket
+probe against the published package source returned:
+
+```elixir
+Gaoxy.BackendOptions.normalize(%{
+  transport: :tls,
+  ip: {0, 0, 0, 0, 0, 0, 0, 0},
+  hell_options: [transport_options: [ipv6_v6only: false]]
+})
+# {:error, {:unsupported_backend_option, :hell_options,
+#           {:transport_options, :ipv6_v6only}}}
+```
+
+Resume only after a published Gaoxy cohort exposes and forwards explicit
+dual-stack configuration and proves both address families on a real listener.
+Then update SecretHub's dependencies and repeat the focused acceptance below.
+Do not assume an operating-system default, substitute an IPv4-only bind, patch
+the dependency, weaken TLS verification or add a local listener shim. No Gaoxy
+listener tests, release assembly, service restarts or live database operations
+were performed in this assessment.
+
+## Historical assessment: 2026-10-22
+
 Date: 2026-10-22. Status: **BLOCKED_UPSTREAM** for complete Bandit replacement.
 
 This report records compatibility findings and the proposed migration boundary.

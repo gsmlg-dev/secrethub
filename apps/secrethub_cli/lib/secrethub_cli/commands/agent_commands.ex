@@ -37,7 +37,7 @@ defmodule SecretHub.CLI.Commands.AgentCommands do
     url = "#{server}/admin/api/dashboard/agents"
     headers = Auth.auth_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         agents = Map.get(body, "agents", [])
         {:ok, agents}
@@ -55,7 +55,7 @@ defmodule SecretHub.CLI.Commands.AgentCommands do
     url = "#{server}/admin/api/agents/#{id}"
     headers = Auth.auth_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, Map.get(body, "data", %{})}
 
@@ -88,7 +88,7 @@ defmodule SecretHub.CLI.Commands.AgentCommands do
     url = "#{server}/admin/api/agents/#{id}/logs"
     headers = Auth.auth_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         logs = Map.get(body, "logs", [])
 

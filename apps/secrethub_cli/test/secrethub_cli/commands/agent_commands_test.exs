@@ -48,7 +48,7 @@ defmodule SecretHub.CLI.Commands.AgentCommandsTest do
 
   describe "execute/3 - list agents" do
     test "lists all connected agents" do
-      # Would mock Req.get for /admin/api/dashboard/agents
+      # Would mock SecretHub.CLI.HTTPClient.get for /admin/api/dashboard/agents
       assert is_function(&AgentCommands.execute/3)
     end
 
@@ -78,7 +78,7 @@ defmodule SecretHub.CLI.Commands.AgentCommandsTest do
 
   describe "execute/4 - get agent status" do
     test "retrieves status for specific agent" do
-      # Would mock Req.get for /admin/api/agents/:id
+      # Would mock SecretHub.CLI.HTTPClient.get for /admin/api/agents/:id
       assert is_function(&AgentCommands.execute/4)
     end
 
@@ -138,7 +138,7 @@ defmodule SecretHub.CLI.Commands.AgentCommandsTest do
 
   describe "log polling" do
     test "retrieves logs from polling endpoint" do
-      # Would mock Req.get for logs endpoint
+      # Would mock SecretHub.CLI.HTTPClient.get for logs endpoint
       assert true
     end
 

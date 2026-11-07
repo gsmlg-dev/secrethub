@@ -54,8 +54,8 @@ defmodule SecretHub.Agent.PreflightTest do
   test "configured enrollment trust file must be readable", %{tmp_dir: dir} do
     path = Path.join(dir, "missing-ca.pem")
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options,
-      connect_options: [transport_opts: [cacertfile: path, verify: :verify_peer]]
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      ssl: [cacertfile: path, verify: :verify_peer]
     )
 
     refute Preflight.checks().enrollment_trust

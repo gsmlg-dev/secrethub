@@ -40,7 +40,7 @@ config :secrethub_human, SecretHub.Human.Repo,
   parameters: [jit: "on"]
 
 # Configures Swoosh API Client
-config :swoosh, api_client: Swoosh.ApiClient.Req
+config :swoosh, api_client: SecretHub.Web.HTTPFetchApiClient
 
 # Disable Swoosh Local Memory Storage
 config :swoosh, local: false

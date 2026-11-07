@@ -9,9 +9,9 @@ RuntimeConfig.distribution!()
 host_key_path = settings[:host_key_path]
 enrollment_ca = settings[:enrollment_ca_path]
 
-enrollment_req_options =
+enrollment_http_options =
   if enrollment_ca do
-    [connect_options: [transport_opts: [cacertfile: enrollment_ca, verify: :verify_peer]]]
+    [ssl: [cacertfile: enrollment_ca, verify: :verify_peer]]
   else
     []
   end
@@ -31,5 +31,5 @@ config :secrethub_agent,
   state_dir: settings[:state_dir],
   socket_path: settings[:socket_path],
   client_auth_bundle_dir: settings[:client_auth_bundle_dir],
-  enrollment_req_options: enrollment_req_options,
+  enrollment_http_options: enrollment_http_options,
   enrollment_opts: [paths: [ecdsa: host_key_path, rsa: host_key_path]]

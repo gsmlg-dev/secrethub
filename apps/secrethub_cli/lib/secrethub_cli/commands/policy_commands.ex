@@ -80,7 +80,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
     url = "#{server}/v1/policies"
     headers = Auth.auth_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         policies = Map.get(body, "data", [])
         {:ok, policies}
@@ -98,7 +98,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
     url = "#{server}/v1/policies/#{URI.encode(name)}"
     headers = Auth.auth_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, Map.get(body, "data", %{})}
 
@@ -129,7 +129,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
           name: name
         })
 
-      case Req.post(url, body: body, headers: headers) do
+      case SecretHub.CLI.HTTPClient.post(url, body: body, headers: headers) do
         {:ok, %{status: 201, body: body}} ->
           Output.success("Policy created from template: #{name}")
           {:ok, Map.get(body, "data", %{})}
@@ -152,7 +152,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
     url = "#{server}/v1/policies/#{URI.encode(name)}"
     headers = Auth.auth_headers()
 
-    case Req.delete(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.delete(url, headers: headers) do
       {:ok, %{status: 204}} ->
         :ok
 
@@ -173,7 +173,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
     context = build_simulation_context(opts)
     body = Jason.encode!(context)
 
-    case Req.post(url, body: body, headers: headers) do
+    case SecretHub.CLI.HTTPClient.post(url, body: body, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, Map.get(body, "data", %{})}
 
@@ -190,7 +190,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommands do
     url = "#{server}/v1/policies/templates"
     headers = Auth.auth_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         templates = Map.get(body, "data", [])
         {:ok, templates}

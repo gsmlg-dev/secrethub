@@ -28,7 +28,7 @@ defmodule SecretHub.CLI.MixProject do
   defp deps do
     [
       # HTTP client for API calls
-      {:req, "~> 0.5"},
+      {:http_fetch, "~> 1.0.0-rc.8"},
 
       # JSON encoding/decoding
       {:jason, "~> 1.4"},

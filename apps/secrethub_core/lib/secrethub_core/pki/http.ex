@@ -56,34 +56,83 @@ defmodule SecretHub.Core.PKI.HTTP do
         customize_hostname_check: [match_fun: :public_key.pkix_verify_hostname_match_fun(:https)]
       ]
 
-      Req.request(
-        method: method,
-        url: url,
-        headers: headers,
-        body: body,
-        retry: false,
-        redirect: false,
-        decode_body: false,
-        compressed: false,
-        receive_timeout: min(Keyword.get(opts, :receive_timeout, 15_000), 60_000),
-        connect_options: connection_options(url, ssl),
-        into: fn event, acc -> accumulate_body(event, acc, limit) end
-      )
+      timeout = min(Keyword.get(opts, :receive_timeout, 15_000), 60_000)
+      deadline = System.monotonic_time(:millisecond) + timeout
+      {:ok, controller} = HTTP.AbortController.start_link()
+
+      try do
+        case url
+             |> HTTP.fetch(
+               method: method,
+               headers: headers,
+               body: body,
+               redirect: :manual,
+               decode_body: false,
+               stream_response: true,
+               timeout: timeout,
+               connect_timeout: 5_000,
+               ssl: ssl,
+               signal: controller
+             )
+             |> HTTP.Promise.await(timeout + 1_000) do
+          %HTTP.Response{} = response ->
+            with {:ok, body} <- read_body(response.body, limit, deadline) do
+              {:ok,
+               %{
+                 status: response.status,
+                 headers: HTTP.Headers.to_list(response.headers),
+                 body: body
+               }}
+            end
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      after
+        HTTP.AbortController.abort(controller)
+        GenServer.stop(controller)
+      end
     end
   end
 
-  defp accumulate_body({:data, chunk}, {request, response}, limit) do
-    accumulated = (response.body || "") <> chunk
-
-    if byte_size(accumulated) > limit,
-      do: {:halt, {request, %{response | body: :response_too_large}}},
-      else: {:cont, {request, %{response | body: accumulated}}}
+  defp read_body(body, limit, _) when is_binary(body) do
+    if byte_size(body) <= limit, do: {:ok, body}, else: {:error, :response_too_large}
   end
 
-  defp connection_options(url, ssl) do
-    if URI.parse(url).scheme == "https",
-      do: [timeout: 5_000, transport_opts: ssl],
-      else: [timeout: 5_000]
+  defp read_body(stream, limit, deadline) when is_pid(stream) do
+    monitor = Process.monitor(stream)
+    send(stream, {:read_chunk, self(), :ack})
+
+    try do
+      collect_body(stream, monitor, [], 0, limit, deadline)
+    after
+      Process.demonitor(monitor, [:flush])
+    end
+  end
+
+  defp collect_body(stream, monitor, chunks, size, limit, deadline) do
+    receive do
+      {:stream_chunk, ^stream, chunk, ack} ->
+        next_size = size + byte_size(chunk)
+
+        if next_size > limit do
+          {:error, :response_too_large}
+        else
+          send(stream, {:stream_chunk_ack, ack})
+          collect_body(stream, monitor, [chunk | chunks], next_size, limit, deadline)
+        end
+
+      {:stream_end, ^stream} ->
+        {:ok, chunks |> Enum.reverse() |> IO.iodata_to_binary()}
+
+      {:stream_error, ^stream, reason} ->
+        {:error, reason}
+
+      {:DOWN, ^monitor, :process, ^stream, reason} ->
+        {:error, {:stream_closed, reason}}
+    after
+      max(deadline - System.monotonic_time(:millisecond), 0) -> {:error, :timeout}
+    end
   end
 
   defp public_roots(opts) do

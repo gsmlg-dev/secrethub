@@ -28,11 +28,13 @@ defmodule SecretHub.Agent.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:phoenix_socket_client, "~> 0.8.7"},
-      {:websocket_client, "~> 1.5"},
+      {:phoenix_socket_client, "~> 0.9.0"},
+      {:http_web_socket, "~> 1.0.0-rc.8"},
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
-      {:req, "~> 0.5"},
+      {:http_fetch, "~> 1.0.0-rc.8"},
+      {:plug_crypto, "~> 2.2"},
+      {:plug, "~> 1.14", only: :test},
       {:x509, in_umbrella: true},
       {:secrethub_shared, in_umbrella: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

@@ -159,26 +159,28 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   test "accepted runtime message finalizes enrollment and deletes the pending token", %{
     tmp_dir: tmp_dir
   } do
-    Req.Test.verify_on_exit!()
+    SecretHub.Agent.HTTPTest.verify_on_exit!()
 
     state_dir = Path.join(tmp_dir, "agent-state")
     pending = %{"enrollment_id" => "enrollment-1", "pending_token" => "pending-token"}
     assert :ok = File.mkdir_p(state_dir)
     assert :ok = File.write(Path.join(state_dir, "pending.json"), Jason.encode!(pending))
 
-    Req.Test.expect(__MODULE__, fn conn ->
+    SecretHub.Agent.HTTPTest.expect(__MODULE__, fn conn ->
       assert conn.method == "POST"
       assert conn.request_path == "/v1/agent/enrollments/enrollment-1/finalize"
       assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer pending-token"]
       assert conn.body_params == %{"status" => "trusted_connected"}
 
-      Req.Test.json(conn, %{"status" => "finalized"})
+      SecretHub.Agent.HTTPTest.json(conn, %{"status" => "finalized"})
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
 
     on_exit(fn ->
-      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+      Application.delete_env(:secrethub_agent, :enrollment_http_options)
     end)
 
     timer = Process.send_after(self(), :unused_runtime_accept_timeout, 10_000)
@@ -205,7 +207,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   test "accepted runtime finalization failure keeps pending state and retry can finalize", %{
     tmp_dir: tmp_dir
   } do
-    Req.Test.verify_on_exit!()
+    SecretHub.Agent.HTTPTest.verify_on_exit!()
 
     state_dir = Path.join(tmp_dir, "agent-state")
     pending = %{"enrollment_id" => "enrollment-1", "pending_token" => "pending-token"}
@@ -214,7 +216,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
 
     {:ok, counter} = Agent.start_link(fn -> 0 end)
 
-    Req.Test.expect(__MODULE__, 2, fn conn ->
+    SecretHub.Agent.HTTPTest.expect(__MODULE__, 2, fn conn ->
       assert conn.method == "POST"
       assert conn.request_path == "/v1/agent/enrollments/enrollment-1/finalize"
       assert conn.body_params == %{"status" => "trusted_connected"}
@@ -224,17 +226,19 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
         0 ->
           conn
           |> Plug.Conn.put_status(503)
-          |> Req.Test.json(%{"error" => "temporarily unavailable"})
+          |> SecretHub.Agent.HTTPTest.json(%{"error" => "temporarily unavailable"})
 
         1 ->
-          Req.Test.json(conn, %{"status" => "finalized"})
+          SecretHub.Agent.HTTPTest.json(conn, %{"status" => "finalized"})
       end
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
 
     on_exit(fn ->
-      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+      Application.delete_env(:secrethub_agent, :enrollment_http_options)
     end)
 
     timer = Process.send_after(self(), :unused_runtime_accept_timeout, 10_000)
@@ -270,7 +274,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   test "trusted runtime start failure keeps pending token and schedules retry", %{
     tmp_dir: tmp_dir
   } do
-    Req.Test.verify_on_exit!()
+    SecretHub.Agent.HTTPTest.verify_on_exit!()
 
     state_dir = Path.join(tmp_dir, "agent-state")
 
@@ -291,10 +295,12 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     assert :ok = IdentityStore.write(state_dir, material)
     assert :ok = File.write(Path.join(state_dir, "pending.json"), Jason.encode!(pending))
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
 
     on_exit(fn ->
-      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+      Application.delete_env(:secrethub_agent, :enrollment_http_options)
     end)
 
     assert {:noreply, retry_state} =
@@ -312,7 +318,7 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   end
 
   test "runtime accept timeout keeps trusted material and reschedules", %{tmp_dir: tmp_dir} do
-    Req.Test.verify_on_exit!()
+    SecretHub.Agent.HTTPTest.verify_on_exit!()
 
     state_dir = Path.join(tmp_dir, "agent-state")
     pending = %{"enrollment_id" => "enrollment-1", "pending_token" => "pending-token"}
@@ -321,10 +327,12 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
     assert :ok = File.write(Path.join(state_dir, "pending.json"), Jason.encode!(pending))
 
     # No finalize-failure HTTP call may happen; any request fails the test.
-    Application.put_env(:secrethub_agent, :enrollment_req_options, plug: {Req.Test, __MODULE__})
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
+    )
 
     on_exit(fn ->
-      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+      Application.delete_env(:secrethub_agent, :enrollment_http_options)
     end)
 
     state = %RuntimeBootstrapper{
@@ -356,26 +364,25 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   end
 
   test "enrollment failure schedules a retry instead of stopping", %{tmp_dir: tmp_dir} do
-    Req.Test.verify_on_exit!()
+    SecretHub.Agent.HTTPTest.verify_on_exit!()
 
     state_dir = Path.join(tmp_dir, "agent-state")
 
-    Req.Test.expect(__MODULE__, fn conn ->
+    SecretHub.Agent.HTTPTest.expect(__MODULE__, fn conn ->
       assert conn.method == "POST"
       assert conn.request_path == "/v1/agent/enrollments"
 
       conn
       |> Plug.Conn.put_status(503)
-      |> Req.Test.json(%{"error" => "temporarily unavailable"})
+      |> SecretHub.Agent.HTTPTest.json(%{"error" => "temporarily unavailable"})
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options,
-      plug: {Req.Test, __MODULE__},
-      retry: false
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
     )
 
     on_exit(fn ->
-      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+      Application.delete_env(:secrethub_agent, :enrollment_http_options)
     end)
 
     state = %RuntimeBootstrapper{
@@ -395,18 +402,18 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
   end
 
   test "rejected enrollment stops instead of retrying", %{tmp_dir: tmp_dir} do
-    Req.Test.verify_on_exit!()
+    SecretHub.Agent.HTTPTest.verify_on_exit!()
 
     state_dir = Path.join(tmp_dir, "agent-state")
 
     {:ok, counter} = Agent.start_link(fn -> 0 end)
 
-    Req.Test.expect(__MODULE__, 2, fn conn ->
+    SecretHub.Agent.HTTPTest.expect(__MODULE__, 2, fn conn ->
       case Agent.get_and_update(counter, fn count -> {count, count + 1} end) do
         0 ->
           assert conn.request_path == "/v1/agent/enrollments"
 
-          Req.Test.json(conn, %{
+          SecretHub.Agent.HTTPTest.json(conn, %{
             "enrollment_id" => "enrollment-1",
             "pending_token" => "pending-token",
             "status" => "pending"
@@ -414,17 +421,16 @@ defmodule SecretHub.Agent.RuntimeBootstrapperTest do
 
         1 ->
           assert conn.request_path == "/v1/agent/enrollments/enrollment-1/status"
-          Req.Test.json(conn, %{"status" => "rejected"})
+          SecretHub.Agent.HTTPTest.json(conn, %{"status" => "rejected"})
       end
     end)
 
-    Application.put_env(:secrethub_agent, :enrollment_req_options,
-      plug: {Req.Test, __MODULE__},
-      retry: false
+    Application.put_env(:secrethub_agent, :enrollment_http_options,
+      transport: SecretHub.Agent.HTTPTest.transport(__MODULE__)
     )
 
     on_exit(fn ->
-      Application.delete_env(:secrethub_agent, :enrollment_req_options)
+      Application.delete_env(:secrethub_agent, :enrollment_http_options)
     end)
 
     state = %RuntimeBootstrapper{

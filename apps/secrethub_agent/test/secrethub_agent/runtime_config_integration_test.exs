@@ -53,7 +53,7 @@ defmodule SecretHub.Agent.RuntimeConfigIntegrationTest do
              rsa: "/fixture/host-key"
            ]
 
-    assert agent[:enrollment_req_options] == []
+    assert agent[:enrollment_http_options] == []
   end
 
   test "standalone Agent config rejects a missing or blank Core URL" do
@@ -86,7 +86,7 @@ defmodule SecretHub.Agent.RuntimeConfigIntegrationTest do
         {"SECRET_HUB_AGENT_ENROLLMENT_CA_PATH", "/fixture/enrollment-ca.pem"}
       ])
 
-    transport = agent[:enrollment_req_options][:connect_options][:transport_opts]
+    transport = agent[:enrollment_http_options][:ssl]
     assert transport[:cacertfile] == "/fixture/enrollment-ca.pem"
     assert transport[:verify] == :verify_peer
   end
@@ -108,7 +108,7 @@ defmodule SecretHub.Agent.RuntimeConfigIntegrationTest do
     assert agent[:enrollment_opts][:paths] ==
              [ecdsa: Path.join(dir, "host-key"), rsa: Path.join(dir, "host-key")]
 
-    assert agent[:enrollment_req_options][:connect_options][:transport_opts] ==
+    assert agent[:enrollment_http_options][:ssl] ==
              [cacertfile: Path.join(dir, "ca.pem"), verify: :verify_peer]
   end
 

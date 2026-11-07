@@ -48,7 +48,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
   describe "execute/3 - list policies" do
     test "lists all policies successfully" do
-      # Would mock Req.get for /v1/policies
+      # Would mock SecretHub.CLI.HTTPClient.get for /v1/policies
       assert is_function(&PolicyCommands.execute/3)
     end
 
@@ -72,7 +72,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
   describe "execute/4 - get policy" do
     test "retrieves policy by name" do
-      # Would mock Req.get for /v1/policies/:name
+      # Would mock SecretHub.CLI.HTTPClient.get for /v1/policies/:name
       assert is_function(&PolicyCommands.execute/4)
     end
 
@@ -103,7 +103,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
     test "creates policy from template successfully" do
       _opts = [from_template: "business_hours", name: "Dev Access"]
 
-      # Would mock Req.post with template data
+      # Would mock SecretHub.CLI.HTTPClient.post with template data
       assert is_function(&PolicyCommands.execute/3)
     end
 
@@ -163,7 +163,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
   describe "execute/4 - delete policy" do
     test "deletes policy by name" do
-      # Would mock Req.delete
+      # Would mock SecretHub.CLI.HTTPClient.delete
       assert is_function(&PolicyCommands.execute/4)
     end
 
@@ -192,7 +192,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
   describe "execute/4 - simulate policy" do
     test "simulates policy evaluation" do
-      # Would mock Req.post to simulate endpoint
+      # Would mock SecretHub.CLI.HTTPClient.post to simulate endpoint
       assert is_function(&PolicyCommands.execute/4)
     end
 
@@ -235,7 +235,7 @@ defmodule SecretHub.CLI.Commands.PolicyCommandsTest do
 
   describe "execute/3 - list policy templates" do
     test "lists available policy templates" do
-      # Would mock Req.get for /v1/policies/templates
+      # Would mock SecretHub.CLI.HTTPClient.get for /v1/policies/templates
       # Note: This doesn't require authentication (public endpoint)
       assert is_function(&PolicyCommands.execute/3)
     end

@@ -106,7 +106,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
     url = "#{server}/v1/secret/metadata?list=true"
     headers = Auth.vault_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         secrets =
           body
@@ -128,7 +128,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
     url = "#{server}/v1/secret/data/#{vault_path(path)}"
     headers = Auth.vault_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, Map.get(body, "data", %{})}
 
@@ -153,7 +153,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
         data: %{value: value}
       })
 
-    case Req.post(url, body: body, headers: headers) do
+    case SecretHub.CLI.HTTPClient.post(url, body: body, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, body}
 
@@ -175,7 +175,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
         data: %{value: value}
       })
 
-    case Req.post(url, body: body, headers: headers) do
+    case SecretHub.CLI.HTTPClient.post(url, body: body, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, body}
 
@@ -192,7 +192,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
     url = "#{server}/v1/secret/data/#{vault_path(path)}"
     headers = Auth.vault_headers()
 
-    case Req.delete(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.delete(url, headers: headers) do
       {:ok, %{status: 204}} ->
         :ok
 
@@ -209,7 +209,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
     url = "#{server}/v1/secret/metadata/#{vault_path(path)}"
     headers = Auth.vault_headers()
 
-    case Req.get(url, headers: headers) do
+    case SecretHub.CLI.HTTPClient.get(url, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         versions = Map.get(body, "versions", %{})
         {:ok, versions}
@@ -232,7 +232,7 @@ defmodule SecretHub.CLI.Commands.SecretCommands do
         version: version
       })
 
-    case Req.post(url, body: body, headers: headers) do
+    case SecretHub.CLI.HTTPClient.post(url, body: body, headers: headers) do
       {:ok, %{status: 200, body: body}} ->
         {:ok, Map.get(body, "data", %{})}
 

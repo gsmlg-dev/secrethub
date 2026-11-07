@@ -759,6 +759,7 @@ defmodule SecretHub.Agent.Connection do
     base_opts = [
       url: url,
       json_library: Jason,
+      transport: Phoenix.SocketClient.Transports.Websocket,
       topic_channel_map: %{runtime_topic() => SecretHub.Agent.RuntimeChannel},
       heartbeat_interval: 30_000,
       reconnect_interval: 5_000
@@ -773,7 +774,6 @@ defmodule SecretHub.Agent.Connection do
       transport_opts = build_mtls_transport_opts(state)
 
       base_opts
-      |> Keyword.put(:transport, SecretHub.Agent.MTLSWebSocketTransport)
       |> Keyword.put(:transport_opts, transport_opts)
     else
       Logger.info("Connecting without mTLS certificate material",
@@ -797,9 +797,9 @@ defmodule SecretHub.Agent.Connection do
     ]
 
     [
-      ssl_verify: :verify_peer,
-      socket_opts:
+      ssl:
         [
+          verify: :verify_peer,
           certs_keys: [in_memory_certs_key(state.cert_pem, state.private_key)],
           cacerts: pem_entries_der(state.ca_pem, :Certificate)
         ] ++ common_opts
