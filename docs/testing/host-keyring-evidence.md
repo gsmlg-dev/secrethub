@@ -121,16 +121,17 @@ application code (only ExUnit test-support noise when run under
 
 ## Remaining gates
 
-* **macOS:** not built or run locally (no macOS host). The release workflow's
-  `build-host-keyring-tools` job builds the escript and launcher and runs the
-  launcher's subprocess suite plus an installed-helper smoke test on
-  `macos-26` and `macos-26-intel` runners; that has not run yet.
-* **Release workflow:** the new job and archive
-  (`secrethub-host-tools-<tag>-<target>.tar.gz`) were checked by building the
-  same archive locally with `scripts/host-keyring/package.sh`, installing it
-  from an extracted directory and running the helper, and by `actionlint`
-  (only the pre-existing unknown-runner-label warnings). GitHub Actions has not
-  executed it.
+* **Release workflow and macOS:** release `v1.0.0-rc.30`
+  ([run 42638094843](https://github.com/gsmlg-dev/secrethub/actions/runs/42638094843))
+  ran `build-host-keyring-tools` on all four targets and published
+  `secrethub-host-tools-v1.0.0-rc.30-{linux,macos}-{amd64,arm64}.tar.gz`.
+  Each job built the escript and launcher, ran the launcher's subprocess suite
+  (Linux 83/83; macOS arm64 and amd64 75/75), installed the archive and smoke
+  tested the helpers (Git hard failure without an Agent, `secrethub version`).
+  On macOS the SIGINT/SIGQUIT forwarding cases are skipped because the system
+  `env` lacks `--default-signal`; SIGTERM forwarding and the other cases run.
+  Real Git/Docker/Python consumers against a live Agent were exercised on
+  Linux only.
 * **Live deployment:** no host was deployed and no real credential was used.
 * **Existing slow fixtures:** some pre-existing channel tests migrate a fresh
   database and exceed ExUnit's default 60 s timeout on a loaded machine; they
