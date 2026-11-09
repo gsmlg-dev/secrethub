@@ -16,6 +16,7 @@ defmodule SecretHub.Core.RuntimeAuthorization do
   }
 
   alias SecretHub.Shared.AccessAudit.{Event, Telemetry}
+  alias SecretHub.Shared.HostCredentials
 
   alias SecretHub.Shared.Schemas.{
     Agent,
@@ -196,7 +197,10 @@ defmodule SecretHub.Core.RuntimeAuthorization do
   end
 
   defp read_static_secret(path, known_revision) do
-    with {:ok, _key} <- SealState.get_master_key(),
+    # Host credential payloads are released only through the credential facade,
+    # which also checks the binding state and its typed credential grants.
+    with false <- HostCredentials.reserved_path?(path),
+         {:ok, _key} <- SealState.get_master_key(),
          %SecretPathRevision{} = revision <-
            Repo.one(
              from(r in SecretPathRevision, where: r.secret_path == ^path, lock: "FOR SHARE")
@@ -252,14 +256,27 @@ defmodule SecretHub.Core.RuntimeAuthorization do
     :ok
   end
 
-  defp authorize_subject(subject, path) do
-    policies =
+  defp authorize_subject(subject, path), do: authorize_subject(subject, path, "read")
+
+  @doc """
+  Evaluates one typed runtime operation for a subject. Explicit deny or a
+  malformed applicable policy refuses; otherwise any allowing policy grants.
+  Callers must already hold the authorization locks for their transaction.
+  """
+  def authorize_subject(subject, path, operation),
+    do: authorize_with_policies(subject_policies(subject), subject, path, operation)
+
+  @doc "Applicable policies for a subject, for evaluating several resources at once."
+  def subject_policies(subject),
+    do:
       Repo.all(from(p in Policy, where: ^subject in p.entity_bindings or p.entity_bindings == []))
 
+  @doc false
+  def authorize_with_policies(policies, subject, path, operation) do
     context = %{
       entity_id: subject,
       secret_path: path,
-      operation: "read",
+      operation: operation,
       timestamp: DateTime.utc_now()
     }
 

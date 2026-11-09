@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keyrings.secrethub"
+version = "1.0.0rc29"
+description = "Python keyring backend backed by the local SecretHub Agent (generic namespace)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["keyring>=24"]
+
+# Intentionally no [project.entry-points."keyring.backends"]: the backend must
+# only ever be selected explicitly.
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["keyrings.secrethub*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

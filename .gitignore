@@ -65,7 +65,6 @@ yarn-error.log
 
 # Generated files
 /apps/*/priv/gettext/*.pot
-/apps/secrethub_cli/secrethub
 
 # Release builds
 /apps/*/rel/
@@ -111,3 +110,6 @@ priv/cert/*.key
 !/apps/secrethub_human/priv/static/human.html
 !/apps/secrethub_human/priv/static/human.js
 !/apps/secrethub_human/priv/static/human.css
+
+# Host keyring local artifacts
+/native/secrethub-exec/secrethub-exec

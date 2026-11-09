@@ -1,6 +1,9 @@
 defmodule SecretHub.CLI.AgentClient do
   @moduledoc "Client for local Agent secret reads and optional application auth-v2."
   @timeout 5_000
+  # Credential requests include a live Core decision; allow the Agent's own
+  # request deadline to elapse before the client gives up.
+  @credential_timeout 15_000
   @default_socket_path "/var/run/secrethub/agent.sock"
 
   @doc "Returns the Agent socket selected by the environment or the standard default."
@@ -10,28 +13,56 @@ defmodule SecretHub.CLI.AgentClient do
 
   def get_secret(path, opts) do
     timeout = Keyword.get(opts, :timeout, @timeout)
-    opts = Keyword.put_new(opts, :socket_path, default_socket_path())
+
+    with {:ok, authentication} <- authentication_material(opts) do
+      with_connection(
+        opts,
+        "Agent connection or key material unavailable",
+        &read_secret(&1, authentication, path, timeout)
+      )
+    end
+  end
+
+  defp read_secret(socket, authentication, path, timeout) do
+    with :ok <- authenticate_if_requested(socket, authentication, timeout),
+         {:ok, data} <- request(socket, "get_secret", %{path: path}, timeout) do
+      {:ok, normalize_secret(data)}
+    end
+  end
+
+  @credential_actions ~w(credential_get credential_put credential_delete credential_list)
+
+  @doc """
+  Sends one Agent-scoped host credential action over the selected local socket.
+  Returns `{:ok, data}`, `{:error, code}` for an Agent error code, or
+  `{:error, "Agent unavailable"}`. There is no fallback to another transport.
+  """
+  def credential(action, params, opts \\ []) when action in @credential_actions do
+    timeout = Keyword.get(opts, :timeout, @credential_timeout)
+    with_connection(opts, "Agent unavailable", &request(&1, action, params, timeout))
+  end
+
+  defp with_connection(opts, unavailable, fun) do
+    timeout = Keyword.get(opts, :timeout, @timeout)
+    opts = Keyword.put_new_lazy(opts, :socket_path, &default_socket_path/0)
 
     with {:ok, socket_path} <- required(opts, :socket_path, "agent socket path"),
-         {:ok, authentication} <- authentication_material(opts),
          {:ok, socket} <-
            :gen_tcp.connect(
              {:local, to_charlist(socket_path)},
              0,
-             [:binary, packet: :line, packet_size: 65_536, active: false],
+             # A receive buffer below the frame limit would split long lines.
+             [:binary, packet: :line, packet_size: 65_536, buffer: 65_536, active: false],
              timeout
            ) do
       try do
-        with :ok <- authenticate_if_requested(socket, authentication, timeout),
-             {:ok, data} <- request(socket, "get_secret", %{path: path}, timeout) do
-          {:ok, normalize_secret(data)}
-        end
+        fun.(socket)
       after
         :gen_tcp.close(socket)
       end
     else
       {:error, reason} when is_binary(reason) -> {:error, reason}
-      _ -> {:error, "Agent connection or key material unavailable"}
+      _ -> {:error, unavailable}
     end
   end
 

@@ -48,6 +48,21 @@ An unavailable Agent never triggers a Core HTTP fallback. See the
 [local Agent guide](../../docs/user-guides/local-agent-secrets.md) for startup
 scripts, the local protocol and password changes.
 
+### Host credentials
+
+```sh
+git config --global credential.helper secrethub          # git-credential-secrethub
+echo '{"credsStore":"secrethub"}' > ~/.docker/config.json  # docker-credential-secrethub
+printf %s "$TOKEN" | secrethub credential put --namespace generic --service ci --account deploy
+secrethub exec --map app.map.json -- ./bin/server
+```
+
+Values are read from stdin, never from arguments. The helpers, `secrethub exec`
+and the native `secrethub-exec` launcher come from the flake package
+`secrethub-cli` or `scripts/host-keyring/build-local.sh`; the Hex escript only
+provides `secrethub`. See the
+[host credentials guide](../../docs/user-guides/host-keyring.md).
+
 ### Authentication for Core API operations
 
 Creating/updating secrets and other Core API operations retain token

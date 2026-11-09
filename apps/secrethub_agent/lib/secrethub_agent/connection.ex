@@ -89,6 +89,23 @@ defmodule SecretHub.Agent.Connection do
   def runtime_event(:heartbeat), do: "agent:heartbeat"
   def runtime_event(:pull_trust_bundle), do: "pki:client_auth_bundle:get"
   def runtime_event(:submit_bundle_receipt), do: "pki:client_auth_bundle:receipt"
+  def runtime_event({:credential, operation}), do: "credential:" <> operation
+
+  @credential_operations ~w(get put delete list)
+  @credential_tasks SecretHub.Agent.HostCredentials.Tasks
+
+  @doc """
+  Forwards one Agent-scoped host credential operation to Core. Requests run
+  concurrently outside this process; a reply from a replaced runtime channel
+  is discarded rather than delivered as a later response.
+  """
+  def credential_request(operation, payload, timeout, server \\ __MODULE__)
+      when operation in @credential_operations do
+    GenServer.call(server, {:credential_request, operation, payload, timeout}, timeout + 500)
+  catch
+    :exit, {:timeout, _} -> {:error, :timeout}
+    :exit, _ -> {:error, :not_connected}
+  end
 
   @doc false
   def in_memory_certs_key(cert_pem, private_key) do
@@ -358,6 +375,20 @@ defmodule SecretHub.Agent.Connection do
   end
 
   @impl true
+  def handle_call({:credential_request, operation, payload, timeout}, from, state) do
+    cond do
+      state.connection_status != :connected ->
+        {:reply, {:error, :not_connected}, state}
+
+      not Map.get(state, :host_credentials_capable, false) ->
+        {:reply, {:error, %{"reason" => "INCOMPATIBLE_VERSION"}}, state}
+
+      true ->
+        start_credential_push(state, from, operation, payload, timeout)
+    end
+  end
+
+  @impl true
   def handle_call({:get_static_secret_local, path, revision, correlation}, from, state) do
     cond do
       state.connection_status != :connected ->
@@ -462,9 +493,10 @@ defmodule SecretHub.Agent.Connection do
   def handle_cast({:sync_uds_runtime, server}, state) when is_pid(server) do
     if state.connection_status == :connected do
       capabilities =
-        if Map.get(state, :local_socket_read_capable, false),
-          do: ["local_socket_read_v1"],
-          else: []
+        uds_capabilities(
+          Map.get(state, :local_socket_read_capable, false),
+          Map.get(state, :host_credentials_capable, false)
+        )
 
       send(
         server,
@@ -480,6 +512,18 @@ defmodule SecretHub.Agent.Connection do
   # server-side channel close to this process).
   @runtime_heartbeat_interval 30_000
   @runtime_heartbeat_timeout 10_000
+
+  @impl true
+  def handle_info({:credential_result, channel, generation, from, result}, state) do
+    current? =
+      state.connection_status == :connected and state.channel == channel and
+        Map.get(state, :channel_ref) == generation
+
+    # A reconnect may have replaced the channel; report that instead of a
+    # result whose channel no longer owns this Agent's runtime session.
+    GenServer.reply(from, if(current?, do: result, else: {:error, :not_connected}))
+    {:noreply, state}
+  end
 
   @impl true
   def handle_info({:ssh_result, channel, generation, capability, from, result}, state) do
@@ -869,6 +913,11 @@ defmodule SecretHub.Agent.Connection do
             ssh_capabilities: negotiated_ssh_capabilities(ssh_capabilities(), response),
             access_audit_capable:
               "access_audit_v1" in negotiated_ssh_capabilities(["access_audit_v1"], response),
+            host_credentials_capable:
+              "host_credentials_v1" in negotiated_ssh_capabilities(
+                ["host_credentials_v1"],
+                response
+              ),
             retry_count: 0
           })
           |> notify_runtime_accepted(response)
@@ -900,7 +949,15 @@ defmodule SecretHub.Agent.Connection do
           Map.get(state, :local_socket_read_capable, false)
         end
 
-      capabilities = if local?, do: ["local_socket_read_v1"], else: []
+      credentials? =
+        if Map.has_key?(payload, "runtime_capabilities") or
+             Map.has_key?(payload, :runtime_capabilities) do
+          "host_credentials_v1" in negotiated_ssh_capabilities(["host_credentials_v1"], payload)
+        else
+          Map.get(state, :host_credentials_capable, false)
+        end
+
+      capabilities = uds_capabilities(local?, credentials?)
       if Process.whereis(Cache), do: Cache.clear()
 
       if Process.whereis(UDSServer),
@@ -909,7 +966,8 @@ defmodule SecretHub.Agent.Connection do
       {:ok,
        state
        |> Map.put(:minimum_uds_auth_version, persisted)
-       |> Map.put(:local_socket_read_capable, local?)}
+       |> Map.put(:local_socket_read_capable, local?)
+       |> Map.put(:host_credentials_capable, credentials?)}
     else
       _ -> {:error, :trusted_state_unavailable}
     end
@@ -931,7 +989,8 @@ defmodule SecretHub.Agent.Connection do
       "runtime_capabilities" => [
         "uds_auth_v2",
         "access_audit_v1",
-        "local_socket_read_v1" | ssh_capabilities()
+        "local_socket_read_v1",
+        "host_credentials_v1" | ssh_capabilities()
       ],
       "agent_id" => state.agent_id,
       "name" => state.agent_id,
@@ -984,6 +1043,40 @@ defmodule SecretHub.Agent.Connection do
     _ -> {:error, :ssh_unavailable}
   catch
     _, _ -> {:error, :ssh_unavailable}
+  end
+
+  defp uds_capabilities(local?, credentials?) do
+    Enum.flat_map(
+      [{local?, "local_socket_read_v1"}, {credentials?, "host_credentials_v1"}],
+      fn {enabled?, capability} -> if enabled?, do: [capability], else: [] end
+    )
+  end
+
+  defp start_credential_push(state, from, operation, payload, timeout) do
+    channel = state.channel
+    generation = Map.get(state, :channel_ref)
+    owner = self()
+    event = runtime_event({:credential, operation})
+    tasks = Map.get(state, :credential_task_supervisor, @credential_tasks)
+
+    push = fn ->
+      result = credential_push(channel, event, payload, timeout)
+      send(owner, {:credential_result, channel, generation, from, result})
+    end
+
+    case Task.Supervisor.start_child(tasks, push) do
+      {:ok, _pid} -> {:noreply, state}
+      {:error, _} -> {:reply, {:error, :busy}, state}
+    end
+  catch
+    :exit, _ -> {:reply, {:error, :busy}, state}
+  end
+
+  defp credential_push(channel, event, payload, timeout) do
+    Channel.push(channel, event, payload, timeout)
+  catch
+    :exit, {:timeout, _} -> {:error, :timeout}
+    :exit, _ -> {:error, :not_connected}
   end
 
   defp send_request(state, _from, event, payload) do

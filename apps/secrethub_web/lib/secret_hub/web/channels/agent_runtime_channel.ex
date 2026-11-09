@@ -10,6 +10,7 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
   alias SecretHub.Core.AccessAudit
   alias SecretHub.Core.Agents
   alias SecretHub.Core.Agents.ConnectionManager
+  alias SecretHub.Core.HostCredentials
   alias SecretHub.Core.Repo
   alias SecretHub.Core.RuntimeAuthorization
   alias SecretHub.Core.RuntimePrincipal
@@ -47,7 +48,8 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
               "ssh_lookup_v1",
               "ssh_signing_v1",
               "access_audit_v1",
-              "local_socket_read_v1"
+              "local_socket_read_v1",
+              "host_credentials_v1"
             ])
         )
         |> Enum.uniq()
@@ -135,6 +137,26 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
 
         true ->
           local_read_reply(socket, payload)
+      end
+    end)
+  rescue
+    _ -> {:reply, {:error, %{reason: "UNAVAILABLE"}}, socket}
+  end
+
+  # Agent-scoped host credentials. Identity comes only from the mTLS socket;
+  # caller-supplied Agent or application identity is not part of the payload.
+  def handle_in("credential:" <> operation, payload, socket)
+      when operation in ~w(get put delete list) do
+    with_runtime_authorized(socket, fn ->
+      cond do
+        "host_credentials_v1" not in (socket.assigns[:runtime_capabilities] || []) ->
+          {:reply, {:error, %{reason: "INCOMPATIBLE_VERSION"}}, socket}
+
+        not is_map(payload) ->
+          {:reply, {:error, credential_failure(:invalid_request)}, socket}
+
+        true ->
+          credential_reply(socket, operation, payload)
       end
     end)
   rescue
@@ -365,6 +387,42 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
       {:error, reason} -> {:reply, {:error, application_failure(reason)}, socket}
     end
   end
+
+  defp credential_reply(socket, operation, payload) do
+    identity = %{agent_id: socket.assigns.agent_id, certificate_id: socket.assigns.certificate_id}
+    correlation = audit_correlation(payload)
+    params = Map.drop(payload, ["audit_request_id", "audit_attempt_id"])
+
+    with {:ok, principal} <-
+           RuntimePrincipal.resolve_agent_runtime_principal(identity, correlation),
+         {:ok, result} <-
+           HostCredentials.execute(principal, "credential_" <> operation, params, correlation) do
+      {:reply, {:ok, result}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, credential_failure(reason)}, socket}
+    end
+  end
+
+  defp credential_failure(reason) do
+    %{
+      reason: credential_error(reason),
+      audit_reason_code: Event.reason(reason, 2),
+      audit_outcome:
+        if(
+          credential_error(reason) in ~w(FORBIDDEN UNAUTHORIZED INVALID_REQUEST READ_ONLY INCOMPATIBLE_VERSION),
+          do: "denied",
+          else: "error"
+        )
+    }
+  end
+
+  defp credential_error(:not_found), do: "NOT_FOUND"
+  defp credential_error(:ambiguous), do: "AMBIGUOUS"
+  defp credential_error(:read_only), do: "READ_ONLY"
+  defp credential_error(:invalid_request), do: "INVALID_REQUEST"
+  defp credential_error(:invalid_value), do: "INVALID_VALUE"
+  defp credential_error(:secret_not_found), do: "SOURCE_UNAVAILABLE"
+  defp credential_error(reason), do: application_error(reason)
 
   defp application_read_reply(socket, path, payload) do
     identity = %{agent_id: socket.assigns.agent_id, certificate_id: socket.assigns.certificate_id}

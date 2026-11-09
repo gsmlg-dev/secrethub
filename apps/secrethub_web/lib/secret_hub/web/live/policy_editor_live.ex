@@ -517,7 +517,11 @@ defmodule SecretHub.Web.PolicyEditorLive do
             {"write", "Allow creating and updating secrets"},
             {"delete", "Allow deleting secrets"},
             {"rotate", "Allow rotating secret values"},
-            {"renew", "Allow renewing dynamic secret leases"}
+            {"renew", "Allow renewing dynamic secret leases"},
+            {"credential_read", "Allow an Agent to read its host credentials"},
+            {"credential_write", "Allow an Agent to store host credentials"},
+            {"credential_delete", "Allow an Agent to erase host credentials"},
+            {"credential_list", "Allow an Agent to list host credential metadata"}
           ] do %>
             <label class="flex items-start">
               <div class="flex items-center h-5">

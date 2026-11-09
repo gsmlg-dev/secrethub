@@ -25,6 +25,16 @@ processes allowed to connect share the Agent's secret permissions. Agent
 enrollment and runtime keys are managed by the Agent and are not passed to
 local callers. Core must be available and unsealed for every delivery.
 
+## Host credentials
+
+The same socket serves Agent-scoped host credentials for Git, Docker,
+`secrethub exec`, systemd services and Python `keyring` (`credential_get`,
+`credential_put`, `credential_delete`, `credential_list`). They need explicit
+`credential_*` policy grants, and every release is authorized by Core. Set
+`SECRET_HUB_AGENT_CREDENTIAL_PROVIDERS` to a provider configuration file to
+serve systemd `LoadCredential=` sockets. See the
+[host credentials guide](../../docs/user-guides/host-keyring.md).
+
 See the [local application guide](../../docs/user-guides/local-agent-secrets.md)
 for startup scripts, the local protocol and updates. Use the
 [Agent deployment guide](../../docs/deployment/agent-deployment-guide.md) for

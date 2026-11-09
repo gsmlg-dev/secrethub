@@ -45,7 +45,7 @@
           mixDeps = beamPackages.fetchMixDeps {
             pname = "secrethub-mix-deps";
             inherit version src;
-            sha256 = "sha256-8TvNdQjWd3EqQVbsPzqsk4WANEK5YZsS+VslrvLQDO8=";
+            sha256 = "sha256-Kucztiewcc4Nl4dybuEBt0fxBwmy/Dg+DubGXDM1RLc=";
             mixEnv = "prod";
           };
 
@@ -117,6 +117,29 @@
               preConfigure = prepareNifs;
             };
 
+            # Native outer launcher for `secrethub exec` and systemd main processes.
+            secrethub-exec = pkgs.stdenv.mkDerivation {
+              pname = "secrethub-exec";
+              inherit version;
+              src = ./native/secrethub-exec;
+              makeFlags = [ "PREFIX=${placeholder "out"}" ];
+              doCheck = true;
+              checkTarget = "test";
+              nativeCheckInputs = [ pkgs.procps ];
+            };
+
+            # Python keyring backend; select it explicitly in the application.
+            python-keyrings-secrethub = pkgs.python3Packages.buildPythonPackage {
+              pname = "keyrings.secrethub";
+              inherit version;
+              pyproject = true;
+              src = ./integrations/python-keyring;
+              build-system = [ pkgs.python3Packages.setuptools ];
+              dependencies = [ pkgs.python3Packages.keyring ];
+              nativeCheckInputs = [ pkgs.python3Packages.pytestCheckHook ];
+              pythonImportsCheck = [ "keyrings.secrethub" ];
+            };
+
             # SecretHub CLI: escript command-line tool
             secrethub-cli = beamPackages.mixRelease {
               pname = "secrethub-cli";
@@ -132,10 +155,19 @@
                 cd ../..
               '';
 
+              # The escript embeds Elixir; pin its Erlang interpreter so no source
+              # checkout, mix or ambient escript is needed on the target host.
+              # Thin wrappers select the Git/Docker helper entry points and route
+              # `secrethub exec` through the native launcher.
               installPhase = ''
                 runHook preInstall
-                mkdir -p $out/bin
-                cp apps/secrethub_cli/secrethub $out/bin/secrethub
+                mkdir -p $out/bin $out/libexec
+                { echo "#!${beamPackages.erlang}/bin/escript"; tail -n +2 apps/secrethub_cli/secrethub; } \
+                  > $out/libexec/secrethub-cli
+                chmod 0755 $out/libexec/secrethub-cli
+                ln -s ${self.packages.${system}.secrethub-exec}/bin/secrethub-exec $out/libexec/secrethub-exec
+                sh ${./scripts/host-keyring/install-wrappers.sh} \
+                  $out/libexec/secrethub-cli $out/libexec/secrethub-exec $out/bin
                 runHook postInstall
               '';
             };
@@ -187,6 +219,12 @@
               inherit nixpkgs pkgs;
               agentModule = self.nixosModules.agent;
             };
+
+            host-keyring-systemd = import ./nix/tests/host-keyring-systemd.nix {
+              inherit pkgs;
+              agentModule = self.nixosModules.agent;
+              launcher = self.packages.${system}.secrethub-exec;
+            };
           };
 
           # Dev shell (standalone alternative to devenv)
@@ -211,6 +249,7 @@
         secrethub-core = self.packages.${prev.system}.secrethub-core;
         secrethub-agent = self.packages.${prev.system}.secrethub-agent;
         secrethub-cli = self.packages.${prev.system}.secrethub-cli;
+        secrethub-exec = self.packages.${prev.system}.secrethub-exec;
       };
 
       # NixOS module for SecretHub Core service
@@ -301,9 +340,28 @@
         };
 
       # NixOS module for SecretHub Agent
-      nixosModules.agent = { config, lib, pkgs, ... }:
+      nixosModules.agent = { config, lib, pkgs, utils, ... }:
         let
           cfg = config.services.secrethub-agent;
+          credentialSocketDir = "/run/secrethub-credentials";
+          providersEnabled = cfg.credentialProviders != { };
+          # Identifiers only: binding IDs, fields and unit names, never values.
+          providerConfig = pkgs.writeText "secrethub-credential-providers.json" (builtins.toJSON {
+            socket_dir = credentialSocketDir;
+            allowed_uids = [ 0 ];
+            providers = lib.mapAttrs (_: provider: {
+              entry_id = provider.entryId;
+              inherit (provider) field units;
+            }) cfg.credentialProviders;
+          });
+          launcherArgs = service:
+            lib.concatLists (lib.mapAttrsToList (credential: _:
+              let
+                exported = lib.filterAttrs (_: name: name == credential) service.environment;
+              in
+              if exported == { } then [ "--credential" credential ]
+              else lib.concatMap (variable: [ "--credential" "${credential}=${variable}" ]) (lib.attrNames exported)
+            ) service.credentials);
           sshEnabled = cfg.ssh.lookup.enable || cfg.ssh.signing.enable;
           lookupDir = builtins.dirOf cfg.ssh.lookup.socketPath;
           signingDir = builtins.dirOf cfg.ssh.signing.socketPath;
@@ -390,6 +448,86 @@
               default = null;
               description = "Deprecated and ignored; Core assigns the Agent identity during enrollment.";
             };
+
+            cliPackage = lib.mkOption {
+              type = lib.types.package;
+              default = self.packages.${pkgs.system}.secrethub-cli;
+              defaultText = lib.literalExpression "secrethub.packages.\${system}.secrethub-cli";
+              description = "Package providing secrethub, secrethub-exec and the Git/Docker credential helpers.";
+            };
+
+            installCli = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = ''
+                Install the CLI and credential helpers on PATH. This does not
+                change any Git or Docker configuration; enable helpers per user.
+              '';
+            };
+
+            credentialProviders = lib.mkOption {
+              default = { };
+              description = ''
+                systemd LoadCredential= provider sockets served by the Agent
+                under ${credentialSocketDir}/NAME.sock. Each maps to exactly
+                one credential binding ID and field; values are fetched from
+                Core at every service activation and never enter the Nix store.
+              '';
+              type = lib.types.attrsOf (lib.types.submodule {
+                options = {
+                  entryId = lib.mkOption {
+                    type = lib.types.strMatching "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+                    description = "Credential binding ID (an identifier, not a value).";
+                  };
+                  field = lib.mkOption {
+                    type = lib.types.enum [ "value" "username" ];
+                    default = "value";
+                  };
+                  units = lib.mkOption {
+                    type = lib.types.listOf lib.types.str;
+                    default = [ ];
+                    description = "Optional unit names allowed to load this credential, checked in addition to the service manager UID.";
+                  };
+                };
+              });
+            };
+
+            serviceCredentials = lib.mkOption {
+              default = { };
+              description = ''
+                Services whose main process receives provider credentials.
+                Generates LoadCredential= entries and an ExecStart that runs the
+                mandatory secrethub-exec launcher, which validates the credential
+                files of the main process and replaces itself with `command`.
+              '';
+              type = lib.types.attrsOf (lib.types.submodule {
+                options = {
+                  credentials = lib.mkOption {
+                    type = lib.types.attrsOf lib.types.str;
+                    description = "Credential name in the unit -> credentialProviders name.";
+                  };
+                  environment = lib.mkOption {
+                    type = lib.types.attrsOf lib.types.str;
+                    default = { };
+                    description = "Environment variable -> credential name, for programs that only read environment variables.";
+                  };
+                  command = lib.mkOption {
+                    type = lib.types.nonEmptyListOf lib.types.str;
+                    description = "Exact argv of the service program (no shell).";
+                  };
+                };
+              });
+            };
+
+            userAgent = {
+              enable = lib.mkEnableOption ''
+                a per-user Agent (systemd user service) for interactive Git,
+                Docker and keyring use. It enrolls with its own generated SSH
+                key under the user's state directory and listens on
+                $XDG_RUNTIME_DIR/secrethub/agent.sock; it does not use the
+                system Agent's socket or host key
+              '';
+            };
           };
 
           config = lib.mkIf cfg.enable {
@@ -426,6 +564,17 @@
                 assertion = lib.all (name: builtins.match "[a-zA-Z_][a-zA-Z0-9_-]{0,63}" name != null) sshGroups;
                 message = "services.secrethub-agent.ssh groups must be valid static Unix group names.";
               }
+              {
+                assertion = lib.all (name: builtins.match "[A-Za-z0-9_.-]{1,64}" name != null) (lib.attrNames cfg.credentialProviders);
+                message = "services.secrethub-agent.credentialProviders names must match [A-Za-z0-9_.-]{1,64}.";
+              }
+              {
+                assertion = lib.all (service:
+                  lib.all (provider: cfg.credentialProviders ? ${provider}) (lib.attrValues service.credentials)
+                  && lib.all (credential: service.credentials ? ${credential}) (lib.attrValues service.environment)
+                ) (lib.attrValues cfg.serviceCredentials);
+                message = "services.secrethub-agent.serviceCredentials must reference configured providers and credentials.";
+              }
             ];
 
             users.groups = lib.genAttrs sshGroups (_: { });
@@ -433,12 +582,18 @@
               (lib.genAttrs cfg.ssh.sourceUsers (_: { extraGroups = sshGroups; }))
               (lib.mkIf cfg.ssh.lookup.enable { nobody.extraGroups = [ cfg.ssh.lookup.group ]; })
             ];
-            environment.systemPackages = lib.optional cfg.ssh.lookup.enable publicHelpers;
+            environment.systemPackages = lib.optional cfg.ssh.lookup.enable publicHelpers
+              ++ lib.optional (cfg.installCli || cfg.userAgent.enable) cfg.cliPackage;
+
+            environment.sessionVariables = lib.mkIf cfg.userAgent.enable {
+              SECRET_HUB_AGENT_SOCKET_PATH = "$XDG_RUNTIME_DIR/secrethub/agent.sock";
+            };
 
             warnings = lib.optional (cfg.agentId != null)
               "services.secrethub-agent.agentId is ignored; remove it because Core assigns the Agent identity.";
 
-            systemd.services.secrethub-agent = {
+            systemd.services = {
+             secrethub-agent = {
               description = "SecretHub Agent Service";
               after = [ "network-online.target" "sshd-keygen.service" ];
               wants = [ "network-online.target" ]
@@ -466,6 +621,8 @@
                 SECRET_HUB_AGENT_SSH_SIGNING_SOCKET_GROUP = cfg.ssh.signing.group;
               } // lib.optionalAttrs (cfg.enrollmentCaPath != null) {
                 SECRET_HUB_AGENT_ENROLLMENT_CA_PATH = "%d/enrollment-ca";
+              } // lib.optionalAttrs providersEnabled {
+                SECRET_HUB_AGENT_CREDENTIAL_PROVIDERS = toString providerConfig;
               };
 
               serviceConfig = {
@@ -476,10 +633,12 @@
                 StateDirectory = "secrethub-agent";
                 StateDirectoryMode = "0700";
                 SupplementaryGroups = sshGroups;
-                RuntimeDirectory = if sshEnabled then [ "secrethub-agent" ]
+                # Provider sockets live in their own private directory; PID 1
+                # connects as root, so services need no access to it.
+                RuntimeDirectory = [ "secrethub-agent" ]
                   ++ lib.optional cfg.ssh.lookup.enable (lib.removePrefix "/run/" lookupDir)
                   ++ lib.optional cfg.ssh.signing.enable (lib.removePrefix "/run/" signingDir)
-                  else "secrethub-agent";
+                  ++ lib.optional providersEnabled (lib.removePrefix "/run/" credentialSocketDir);
                 RuntimeDirectoryMode = "0700";
                 WorkingDirectory = "/var/lib/secrethub-agent";
                 UMask = "0077";
@@ -500,6 +659,59 @@
               script = ''
                 # mixRelease removes its build-time cookie. Distribution is off,
                 # so a fresh process-local cookie needs no persistent secret.
+                export RELEASE_COOKIE="$(head -c 32 /dev/urandom | base64)"
+                exec ${cfg.package}/bin/secrethub_agent start
+              '';
+             };
+            } // lib.mapAttrs (_name: service: {
+              after = [ "secrethub-agent.service" ];
+              wants = [ "secrethub-agent.service" ];
+              serviceConfig = {
+                LoadCredential = lib.mapAttrsToList
+                  (credential: provider: "${credential}:${credentialSocketDir}/${provider}.sock")
+                  service.credentials;
+                # The main process validates its own credential copies; an empty
+                # credential from a failed acquisition stops it before the target.
+                ExecStart = utils.escapeSystemdExecArgs (
+                  [ "${cfg.cliPackage}/bin/secrethub-exec" ] ++ launcherArgs service ++ [ "--" ] ++ service.command
+                );
+              };
+            }) cfg.serviceCredentials;
+
+            systemd.user.services.secrethub-agent = lib.mkIf cfg.userAgent.enable {
+              description = "SecretHub Agent (user profile)";
+              wantedBy = [ "default.target" ];
+              path = [ pkgs.getent pkgs.coreutils ];
+              environment = {
+                SECRET_HUB_AGENT_CORE_URL = cfg.coreUrl;
+                SECRET_HUB_AGENT_STATE_DIR = "%S/secrethub-agent";
+                SECRET_HUB_AGENT_HOST_KEY_PATH = "%S/secrethub-agent/user-host-key";
+                SECRET_HUB_AGENT_SOCKET_PATH = "%t/secrethub/agent.sock";
+                RELEASE_DISTRIBUTION = "none";
+                RELEASE_TMP = "%t/secrethub";
+                ERL_CRASH_DUMP = "/dev/null";
+                LANG = "C.UTF-8";
+              } // lib.optionalAttrs (cfg.enrollmentCaPath != null) {
+                SECRET_HUB_AGENT_ENROLLMENT_CA_PATH = cfg.enrollmentCaPath;
+              };
+              serviceConfig = {
+                Type = "exec";
+                Restart = "on-failure";
+                RestartSec = 5;
+                StateDirectory = "secrethub-agent";
+                StateDirectoryMode = "0700";
+                RuntimeDirectory = "secrethub";
+                RuntimeDirectoryMode = "0700";
+                UMask = "0077";
+              };
+              # The per-user enrollment identity is a generated key owned by
+              # the user, never the machine's root-only SSH host key.
+              preStart = ''
+                if [ ! -e "$SECRET_HUB_AGENT_HOST_KEY_PATH" ]; then
+                  ${pkgs.openssh}/bin/ssh-keygen -q -t ecdsa -b 256 -N "" -f "$SECRET_HUB_AGENT_HOST_KEY_PATH"
+                fi
+              '';
+              script = ''
                 export RELEASE_COOKIE="$(head -c 32 /dev/urandom | base64)"
                 exec ${cfg.package}/bin/secrethub_agent start
               '';

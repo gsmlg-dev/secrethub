@@ -313,7 +313,7 @@ defmodule SecretHub.Agent.AccessAudit.Journal do
         event_id: Ecto.UUID.generate(),
         producer_id: state.producer_id,
         producer_sequence: state.sequence + 1,
-        schema_version: 1,
+        schema_version: Event.schema_version_for(attrs[:operation]),
         source: "agent",
         observed_at: DateTime.utc_now() |> DateTime.to_iso8601()
       })

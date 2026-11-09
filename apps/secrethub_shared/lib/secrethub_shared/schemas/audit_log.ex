@@ -367,6 +367,15 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "secret.updated",
       "secret.rotated",
       "secret.deleted",
+      # Host credential runtime and management events (no values or lookup data)
+      "host_credential.read",
+      "host_credential.written",
+      "host_credential.deleted",
+      "host_credential.listed",
+      "host_credential.reference_bound",
+      "host_credential.reference_enabled",
+      "host_credential.reference_rebound",
+      "host_credential.reference_disabled",
       # Authentication events
       "auth.agent_bootstrap",
       "auth.agent_certificate_issued",

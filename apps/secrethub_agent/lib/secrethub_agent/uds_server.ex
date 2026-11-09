@@ -3,13 +3,23 @@ defmodule SecretHub.Agent.UDSServer do
   use GenServer
   alias SecretHub.Agent.AccessAudit.Journal
   alias SecretHub.Agent.{Cache, CertVerifier, Connection, IdentityStore, UDSAuth}
+  alias SecretHub.Agent.HostCredentials.LocalAPI
   alias SecretHub.Shared.AccessAudit.{Event, Telemetry}
 
   @frame_limit 65_536
+  @credential_actions ~w(credential_get credential_put credential_delete credential_list)
+  @max_in_flight_per_connection 8
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   def get_stats, do: GenServer.call(__MODULE__, :get_stats)
   def shutdown, do: GenServer.call(__MODULE__, :shutdown)
+
+  @doc "Current Agent identity and host credential capability for other local endpoints."
+  def runtime_context(server \\ __MODULE__) do
+    GenServer.call(server, :runtime_context, 5_000)
+  catch
+    :exit, _ -> {:error, :unavailable}
+  end
 
   def configure_runtime(agent_id, floor, capabilities \\ []),
     do: GenServer.call(__MODULE__, {:configure_runtime, agent_id, floor, capabilities})
@@ -41,6 +51,9 @@ defmodule SecretHub.Agent.UDSServer do
          agent_id: agent_id,
          minimum_uds_auth_version: floor,
          local_socket_read_capable: false,
+         host_credentials_capable: false,
+         credential_tasks:
+           Keyword.get(opts, :credential_tasks, SecretHub.Agent.HostCredentials.Tasks),
          connections: %{},
          max_connections: Keyword.get(opts, :max_connections, 100),
          connection_timeout: Keyword.get(opts, :connection_timeout, 30_000),
@@ -61,6 +74,16 @@ defmodule SecretHub.Agent.UDSServer do
 
   @impl true
   def handle_call(:get_stats, _from, state), do: {:reply, {:ok, state.stats}, state}
+
+  def handle_call(:runtime_context, _from, state) do
+    reply =
+      if is_binary(state.agent_id) and state.host_credentials_capable,
+        do: {:ok, %{agent_id: state.agent_id, timeout: state.request_timeout}},
+        else: {:error, :unavailable}
+
+    {:reply, reply, state}
+  end
+
   def handle_call(:shutdown, _from, state), do: {:stop, :normal, :ok, state}
 
   def handle_call({:configure_runtime, agent_id, floor, capabilities}, _from, state)
@@ -76,13 +99,15 @@ defmodule SecretHub.Agent.UDSServer do
       state
       | agent_id: agent_id,
         minimum_uds_auth_version: floor,
-        local_socket_read_capable: local?
+        local_socket_read_capable: local?,
+        host_credentials_capable: "host_credentials_v1" in capabilities
     }
 
     Enum.reduce(state.connections, state, fn {socket, connection}, acc ->
       if (connection.auth_version < floor and connection.auth_state == :authenticated) or
            (connection.auth_state == :local and
-              (not local? or connection.local_agent_id != agent_id)),
+              ((not local? and not state.host_credentials_capable) or
+                 connection.local_agent_id != agent_id)),
          do: close_connection(acc, socket),
          else: acc
     end)
@@ -113,6 +138,7 @@ defmodule SecretHub.Agent.UDSServer do
             auth_version: 0,
             principal: nil,
             local_agent_id: nil,
+            in_flight: 0,
             challenge: nil,
             attempts: 0,
             timer: timer
@@ -142,6 +168,16 @@ defmodule SecretHub.Agent.UDSServer do
     state = handle_frame(socket, frame, state)
     if Map.has_key?(state.connections, socket), do: :inet.setopts(socket, active: :once)
     {:noreply, state}
+  end
+
+  def handle_info({:credential_done, socket}, state) do
+    case state.connections[socket] do
+      %{in_flight: count} when count > 0 ->
+        {:noreply, put_in(state, [:connections, socket, :in_flight], count - 1)}
+
+      _ ->
+        {:noreply, state}
+    end
   end
 
   def handle_info({:tcp_closed, socket}, state), do: {:noreply, close_connection(state, socket)}
@@ -321,6 +357,29 @@ defmodule SecretHub.Agent.UDSServer do
     audited_reject(socket, id, params, state, "PROOF_REQUIRED", "proof_required")
   end
 
+  # Host credentials are Agent-scoped: served on local connections only, never
+  # by downgrading an application-authenticated connection.
+  defp dispatch(socket, id, action, params, %{auth_state: auth_state} = connection, state)
+       when action in @credential_actions and auth_state in [:unauthenticated, :local] do
+    cond do
+      is_nil(state.agent_id) ->
+        credential_reject(socket, id, action, state, "ENROLLMENT_IN_PROGRESS")
+
+      not state.host_credentials_capable ->
+        credential_reject(socket, id, action, state, "INCOMPATIBLE_VERSION")
+
+      connection.in_flight >= @max_in_flight_per_connection ->
+        credential_reject(socket, id, action, state, "BUSY")
+
+      true ->
+        start_credential_task(socket, id, action, params, connection, state)
+    end
+  end
+
+  defp dispatch(socket, id, action, _params, _connection, state)
+       when action in @credential_actions,
+       do: credential_reject(socket, id, action, state, "AGENT_SCOPE_REQUIRED")
+
   defp dispatch(socket, id, _action, _params, %{auth_state: :authenticated}, state) do
     record_invalid(state)
     fail(state, socket, id, "UNAVAILABLE", false)
@@ -329,6 +388,44 @@ defmodule SecretHub.Agent.UDSServer do
   defp dispatch(socket, id, _action, _params, _connection, state) do
     record_invalid(state)
     fail(state, socket, id, "PROOF_REQUIRED", false)
+  end
+
+  defp start_credential_task(socket, id, action, params, connection, state) do
+    server = self()
+    context = %{agent_id: state.agent_id, timeout: state.request_timeout}
+
+    task =
+      Task.Supervisor.start_child(state.credential_tasks, fn ->
+        try do
+          LocalAPI.handle(socket, id, action, params, context)
+        after
+          send(server, {:credential_done, socket})
+        end
+      end)
+
+    case task do
+      {:ok, _pid} ->
+        Process.cancel_timer(connection.timer)
+
+        connection = %{
+          connection
+          | auth_state: :local,
+            local_agent_id: state.agent_id,
+            in_flight: connection.in_flight + 1
+        }
+
+        put_in(state, [:connections, socket], connection)
+
+      {:error, _} ->
+        credential_reject(socket, id, action, state, "BUSY")
+    end
+  catch
+    :exit, _ -> credential_reject(socket, id, action, state, "BUSY")
+  end
+
+  defp credential_reject(socket, id, action, state, code) do
+    LocalAPI.reject(socket, id, action, state.agent_id, code)
+    count(state, :failed_requests)
   end
 
   defp authenticate(socket, id, params, connection, state, version) do

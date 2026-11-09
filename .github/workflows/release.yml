@@ -519,6 +519,80 @@ jobs:
           RELEASE_SHA: ${{ needs.prepare-release.outputs.release_sha }}
         run: bash scripts/verify-pki-trust-image.sh "$IMAGE" "$RELEASE_TAG" "$RELEASE_SHA"
 
+  build-host-keyring-tools:
+    name: Build Host Credential Tools (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    needs: prepare-release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: macos-amd64
+            runner: macos-26-intel
+          - target: macos-arm64
+            runner: macos-26
+
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.release_sha }}
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+          mix deps.get --only prod
+
+      # Builds the CLI escript and the native secrethub-exec launcher, runs the
+      # launcher's subprocess tests on this platform, and packages both with an
+      # installer for the secrethub, Git and Docker helper wrappers.
+      - name: Package host credential tools
+        shell: bash
+        env:
+          MIX_ENV: prod
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          scripts/host-keyring/package.sh "$RELEASE_TAG" "$RELEASE_TARGET" "$PWD/dist"
+
+      - name: Smoke test installed helpers
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          tar -C "$work" -xzf "dist/secrethub-host-tools-${RELEASE_TAG}-${RELEASE_TARGET}.tar.gz"
+          root="$work/secrethub-host-tools-${RELEASE_TAG}-${RELEASE_TARGET}"
+          "$root/install.sh"
+          # No Agent: Git must stop (quit=true, non-zero) with protocol-only stdout.
+          out="$(printf 'protocol=https\nhost=example.com\n\n' | SECRET_HUB_AGENT_SOCKET_PATH=/nonexistent "$root/bin/git-credential-secrethub" get 2>/dev/null || true)"
+          test "$out" = "quit=true"
+          "$root/bin/secrethub" version
+
+      - name: Upload host credential tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: secrethub-host-tools-${{ matrix.target }}
+          path: dist/secrethub-host-tools-${{ needs.prepare-release.outputs.tag }}-${{ matrix.target }}.tar.gz
+          retention-days: 7
+
   create-release:
     name: Create GitHub Release
     runs-on: ubuntu-24.04
@@ -528,6 +602,7 @@ jobs:
       - build-core-release
       - build-agent-release
       - build-agent-freebsd
+      - build-host-keyring-tools
       - build-docker-images
     permissions:
       contents: write

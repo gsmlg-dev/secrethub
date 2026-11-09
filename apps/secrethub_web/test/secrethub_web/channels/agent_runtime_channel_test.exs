@@ -1,8 +1,12 @@
 defmodule SecretHub.Web.AgentRuntimeChannelTest do
   use SecretHub.Web.ChannelCase, async: false
+  import Ecto.Query, only: [from: 2]
 
   alias SecretHub.Agent.AccessAudit.Journal
   alias SecretHub.Agent.UDSAuth
+  alias SecretHub.Agent.UDSServer
+  alias SecretHub.CLI.AgentClient
+  alias SecretHub.Web.GitHTTPFixture
   alias SecretHub.Core.AccessAudit
   alias SecretHub.Core.Agents
   alias SecretHub.Core.Agents.ConnectionManager
@@ -908,6 +912,552 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
     end
   end
 
+  ## Host credentials (host_credentials_v1)
+
+  @tag :tmp_dir
+  @tag timeout: 180_000
+  test "host credential operations need the negotiated capability and Agent-owned grants",
+       fixture do
+    ctx = application_runtime_fixture!(["uds_auth_v2", "host_credentials_v1"], fixture)
+    assert "host_credentials_v1" in ctx.socket.assigns.runtime_capabilities
+    assert "host_credentials_v1" in Agents.get_agent(ctx.agent.agent_id).runtime_capabilities
+    selector = %{"namespace" => "generic", "service" => "svc", "account" => "u"}
+
+    ref = push(ctx.socket, "credential:get", selector)
+    assert_reply(ref, :error, %{reason: "FORBIDDEN"}, 5_000)
+
+    grant_host_credentials!(ctx.agent)
+    ref = push(ctx.socket, "credential:put", Map.put(selector, "value", "v-1"))
+    assert_reply(ref, :ok, %{"status" => "created", "entry_id" => id}, 5_000)
+
+    ref =
+      push(
+        ctx.socket,
+        "credential:get",
+        Map.put(selector, "audit_request_id", Ecto.UUID.generate())
+      )
+
+    assert_reply(ref, :ok, %{"value" => "v-1", "entry_id" => ^id, "audit_event_id" => _}, 5_000)
+
+    # Payload identity claims are not part of the contract.
+    ref = push(ctx.socket, "credential:get", Map.put(selector, "agent_id", "someone-else"))
+    assert_reply(ref, :error, %{reason: "INVALID_REQUEST"}, 5_000)
+
+    ref = push(ctx.socket, "credential:list", %{"namespace" => "generic"})
+    assert_reply(ref, :ok, %{"entries" => [%{"entry_id" => ^id} = entry]}, 5_000)
+    refute Map.has_key?(entry, "value")
+
+    ref = push(ctx.socket, "credential:delete", selector)
+    assert_reply(ref, :ok, %{"status" => "deleted"}, 5_000)
+    ref = push(ctx.socket, "credential:get", selector)
+    assert_reply(ref, :error, %{reason: "NOT_FOUND"}, 5_000)
+  end
+
+  @tag :tmp_dir
+  @tag timeout: 180_000
+  test "host credential operations are refused without the negotiated capability", fixture do
+    ctx = application_runtime_fixture!(["uds_auth_v2"], fixture)
+    refute "host_credentials_v1" in ctx.socket.assigns.runtime_capabilities
+
+    ref =
+      push(ctx.socket, "credential:get", %{
+        "namespace" => "generic",
+        "service" => "s",
+        "account" => "u"
+      })
+
+    assert_reply(ref, :error, %{reason: "INCOMPATIBLE_VERSION"}, 2_000)
+  end
+
+  @tag :tmp_dir
+  @tag timeout: 300_000
+  test "CLI credential reads cross real UDS and trusted Core; denial never releases cache",
+       fixture do
+    ctx = host_keyring_runtime!(fixture)
+    opts = [socket_path: ctx.socket_path, timeout: 20_000]
+    selector = %{"namespace" => "generic", "service" => "billing", "account" => "svc"}
+
+    assert {:ok, %{"status" => "created"}} =
+             relay(ctx, fn ->
+               AgentClient.credential("credential_put", Map.put(selector, "value", "first"), opts)
+             end)
+
+    assert {:ok, %{"value" => "first"}} =
+             relay(ctx, fn -> AgentClient.credential("credential_get", selector, opts) end)
+
+    # Second read is answered from the exact-revision cache after a fresh Core decision.
+    assert {:ok, %{"value" => "first"}} =
+             relay(ctx, fn -> AgentClient.credential("credential_get", selector, opts) end)
+
+    # Rotation is observed by the next helper get.
+    assert {:ok, %{"status" => "updated"}} =
+             relay(ctx, fn ->
+               AgentClient.credential(
+                 "credential_put",
+                 Map.put(selector, "value", "second"),
+                 opts
+               )
+             end)
+
+    assert {:ok, %{"value" => "second"}} =
+             relay(ctx, fn -> AgentClient.credential("credential_get", selector, opts) end)
+
+    Repo.delete_all(
+      from(p in SecretHub.Shared.Schemas.Policy,
+        where: ^("agent:" <> ctx.agent.id) in p.entity_bindings
+      )
+    )
+
+    assert {:error, "FORBIDDEN"} =
+             relay(ctx, fn -> AgentClient.credential("credential_get", selector, opts) end)
+
+    await_audit_agent_phases_at_least!(10)
+    assert {:ok, events} = Journal.batch()
+    assert Enum.any?(events, &(&1["schema_version"] == 2))
+    refute Jason.encode!(events) =~ "second"
+
+    # Core ingests the version 2 Agent observations.
+    ref = push(ctx.socket, "audit:batch", %{"events" => events})
+    assert_reply(ref, :ok, %{accepted: accepted}, 5_000)
+    assert length(accepted) == length(events)
+  end
+
+  @tag :tmp_dir
+  @tag :host_keyring_consumers
+  @tag timeout: 600_000
+  test "real git fill/approve/reject and authenticated HTTP clone use the Agent", fixture do
+    bin = consumer_bin!()
+    ctx = host_keyring_runtime!(fixture)
+    root = Path.join(fixture.tmp_dir, "git-root")
+    seed_git_repository!(root)
+    {server, port} = GitHTTPFixture.start(root, "alice", "correct-pw")
+    on_exit(fn -> Process.exit(server, :shutdown) end)
+    home = Path.join(fixture.tmp_dir, "home")
+    File.mkdir_p!(home)
+
+    File.write!(Path.join(home, ".gitconfig"), """
+    [credential]
+    \thelper = #{bin}/git-credential-secrethub
+    """)
+
+    env = [
+      {"HOME", home},
+      {"GIT_CONFIG_NOSYSTEM", "1"},
+      {"GIT_TERMINAL_PROMPT", "0"},
+      {"GIT_ASKPASS", ""},
+      {"SSH_ASKPASS", ""},
+      {"SECRET_HUB_AGENT_SOCKET_PATH", ctx.socket_path}
+    ]
+
+    url = "http://127.0.0.1:#{port}/repo.git"
+
+    git = fn args, input ->
+      relay(ctx, fn -> cmd("git", args, input, env, fixture.tmp_dir) end)
+    end
+
+    helper = fn op, input ->
+      relay(ctx, fn -> cmd("#{bin}/git-credential-secrethub", [op], input, env, home) end)
+    end
+
+    # Miss: the helper answers nothing; Git cannot prompt and the clone fails.
+    assert {_, status} = git.(["clone", url, "miss"], "")
+    refute status == 0
+    assert {"", 0} = helper.("get", "protocol=http\nhost=127.0.0.1:#{port}\n\n")
+
+    attrs = "protocol=http\nhost=127.0.0.1:#{port}\nusername=alice\npassword=correct-pw\n\n"
+    assert {"", 0} = git.(["credential", "approve"], attrs)
+
+    assert {fill, 0} = git.(["credential", "fill"], "protocol=http\nhost=127.0.0.1:#{port}\n\n")
+    assert fill =~ "username=alice\npassword=correct-pw"
+
+    assert {_, 0} = git.(["clone", url, "authenticated"], "")
+    assert File.read!(Path.join([fixture.tmp_dir, "authenticated", "README"])) == "seed\n"
+
+    # A wrong stored password is rejected by the server; Git's reject erases it.
+    bad = String.replace(attrs, "correct-pw", "stale-pw")
+    assert {"", 0} = git.(["credential", "approve"], bad)
+    assert {_, status} = git.(["clone", url, "stale"], "")
+    refute status == 0
+    assert {"", 0} = helper.("get", "protocol=http\nhost=127.0.0.1:#{port}\n\n")
+
+    # Erase with a stale password must not remove a newer replacement.
+    assert {"", 0} = git.(["credential", "approve"], attrs)
+    assert {"", 0} = git.(["credential", "reject"], bad)
+    assert {out, 0} = helper.("get", "protocol=http\nhost=127.0.0.1:#{port}\nusername=alice\n\n")
+    assert out == "username=alice\npassword=correct-pw\n"
+
+    # Path scope and port are kept distinct; Agent denial is a hard failure.
+    assert {"", 0} = helper.("get", "protocol=http\nhost=127.0.0.1:#{port}\npath=repo.git\n\n")
+    assert {"", 0} = helper.("get", "protocol=http\nhost=127.0.0.1:1\n\n")
+    revoke_host_credentials!(ctx.agent)
+    assert {"quit=true\n", 1} = helper.("get", "protocol=http\nhost=127.0.0.1:#{port}\n\n")
+  end
+
+  @tag :tmp_dir
+  @tag :host_keyring_consumers
+  @tag timeout: 300_000
+  test "secrethub exec resolves through the Agent and replaces itself with the target",
+       fixture do
+    bin = consumer_bin!()
+    ctx = host_keyring_runtime!(fixture)
+    opts = [socket_path: ctx.socket_path, timeout: 20_000]
+
+    {:ok, %{"entry_id" => id}} =
+      relay(ctx, fn ->
+        AgentClient.credential(
+          "credential_put",
+          %{"namespace" => "generic", "service" => "db", "account" => "app", "value" => "p w\nx"},
+          opts
+        )
+      end)
+
+    map = Path.join(fixture.tmp_dir, "map.json")
+
+    File.write!(
+      map,
+      Jason.encode!(%{
+        "env" => %{
+          "DB_PASSWORD" => %{"entry_id" => id, "field" => "value"},
+          "DB_USER" => %{"entry_id" => id, "field" => "username"}
+        }
+      })
+    )
+
+    out = Path.join(fixture.tmp_dir, "out")
+    env = [{"SECRET_HUB_AGENT_SOCKET_PATH", ctx.socket_path}]
+
+    script =
+      ~s(echo "$$"; exec "$1" exec --map "$2" -- sh -c 'echo "$$"; printf %s "$DB_USER:$DB_PASSWORD" > "$0"; cat; exit 7' "$3")
+
+    {output, status} =
+      relay(ctx, fn ->
+        cmd(
+          "sh",
+          ["-c", script, "sh", "#{bin}/secrethub", map, out],
+          "stdin-data",
+          env,
+          fixture.tmp_dir
+        )
+      end)
+
+    assert status == 7
+    [outer, inner, stdin_echo] = String.split(output, "\n", parts: 3)
+    assert outer == inner
+    assert stdin_echo == "stdin-data"
+    assert File.read!(out) == "app:p w\nx"
+
+    # A missing credential stops before the target starts.
+    File.write!(
+      map,
+      Jason.encode!(%{
+        "env" => %{"X" => %{"entry_id" => Ecto.UUID.generate(), "field" => "value"}}
+      })
+    )
+
+    marker = Path.join(fixture.tmp_dir, "started")
+
+    {_, status} =
+      relay(ctx, fn ->
+        cmd(
+          "#{bin}/secrethub",
+          ["exec", "--map", map, "--", "touch", marker],
+          "",
+          env,
+          fixture.tmp_dir
+        )
+      end)
+
+    assert status == 1
+    refute File.exists?(marker)
+  end
+
+  @tag :tmp_dir
+  @tag :host_keyring_consumers
+  @tag timeout: 300_000
+  test "the Python keyring backend works through the real keyring API", fixture do
+    python =
+      System.get_env("SECRETHUB_HOST_KEYRING_PYTHON") ||
+        flunk("SECRETHUB_HOST_KEYRING_PYTHON unset")
+
+    ctx = host_keyring_runtime!(fixture)
+
+    script = """
+    import keyring
+    from keyring.credentials import SimpleCredential
+    assert type(keyring.get_keyring()).__name__ == "SecretHubKeyring"
+    assert keyring.get_password("svc", "alice") is None
+    keyring.set_password("svc", "alice", "pw-é")
+    assert keyring.get_password("svc", "alice") == "pw-é"
+    cred = keyring.get_credential("svc", None)
+    assert isinstance(cred, SimpleCredential) and cred.username == "alice"
+    keyring.set_password("svc", "empty", "")
+    assert keyring.get_password("svc", "empty") == ""
+    keyring.delete_password("svc", "alice")
+    assert keyring.get_password("svc", "alice") is None
+    print("ok")
+    """
+
+    env = [
+      {"SECRET_HUB_AGENT_SOCKET_PATH", ctx.socket_path},
+      {"PYTHON_KEYRING_BACKEND", "keyrings.secrethub.SecretHubKeyring"},
+      {"PYTHONPATH", Path.expand("../../../../../integrations/python-keyring/src", __DIR__)},
+      {"PYTHONDONTWRITEBYTECODE", "1"}
+    ]
+
+    assert {"ok\n", 0} =
+             relay(ctx, fn -> cmd(python, ["-c", script], "", env, fixture.tmp_dir) end)
+  end
+
+  @tag :tmp_dir
+  @tag :host_keyring_docker
+  @tag timeout: 900_000
+  test "docker login, authenticated pull and logout use docker-credential-secrethub", fixture do
+    bin = consumer_bin!()
+
+    htpasswd =
+      System.get_env("SECRETHUB_HOST_KEYRING_HTPASSWD") ||
+        flunk("SECRETHUB_HOST_KEYRING_HTPASSWD unset")
+
+    ctx = host_keyring_runtime!(fixture)
+    name = "secrethub-hk-registry-#{System.unique_integer([:positive])}"
+
+    {_, 0} =
+      System.cmd("docker", [
+        "run",
+        "-d",
+        "--rm",
+        "--name",
+        name,
+        "-p",
+        "127.0.0.1::5000",
+        "-v",
+        "#{htpasswd}:/auth/htpasswd:ro",
+        "-e",
+        "REGISTRY_AUTH=htpasswd",
+        "-e",
+        "REGISTRY_AUTH_HTPASSWD_REALM=hk",
+        "-e",
+        "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
+        "registry:2"
+      ])
+
+    on_exit(fn -> System.cmd("docker", ["rm", "-f", name], stderr_to_stdout: true) end)
+    {port_line, 0} = System.cmd("docker", ["port", name, "5000/tcp"])
+
+    registry =
+      "127.0.0.1:" <>
+        (port_line |> String.split("\n") |> hd() |> String.split(":") |> List.last())
+
+    config = Path.join(fixture.tmp_dir, "docker-config")
+    File.mkdir_p!(config)
+    File.write!(Path.join(config, "config.json"), ~s({"credsStore":"secrethub"}))
+
+    env = [
+      {"DOCKER_CONFIG", config},
+      {"PATH", bin <> ":" <> System.get_env("PATH")},
+      {"SECRET_HUB_AGENT_SOCKET_PATH", ctx.socket_path}
+    ]
+
+    docker = fn args, input ->
+      relay(ctx, fn -> cmd("docker", args, input, env, fixture.tmp_dir) end)
+    end
+
+    helper = fn op, input ->
+      relay(ctx, fn -> cmd("docker-credential-secrethub", [op], input, env, fixture.tmp_dir) end)
+    end
+
+    await_registry!(registry)
+
+    assert {_, 0} =
+             docker.(["login", registry, "-u", "hkuser", "--password-stdin"], "hk-password")
+
+    refute File.read!(Path.join(config, "config.json")) =~ "hk-password"
+    assert {list, 0} = helper.("list", "unused")
+    assert %{^registry => "hkuser"} = Jason.decode!(list)
+
+    image = "#{registry}/hk/seed:1"
+    rootfs = Path.join(fixture.tmp_dir, "rootfs.tar")
+    File.write!(Path.join(fixture.tmp_dir, "seed"), "seed\n")
+    {_, 0} = System.cmd("tar", ["-C", fixture.tmp_dir, "-cf", rootfs, "seed"])
+    assert {_, 0} = docker.(["import", rootfs, image], "")
+    assert {_, 0} = docker.(["push", image], "")
+    assert {_, 0} = docker.(["rmi", image], "")
+    assert {_, 0} = docker.(["pull", image], "")
+    docker.(["rmi", image], "")
+
+    assert {_, 0} = docker.(["logout", registry], "")
+    assert {"credentials not found in native keychain\n", 1} = helper.("get", registry)
+    assert {list, 0} = helper.("list", "unused")
+    refute Map.has_key?(Jason.decode!(list), registry)
+    assert {_, status} = docker.(["pull", image], "")
+    refute status == 0
+  end
+
+  defp consumer_bin! do
+    System.get_env("SECRETHUB_HOST_KEYRING_BIN") ||
+      flunk("SECRETHUB_HOST_KEYRING_BIN is unset; build with scripts/host-keyring/build-local.sh")
+  end
+
+  # Real Agent UDS server and local API against the trusted Core channel. The
+  # relay stands in for the Agent websocket client and forwards each request.
+  defp host_keyring_runtime!(fixture) do
+    ctx =
+      application_runtime_fixture!(
+        ["uds_auth_v2", "access_audit_v1", "host_credentials_v1"],
+        fixture
+      )
+
+    grant_host_credentials!(ctx.agent)
+    start_supervised!({Journal, state_dir: fixture.tmp_dir})
+    start_supervised!(SecretHub.Agent.Cache)
+    start_supervised!({Task.Supervisor, name: SecretHub.Agent.HostCredentials.Tasks})
+
+    socket_path =
+      Path.join(System.tmp_dir!(), "sh-hk-#{System.unique_integer([:positive])}.sock")
+
+    on_exit(fn -> File.rm(socket_path) end)
+
+    start_supervised!({UDSServer, socket_path: socket_path, request_timeout: 20_000})
+
+    :ok =
+      UDSServer.configure_runtime(ctx.agent.agent_id, 2, ["host_credentials_v1"])
+
+    start_supervised!({SecretHub.Web.HostCredentialRelay, owner: self()})
+    Map.put(ctx, :socket_path, socket_path)
+  end
+
+  defp grant_host_credentials!(agent) do
+    patterns =
+      for ns <- ~w(git docker generic),
+          suffix <- ["", ".*"],
+          do: "host-credentials.#{agent.id}.#{ns}#{suffix}"
+
+    {:ok, _} =
+      Policies.create_policy(%{
+        name: "host-credentials-#{agent.id}",
+        policy_document: %{
+          "version" => "1.0",
+          "allowed_secrets" => patterns,
+          "allowed_operations" =>
+            ~w(credential_read credential_write credential_delete credential_list)
+        },
+        entity_bindings: ["agent:" <> agent.id]
+      })
+  end
+
+  defp revoke_host_credentials!(agent) do
+    Repo.delete_all(
+      from(p in SecretHub.Shared.Schemas.Policy, where: p.name == ^"host-credentials-#{agent.id}")
+    )
+  end
+
+  # Runs a consumer while this test process relays its runtime requests over
+  # the trusted channel (channel replies are delivered to this process).
+  defp relay(ctx, fun) do
+    task = Task.async(fun)
+    relay_loop(ctx.socket, task)
+  end
+
+  defp relay_loop(socket, %Task{ref: ref} = task) do
+    receive do
+      {:credential_forward, from, event, payload} ->
+        push_ref = push(socket, event, payload)
+
+        reply =
+          receive do
+            %Phoenix.Socket.Reply{ref: ^push_ref, status: status, payload: response} ->
+              {status, audit_wire(response)}
+          after
+            20_000 -> {:error, :timeout}
+          end
+
+        GenServer.reply(from, reply)
+        relay_loop(socket, task)
+
+      {^ref, result} ->
+        Process.demonitor(ref, [:flush])
+        result
+    after
+      180_000 -> flunk("consumer did not finish")
+    end
+  end
+
+  defp cmd(program, args, input, env, dir) do
+    stdin = Path.join(System.tmp_dir!(), "hk-stdin-#{System.unique_integer([:positive])}")
+    File.write!(stdin, input)
+
+    try do
+      System.cmd("sh", ["-c", ~s(exec "$0" "$@" < "$STDIN_FILE"), program | args],
+        env: [{"STDIN_FILE", stdin} | env],
+        cd: dir
+      )
+    after
+      File.rm(stdin)
+    end
+  end
+
+  defp seed_git_repository!(root) do
+    work = root <> "-work"
+    File.mkdir_p!(work)
+    File.write!(Path.join(work, "README"), "seed\n")
+
+    for args <- [
+          ["init", "-q", "-b", "main", work],
+          ["-C", work, "add", "README"],
+          [
+            "-C",
+            work,
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-qm",
+            "seed"
+          ],
+          ["clone", "-q", "--bare", work, Path.join(root, "repo.git")]
+        ] do
+      {_, 0} = System.cmd("git", args, stderr_to_stdout: true)
+    end
+  end
+
+  defp await_registry!(registry, attempts \\ 100)
+  defp await_registry!(_, 0), do: flunk("registry did not start")
+
+  defp await_registry!(registry, attempts) do
+    case System.cmd("curl", [
+           "-s",
+           "-o",
+           "/dev/null",
+           "-w",
+           "%{http_code}",
+           "http://#{registry}/v2/"
+         ]) do
+      {"401", 0} ->
+        :ok
+
+      _ ->
+        Process.sleep(200)
+        await_registry!(registry, attempts - 1)
+    end
+  end
+
+  defp await_audit_agent_phases_at_least!(expected, attempts \\ 500)
+
+  defp await_audit_agent_phases_at_least!(_, 0),
+    do: flunk("Agent observations were not persisted")
+
+  defp await_audit_agent_phases_at_least!(expected, attempts) do
+    case Journal.batch() do
+      {:ok, events} when length(events) >= expected ->
+        :ok
+
+      _ ->
+        Process.sleep(10)
+        await_audit_agent_phases_at_least!(expected, attempts - 1)
+    end
+  end
+
   defp application_runtime_fixture!(capabilities \\ ["uds_auth_v2"], fixture \\ %{}) do
     :ok = RuntimeDatabaseFixture.setup(fixture)
     ensure_current_audit_partition!()
@@ -1434,6 +1984,23 @@ defmodule SecretHub.Web.AccessAuditRuntimeBridge do
 
   def handle_call({:get_static_secret_local, path, revision, correlation}, from, owner) do
     send(owner, {:local_runtime_read, from, path, revision, correlation})
+    {:noreply, owner}
+  end
+end
+
+defmodule SecretHub.Web.HostCredentialRelay do
+  @moduledoc false
+  use GenServer
+
+  def start_link(opts),
+    do: GenServer.start_link(__MODULE__, opts, name: SecretHub.Agent.Connection)
+
+  def init(opts), do: {:ok, Keyword.fetch!(opts, :owner)}
+
+  def handle_cast({:sync_uds_runtime, _server}, owner), do: {:noreply, owner}
+
+  def handle_call({:credential_request, operation, payload, _timeout}, from, owner) do
+    send(owner, {:credential_forward, from, "credential:" <> operation, payload})
     {:noreply, owner}
   end
 end

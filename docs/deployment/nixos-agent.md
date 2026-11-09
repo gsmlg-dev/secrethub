@@ -139,9 +139,39 @@ enrollment. Erlang distribution is disabled and the service creates a temporary
 process cookie outside the Nix store.
 
 The Agent socket is mode `0600`, and its runtime directory is private. Local
-consumers need the Agent UID or root access as well as their existing application
-certificate/proof authorization. Adding a consumer to a group does not grant
-socket access. No inbound Agent firewall port is opened.
+consumers need the Agent UID or root access; shared Agent-scoped reads need no
+application certificate, while consumers that explicitly present an application
+certificate keep using application auth-v2. Adding a consumer to a group does
+not grant socket access. No inbound Agent firewall port is opened.
+
+## Host credentials for services and users
+
+Values are fetched from Core at runtime; only binding IDs appear in Nix
+expressions. See the [host credentials guide](../user-guides/host-keyring.md).
+
+| Option | Effect |
+|--------|--------|
+| `credentialProviders.<name>.entryId` (`field`, `units`) | Agent serves `/run/secrethub-credentials/<name>.sock` for `LoadCredential=`; only UID 0 (systemd) may connect |
+| `serviceCredentials.<unit>` (`credentials`, `environment`, `command`) | Adds `LoadCredential=` and an `ExecStart=` through `secrethub-exec`, which refuses missing or empty credentials before the program starts |
+| `installCli` | Puts `secrethub`, `secrethub-exec` and the Git/Docker helpers on PATH without changing Git/Docker configuration |
+| `userAgent.enable` | Per-user Agent (systemd user service) with its own key, state and `$XDG_RUNTIME_DIR/secrethub/agent.sock` |
+| `cliPackage` | Package providing the launcher and helpers |
+
+```nix
+services.secrethub-agent = {
+  credentialProviders.billing-db.entryId = "<binding UUID>";
+  serviceCredentials.billing = {
+    credentials.db = "billing-db";
+    environment.DATABASE_PASSWORD = "db";
+    command = [ "${billing}/bin/billing" "serve" ];
+  };
+};
+```
+
+`After=secrethub-agent.service` is added, but readiness is decided per
+activation: a denial, Core outage or stopped Agent prevents the service from
+starting. Credentials are activation snapshots; restart the service to apply a
+rotated value.
 
 ## Verify the package and module
 
@@ -150,7 +180,14 @@ From the SecretHub checkout:
 ```bash
 nix build .#secrethub-agent
 nix build .#checks.x86_64-linux.agent-module
+nix build .#checks.x86_64-linux.host-keyring-systemd
 ```
+
+`host-keyring-systemd` boots a VM and checks credential delivery to services
+running as different users, refusal after a denial or outage, the case where
+`ExecStartPre=` succeeds but the main process's acquisition fails, and the
+per-user Agent profile (own key, state and private socket). It uses a stub in
+place of the Agent binary.
 
 Use `aarch64-linux` for the check on an ARM host. The scoped check evaluates the
 NixOS service and runs the packaged Agent's real preflight with temporary test

@@ -1,3 +1,26 @@
+defmodule SecretHub.Agent.FakeRuntimeChannel do
+  @moduledoc false
+  # Answers Phoenix.SocketClient.Channel.push/4 calls like a joined channel.
+  use GenServer
+
+  def start_link(opts), do: GenServer.start_link(__MODULE__, Keyword.fetch!(opts, :owner))
+  def hang(pid), do: GenServer.call(pid, :hang)
+
+  @impl true
+  def init(owner), do: {:ok, %{owner: owner, hang: false}}
+
+  @impl true
+  def handle_call(:hang, _from, state), do: {:reply, :ok, %{state | hang: true}}
+
+  def handle_call({:push, _event, _payload}, _from, %{hang: true} = state),
+    do: {:noreply, state}
+
+  def handle_call({:push, event, payload}, _from, state) do
+    send(state.owner, {:pushed, event, payload})
+    {:reply, {:ok, %{"value" => "v"}}, state}
+  end
+end
+
 defmodule SecretHub.Agent.ConnectionProtocolTest do
   use ExUnit.Case, async: true
 
@@ -138,6 +161,126 @@ defmodule SecretHub.Agent.ConnectionProtocolTest do
                  nil,
                  state
                )
+    end
+  end
+
+  describe "host credentials" do
+    setup do
+      tasks =
+        start_supervised!(
+          {Task.Supervisor, name: :"hc_tasks_#{System.unique_integer([:positive])}"}
+        )
+
+      channel = start_supervised!({SecretHub.Agent.FakeRuntimeChannel, owner: self()})
+      generation = make_ref()
+
+      state = %{
+        connection_status: :connected,
+        host_credentials_capable: true,
+        channel: channel,
+        channel_ref: generation,
+        credential_task_supervisor: tasks,
+        agent_id: "agent-current",
+        minimum_uds_auth_version: 2,
+        local_socket_read_capable: false
+      }
+
+      %{state: state}
+    end
+
+    test "uses the credential runtime event vocabulary" do
+      assert Connection.runtime_event({:credential, "get"}) == "credential:get"
+      assert Connection.runtime_event({:credential, "list"}) == "credential:list"
+    end
+
+    test "requests are pushed outside the connection process and replied to the caller",
+         %{state: state} do
+      from = {self(), make_ref()}
+      payload = %{"namespace" => "generic", "service" => "svc", "account" => "u"}
+
+      assert {:noreply, ^state} =
+               Connection.handle_call({:credential_request, "get", payload, 1_000}, from, state)
+
+      assert_receive {:pushed, "credential:get", ^payload}
+      assert_receive {:credential_result, _, _, ^from, {:ok, %{"value" => "v"}}} = result, 1_000
+
+      assert {:noreply, ^state} = Connection.handle_info(result, state)
+      {_pid, ref} = from
+      assert_receive {^ref, {:ok, %{"value" => "v"}}}
+    end
+
+    test "a reply from a replaced channel is not delivered as a result", %{state: state} do
+      from = {self(), make_ref()}
+
+      {:noreply, _} =
+        Connection.handle_call({:credential_request, "put", %{}, 1_000}, from, state)
+
+      assert_receive {:credential_result, _, _, ^from, _} = result, 1_000
+      reconnected = %{state | channel_ref: make_ref()}
+      Connection.handle_info(result, reconnected)
+      {_pid, ref} = from
+      assert_receive {^ref, {:error, :not_connected}}
+    end
+
+    test "a Core timeout is reported as a timeout, never as success", %{state: state} do
+      SecretHub.Agent.FakeRuntimeChannel.hang(state.channel)
+      from = {self(), make_ref()}
+
+      {:noreply, _} =
+        Connection.handle_call({:credential_request, "delete", %{}, 100}, from, state)
+
+      assert_receive {:credential_result, _, _, ^from, {:error, :timeout}}, 2_000
+    end
+
+    test "requests refuse an unnegotiated capability or a disconnected Core", %{state: state} do
+      incapable = %{state | host_credentials_capable: false}
+
+      assert {:reply, {:error, %{"reason" => "INCOMPATIBLE_VERSION"}}, _} =
+               Connection.handle_call({:credential_request, "get", %{}, 1_000}, nil, incapable)
+
+      for status <- [:connecting, :disconnected] do
+        assert {:reply, {:error, :not_connected}, _} =
+                 Connection.handle_call(
+                   {:credential_request, "get", %{}, 1_000},
+                   nil,
+                   %{state | connection_status: status}
+                 )
+      end
+
+      refute_receive {:pushed, _, _}
+    end
+
+    test "negotiation enables the UDS capability only when Core accepts it",
+         %{state: state, tmp_dir: dir} do
+      :ok =
+        IdentityStore.write(dir, %{
+          agent_id: "agent-current",
+          certificate_pem: "certificate",
+          private_key_pem: "key",
+          ca_chain_pem: "ca",
+          connect_info: %{},
+          identity: %{"agent_id" => "agent-current"}
+        })
+
+      state = Map.put(state, :state_dir, dir)
+
+      assert {:ok, %{host_credentials_capable: true}} =
+               Connection.accept_runtime_floor(state, %{
+                 "minimum_uds_auth_version" => 2,
+                 "runtime_capabilities" => ["uds_auth_v2", "host_credentials_v1"]
+               })
+
+      assert {:ok, %{host_credentials_capable: false} = older} =
+               Connection.accept_runtime_floor(state, %{
+                 "minimum_uds_auth_version" => 2,
+                 "runtime_capabilities" => ["uds_auth_v2"]
+               })
+
+      assert {:noreply, _} = Connection.handle_cast({:sync_uds_runtime, self()}, older)
+      assert_receive {:configure_runtime, "agent-current", 2, []}
+
+      assert {:noreply, _} = Connection.handle_cast({:sync_uds_runtime, self()}, state)
+      assert_receive {:configure_runtime, "agent-current", 2, ["host_credentials_v1"]}
     end
   end
 

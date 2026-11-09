@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add Agent-scoped host credentials (`host_credentials_v1`): Core credential
+  bindings with typed `credential_*` grants and audit schema v2, local Agent
+  `credential_*` actions, `git-credential-secrethub`,
+  `docker-credential-secrethub`, `secrethub credential`, `secrethub exec` with
+  the native `secrethub-exec` launcher, systemd `LoadCredential=` provider
+  sockets with NixOS options, and the `keyrings.secrethub` Python backend.
+  Requires the new Core migration before upgraded Agents connect. See the
+  [user guide](docs/user-guides/host-keyring.md) and
+  [evidence](docs/testing/host-keyring-evidence.md).
+
 - Package a Mozilla-derived public TLS root catalogue and a separate pinned
   Let's Encrypt staging issuance profile, with offline release inspection and
   explicit peer/hostname verification for ACME and DNS-provider HTTPS.

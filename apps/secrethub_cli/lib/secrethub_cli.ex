@@ -32,6 +32,10 @@ defmodule SecretHub.CLI do
   - `policy simulate <name>` - Simulate policy evaluation
   - `policy templates` - List available policy templates
 
+  ### Host credentials
+  - `credential get|put|delete|list` - Agent-scoped host credentials (values on stdin)
+  - `exec --map FILE -- TARGET ARGS...` - Start a program with credentials in its environment
+
   ### Agent Management
   - `agent list` - List connected agents
   - `agent status <id>` - Get agent status
@@ -82,11 +86,12 @@ defmodule SecretHub.CLI do
       expires_at = "2024-12-31T23:59:59Z"
   """
 
-  alias SecretHub.CLI.{Auth, Completion}
+  alias SecretHub.CLI.{Auth, Completion, DockerCredential, ExecResolver, GitCredential}
 
   alias SecretHub.CLI.Commands.{
     AgentCommands,
     ConfigCommands,
+    CredentialCommands,
     LoginCommand,
     PolicyCommands,
     SecretCommands
@@ -97,11 +102,81 @@ defmodule SecretHub.CLI do
   @doc """
   Main entry point for the CLI (called by escript).
   """
+  def main(["__git-credential", operation | _]),
+    do: protocol_helper(&GitCredential.run(operation, &1))
+
+  def main(["__docker-credential", operation | _]),
+    do: protocol_helper(&DockerCredential.run(operation, &1))
+
+  def main(["__exec-resolve" | args]) do
+    quiet_logger()
+    emit(exec_resolve(args))
+  end
+
+  def main(["credential" | args]) do
+    quiet_logger()
+    emit(CredentialCommands.run(args))
+  end
+
+  def main(["exec" | _]) do
+    emit(
+      {"", 2,
+       [
+         "secrethub exec must be started through the installed `secrethub` wrapper, " <>
+           "which replaces itself with the target via secrethub-exec"
+       ]}
+    )
+  end
+
   def main(args) do
     args
     |> parse_args()
     |> execute()
     |> handle_result()
+  end
+
+  # Credential helpers own stdout for their protocol: logging goes to stderr
+  # and nothing else is printed.
+  defp protocol_helper(run) do
+    quiet_logger()
+
+    input =
+      case IO.read(:stdio, :eof) do
+        data when is_binary(data) -> data
+        _ -> ""
+      end
+
+    emit(run.(input))
+  end
+
+  defp exec_resolve(args) do
+    with {parsed, [], []} <- OptionParser.parse(args, strict: [map: :string, socket: :string]),
+         path when is_binary(path) <- parsed[:map],
+         {:ok, json} <- File.read(path),
+         {:ok, records} <-
+           ExecResolver.resolve(
+             json,
+             if(parsed[:socket], do: [socket_path: parsed[:socket]], else: [])
+           ) do
+      {records, 0, []}
+    else
+      {:error, message} when is_binary(message) -> {"", 1, ["secrethub exec: " <> message]}
+      {:error, reason} -> {"", 1, ["secrethub exec: cannot read map (#{inspect(reason)})"]}
+      _ -> {"", 2, ["secrethub exec: usage: __exec-resolve --map FILE [--socket PATH]"]}
+    end
+  end
+
+  defp emit({stdout, status, diagnostics}) do
+    IO.write(stdout)
+    Enum.each(diagnostics, &IO.puts(:stderr, &1))
+    halt(status)
+  end
+
+  defp quiet_logger do
+    Logger.configure(level: :error)
+    :logger.update_handler_config(:default, :config, %{type: :standard_error})
+  catch
+    _, _ -> :ok
   end
 
   @doc false
@@ -282,6 +357,10 @@ defmodule SecretHub.CLI do
           policy delete <name>     Delete a policy
           policy simulate <name>   Simulate policy
           policy templates         List templates
+
+        Host credentials:
+          credential get|put|delete|list   Agent-scoped credentials (values via stdin)
+          exec --map FILE -- CMD ARGS...   Launch CMD with mapped credentials
 
         Agents:
           agent list               List connected agents

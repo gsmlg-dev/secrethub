@@ -2,6 +2,7 @@ defmodule SecretHub.Agent.Application do
   @moduledoc false
 
   use Application
+  alias SecretHub.Agent.HostCredentials.Provider
   alias SecretHub.Shared.LaunchProfile
 
   @impl true
@@ -80,6 +81,10 @@ defmodule SecretHub.Agent.Application do
         # Cache for secrets
         SecretHub.Agent.Cache,
 
+        # Bounded concurrent host credential requests; slow Core calls must not
+        # serialize unrelated Git/Docker/keyring requests.
+        {Task.Supervisor, name: SecretHub.Agent.HostCredentials.Tasks, max_children: 64},
+
         # Endpoint manager for multi-endpoint failover
         {SecretHub.Agent.EndpointManager,
          [
@@ -126,7 +131,7 @@ defmodule SecretHub.Agent.Application do
              state_dir: state_dir,
              max_connections: Application.get_env(:secrethub_agent, :max_connections, 100)
            ]}
-        ]
+        ] ++ credential_provider_children()
 
     children =
       Enum.reject(children, fn
@@ -142,6 +147,28 @@ defmodule SecretHub.Agent.Application do
     # and UDSServer restart since they depend on the Core connection).
     opts = [strategy: :rest_for_one, name: SecretHub.Agent.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # systemd LoadCredential= providers are opt-in; invalid configuration stops
+  # startup instead of silently disabling a service's credential source.
+  defp credential_provider_children do
+    case System.get_env("SECRET_HUB_AGENT_CREDENTIAL_PROVIDERS") ||
+           Application.get_env(:secrethub_agent, :credential_providers) do
+      path when is_binary(path) and path != "" ->
+        config =
+          with {:ok, json} <- File.read(path),
+               {:ok, config} <- Provider.parse_config(json) do
+            config
+          else
+            {:error, reason} ->
+              raise "SECRET_HUB_AGENT_CREDENTIAL_PROVIDERS is invalid: #{inspect(reason)}"
+          end
+
+        [{Provider, config: config}]
+
+      _ ->
+        []
+    end
   end
 
   defp ssh_children do

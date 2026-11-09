@@ -95,8 +95,10 @@ Startup environment variables do not change inside a running application. The
 application must retrieve the new password and reload its configuration and
 connections, or restart using its startup script.
 
-Secret creation/update remains a Core management/API operation. The Agent
-socket supports reading, not writing passwords back to Core. CLI Core
+Secret creation/update remains a Core management/API operation; `get_secret`
+only reads. Host credentials (Git, Docker, keyring entries owned by this Agent)
+use the separate `credential_*` socket actions with their own policy grants; see
+[host credentials](host-keyring.md). CLI Core
 operations retain token authentication. For an explicit Core HTTP read:
 
 ```sh

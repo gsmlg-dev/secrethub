@@ -210,6 +210,15 @@ defmodule SecretHub.Web.Router do
     post "/agents/:id/disconnect", AgentController, :disconnect
     post "/agents/:id/reconnect", AgentController, :reconnect
     post "/agents/:id/restart", AgentController, :restart
+    get "/agents/:agent_id/host-credentials", HostCredentialController, :index
+
+    post "/agents/:agent_id/host-credentials/references",
+         HostCredentialController,
+         :bind
+
+    post "/host-credentials/:id/enable", HostCredentialController, :enable
+    post "/host-credentials/:id/disable", HostCredentialController, :disable
+    post "/host-credentials/:id/rebind", HostCredentialController, :rebind
   end
 
   # Vault mutations and CSRF state belong exclusively to management ingress.

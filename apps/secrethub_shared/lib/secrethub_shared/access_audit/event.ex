@@ -1,8 +1,12 @@
 defmodule SecretHub.Shared.AccessAudit.Event do
   @moduledoc """
-  Version 1 secret-free access observations. Producer assertions are validated at
-  this boundary; Core supplies receive time and authenticates the producer.
-  See ADR 0001 for counting, provenance, limits and phase requirements.
+  Secret-free access observations. Producer assertions are validated at this
+  boundary; Core supplies receive time and authenticates the producer.
+
+  Schema version 1 covers static reads (ADR 0001) and is unchanged. Version 2 is
+  the additive host credential extension: the same envelope keys, limited to the
+  `credential_*` operations plus a few bounded reason codes. Version 1 events
+  cannot use version 2 vocabulary and vice versa.
   """
 
   @required ~w(schema_version event_id producer_id producer_sequence request_id source phase
@@ -20,6 +24,9 @@ defmodule SecretHub.Shared.AccessAudit.Event do
     audit_unavailable sealed timeout transport_error response_error internal_error unsupported_schema
     invalid_event event_conflict journal_full journal_corrupt proof_required proof_failed
     certificate_invalid connection_closed rate_limited)
+  @v2_reasons @reasons ++ ~w(ambiguous read_only unconfirmed busy invalid_value)
+  @v1_operations ~w(read invalid authenticate)
+  @v2_operations ~w(credential_read credential_write credential_delete credential_list)
   @max_integer 9_007_199_254_740_991
   @path ~r/\A[a-zA-Z0-9_-]+(?:[.\/][a-zA-Z0-9_-]+)*\z/
   @agent_id ~r/\A[a-zA-Z0-9_.:-]{1,128}\z/
@@ -28,6 +35,12 @@ defmodule SecretHub.Shared.AccessAudit.Event do
   def max_batch_events, do: 100
   def max_batch_bytes, do: 131_072
   def reasons, do: @reasons
+  def reasons(2), do: @v2_reasons
+  def reasons(1), do: @reasons
+
+  @doc "The schema version that carries an operation; credential operations use version 2."
+  def schema_version_for(operation) when operation in @v2_operations, do: 2
+  def schema_version_for(_operation), do: 1
 
   @spec validate(term(), keyword()) :: {:ok, map()} | {:error, atom()}
   def validate(input, opts \\ [])
@@ -35,7 +48,7 @@ defmodule SecretHub.Shared.AccessAudit.Event do
   def validate(input, opts) when is_map(input) and map_size(input) <= 27 do
     with {:ok, event} <- normalize_keys(input),
          true <- Enum.all?(@required, &Map.has_key?(event, &1)),
-         true <- event["schema_version"] == 1,
+         true <- event["schema_version"] in [1, 2],
          true <- valid_fields?(event),
          true <- Keyword.get(opts, :source, event["source"]) == event["source"],
          true <- valid_phase?(event),
@@ -69,6 +82,12 @@ defmodule SecretHub.Shared.AccessAudit.Event do
   def reason(value) when is_atom(value), do: value |> Atom.to_string() |> reason()
   def reason(value) when value in @reasons, do: value
   def reason(_), do: "internal_error"
+
+  @doc "Maps an internal reason into the bounded vocabulary of a schema version."
+  def reason(value, 1), do: reason(value)
+  def reason(value, 2) when is_atom(value), do: value |> Atom.to_string() |> reason(2)
+  def reason(value, 2) when value in @v2_reasons, do: value
+  def reason(_, 2), do: "internal_error"
 
   defp normalize_keys(input) do
     Enum.reduce_while(input, {:ok, %{}}, fn {key, value}, {:ok, acc} ->
@@ -104,11 +123,14 @@ defmodule SecretHub.Shared.AccessAudit.Event do
     event["source"] in ~w(agent core) and
       event["identity_status"] in ~w(verified unverified) and
       event["attribution"] in ~w(core_certificate agent_certificate token none) and
-      event["operation"] in ~w(read invalid authenticate) and
+      event["operation"] in operations(event["schema_version"]) and
       event["outcome"] in ~w(success denied error unknown) and
-      event["reason_code"] in @reasons and
+      event["reason_code"] in reasons(event["schema_version"]) and
       event["cache_status"] in ~w(none miss hit validated invalidated)
   end
+
+  defp operations(1), do: @v1_operations
+  defp operations(2), do: @v2_operations
 
   defp valid_phase?(%{"source" => source, "phase" => phase} = event) do
     allowed = if source == "agent", do: @agent_phases, else: @core_phases

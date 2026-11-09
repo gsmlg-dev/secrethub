@@ -11,6 +11,14 @@ defmodule SecretHub.Core.PolicyEvaluator do
   require Logger
   import Bitwise
 
+  # Typed runtime operations. Credential operations are distinct grants: a
+  # static `read` grant never implies credential writes, deletion or listing.
+  @runtime_operations ~w(read generate renew revoke credential_read credential_write
+    credential_delete credential_list)
+
+  @doc "Operations accepted in runtime policy documents."
+  def runtime_operations, do: @runtime_operations
+
   @doc "Validates the single dot-delimited runtime resource namespace."
   def normalize_runtime_path(path) when is_binary(path) and byte_size(path) <= 512 do
     if Regex.match?(~r/\A[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*\z/, path),
@@ -25,7 +33,7 @@ defmodule SecretHub.Core.PolicyEvaluator do
     doc = policy.policy_document
 
     with {:ok, _} <- normalize_runtime_path(context[:secret_path]),
-         true <- context[:operation] in ~w(read generate renew revoke),
+         true <- context[:operation] in @runtime_operations,
          :ok <- validate_runtime_document(doc),
          patterns when is_list(patterns) <- doc["allowed_secrets"],
          true <- Enum.all?(patterns, &valid_runtime_pattern?/1),
@@ -53,7 +61,7 @@ defmodule SecretHub.Core.PolicyEvaluator do
     operations = doc["allowed_operations"]
 
     if is_list(patterns) and Enum.all?(patterns, &valid_runtime_pattern?/1) and
-         is_list(operations) and Enum.all?(operations, &(&1 in ~w(read generate renew revoke))),
+         is_list(operations) and Enum.all?(operations, &(&1 in @runtime_operations)),
        do: :ok,
        else: {:error, :malformed_policy}
   end

@@ -13,7 +13,10 @@ defmodule SecretHub.Agent.Cache do
   @cache_misses_counter :cache_misses_total
 
   @type key ::
-          String.t() | {String.t(), String.t(), String.t()} | {:local, String.t(), String.t()}
+          String.t()
+          | {String.t(), String.t(), String.t()}
+          | {:local, String.t(), String.t()}
+          | {:host_credential, String.t(), String.t()}
 
   defmodule CacheEntry do
     @moduledoc false
