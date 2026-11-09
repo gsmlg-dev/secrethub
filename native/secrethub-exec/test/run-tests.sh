@@ -161,8 +161,11 @@ wait $sp')
   if started; then not_ok "A: SIG$sig target not started"; else ok "A: SIG$sig target not started"; fi
 }
 RESET_SIGNALS=
-if env --default-signal=INT,QUIT true 2>/dev/null; then
+if [ -z "${SECRETHUB_EXEC_TEST_PERL_RESET-}" ] && env --default-signal=INT,QUIT true 2>/dev/null; then
   RESET_SIGNALS="env --default-signal=INT,QUIT"
+elif command -v perl >/dev/null 2>&1; then
+  # BSD/macOS env has no --default-signal; perl resets the dispositions and execs.
+  RESET_SIGNALS="perl -e \$SIG{INT}=\$SIG{QUIT}=q(DEFAULT);exec(@ARGV)||die --"
 fi
 signal_test TERM 143
 signal_test HUP 129
@@ -170,7 +173,7 @@ if [ -n "$RESET_SIGNALS" ]; then
   signal_test INT 130
   signal_test QUIT 131
 else
-  echo "# skip: SIGINT/SIGQUIT forwarding needs env --default-signal"
+  echo "# skip: SIGINT/SIGQUIT forwarding needs env --default-signal or perl"
 fi
 
 # ---------------------------------------------------------------- Mode B
