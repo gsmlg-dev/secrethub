@@ -121,7 +121,10 @@ application code (only ExUnit test-support noise when run under
 
 ## Remaining gates
 
-* **Release workflow and macOS:** release `v1.0.0-rc.30`
+* **Platform scope:** the host keyring is qualified for Linux/NixOS only.
+  From the next release, `build-host-keyring-tools` builds Linux archives
+  only; the `v1.0.0-rc.30` macOS archives below are not a supported target.
+* **Release workflow:** release `v1.0.0-rc.30`
   ([run 42638094843](https://github.com/gsmlg-dev/secrethub/actions/runs/42638094843))
   ran `build-host-keyring-tools` on all four targets and published
   `secrethub-host-tools-v1.0.0-rc.30-{linux,macos}-{amd64,arm64}.tar.gz`.
