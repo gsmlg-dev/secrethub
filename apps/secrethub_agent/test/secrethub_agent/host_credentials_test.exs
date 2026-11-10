@@ -81,6 +81,20 @@ defmodule SecretHub.Agent.HostCredentialsTest do
     assert %{"error" => %{"code" => "UNAVAILABLE"}} = request(socket, "credential_get", generic())
   end
 
+  test "a cached value is never released while the audit journal is unavailable",
+       %{path: path} do
+    socket = connect(path)
+    reply_with(fn "get", _ -> {:ok, get_response("v-1", 1, 4)} end)
+    assert %{"data" => %{"value" => "v-1"}} = request(socket, "credential_get", generic())
+
+    stop_supervised!(Journal)
+    reply_with(fn _, _ -> flunk("Core must not be called without audit admission") end)
+
+    response = request(socket, "credential_get", generic())
+    assert %{"error" => %{"code" => "AUDIT_UNAVAILABLE"}} = response
+    refute Jason.encode!(response) =~ "v-1"
+  end
+
   test "a slow Core call does not stall other clients and replies keep their request ids",
        %{path: path} do
     slow = connect(path)

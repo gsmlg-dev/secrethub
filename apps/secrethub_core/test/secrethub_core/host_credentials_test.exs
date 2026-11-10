@@ -216,6 +216,25 @@ defmodule SecretHub.Core.HostCredentialsTest do
       assert {:error, :sealed} = call(ctx.a, "credential_get", cached)
     end
 
+    test "cached revisions are not acknowledged when audit persistence is unavailable", ctx do
+      grant!(ctx.a, ~w(credential_read credential_write))
+      {:ok, _} = call(ctx.a, "credential_put", git("alice", "pw"))
+
+      {:ok, %{"entry_id" => id, "binding_revision" => b, "source_revision" => s}} =
+        call(ctx.a, "credential_get", git_lookup("alice"))
+
+      Repo.query!("ALTER TABLE access_audit_events RENAME TO access_audit_events_unavailable", [])
+
+      for known <- [known(id, b, s), nil] do
+        assert {:error, :audit_unavailable} =
+                 call(ctx.a, "credential_get", Map.put(git_lookup("alice"), "known", known))
+      end
+
+      assert {:error, :audit_unavailable} = call(ctx.a, "credential_put", git("alice", "new"))
+      Repo.query!("ALTER TABLE access_audit_events_unavailable RENAME TO access_audit_events", [])
+      assert {:ok, %{"value" => "pw"}} = call(ctx.a, "credential_get", git_lookup("alice"))
+    end
+
     test "revoked Agents cannot use previously granted credentials", ctx do
       grant!(ctx.a, ~w(credential_read credential_write))
       {:ok, _} = call(ctx.a, "credential_put", git("alice", "pw"))

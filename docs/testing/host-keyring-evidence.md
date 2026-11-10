@@ -61,7 +61,7 @@ channel tests.
 | Owned lifecycle | Core: create, get, identical no-op, update, list without values, stale-value erase refused, erase, idempotent absent | pass |
 | Reference lifecycle | Core: erase disables; repeated erase; source survives; store and rotation do not reactivate; explicit enable; source deletion + same-path recreation unavailable until rebind | pass |
 | Managed store | Core: identical store audited no-op; replacement and disabled store `READ_ONLY`; source read grant required | pass |
-| Current authorization | Core: exact-revision `not_modified` still denied after explicit deny and refused when sealed; revoked Agent refused. Agent: cached value released only on matching Core confirmation; denial invalidates; channel E2E: cached read then policy removal → `FORBIDDEN` | pass |
+| Current authorization | Core: exact-revision `not_modified` still denied after explicit deny, refused when sealed, and refused with `audit_unavailable` (as are fresh reads and stores) when Core audit persistence is unavailable; revoked Agent refused. Agent: with the audit journal unavailable, a cached value is not released and Core is not called (`AUDIT_UNAVAILABLE`). Agent: cached value released only on matching Core confirmation; denial invalidates; channel E2E: cached read then policy removal → `FORBIDDEN` | pass |
 | Concurrency | Agent: slow (1.5 s) request does not delay another client (<1 s); request IDs preserved; write timeout → `UNCONFIRMED`. Core: writers serialize on the global authorization epoch | pass |
 | Git | Real `git credential approve/fill/reject`; authenticated HTTP clone through `git http-backend` with Basic auth; miss → clone fails without prompt; server rejection erases stale password; stale reject does not erase newer value; path and port scope; Agent denial → `quit=true`, exit 1 | pass |
 | Docker | Real `docker login --password-stdin`, `push`, `rmi`, authenticated `pull`, `logout` against disposable `registry:2`; config contains no secret; after logout `get` → `credentials not found in native keychain`, `list` excludes it, pull fails | pass |
@@ -75,7 +75,11 @@ channel tests.
 | Packaging | `nix build .#secrethub-exec` (runs the 75 launcher tests), `.#python-keyrings-secrethub` (22 tests in the sandbox), `.#secrethub-cli` (escript interpreter pinned to the Erlang store path; wrappers for `secrethub`, `secrethub-exec`, Git and Docker helpers). Installed helpers run from `/tmp` under `env -i` (no PATH, no locale) with protocol-only stdout | pass |
 | No secrets in evidence | Canary values absent from audit log rows, observations, Agent WAL/events, unit text | pass |
 
-Regression suites: Web 458 tests pass (54 excluded tags), Agent 351, CLI 299,
+Final regression run (after all changes, against the disposable cluster over
+TCP): Core 933 tests, 0 failures (4 skipped); Web 461 tests, 0 failures (54
+excluded by tag, including the real-consumer tests run separately above).
+
+Earlier regression suites: Web 458 tests pass (54 excluded tags), Agent 351, CLI 299,
 Shared 125 + 7 new. Core 932 tests: failures in a run concurrent with Dialyzer
 and Nix builds were pool/GenServer timeouts and a stale shared test schema; on
 re-run after migrating the test database, 73 of the 74 affected tests pass. The
