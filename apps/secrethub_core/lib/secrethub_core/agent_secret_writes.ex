@@ -254,7 +254,7 @@ defmodule SecretHub.Core.AgentSecretWrites do
       phase: "core_decision",
       outcome: outcome(reason),
       reason_code: Event.reason(reason, 2),
-      secret_path: request && Event.safe_path(request["path"]),
+      secret_path: Event.safe_path(request["path"]),
       cache_status: "none"
     }
   end
