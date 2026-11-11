@@ -90,6 +90,7 @@ defmodule SecretHub.Agent.Connection do
   def runtime_event(:pull_trust_bundle), do: "pki:client_auth_bundle:get"
   def runtime_event(:submit_bundle_receipt), do: "pki:client_auth_bundle:receipt"
   def runtime_event({:credential, operation}), do: "credential:" <> operation
+  def runtime_event({:secret_write, operation}), do: "secret:" <> operation
 
   @credential_operations ~w(get put delete list)
   @credential_tasks SecretHub.Agent.HostCredentials.Tasks
@@ -102,6 +103,19 @@ defmodule SecretHub.Agent.Connection do
   def credential_request(operation, payload, timeout, server \\ __MODULE__)
       when operation in @credential_operations do
     GenServer.call(server, {:credential_request, operation, payload, timeout}, timeout + 500)
+  catch
+    :exit, {:timeout, _} -> {:error, :timeout}
+    :exit, _ -> {:error, :not_connected}
+  end
+
+  @doc """
+  Forwards one Agent-scoped static secret publication (`write` or `delete`)
+  to Core, with the same concurrency and stale-channel rules as
+  `credential_request/4`.
+  """
+  def secret_write_request(operation, payload, timeout, server \\ __MODULE__)
+      when operation in ~w(write delete) do
+    GenServer.call(server, {:secret_write_request, operation, payload, timeout}, timeout + 500)
   catch
     :exit, {:timeout, _} -> {:error, :timeout}
     :exit, _ -> {:error, :not_connected}
@@ -384,7 +398,21 @@ defmodule SecretHub.Agent.Connection do
         {:reply, {:error, %{"reason" => "INCOMPATIBLE_VERSION"}}, state}
 
       true ->
-        start_credential_push(state, from, operation, payload, timeout)
+        start_credential_push(state, from, {:credential, operation}, payload, timeout)
+    end
+  end
+
+  @impl true
+  def handle_call({:secret_write_request, operation, payload, timeout}, from, state) do
+    cond do
+      state.connection_status != :connected ->
+        {:reply, {:error, :not_connected}, state}
+
+      not Map.get(state, :secret_write_capable, false) ->
+        {:reply, {:error, %{"reason" => "INCOMPATIBLE_VERSION"}}, state}
+
+      true ->
+        start_credential_push(state, from, {:secret_write, operation}, payload, timeout)
     end
   end
 
@@ -495,7 +523,8 @@ defmodule SecretHub.Agent.Connection do
       capabilities =
         uds_capabilities(
           Map.get(state, :local_socket_read_capable, false),
-          Map.get(state, :host_credentials_capable, false)
+          Map.get(state, :host_credentials_capable, false),
+          Map.get(state, :secret_write_capable, false)
         )
 
       send(
@@ -918,6 +947,8 @@ defmodule SecretHub.Agent.Connection do
                 ["host_credentials_v1"],
                 response
               ),
+            secret_write_capable:
+              "secret_write_v1" in negotiated_ssh_capabilities(["secret_write_v1"], response),
             retry_count: 0
           })
           |> notify_runtime_accepted(response)
@@ -957,7 +988,15 @@ defmodule SecretHub.Agent.Connection do
           Map.get(state, :host_credentials_capable, false)
         end
 
-      capabilities = uds_capabilities(local?, credentials?)
+      writes? =
+        if Map.has_key?(payload, "runtime_capabilities") or
+             Map.has_key?(payload, :runtime_capabilities) do
+          "secret_write_v1" in negotiated_ssh_capabilities(["secret_write_v1"], payload)
+        else
+          Map.get(state, :secret_write_capable, false)
+        end
+
+      capabilities = uds_capabilities(local?, credentials?, writes?)
       if Process.whereis(Cache), do: Cache.clear()
 
       if Process.whereis(UDSServer),
@@ -967,7 +1006,8 @@ defmodule SecretHub.Agent.Connection do
        state
        |> Map.put(:minimum_uds_auth_version, persisted)
        |> Map.put(:local_socket_read_capable, local?)
-       |> Map.put(:host_credentials_capable, credentials?)}
+       |> Map.put(:host_credentials_capable, credentials?)
+       |> Map.put(:secret_write_capable, writes?)}
     else
       _ -> {:error, :trusted_state_unavailable}
     end
@@ -990,7 +1030,8 @@ defmodule SecretHub.Agent.Connection do
         "uds_auth_v2",
         "access_audit_v1",
         "local_socket_read_v1",
-        "host_credentials_v1" | ssh_capabilities()
+        "host_credentials_v1",
+        "secret_write_v1" | ssh_capabilities()
       ],
       "agent_id" => state.agent_id,
       "name" => state.agent_id,
@@ -1045,18 +1086,22 @@ defmodule SecretHub.Agent.Connection do
     _, _ -> {:error, :ssh_unavailable}
   end
 
-  defp uds_capabilities(local?, credentials?) do
+  defp uds_capabilities(local?, credentials?, writes?) do
     Enum.flat_map(
-      [{local?, "local_socket_read_v1"}, {credentials?, "host_credentials_v1"}],
+      [
+        {local?, "local_socket_read_v1"},
+        {credentials?, "host_credentials_v1"},
+        {writes?, "secret_write_v1"}
+      ],
       fn {enabled?, capability} -> if enabled?, do: [capability], else: [] end
     )
   end
 
-  defp start_credential_push(state, from, operation, payload, timeout) do
+  defp start_credential_push(state, from, kind, payload, timeout) do
     channel = state.channel
     generation = Map.get(state, :channel_ref)
     owner = self()
-    event = runtime_event({:credential, operation})
+    event = runtime_event(kind)
     tasks = Map.get(state, :credential_task_supervisor, @credential_tasks)
 
     push = fn ->

@@ -367,6 +367,9 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "secret.updated",
       "secret.rotated",
       "secret.deleted",
+      # Agent-scoped static secret writes (no values)
+      "secret.agent_write",
+      "secret.agent_delete",
       # Host credential runtime and management events (no values or lookup data)
       "host_credential.read",
       "host_credential.written",

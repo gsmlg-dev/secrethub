@@ -263,6 +263,92 @@ defmodule SecretHub.Agent.HostCredentialsTest do
     end
   end
 
+  describe "static secret publication" do
+    setup do
+      :ok = UDSServer.configure_runtime("agent-1", 2, ["host_credentials_v1", "secret_write_v1"])
+    end
+
+    test "secret_put is forwarded with audit correlation and returns no value", %{path: path} do
+      socket = connect(path)
+
+      reply_with(fn "secret:write", payload ->
+        assert payload["path"] == "backplane.llm.openai-main"
+        assert payload["data"] == %{"api_key" => "sk-canary"}
+        assert is_binary(payload["audit_request_id"]) and is_binary(payload["audit_attempt_id"])
+        refute Map.has_key?(payload, "expected_version")
+        refute Map.has_key?(payload, "agent_id")
+
+        {:ok,
+         %{
+           "status" => "created",
+           "path" => payload["path"],
+           "version" => 1,
+           "audit_event_id" => Ecto.UUID.generate()
+         }}
+      end)
+
+      response =
+        request(socket, "secret_put", %{
+          "path" => "backplane.llm.openai-main",
+          "data" => %{"api_key" => "sk-canary"}
+        })
+
+      assert %{
+               "status" => "ok",
+               "data" => %{
+                 "status" => "created",
+                 "path" => "backplane.llm.openai-main",
+                 "version" => 1
+               }
+             } = response
+
+      await_phases(4)
+      assert {:ok, events} = Journal.batch()
+
+      assert Enum.all?(events, &(&1["schema_version"] == 2 and &1["operation"] == "secret_write"))
+      assert Enum.any?(events, &(&1["secret_path"] == "backplane.llm.openai-main"))
+      refute Jason.encode!([response, events]) =~ "sk-canary"
+    end
+
+    test "Core conflicts, denials and lost replies keep distinct codes", %{path: path} do
+      socket = connect(path)
+      delete = %{"path" => "backplane.llm.openai-main", "expected_version" => 3}
+
+      reply_with(fn "secret:delete", %{"expected_version" => 3} ->
+        {:error, %{"reason" => "CONFLICT"}}
+      end)
+
+      assert %{"error" => %{"code" => "CONFLICT"}} = request(socket, "secret_delete", delete)
+
+      reply_with(fn "secret:delete", _ -> {:error, %{"reason" => "FORBIDDEN"}} end)
+      assert %{"error" => %{"code" => "FORBIDDEN"}} = request(socket, "secret_delete", delete)
+
+      # A mutation whose reply is lost may have been applied.
+      reply_with(fn "secret:delete", _ -> {:error, :timeout} end)
+      assert %{"error" => %{"code" => "UNCONFIRMED"}} = request(socket, "secret_delete", delete)
+    end
+
+    test "invalid requests and unnegotiated Cores never reach Core", %{path: path} do
+      socket = connect(path)
+      reply_with(fn _, _ -> flunk("Core must not be called") end)
+
+      for params <- [
+            %{"path" => "Upper.Case", "data" => %{"k" => "v"}},
+            %{"path" => "host-credentials.x.generic", "data" => %{"k" => "v"}},
+            %{"path" => "backplane.k", "data" => %{"k" => 1}}
+          ] do
+        assert %{"error" => %{"code" => "INVALID_REQUEST"}} =
+                 request(socket, "secret_put", params)
+      end
+
+      :ok = UDSServer.configure_runtime("agent-1", 2, ["host_credentials_v1"])
+      socket = connect(path)
+
+      assert %{"error" => %{"code" => "INCOMPATIBLE_VERSION"}} =
+               request(socket, "secret_put", %{"path" => "backplane.k", "data" => %{"k" => "v"}})
+    end
+  end
+
   ## Helpers
 
   defp generic,
@@ -397,4 +483,7 @@ defmodule SecretHub.Agent.CredentialCoreFixture do
 
     {:noreply, state}
   end
+
+  def handle_call({:secret_write_request, operation, payload, timeout}, from, state),
+    do: handle_call({:credential_request, "secret:" <> operation, payload, timeout}, from, state)
 end

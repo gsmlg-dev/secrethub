@@ -131,7 +131,9 @@ defmodule SecretHub.Core.HostCredentials do
     lock_identity!(principal)
   end
 
-  defp lock_identity!(principal) do
+  @doc false
+  # Shared with `SecretHub.Core.AgentSecretWrites`: same lock order and Agent checks.
+  def lock_identity!(principal) do
     Repo.one(from(a in Agent, where: a.id == ^principal.agent_id, lock: "FOR SHARE"))
 
     Repo.one(
@@ -139,7 +141,8 @@ defmodule SecretHub.Core.HostCredentials do
     )
   end
 
-  defp current_principal(principal) do
+  @doc false
+  def current_principal(principal) do
     with %UpgradeGate{} <- Repo.get_by(UpgradeGate, name: "typed_runtime_authorization"),
          :ok <-
            Agents.authorize_runtime(principal.agent_public_id, principal.agent_certificate_id),

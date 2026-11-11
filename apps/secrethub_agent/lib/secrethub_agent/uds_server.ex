@@ -8,6 +8,8 @@ defmodule SecretHub.Agent.UDSServer do
 
   @frame_limit 65_536
   @credential_actions ~w(credential_get credential_put credential_delete credential_list)
+  @secret_write_actions ~w(secret_put secret_delete)
+  @agent_scope_actions @credential_actions ++ @secret_write_actions
   @max_in_flight_per_connection 8
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -52,6 +54,7 @@ defmodule SecretHub.Agent.UDSServer do
          minimum_uds_auth_version: floor,
          local_socket_read_capable: false,
          host_credentials_capable: false,
+         secret_write_capable: false,
          credential_tasks:
            Keyword.get(opts, :credential_tasks, SecretHub.Agent.HostCredentials.Tasks),
          connections: %{},
@@ -100,13 +103,15 @@ defmodule SecretHub.Agent.UDSServer do
       | agent_id: agent_id,
         minimum_uds_auth_version: floor,
         local_socket_read_capable: local?,
-        host_credentials_capable: "host_credentials_v1" in capabilities
+        host_credentials_capable: "host_credentials_v1" in capabilities,
+        secret_write_capable: "secret_write_v1" in capabilities
     }
 
     Enum.reduce(state.connections, state, fn {socket, connection}, acc ->
       if (connection.auth_version < floor and connection.auth_state == :authenticated) or
            (connection.auth_state == :local and
-              ((not local? and not state.host_credentials_capable) or
+              ((not local? and not state.host_credentials_capable and
+                  not state.secret_write_capable) or
                  connection.local_agent_id != agent_id)),
          do: close_connection(acc, socket),
          else: acc
@@ -357,15 +362,16 @@ defmodule SecretHub.Agent.UDSServer do
     audited_reject(socket, id, params, state, "PROOF_REQUIRED", "proof_required")
   end
 
-  # Host credentials are Agent-scoped: served on local connections only, never
-  # by downgrading an application-authenticated connection.
+  # Host credentials and static secret publication are Agent-scoped: served on
+  # local connections only, never by downgrading an application-authenticated
+  # connection.
   defp dispatch(socket, id, action, params, %{auth_state: auth_state} = connection, state)
-       when action in @credential_actions and auth_state in [:unauthenticated, :local] do
+       when action in @agent_scope_actions and auth_state in [:unauthenticated, :local] do
     cond do
       is_nil(state.agent_id) ->
         credential_reject(socket, id, action, state, "ENROLLMENT_IN_PROGRESS")
 
-      not state.host_credentials_capable ->
+      not agent_scope_capable?(state, action) ->
         credential_reject(socket, id, action, state, "INCOMPATIBLE_VERSION")
 
       connection.in_flight >= @max_in_flight_per_connection ->
@@ -377,7 +383,7 @@ defmodule SecretHub.Agent.UDSServer do
   end
 
   defp dispatch(socket, id, action, _params, _connection, state)
-       when action in @credential_actions,
+       when action in @agent_scope_actions,
        do: credential_reject(socket, id, action, state, "AGENT_SCOPE_REQUIRED")
 
   defp dispatch(socket, id, _action, _params, %{auth_state: :authenticated}, state) do
@@ -422,6 +428,11 @@ defmodule SecretHub.Agent.UDSServer do
   catch
     :exit, _ -> credential_reject(socket, id, action, state, "BUSY")
   end
+
+  defp agent_scope_capable?(state, action) when action in @secret_write_actions,
+    do: state.secret_write_capable
+
+  defp agent_scope_capable?(state, _action), do: state.host_credentials_capable
 
   defp credential_reject(socket, id, action, state, code) do
     LocalAPI.reject(socket, id, action, state.agent_id, code)

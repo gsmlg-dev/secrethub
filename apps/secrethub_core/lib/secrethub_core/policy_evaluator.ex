@@ -14,7 +14,7 @@ defmodule SecretHub.Core.PolicyEvaluator do
   # Typed runtime operations. Credential operations are distinct grants: a
   # static `read` grant never implies credential writes, deletion or listing.
   @runtime_operations ~w(read generate renew revoke credential_read credential_write
-    credential_delete credential_list)
+    credential_delete credential_list secret_write secret_delete)
 
   @doc "Operations accepted in runtime policy documents."
   def runtime_operations, do: @runtime_operations

@@ -10,6 +10,7 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
   alias SecretHub.Core.AccessAudit
   alias SecretHub.Core.Agents
   alias SecretHub.Core.Agents.ConnectionManager
+  alias SecretHub.Core.AgentSecretWrites
   alias SecretHub.Core.HostCredentials
   alias SecretHub.Core.Repo
   alias SecretHub.Core.RuntimeAuthorization
@@ -49,7 +50,8 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
               "ssh_signing_v1",
               "access_audit_v1",
               "local_socket_read_v1",
-              "host_credentials_v1"
+              "host_credentials_v1",
+              "secret_write_v1"
             ])
         )
         |> Enum.uniq()
@@ -157,6 +159,24 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
 
         true ->
           credential_reply(socket, operation, payload)
+      end
+    end)
+  rescue
+    _ -> {:reply, {:error, %{reason: "UNAVAILABLE"}}, socket}
+  end
+
+  # Agent-scoped static secret publication from the Agent's local socket.
+  def handle_in("secret:" <> operation, payload, socket) when operation in ~w(write delete) do
+    with_runtime_authorized(socket, fn ->
+      cond do
+        "secret_write_v1" not in (socket.assigns[:runtime_capabilities] || []) ->
+          {:reply, {:error, %{reason: "INCOMPATIBLE_VERSION"}}, socket}
+
+        not is_map(payload) ->
+          {:reply, {:error, credential_failure(:invalid_request)}, socket}
+
+        true ->
+          secret_write_reply(socket, operation, payload)
       end
     end)
   rescue
@@ -403,6 +423,21 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
     end
   end
 
+  defp secret_write_reply(socket, operation, payload) do
+    identity = %{agent_id: socket.assigns.agent_id, certificate_id: socket.assigns.certificate_id}
+    correlation = audit_correlation(payload)
+    params = Map.drop(payload, ["audit_request_id", "audit_attempt_id"])
+    action = if operation == "write", do: "secret_put", else: "secret_delete"
+
+    with {:ok, principal} <-
+           RuntimePrincipal.resolve_agent_runtime_principal(identity, correlation),
+         {:ok, result} <- AgentSecretWrites.execute(principal, action, params, correlation) do
+      {:reply, {:ok, result}, socket}
+    else
+      {:error, reason} -> {:reply, {:error, credential_failure(reason)}, socket}
+    end
+  end
+
   defp credential_failure(reason) do
     %{
       reason: credential_error(reason),
@@ -422,6 +457,7 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
   defp credential_error(:invalid_request), do: "INVALID_REQUEST"
   defp credential_error(:invalid_value), do: "INVALID_VALUE"
   defp credential_error(:secret_not_found), do: "SOURCE_UNAVAILABLE"
+  defp credential_error(:conflict), do: "CONFLICT"
   defp credential_error(reason), do: application_error(reason)
 
   defp application_read_reply(socket, path, payload) do

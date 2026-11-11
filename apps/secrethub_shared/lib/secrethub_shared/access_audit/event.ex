@@ -4,8 +4,9 @@ defmodule SecretHub.Shared.AccessAudit.Event do
   boundary; Core supplies receive time and authenticates the producer.
 
   Schema version 1 covers static reads (ADR 0001) and is unchanged. Version 2 is
-  the additive host credential extension: the same envelope keys, limited to the
-  `credential_*` operations plus a few bounded reason codes. Version 1 events
+  the additive extension for Agent-scoped operations: the same envelope keys,
+  limited to the host credential `credential_*` operations and the static
+  `secret_write`/`secret_delete` operations, plus a few bounded reason codes. Version 1 events
   cannot use version 2 vocabulary and vice versa.
   """
 
@@ -24,9 +25,10 @@ defmodule SecretHub.Shared.AccessAudit.Event do
     audit_unavailable sealed timeout transport_error response_error internal_error unsupported_schema
     invalid_event event_conflict journal_full journal_corrupt proof_required proof_failed
     certificate_invalid connection_closed rate_limited)
-  @v2_reasons @reasons ++ ~w(ambiguous read_only unconfirmed busy invalid_value)
+  @v2_reasons @reasons ++ ~w(ambiguous read_only unconfirmed busy invalid_value conflict)
   @v1_operations ~w(read invalid authenticate)
-  @v2_operations ~w(credential_read credential_write credential_delete credential_list)
+  @v2_operations ~w(credential_read credential_write credential_delete credential_list
+    secret_write secret_delete)
   @max_integer 9_007_199_254_740_991
   @path ~r/\A[a-zA-Z0-9_-]+(?:[.\/][a-zA-Z0-9_-]+)*\z/
   @agent_id ~r/\A[a-zA-Z0-9_.:-]{1,128}\z/
@@ -38,7 +40,7 @@ defmodule SecretHub.Shared.AccessAudit.Event do
   def reasons(2), do: @v2_reasons
   def reasons(1), do: @reasons
 
-  @doc "The schema version that carries an operation; credential operations use version 2."
+  @doc "The schema version that carries an operation; Agent-scoped operations use version 2."
   def schema_version_for(operation) when operation in @v2_operations, do: 2
   def schema_version_for(_operation), do: 1
 

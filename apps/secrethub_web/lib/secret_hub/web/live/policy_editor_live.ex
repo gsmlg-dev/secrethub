@@ -521,7 +521,9 @@ defmodule SecretHub.Web.PolicyEditorLive do
             {"credential_read", "Allow an Agent to read its host credentials"},
             {"credential_write", "Allow an Agent to store host credentials"},
             {"credential_delete", "Allow an Agent to erase host credentials"},
-            {"credential_list", "Allow an Agent to list host credential metadata"}
+            {"credential_list", "Allow an Agent to list host credential metadata"},
+            {"secret_write", "Allow an Agent to publish static secrets from its local socket"},
+            {"secret_delete", "Allow an Agent to delete static secrets from its local socket"}
           ] do %>
             <label class="flex items-start">
               <div class="flex items-center h-5">

@@ -1,6 +1,8 @@
 defmodule SecretHub.Agent.HostCredentials.LocalAPI do
   @moduledoc """
-  Local `credential_*` request execution for the Agent's owner-only socket.
+  Local Agent-scoped request execution for the Agent's owner-only socket:
+  host credentials (`credential_*`) and static secret publication
+  (`secret_put`, `secret_delete`).
 
   Each request runs in its own supervised task so a slow Core call never
   blocks unrelated Git, Docker or keyring requests. The task owns its durable
@@ -13,20 +15,22 @@ defmodule SecretHub.Agent.HostCredentials.LocalAPI do
   alias SecretHub.Agent.{Cache, Connection}
   alias SecretHub.Shared.AccessAudit.Event
   alias SecretHub.Shared.HostCredentials, as: Contract
+  alias SecretHub.Shared.StaticSecretWrites
 
   @frame_limit 65_536
   @public_codes ~w(NOT_FOUND AMBIGUOUS READ_ONLY INVALID_REQUEST INVALID_VALUE SOURCE_UNAVAILABLE
-    FORBIDDEN UNAUTHORIZED INCOMPATIBLE_VERSION VAULT_SEALED UNAVAILABLE)
+    FORBIDDEN UNAUTHORIZED INCOMPATIBLE_VERSION VAULT_SEALED UNAVAILABLE CONFLICT)
   @denied_codes ~w(FORBIDDEN UNAUTHORIZED INVALID_REQUEST READ_ONLY INCOMPATIBLE_VERSION)
 
   def frame_limit, do: @frame_limit
 
   @doc "Handles one validated-by-dispatch action and writes its response to `socket`."
   def handle(socket, request_id, action, params, ctx) do
-    {:ok, operation} = Contract.operation(action)
+    contract = contract(action)
+    {:ok, operation} = contract.operation(action)
     started = System.monotonic_time(:microsecond)
 
-    case Contract.validate(action, params) do
+    case contract.validate(action, params) do
       {:ok, request} ->
         admitted(json_responder(socket, request_id), request_id, operation, request, ctx, started)
 
@@ -38,7 +42,7 @@ defmodule SecretHub.Agent.HostCredentials.LocalAPI do
   @doc "Records a locally rejected credential request and returns its error frame."
   def reject(socket, request_id, action, agent_id, code) do
     operation =
-      case Contract.operation(action) do
+      case contract(action).operation(action) do
         {:ok, operation} -> operation
         :error -> "credential_read"
       end
@@ -69,6 +73,10 @@ defmodule SecretHub.Agent.HostCredentials.LocalAPI do
     responder = raw_responder(socket, field)
     request = %{"entry_id" => entry_id, "known" => nil}
     admitted(responder, nil, "credential_read", request, ctx, started)
+  end
+
+  defp contract(action) do
+    if action in StaticSecretWrites.actions(), do: StaticSecretWrites, else: Contract
   end
 
   defp json_responder(socket, request_id) do
@@ -183,6 +191,20 @@ defmodule SecretHub.Agent.HostCredentials.LocalAPI do
     end
   end
 
+  defp forward(operation, request, audit, ctx) when operation in ~w(secret_write secret_delete) do
+    action = if operation == "secret_write", do: "write", else: "delete"
+    payload = request |> Map.reject(fn {_key, value} -> is_nil(value) end) |> correlate(audit)
+
+    case Connection.secret_write_request(action, payload, ctx.timeout) do
+      {:ok, %{"status" => _} = response} ->
+        {:ok, Map.take(response, ~w(status path version)),
+         release(Map.put(response, "resource", request["path"]), "none")}
+
+      other ->
+        failure(other, operation)
+    end
+  end
+
   defp forward(operation, request, audit, ctx) do
     action =
       Map.fetch!(
@@ -245,7 +267,7 @@ defmodule SecretHub.Agent.HostCredentials.LocalAPI do
 
   # An ambiguous transport outcome for a mutation is reported as unconfirmed.
   defp failure({:error, :timeout}, operation)
-       when operation in ~w(credential_write credential_delete),
+       when operation in ~w(credential_write credential_delete secret_write secret_delete),
        do: {:error, "UNCONFIRMED", %{classification: {"unknown", "unconfirmed"}}}
 
   defp failure({:error, :busy}, _operation),
@@ -282,6 +304,7 @@ defmodule SecretHub.Agent.HostCredentials.LocalAPI do
         "VAULT_SEALED" => "sealed",
         "ENROLLMENT_IN_PROGRESS" => "invalid_identity",
         "AGENT_SCOPE_REQUIRED" => "invalid_identity",
+        "CONFLICT" => "conflict",
         "BUSY" => "busy"
       }
       |> Map.get(code, "core_unavailable")
