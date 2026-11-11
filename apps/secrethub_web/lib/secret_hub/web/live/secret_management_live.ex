@@ -128,22 +128,6 @@ defmodule SecretHub.Web.SecretManagementLive do
   end
 
   @impl true
-  def handle_event("rotate_secret", %{"id" => secret_id}, socket) do
-    Logger.info("Rotating secret: #{secret_id}")
-
-    # FIXME: Call SecretHub.Core.Secrets.rotate_secret(secret_id)
-
-    socket =
-      socket
-      |> put_flash(:info, "Secret rotation initiated")
-      |> assign(:loading, true)
-
-    :timer.send_after(2000, :refresh_secrets)
-
-    {:noreply, socket}
-  end
-
-  @impl true
   def handle_event("filter_secrets", %{"rotator" => rotator_id}, socket) do
     socket = assign(socket, :filter_rotator, rotator_id)
     {:noreply, socket}
@@ -182,18 +166,6 @@ defmodule SecretHub.Web.SecretManagementLive do
       socket
       |> assign(:show_form, false)
       |> push_patch(to: "/admin/secrets")
-
-    {:noreply, socket}
-  end
-
-  @impl true
-  def handle_info(:refresh_secrets, socket) do
-    secrets = fetch_secrets()
-
-    socket =
-      socket
-      |> assign(:secrets, secrets)
-      |> assign(:loading, false)
 
     {:noreply, socket}
   end
