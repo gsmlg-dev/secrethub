@@ -4,7 +4,7 @@ defmodule SecretHub.SDK.MixProject do
   def project do
     [
       app: :secrethub_sdk,
-      version: "1.0.0-rc.31",
+      version: "1.0.0-rc.32",
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
