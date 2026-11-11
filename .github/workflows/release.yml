@@ -100,6 +100,7 @@ jobs:
             apps/secrethub_agent/mix.exs
             apps/secrethub_shared/mix.exs
             apps/secrethub_cli/mix.exs
+            apps/secrethub_sdk/mix.exs
             apps/secrethub_human/mix.exs
             Dockerfile.core-standalone
             apps/secrethub_core/Dockerfile
@@ -125,7 +126,7 @@ jobs:
           echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
   publish-cli-hex:
-    name: Publish CLI to Hex.pm
+    name: Publish CLI and SDK to Hex.pm
     runs-on: ubuntu-24.04
     needs:
       - prepare-release
@@ -177,8 +178,8 @@ jobs:
             exit 1
           fi
 
-          cd apps/secrethub_cli
-          mix hex.publish package --yes
+          (cd apps/secrethub_cli && mix hex.publish package --yes)
+          (cd apps/secrethub_sdk && mix hex.publish package --yes)
 
   build-core-release:
     name: Build Core Release (${{ matrix.target }})
@@ -767,6 +768,14 @@ jobs:
           secrethub version
           \`\`\`
 
+          ## Elixir SDK
+
+          The \`secrethub_sdk\` package (publish and read secrets through the local Agent) is published to Hex.pm:
+
+          \`\`\`elixir
+          {:secrethub_sdk, "${RELEASE_TAG#v}"}
+          \`\`\`
+
           ## Notes
 
           ${CHANGELOG_LINK}
@@ -806,6 +815,7 @@ jobs:
             echo ""
             echo "Published:"
             echo "- CLI package: Hex.pm secrethub_cli"
+            echo "- Elixir SDK package: Hex.pm secrethub_sdk"
             echo "- Core release artifacts: linux amd64, linux arm64"
             echo "- Agent release artifacts: linux amd64, linux arm64, macOS amd64, macOS arm64, Windows amd64, FreeBSD amd64"
             echo "- Docker images: core, core-standalone, agent"

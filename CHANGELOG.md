@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add Agent-scoped static secret publication (`secret_write_v1`): a local
+  process on an Agent host writes or deletes Core static secrets through the
+  Agent socket (`secret_put`, `secret_delete`). Writes are versioned and
+  support compare-and-set. Core authorizes them only with the new dedicated
+  `secret_write`/`secret_delete` policy operations; the generic `write`/`delete`
+  never apply. Every decision is audited without values.
+- Add the `secrethub_sdk` Elixir package (`SecretHub.SDK.put_secret/3`,
+  `delete_secret/2`, `get_secret/2`, `path/1`), published to Hex.pm with each
+  release. See [apps/secrethub_sdk/README.md](apps/secrethub_sdk/README.md).
+- Remove the admin secret page's non-functional "rotate" handler.
+
 - Add Agent-scoped host credentials (`host_credentials_v1`): Core credential
   bindings with typed `credential_*` grants and audit schema v2, local Agent
   `credential_*` actions, `git-credential-secrethub`,

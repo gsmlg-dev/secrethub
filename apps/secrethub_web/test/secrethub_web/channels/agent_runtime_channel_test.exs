@@ -1023,6 +1023,90 @@ defmodule SecretHub.Web.AgentRuntimeChannelTest do
   end
 
   @tag :tmp_dir
+  @tag timeout: 300_000
+  test "the Elixir SDK publishes static secrets through the real Agent socket and Core",
+       fixture do
+    ctx =
+      application_runtime_fixture!(
+        ["uds_auth_v2", "access_audit_v1", "secret_write_v1"],
+        fixture
+      )
+
+    {:ok, _} =
+      Policies.create_policy(%{
+        name: "secret-write-#{ctx.agent.id}",
+        policy_document: %{
+          "version" => "1.0",
+          "allowed_secrets" => ["backplane.**"],
+          "allowed_operations" => ~w(secret_write secret_delete)
+        },
+        entity_bindings: ["agent:" <> ctx.agent.id]
+      })
+
+    start_supervised!({Journal, state_dir: fixture.tmp_dir})
+    start_supervised!(SecretHub.Agent.Cache)
+    start_supervised!({Task.Supervisor, name: SecretHub.Agent.HostCredentials.Tasks})
+    socket_path = Path.join(System.tmp_dir!(), "sh-sw-#{System.unique_integer([:positive])}.sock")
+    on_exit(fn -> File.rm(socket_path) end)
+    start_supervised!({UDSServer, socket_path: socket_path, request_timeout: 20_000})
+    :ok = UDSServer.configure_runtime(ctx.agent.agent_id, 2, ["secret_write_v1"])
+    start_supervised!({SecretHub.Web.HostCredentialRelay, owner: self()})
+
+    opts = [socket_path: socket_path, timeout: 30_000]
+    path = SecretHub.SDK.path(["backplane", "llm", "OpenAI_Main"])
+    assert path == "backplane.llm.openai-main"
+    put = fn data -> SecretHub.SDK.put_secret(path, data, opts) end
+
+    assert {:ok, %{status: :created, version: 1}} =
+             relay(ctx, fn -> put.(%{"api_key" => "sk-first"}) end)
+
+    assert {:ok, %{"api_key" => "sk-first"}, _} = Secrets.read_decrypted(path)
+
+    assert {:ok, %{status: :unchanged, version: 1}} =
+             relay(ctx, fn -> put.(%{"api_key" => "sk-first"}) end)
+
+    assert {:ok, %{status: :updated, version: 2}} =
+             relay(ctx, fn -> put.(%{"api_key" => "sk-second"}) end)
+
+    assert {:ok, %{"api_key" => "sk-second"}, _} = Secrets.read_decrypted(path)
+
+    assert {:error, %SecretHub.SDK.Error{code: :conflict}} =
+             relay(ctx, fn ->
+               SecretHub.SDK.delete_secret(path, Keyword.put(opts, :expected_version, 1))
+             end)
+
+    assert {:ok, %{status: :deleted}} =
+             relay(ctx, fn -> SecretHub.SDK.delete_secret(path, opts) end)
+
+    assert {:error, _} = Secrets.read_decrypted(path)
+
+    # Outside the granted prefix nothing is written.
+    assert {:error, %SecretHub.SDK.Error{code: :forbidden}} =
+             relay(ctx, fn -> SecretHub.SDK.put_secret("other.team.key", %{"k" => "v"}, opts) end)
+
+    assert {:error, _} = Secrets.read_decrypted("other.team.key")
+
+    chain =
+      Repo.all(
+        from(l in SecretHub.Shared.Schemas.AuditLog,
+          where:
+            l.event_type in ["secret.agent_write", "secret.agent_delete"] and
+              l.actor_id == ^ctx.agent.agent_id
+        )
+      )
+
+    assert length(chain) == 6
+    refute inspect(chain) =~ "sk-second"
+
+    await_audit_agent_phases_at_least!(16)
+    assert {:ok, events} = Journal.batch()
+    refute Jason.encode!(events) =~ "sk-"
+    ref = push(ctx.socket, "audit:batch", %{"events" => events})
+    assert_reply(ref, :ok, %{accepted: accepted}, 5_000)
+    assert length(accepted) == length(events)
+  end
+
+  @tag :tmp_dir
   @tag :host_keyring_consumers
   @tag timeout: 600_000
   test "real git fill/approve/reject and authenticated HTTP clone use the Agent", fixture do
@@ -2001,6 +2085,11 @@ defmodule SecretHub.Web.HostCredentialRelay do
 
   def handle_call({:credential_request, operation, payload, _timeout}, from, owner) do
     send(owner, {:credential_forward, from, "credential:" <> operation, payload})
+    {:noreply, owner}
+  end
+
+  def handle_call({:secret_write_request, operation, payload, _timeout}, from, owner) do
+    send(owner, {:credential_forward, from, "secret:" <> operation, payload})
     {:noreply, owner}
   end
 end
