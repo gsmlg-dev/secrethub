@@ -173,11 +173,12 @@ defmodule SecretHub.Web.SSHAccess.Access do
       <input type="hidden" name="cell[source]" value={@source_value} />
       <input type="hidden" name="cell[destination]" value={@destination_value} />
       <p class={["text-xs", summary_class(@rules)]}>{summary(@rules)}</p>
-      <input
+      <.dm_input
         name="cell[user]"
         list={@list_id}
         placeholder="user"
-        class="w-24 rounded border border-outline bg-surface px-1 text-xs"
+        size="xs"
+        class="w-24"
         aria-label="Destination user"
       />
       <span class="flex gap-1">

@@ -51,11 +51,11 @@ defmodule SecretHub.Web.SSHAccess.Identities do
                     class="flex gap-1 items-center"
                   >
                     <input type="hidden" name="rotation[id]" value={identity.id} />
-                    <input
+                    <.dm_input
                       name="rotation[days]"
                       value={identity.rotation_days}
-                      size="4"
-                      class="w-16 rounded border border-outline bg-surface px-1"
+                      size="sm"
+                      class="w-16"
                       aria-label="Rotation days"
                     />
                     <span class="text-xs text-on-surface-variant">days · {due(identity)}</span>
