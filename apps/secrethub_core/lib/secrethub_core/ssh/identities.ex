@@ -2,6 +2,9 @@ defmodule SecretHub.Core.SSH.Identities do
   @moduledoc """
   Pure SSH identity lifecycle over in-memory maps. Core never sees private keys:
   Agents report public keys per generation; operators add external public keys.
+
+  Callers must pass `now` truncated to whole seconds: the `:utc_datetime`
+  columns reject microseconds.
   """
   alias SecretHub.Shared.SSH.Key
 
@@ -34,16 +37,22 @@ defmodule SecretHub.Core.SSH.Identities do
         existing && existing.local_username != report.username ->
           {:error, :account_changed}
 
+        existing && existing.status == "retired" ->
+          {:error, :retired}
+
         existing && same_key?(existing, report.generation, public) ->
           {:ok, identities, :unchanged}
 
         fingerprint_taken?(identities, public.fingerprint) ->
           {:error, :duplicate_key}
 
+        is_nil(existing) and report.generation == 1 and is_nil(agent_name(identities, report)) ->
+          {:error, :name_taken}
+
         is_nil(existing) and report.generation == 1 ->
           identity = %{
             id: Ecto.UUID.generate(),
-            name: report.username <> "@" <> report.agent_name,
+            name: agent_name(identities, report),
             origin: "agent",
             agent_id: report.agent_id,
             local_username: report.username,
@@ -61,9 +70,6 @@ defmodule SecretHub.Core.SSH.Identities do
         is_nil(existing) ->
           {:error, :unexpected_generation}
 
-        existing.status == "retired" ->
-          {:error, :retired}
-
         report.generation == existing.requested_generation and
             report.generation == current_generation(existing) + 1 ->
           rotated = supersede(existing, new_key(public, report.generation, now), now)
@@ -75,6 +81,12 @@ defmodule SecretHub.Core.SSH.Identities do
     else
       _ -> {:error, :invalid_public_key}
     end
+  end
+
+  defp agent_name(identities, report) do
+    [report.agent_name, report.agent_id]
+    |> Enum.map(&(report.username <> "@" <> &1))
+    |> Enum.find(fn name -> not Enum.any?(identities, &(&1.name == name)) end)
   end
 
   def approve(identities, id, now) do
@@ -101,6 +113,17 @@ defmodule SecretHub.Core.SSH.Identities do
         keys = Enum.map(identity.keys, &expire_by(&1, now))
         {:ok, %{identity | status: "retired", keys: keys, next_rotation_at: nil}}
     end)
+  end
+
+  @doc "Removes a pending or retired identity so the next generation-1 report starts fresh."
+  def delete(identities, id) do
+    case Enum.find(identities, &(&1.id == id)) do
+      %{status: status} when status in ["pending", "retired"] ->
+        {:ok, Enum.reject(identities, &(&1.id == id))}
+
+      _ ->
+        {:error, :invalid_change}
+    end
   end
 
   def add_external(identities, name, public_key, rotation_days, now) do
@@ -148,7 +171,13 @@ defmodule SecretHub.Core.SSH.Identities do
     if valid_rotation?(days) do
       update(identities, id, fn identity ->
         next = if identity.status == "active", do: next_rotation(days, now), else: nil
-        {:ok, %{identity | rotation_days: days, next_rotation_at: next}}
+
+        overdue =
+          identity.rotation_overdue and is_struct(next, DateTime) and
+            DateTime.compare(next, now) != :gt
+
+        {:ok,
+         %{identity | rotation_days: days, next_rotation_at: next, rotation_overdue: overdue}}
       end)
     else
       {:error, :invalid_rotation}
@@ -256,13 +285,16 @@ defmodule SecretHub.Core.SSH.Identities do
       public_key: public.public_line,
       fingerprint: public.fingerprint,
       not_after: nil,
-      inserted_at: now
+      inserted_at: DateTime.truncate(now, :second)
     }
 
-  defp expire_by(%{not_after: nil} = key, now), do: %{key | not_after: now}
+  defp expire_by(key, now) do
+    now = DateTime.truncate(now, :second)
 
-  defp expire_by(key, now),
-    do: if(DateTime.compare(key.not_after, now) == :gt, do: %{key | not_after: now}, else: key)
+    if is_nil(key.not_after) or DateTime.compare(key.not_after, now) == :gt,
+      do: %{key | not_after: now},
+      else: key
+  end
 
   defp key_valid?(%{not_after: nil}, _), do: true
   defp key_valid?(%{not_after: at}, now), do: DateTime.compare(at, now) == :gt

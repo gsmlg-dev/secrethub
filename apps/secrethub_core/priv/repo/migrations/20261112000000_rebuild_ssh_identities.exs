@@ -97,5 +97,11 @@ defmodule SecretHub.Core.Repo.Migrations.RebuildSSHIdentities do
     create(unique_index(:ssh_identities, [:agent_id, :username]))
     create(unique_index(:ssh_identities, [:agent_id, :uid]))
     create(unique_index(:ssh_identities, [:fingerprint]))
+
+    create(
+      constraint(:ssh_identities, :ssh_identity_uid_range,
+        check: "uid >= 0 AND uid <= 4294967295"
+      )
+    )
   end
 end

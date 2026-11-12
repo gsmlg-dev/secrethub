@@ -125,4 +125,61 @@ defmodule SecretHub.Core.SSH.IdentitiesTest do
 
     assert {:error, :invalid_rotation} = Identities.set_rotation([ext], ext.id, 0, @now)
   end
+
+  test "agent identity name falls back to the agent id when the base name is taken" do
+    {:ok, ids} = Identities.add_external([], "gao@laptop", public(), 90, @now)
+
+    assert {:ok, ids, {:reported, id}} =
+             Identities.report(
+               ids,
+               report(%{agent_id: "laptop-id", agent_name: "laptop"}),
+               @now
+             )
+
+    assert %{name: "gao@laptop-id"} = Enum.find(ids, &(&1.id == id))
+
+    {:ok, ids} = Identities.add_external(ids, "ops@box", public(), 90, @now)
+    {:ok, ids} = Identities.add_external(ids, "ops@box-id", public(), 90, @now)
+
+    assert {:error, :name_taken} =
+             Identities.report(
+               ids,
+               report(%{agent_id: "box-id", agent_name: "box", uid: 1001, username: "ops"}),
+               @now
+             )
+  end
+
+  test "a retired identity re-reporting its key is rejected" do
+    first = report()
+    {:ok, [identity], _} = Identities.report([], first, @now)
+    {:ok, ids} = Identities.approve([identity], identity.id, @now)
+    {:ok, ids} = Identities.revoke(ids, identity.id, @now)
+    assert {:error, :retired} = Identities.report(ids, first, @now)
+  end
+
+  test "delete clears pending or retired identities so generation 1 starts fresh" do
+    {:ok, [identity], _} = Identities.report([], report(), @now)
+    {:ok, ids} = Identities.approve([identity], identity.id, @now)
+    assert {:error, :invalid_change} = Identities.delete(ids, identity.id)
+    {:ok, ids} = Identities.revoke(ids, identity.id, @now)
+    assert {:ok, []} = Identities.delete(ids, identity.id)
+    assert {:error, :invalid_change} = Identities.delete(ids, "missing")
+
+    assert {:ok, [fresh], {:reported, _}} = Identities.report([], report(), @now)
+    assert fresh.status == "pending" and fresh.id != identity.id
+
+    assert {:ok, []} = Identities.delete([fresh], fresh.id)
+  end
+
+  test "set_rotation clears the overdue flag when the next rotation is not due" do
+    {:ok, [ext]} = Identities.add_external([], "ci", public(), 30, @now)
+    due = DateTime.add(@now, 31 * 86_400)
+    {[flagged], _} = Identities.schedule([ext], due)
+    assert flagged.rotation_overdue
+
+    assert {:ok, [updated]} = Identities.set_rotation([flagged], ext.id, 90, due)
+    refute updated.rotation_overdue
+    assert {:ok, [updated]} = Identities.set_rotation([flagged], ext.id, nil, due)
+    refute updated.rotation_overdue
+  end
 end

@@ -88,6 +88,21 @@ defmodule SecretHub.Core.SSH.EvaluatorTest do
         rule(%{id: "phone", source_kind: "identity", source_id: "phone"})
       ])
 
+    inv = %{
+      inv
+      | groups:
+          Enum.map(inv.groups, fn
+            %{id: "servers"} = g -> %{g | agent_ids: g.agent_ids ++ ["unapproved", "nokeys"]}
+            g -> g
+          end),
+        endpoints:
+          inv.endpoints ++
+            [
+              %{agent_id: "unapproved", aliases: [], port: 22, approved: false, host_keys: ["h"]},
+              %{agent_id: "nokeys", aliases: [], port: 22, approved: true, host_keys: []}
+            ]
+    }
+
     assert [
              %{identity_id: "gao", destination_agent_id: "vultr-01", destination_user: "gao"},
              %{identity_id: "gao", destination_agent_id: "vultr-02", destination_user: "gao"}
