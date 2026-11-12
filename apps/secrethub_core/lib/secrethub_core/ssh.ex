@@ -96,6 +96,55 @@ defmodule SecretHub.Core.SSH do
     end
   end
 
+  @doc "Applies due rotations, overdue flags and key pruning. Returns {:ok, events}."
+  def rotate_due(now \\ DateTime.utc_now()) do
+    now = DateTime.truncate(now, :second)
+
+    with {:ok, master_key} <- master_key() do
+      Repo.transaction(fn ->
+        row = lock_inventory("FOR UPDATE")
+        inventory = load_inventory(row)
+
+        case Identities.schedule(inventory.identities, now) do
+          {_, []} ->
+            []
+
+          {identities, events} ->
+            revision = row.revision + 1
+
+            for event <- events do
+              {name, data} = rotation_audit(event)
+              audit!(name, "system", "ssh_identity_rotation", revision, true, data)
+            end
+
+            ensure_master_key!(master_key)
+            persist!(row, %{inventory | identities: identities}, revision)
+            {revision, events}
+        end
+      end)
+      |> case do
+        {:ok, []} ->
+          {:ok, []}
+
+        {:ok, {revision, events}} ->
+          broadcast(revision)
+          {:ok, events}
+
+        error ->
+          error
+      end
+    end
+  end
+
+  defp rotation_audit({:rotation_requested, id, generation}),
+    do: {"identity_rotation_requested", %{"identity_id" => id, "generation" => generation}}
+
+  defp rotation_audit({:rotation_overdue, id}),
+    do: {"identity_rotation_overdue", %{"identity_id" => id}}
+
+  defp rotation_audit({:keys_pruned, id, count}),
+    do: {"identity_keys_pruned", %{"identity_id" => id, "count" => count}}
+
   def runtime_operation(%{agent_id: agent_id, certificate_id: certificate_id}, operation, payload)
       when is_binary(agent_id) and is_binary(operation) and is_map(payload) do
     with {:ok, master_key} <- master_key() do

@@ -27,11 +27,15 @@ config :secrethub_core,
 config :secrethub_core, SecretHub.Core.Styx,
   name: SecretHub.Core.Styx,
   repo: SecretHub.Core.Repo,
-  queues: [acme: 4, acme_cleanup: 2],
+  queues: [acme: 4, acme_cleanup: 2, ssh: 1],
   shutdown_grace_period: 15_000,
   plugins: [
     {Styx.Plugins.Pruner, max_age: 604_800},
-    {Styx.Plugins.Cron, crontab: [{"* * * * *", SecretHub.Core.PKI.ACME.Reconciler}]}
+    {Styx.Plugins.Cron,
+     crontab: [
+       {"* * * * *", SecretHub.Core.PKI.ACME.Reconciler},
+       {"7 * * * *", SecretHub.Core.Workers.SSHIdentityRotationWorker}
+     ]}
   ]
 
 config :secrethub_human,
