@@ -1118,6 +1118,9 @@ The `Encryption` alias is removed.
   defp persist_identities!(identities) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     replace = (@identity_fields -- [:id]) ++ [:updated_at]
+    ids = Enum.map(identities, & &1.id)
+    # identity_delete removes pending/retired identities; their keys cascade.
+    Repo.delete_all(from(i in Identity, where: i.id not in ^ids), log: false)
 
     for identity <- identities do
       row =
@@ -1241,6 +1244,16 @@ Replace the `group_upsert`, `group_members`, and `group_delete` clauses and ever
 
   defp change(inventory, %{"op" => "identity_approve", "id" => id}, now),
     do: identities(inventory, Identities.approve(inventory.identities, id, now))
+
+  defp change(inventory, %{"op" => "identity_delete", "id" => id}, _now) do
+    used =
+      Enum.any?(inventory.rules, &(&1.source_kind == "identity" and &1.source_id == id)) or
+        Enum.any?(inventory.groups, &(&1.kind == "identity" and id in &1.identity_ids))
+
+    if used,
+      do: {:error, :identity_in_use},
+      else: identities(inventory, Identities.delete(inventory.identities, id))
+  end
 
   defp change(inventory, %{"op" => "identity_revoke", "id" => id}, now),
     do: identities(inventory, Identities.revoke(inventory.identities, id, now))
@@ -2602,6 +2615,7 @@ defmodule SecretHub.Web.SSHAccess.Preview do
 
   defp describe(%{"op" => "identity_approve", "id" => id}, inv), do: "Approve identity #{identity(inv, id)}"
   defp describe(%{"op" => "identity_revoke", "id" => id}, inv), do: "Revoke identity #{identity(inv, id)}"
+  defp describe(%{"op" => "identity_delete", "id" => id}, inv), do: "Delete identity #{identity(inv, id)}"
   defp describe(%{"op" => "identity_rotate", "id" => id}, inv), do: "Rotate identity #{identity(inv, id)} now"
 
   defp describe(%{"op" => "identity_rotation", "id" => id, "rotation_days" => nil}, inv),
@@ -2771,7 +2785,7 @@ defmodule SecretHub.Web.SSHAccessLive do
     do: stage(socket, [%{"op" => "endpoint_delete", "agent_id" => id}])
 
   def handle_event("identity", %{"op" => op, "id" => id}, socket)
-      when op in ~w(identity_approve identity_revoke identity_rotate),
+      when op in ~w(identity_approve identity_revoke identity_rotate identity_delete),
       do: stage(socket, [%{"op" => op, "id" => id}])
 
   def handle_event("identity_rotation", %{"rotation" => %{"id" => id, "days" => days}}, socket),
@@ -2897,6 +2911,8 @@ defmodule SecretHub.Web.SSHAccessLive do
   defp error_message(:invalid_public_key), do: "Paste one OpenSSH public key line."
   defp error_message(:invalid_rotation), do: "Rotation days must be between 1 and 3650, or blank to disable."
   defp error_message(:endpoint_conflict), do: "That endpoint alias and port already belong to another machine."
+  defp error_message(:identity_in_use), do: "Remove this identity's access cells and group memberships before deleting it."
+  defp error_message(:name_taken), do: "That identity name is already used."
   defp error_message(:group_in_use), do: "Remove this group's access cells before deleting the group."
   defp error_message(_), do: "SSH changes are invalid or Core is unavailable."
 
@@ -3251,6 +3267,8 @@ defmodule SecretHub.Web.SSHAccess.Identities do
                   </.dm_btn>
                   <.dm_btn :if={identity.status != "retired"} id={"revoke-" <> identity.id} size="sm" variant="error"
                     phx-click="identity" phx-value-op="identity_revoke" phx-value-id={identity.id}>Revoke</.dm_btn>
+                  <.dm_btn :if={identity.status in ["pending", "retired"]} id={"delete-" <> identity.id} size="sm" variant="ghost"
+                    phx-click="identity" phx-value-op="identity_delete" phx-value-id={identity.id}>Delete</.dm_btn>
                 </td>
               </tr>
             </tbody>
