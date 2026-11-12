@@ -2,25 +2,29 @@ defmodule SecretHub.Core.SSH do
   @moduledoc "Revisioned SSH management and freshly authorized machine runtime views."
   import Ecto.Query
   alias SecretHub.Core.{Agents, Audit, Repo}
-  alias SecretHub.Core.SSH.Evaluator
+  alias SecretHub.Core.SSH.{Evaluator, Identities}
   alias SecretHub.Core.Vault.SealState
-  alias SecretHub.Shared.Crypto.Encryption
   alias SecretHub.Shared.Schemas.{Agent, Certificate}
-  alias SecretHub.Shared.Schemas.SSH.{Identity, Inventory}
+  alias SecretHub.Shared.Schemas.SSH.{Identity, IdentityKey, Inventory}
   alias SecretHub.Shared.SSH.Key
 
   @identity_fields [
     :id,
+    :name,
+    :origin,
     :agent_id,
-    :username,
-    :uid,
-    :public_key,
-    :fingerprint,
-    :key_revision,
-    :active
+    :local_username,
+    :local_uid,
+    :status,
+    :rotation_days,
+    :next_rotation_at,
+    :requested_generation,
+    :rotation_overdue
   ]
+  @key_fields [:id, :generation, :public_key, :fingerprint, :not_after, :inserted_at]
   @inventory_fields [:groups, :endpoints, :rules, :reports]
-  @record_keys ~w(id name agent_ids agent_id aliases port host_keys approved enabled effect source_kind source_id source_user destination_kind destination_id destination_user candidate_host_keys)
+  @mutating_ops ["inventory", "identity_report"]
+  @record_keys ~w(id name kind agent_ids identity_ids agent_id aliases port host_keys approved enabled effect source_kind source_id destination_kind destination_id destination_user candidate_host_keys)
 
   def snapshot do
     case Repo.transaction(fn -> public_snapshot(load_inventory(lock_inventory("FOR SHARE"))) end) do
@@ -30,14 +34,19 @@ defmodule SecretHub.Core.SSH do
   end
 
   def preview(changes, expected_revision) do
-    with {:ok, master_key} <- master_key() do
+    with {:ok, _master_key} <- master_key() do
       Repo.transaction(fn ->
         row = lock_inventory("FOR UPDATE")
         check_revision!(row, expected_revision)
         before = load_inventory(row)
-        after_inventory = change_batch!(before, changes, master_key)
+        after_inventory = change_batch!(before, changes, now())
         diff = Evaluator.diff(before, after_inventory)
-        Map.merge(diff, %{revision: row.revision, changes: scrub_changes(changes)})
+
+        Map.merge(diff, %{
+          revision: row.revision,
+          changes: scrub_changes(changes),
+          identity_names: Map.new(after_inventory.identities, &{&1.id, &1.name})
+        })
       end)
     end
   end
@@ -48,24 +57,17 @@ defmodule SecretHub.Core.SSH do
         Repo.transaction(fn ->
           row = lock_inventory("FOR UPDATE")
           check_revision!(row, expected_revision)
-          inventory = change_batch!(load_inventory(row), changes, master_key)
+          inventory = change_batch!(load_inventory(row), changes, now())
           revision = row.revision + 1
 
           audit!("configuration", "operator", "management", revision, true, %{
             changes: scrub_changes(changes),
             identities:
-              Enum.map(
-                inventory.identities,
-                &Map.take(&1, [
-                  :id,
-                  :agent_id,
-                  :username,
-                  :uid,
-                  :fingerprint,
-                  :key_revision,
-                  :active
-                ])
-              )
+              Enum.map(inventory.identities, fn identity ->
+                identity
+                |> Map.take([:id, :name, :origin, :agent_id, :status, :requested_generation])
+                |> Map.put(:fingerprints, Enum.map(identity.keys, & &1.fingerprint))
+              end)
           })
 
           ensure_master_key!(master_key)
@@ -75,14 +77,7 @@ defmodule SecretHub.Core.SSH do
 
       case result do
         {:ok, snapshot} ->
-          if Process.whereis(SecretHub.Web.PubSub),
-            do:
-              Phoenix.PubSub.broadcast(
-                SecretHub.Web.PubSub,
-                "ssh:policy",
-                {:ssh_policy_changed, snapshot.revision}
-              )
-
+          broadcast(snapshot.revision)
           {:ok, snapshot}
 
         error ->
@@ -95,9 +90,11 @@ defmodule SecretHub.Core.SSH do
       when is_binary(agent_id) and is_binary(operation) and is_map(payload) do
     with {:ok, master_key} <- master_key() do
       Repo.transaction(fn ->
+        now = now()
+
         inventory =
           load_inventory(
-            lock_inventory(if(operation == "inventory", do: "FOR UPDATE", else: "FOR SHARE"))
+            lock_inventory(if(operation in @mutating_ops, do: "FOR UPDATE", else: "FOR SHARE"))
           )
 
         lock_machine(agent_id)
@@ -106,7 +103,7 @@ defmodule SecretHub.Core.SSH do
           with :ok <- Agents.authorize_runtime(agent_id, certificate_id),
                :ok <- current_certificate_start(certificate_id),
                :ok <- capability(agent_id, operation) do
-            runtime_view(inventory, agent_id, operation, payload, master_key)
+            runtime_view(inventory, agent_id, operation, payload, now)
           end
 
         granted = decision_granted?(result)
@@ -128,7 +125,7 @@ defmodule SecretHub.Core.SSH do
                :ok <- Agents.authorize_runtime(agent_id, certificate_id),
                :ok <- current_certificate_start(certificate_id),
                :ok <- capability(agent_id, operation) do
-            if operation == "inventory",
+            if operation in @mutating_ops,
               do: result,
               else:
                 runtime_view(
@@ -136,7 +133,7 @@ defmodule SecretHub.Core.SSH do
                   agent_id,
                   operation,
                   payload,
-                  master_key
+                  now
                 )
           end
 
@@ -153,24 +150,15 @@ defmodule SecretHub.Core.SSH do
               Map.put(metadata, "outcome", "changed_before_release")
             )
 
-        if operation == "inventory",
-          do: persist_candidates(inventory, agent_id, final),
-          else: final
+        persist_runtime(operation, inventory, agent_id, final)
       end)
       |> case do
-        {:ok, {:ok, %{unchanged: true, revision: revision}}} when operation == "inventory" ->
-          {:ok, %{revision: revision}}
+        {:ok, {:ok, %{unchanged: true} = reply}} when operation in @mutating_ops ->
+          {:ok, Map.delete(reply, :unchanged)}
 
-        {:ok, {:ok, %{revision: revision}} = result} when operation == "inventory" ->
-          if Process.whereis(SecretHub.Web.PubSub),
-            do:
-              Phoenix.PubSub.broadcast(
-                SecretHub.Web.PubSub,
-                "ssh:policy",
-                {:ssh_policy_changed, revision}
-              )
-
-          result
+        {:ok, {:ok, %{revision: revision} = reply}} when operation in @mutating_ops ->
+          broadcast(revision)
+          {:ok, reply}
 
         {:ok, result} ->
           result
@@ -183,33 +171,57 @@ defmodule SecretHub.Core.SSH do
 
   def runtime_operation(_, _, _), do: {:error, :invalid_identity}
 
-  defp runtime_view(inventory, agent_id, "identities", payload, _) do
-    identities =
-      source_identities(inventory, agent_id, payload)
-      |> Enum.filter(&outgoing?(inventory, &1))
-      |> Enum.map(&Map.take(&1, [:public_key, :key_revision]))
+  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 
-    {:ok, %{identities: identities, revision: inventory.revision}}
+  defp broadcast(revision) do
+    if Process.whereis(SecretHub.Web.PubSub),
+      do:
+        Phoenix.PubSub.broadcast(
+          SecretHub.Web.PubSub,
+          "ssh:policy",
+          {:ssh_policy_changed, revision}
+        )
   end
 
-  defp runtime_view(inventory, agent_id, "authorize_sign", payload, master_key) do
-    with {:ok, public} <- Key.decode_public(payload["public_key"]),
-         %Identity{} = identity <-
+  defp runtime_view(inventory, agent_id, "identities", payload, now) do
+    with true <- local_account?(payload) do
+      keys =
+        case agent_identity(inventory, agent_id, payload) do
+          nil ->
+            []
+
+          identity ->
+            if Identities.usable?(identity, now) and outgoing?(inventory, identity),
+              do:
+                for(
+                  key <- Identities.valid_keys(identity, now),
+                  do: %{public_key: key.public_key, generation: key.generation}
+                ),
+              else: []
+        end
+
+      {:ok, %{identities: keys, revision: inventory.revision}}
+    else
+      _ -> {:error, :invalid_request}
+    end
+  end
+
+  defp runtime_view(inventory, agent_id, "authorize_sign", payload, now) do
+    with true <- local_account?(payload),
+         {:ok, public} <- Key.decode_public(payload["public_key"]),
+         %{} = identity <- agent_identity(inventory, agent_id, payload),
+         true <- Identities.usable?(identity, now),
+         %{} = key <-
            Enum.find(
-             source_identities(inventory, agent_id, payload),
+             Identities.valid_keys(identity, now),
              &(&1.public_key == public.public_line)
            ),
-         true <- outgoing?(inventory, identity),
-         {:ok, pem} <-
-           Encryption.decrypt_from_blob(
-             identity.private_key_encrypted,
-             identity_encryption_key(master_key, identity)
-           ) do
+         true <- outgoing?(inventory, identity) do
       {:ok,
        %{
-         private_key: pem,
-         public_key: identity.public_key,
-         key_revision: identity.key_revision,
+         allowed: true,
+         public_key: key.public_key,
+         generation: key.generation,
          revision: inventory.revision
        }}
     else
@@ -217,22 +229,17 @@ defmodule SecretHub.Core.SSH do
     end
   end
 
-  defp runtime_view(inventory, agent_id, "authorized_keys", payload, _) do
+  defp runtime_view(inventory, agent_id, "authorized_keys", payload, now) do
     with true <- valid_user?(payload["username"]),
          {:ok, public} <- Key.decode_public(payload["key"]) do
       lines =
         for identity <- inventory.identities,
-            identity.active and identity.public_key == public.public_line,
-            live_agent?(identity.agent_id, "ssh_signing_v1"),
+            Identities.usable?(identity, now),
+            key <- Identities.valid_keys(identity, now),
+            key.public_key == public.public_line,
             approved_endpoint?(inventory, agent_id),
-            Evaluator.decision(
-              inventory,
-              identity.agent_id,
-              identity.username,
-              agent_id,
-              payload["username"]
-            ).allowed,
-            do: "no-agent-forwarding " <> identity.public_key
+            Evaluator.decision(inventory, identity.id, agent_id, payload["username"]).allowed,
+            do: "no-agent-forwarding " <> key.public_key
 
       {:ok, %{lines: Enum.uniq(lines), revision: inventory.revision}}
     else
@@ -240,12 +247,14 @@ defmodule SecretHub.Core.SSH do
     end
   end
 
-  defp runtime_view(inventory, agent_id, "known_hosts", payload, _) do
-    with true <- payload["reason"] in ["ORDER", "HOSTNAME", "ADDRESS"],
+  defp runtime_view(inventory, agent_id, "known_hosts", payload, now) do
+    with true <- local_account?(payload),
+         true <- payload["reason"] in ["ORDER", "HOSTNAME", "ADDRESS"],
          true <- is_integer(payload["port"]) and payload["port"] in 1..65_535,
          {:ok, host} <- lookup_alias(payload["host"], payload["port"]) do
       lines =
-        for identity <- source_identities(inventory, agent_id, payload),
+        for identity <- List.wrap(agent_identity(inventory, agent_id, payload)),
+            Identities.usable?(identity, now),
             endpoint <- inventory.endpoints,
             endpoint.approved and endpoint.host_keys != [],
             endpoint.port == payload["port"] and host in endpoint.aliases,
@@ -260,7 +269,7 @@ defmodule SecretHub.Core.SSH do
     end
   end
 
-  defp runtime_view(inventory, agent_id, "inventory", payload, _) do
+  defp runtime_view(inventory, agent_id, "inventory", payload, _now) do
     with {:ok, keys} <- public_keys(Map.get(payload, "host_keys", [])),
          {:ok, users} <- reported_users(Map.get(payload, "users", [])) do
       endpoint = Enum.find(inventory.endpoints, &(&1.agent_id == agent_id))
@@ -275,22 +284,76 @@ defmodule SecretHub.Core.SSH do
          revision: inventory.revision + if(unchanged, do: 0, else: 1),
          candidate_host_keys: keys,
          users: users,
-         unchanged: unchanged
+         unchanged: unchanged,
+         identity_generations: identity_generations(inventory, agent_id)
        }}
     else
       _ -> {:error, :invalid_request}
     end
   end
 
+  defp runtime_view(inventory, agent_id, "identity_report", payload, now) do
+    with true <- local_account?(payload),
+         true <- is_integer(payload["generation"]) and payload["generation"] >= 1,
+         %Agent{} = agent <- Repo.get_by(Agent, agent_id: agent_id),
+         {:ok, identities, event} <-
+           Identities.report(
+             inventory.identities,
+             %{
+               agent_id: agent_id,
+               agent_name: agent.name || agent_id,
+               uid: payload["uid"],
+               username: payload["username"],
+               generation: payload["generation"],
+               public_key: payload["public_key"]
+             },
+             now
+           ) do
+      unchanged = event == :unchanged
+
+      {:ok,
+       %{
+         revision: inventory.revision + if(unchanged, do: 0, else: 1),
+         unchanged: unchanged,
+         identities: identities
+       }}
+    else
+      _ -> {:error, :denied}
+    end
+  end
+
   defp runtime_view(_, _, _, _, _), do: {:error, :unsupported_operation}
 
-  defp persist_candidates(_, _, {:ok, %{unchanged: true, revision: revision}}),
-    do: {:ok, %{unchanged: true, revision: revision}}
+  defp persist_runtime("inventory", inventory, agent_id, result),
+    do: persist_candidates(inventory, agent_id, result)
+
+  defp persist_runtime(
+         "identity_report",
+         _inventory,
+         _agent_id,
+         {:ok, %{unchanged: true} = reply}
+       ),
+       do: {:ok, Map.delete(reply, :identities)}
+
+  defp persist_runtime(
+         "identity_report",
+         inventory,
+         _agent_id,
+         {:ok, %{revision: revision, identities: identities}}
+       ) do
+    persist!(Repo.get!(Inventory, 1), %{inventory | identities: identities}, revision)
+    {:ok, %{revision: revision, accepted: true}}
+  end
+
+  defp persist_runtime(_, _, _, result), do: result
+
+  defp persist_candidates(_, _, {:ok, %{unchanged: true} = reply}),
+    do: {:ok, Map.take(reply, [:unchanged, :revision, :identity_generations])}
 
   defp persist_candidates(
          inventory,
          agent_id,
-         {:ok, %{candidate_host_keys: keys, users: users, revision: revision}}
+         {:ok, %{candidate_host_keys: keys, users: users, revision: revision} = reply}
        ) do
     endpoint =
       Enum.find(inventory.endpoints, &(&1.agent_id == agent_id)) ||
@@ -302,17 +365,36 @@ defmodule SecretHub.Core.SSH do
     report = %{"users" => users, "seen_at" => DateTime.to_iso8601(DateTime.utc_now())}
     updated = %{updated | reports: Map.put(updated.reports, agent_id, report)}
     persist!(Repo.get!(Inventory, 1), updated, revision)
-    {:ok, %{revision: revision}}
+    {:ok, %{revision: revision, identity_generations: reply.identity_generations}}
   end
 
   defp persist_candidates(_, _, result), do: result
 
-  defp source_identities(inventory, agent_id, payload) do
-    Enum.filter(inventory.identities, fn identity ->
-      is_integer(payload["uid"]) and valid_user?(payload["username"]) and
-        identity.active and identity.agent_id == agent_id and
-        identity.username == payload["username"] and identity.uid == payload["uid"]
-    end)
+  defp local_account?(payload),
+    do:
+      is_integer(payload["uid"]) and payload["uid"] in 0..4_294_967_295 and
+        valid_user?(payload["username"])
+
+  defp agent_identity(inventory, agent_id, payload) do
+    username = payload["username"]
+
+    case Identities.find_agent_identity(inventory.identities, agent_id, payload["uid"]) do
+      %{local_username: ^username} = identity -> identity
+      _ -> nil
+    end
+  end
+
+  defp identity_generations(inventory, agent_id) do
+    now = DateTime.utc_now()
+
+    for identity <- inventory.identities,
+        identity.origin == "agent" and identity.agent_id == agent_id and
+          identity.status != "retired",
+        do: %{
+          uid: identity.local_uid,
+          requested_generation: identity.requested_generation,
+          generations: Enum.map(Identities.valid_keys(identity, now), & &1.generation)
+        }
   end
 
   defp outgoing?(inventory, identity),
@@ -323,17 +405,11 @@ defmodule SecretHub.Core.SSH do
             outgoing_to?(inventory, identity, &1.agent_id))
       )
 
-  defp outgoing_to?(inventory, identity, destination) do
-    Enum.any?(inventory.rules, fn rule ->
-      Evaluator.decision(
-        inventory,
-        identity.agent_id,
-        identity.username,
-        destination,
-        rule.destination_user
-      ).allowed
-    end)
-  end
+  defp outgoing_to?(inventory, identity, destination),
+    do:
+      Enum.any?(inventory.rules, fn rule ->
+        Evaluator.decision(inventory, identity.id, destination, rule.destination_user).allowed
+      end)
 
   defp approved_endpoint?(inventory, agent_id),
     do:
@@ -385,9 +461,14 @@ defmodule SecretHub.Core.SSH do
   defp capability(agent_id, operation) do
     required =
       case operation do
-        "inventory" -> ["ssh_signing_v1", "ssh_lookup_v1"]
-        operation when operation in ["identities", "authorize_sign"] -> ["ssh_signing_v1"]
-        _ -> ["ssh_lookup_v1"]
+        "inventory" ->
+          ["ssh_signing_v1", "ssh_lookup_v1"]
+
+        operation when operation in ["identities", "authorize_sign", "identity_report"] ->
+          ["ssh_signing_v1"]
+
+        _ ->
+          ["ssh_lookup_v1"]
       end
 
     case Repo.get_by(Agent, agent_id: agent_id) do
@@ -413,12 +494,26 @@ defmodule SecretHub.Core.SSH do
   defp load_inventory(row) do
     %{
       revision: row.revision,
-      groups: records(row.groups),
+      groups: Enum.map(records(row.groups), &normalize_group/1),
       endpoints: records(row.endpoints),
       rules: records(row.rules),
       reports: row.reports,
-      identities: Repo.all(from(i in Identity, order_by: i.id))
+      identities:
+        Repo.all(from(i in Identity, order_by: i.id, preload: :keys))
+        |> Enum.map(fn identity ->
+          identity
+          |> Map.take(@identity_fields)
+          |> Map.put(:keys, Enum.map(identity.keys, &Map.take(&1, @key_fields)))
+        end)
     }
+  end
+
+  # Groups stored before identity groups existed are host groups.
+  defp normalize_group(group) do
+    case Map.get(group, :kind, "host") do
+      "identity" -> group |> Map.put(:kind, "identity") |> Map.put_new(:identity_ids, [])
+      _ -> group |> Map.put(:kind, "host") |> Map.put_new(:agent_ids, [])
+    end
   end
 
   defp records(records),
@@ -455,15 +550,15 @@ defmodule SecretHub.Core.SSH do
 
     inventory
     |> Map.delete(:reports)
-    |> Map.put(:identities, Enum.map(inventory.identities, &Map.take(&1, @identity_fields)))
+    |> Map.put(:identities, inventory.identities)
     |> Map.put(:agents, agents)
     |> Map.put(:edges, Evaluator.edges(inventory))
   end
 
-  defp change_batch!(inventory, changes, master_key)
+  defp change_batch!(inventory, changes, now)
        when is_list(changes) and length(changes) <= 500 do
     Enum.reduce(changes, inventory, fn change, current ->
-      case change(current, change, master_key) do
+      case change(current, change, now) do
         {:ok, next} -> next
         {:error, reason} -> Repo.rollback(reason)
       end
@@ -475,22 +570,36 @@ defmodule SecretHub.Core.SSH do
   defp change(inventory, %{"op" => "group_upsert", "name" => name} = attrs, _)
        when is_binary(name) and byte_size(name) in 1..100 do
     id = attrs["id"] || Ecto.UUID.generate()
+    existing = Enum.find(inventory.groups, &(&1.id == id))
+    kind = if existing, do: existing.kind, else: attrs["kind"]
 
-    if valid_id?(id) and not String.contains?(name, <<0>>) do
-      group = Enum.find(inventory.groups, &(&1.id == id)) || %{id: id, agent_ids: []}
+    if valid_id?(id) and kind in ["host", "identity"] and not String.contains?(name, <<0>>) do
+      group = existing || normalize_group(%{id: id, kind: kind})
       {:ok, put_record(inventory, :groups, Map.put(group, :name, name))}
     else
       {:error, :invalid_change}
     end
   end
 
-  defp change(inventory, %{"op" => "group_members", "group_id" => id, "agent_ids" => ids}, _)
+  defp change(inventory, %{"op" => "group_members", "group_id" => id, "member_ids" => ids}, _)
        when is_list(ids) and length(ids) <= 10_000 do
-    with %{id: ^id} = group <- Enum.find(inventory.groups, &(&1.id == id)),
-         true <- Enum.all?(ids, &agent_exists?/1) do
-      {:ok, put_record(inventory, :groups, %{group | agent_ids: Enum.uniq(ids) |> Enum.sort()})}
-    else
-      _ -> {:error, :invalid_change}
+    ids = ids |> Enum.uniq() |> Enum.sort()
+
+    case Enum.find(inventory.groups, &(&1.id == id)) do
+      %{kind: "host"} = group ->
+        if Enum.all?(ids, &agent_exists?/1),
+          do: {:ok, put_record(inventory, :groups, %{group | agent_ids: ids})},
+          else: {:error, :invalid_change}
+
+      %{kind: "identity"} = group ->
+        known = MapSet.new(inventory.identities, & &1.id)
+
+        if Enum.all?(ids, &MapSet.member?(known, &1)),
+          do: {:ok, put_record(inventory, :groups, %{group | identity_ids: ids})},
+          else: {:error, :invalid_change}
+
+      _ ->
+        {:error, :invalid_change}
     end
   end
 
@@ -498,8 +607,8 @@ defmodule SecretHub.Core.SSH do
     used =
       Enum.any?(
         inventory.rules,
-        &((&1.source_kind == "group" and &1.source_id == id) or
-            (&1.destination_kind == "group" and &1.destination_id == id))
+        &((&1.source_kind == "identity_group" and &1.source_id == id) or
+            (&1.destination_kind == "host_group" and &1.destination_id == id))
       )
 
     if used,
@@ -548,74 +657,56 @@ defmodule SecretHub.Core.SSH do
     {:ok, %{inventory | endpoints: Enum.reject(inventory.endpoints, &(&1.agent_id == id))}}
   end
 
+  defp change(inventory, %{"op" => "identity_approve", "id" => id}, now),
+    do: identities(inventory, Identities.approve(inventory.identities, id, now))
+
+  defp change(inventory, %{"op" => "identity_delete", "id" => id}, _now) do
+    used =
+      Enum.any?(inventory.rules, &(&1.source_kind == "identity" and &1.source_id == id)) or
+        Enum.any?(inventory.groups, &(&1.kind == "identity" and id in &1.identity_ids))
+
+    if used,
+      do: {:error, :identity_in_use},
+      else: identities(inventory, Identities.delete(inventory.identities, id))
+  end
+
+  defp change(inventory, %{"op" => "identity_revoke", "id" => id}, now),
+    do: identities(inventory, Identities.revoke(inventory.identities, id, now))
+
+  defp change(inventory, %{"op" => "identity_rotate", "id" => id}, now),
+    do: identities(inventory, Identities.request_rotation(inventory.identities, id, now))
+
+  defp change(inventory, %{"op" => "identity_rotation", "id" => id} = attrs, now)
+       when is_map_key(attrs, "rotation_days"),
+       do:
+         identities(
+           inventory,
+           Identities.set_rotation(inventory.identities, id, attrs["rotation_days"], now)
+         )
+
   defp change(
          inventory,
-         %{
-           "op" => "identity_upsert",
-           "agent_id" => agent_id,
-           "username" => username,
-           "uid" => uid
-         } = attrs,
-         master_key
-       ) do
-    with true <-
-           agent_exists?(agent_id) and valid_user?(username) and is_integer(uid) and
-             uid in 0..4_294_967_295,
-         {:ok, key} <- provisioning_key(attrs) do
-      old =
-        Enum.find(inventory.identities, &(&1.agent_id == agent_id and &1.username == username))
+         %{"op" => "identity_external_add", "name" => name, "public_key" => key} = attrs,
+         now
+       ),
+       do:
+         identities(
+           inventory,
+           Identities.add_external(
+             inventory.identities,
+             name,
+             key,
+             Map.get(attrs, "rotation_days", Identities.default_rotation_days()),
+             now
+           )
+         )
 
-      identity =
-        old || struct(Identity, id: Ecto.UUID.generate(), agent_id: agent_id, username: username)
-
-      duplicate =
-        Enum.any?(
-          inventory.identities,
-          &(&1.id != identity.id and
-              ((&1.agent_id == agent_id and &1.uid == uid) or
-                 &1.fingerprint == key.public.fingerprint))
-        )
-
-      if duplicate do
-        {:error, :duplicate_identity}
-      else
-        identity = %{
-          identity
-          | uid: uid,
-            public_key: key.public.public_line,
-            fingerprint: key.public.fingerprint,
-            active: true,
-            key_revision: if(old, do: old.key_revision + 1, else: 1)
-        }
-
-        with {:ok, ciphertext} <-
-               Encryption.encrypt_to_blob(
-                 key.private_pem,
-                 identity_encryption_key(master_key, identity)
-               ) do
-          {:ok,
-           put_record(inventory, :identities, %{identity | private_key_encrypted: ciphertext})}
-        end
-      end
-    else
-      _ -> {:error, :invalid_change}
-    end
-  end
-
-  defp change(inventory, %{"op" => "identity_revoke", "id" => id}, _) do
-    case Enum.find(inventory.identities, &(&1.id == id)) do
-      nil ->
-        {:error, :invalid_change}
-
-      identity ->
-        {:ok,
-         put_record(inventory, :identities, %{
-           identity
-           | active: false,
-             key_revision: identity.key_revision + 1
-         })}
-    end
-  end
+  defp change(
+         inventory,
+         %{"op" => "identity_external_replace", "id" => id, "public_key" => key},
+         now
+       ),
+       do: identities(inventory, Identities.replace_external(inventory.identities, id, key, now))
 
   defp change(inventory, %{"op" => "rule_upsert"} = attrs, _) do
     rule = %{
@@ -624,14 +715,15 @@ defmodule SecretHub.Core.SSH do
       enabled: Map.get(attrs, "enabled", true),
       source_kind: attrs["source_kind"],
       source_id: attrs["source_id"],
-      source_user: attrs["source_user"],
       destination_kind: attrs["destination_kind"],
       destination_id: attrs["destination_id"],
       destination_user: attrs["destination_user"]
     }
 
     if valid_id?(rule.id) and rule.effect in ["allow", "deny"] and is_boolean(rule.enabled) and
-         valid_user?(rule.source_user) and valid_user?(rule.destination_user) and
+         valid_user?(rule.destination_user) and
+         rule.source_kind in ["identity", "identity_group"] and
+         rule.destination_kind in ["endpoint", "host_group"] and
          selector_exists?(inventory, rule.source_kind, rule.source_id) and
          selector_exists?(inventory, rule.destination_kind, rule.destination_id) do
       {:ok, put_record(inventory, :rules, rule)}
@@ -645,6 +737,9 @@ defmodule SecretHub.Core.SSH do
 
   defp change(_, _, _), do: {:error, :invalid_change}
 
+  defp identities(inventory, {:ok, identities}), do: {:ok, %{inventory | identities: identities}}
+  defp identities(_, {:error, reason}), do: {:error, reason}
+
   defp persist!(row, inventory, revision) do
     row
     |> Ecto.Changeset.change(
@@ -653,15 +748,51 @@ defmodule SecretHub.Core.SSH do
     )
     |> Repo.update!(log: false)
 
-    for identity <- inventory.identities do
-      attrs = Map.take(identity, @identity_fields ++ [:private_key_encrypted])
-      existing = Repo.get(Identity, identity.id) || %Identity{id: identity.id}
+    persist_identities!(inventory.identities)
+  end
 
-      case existing |> Ecto.Changeset.change(attrs) |> Repo.insert_or_update(log: false) do
-        {:ok, _} -> :ok
-        {:error, _} -> Repo.rollback(:invalid_change)
-      end
+  defp persist_identities!(identities) do
+    now = now()
+    replace = (@identity_fields -- [:id]) ++ [:updated_at]
+    ids = Enum.map(identities, & &1.id)
+    # identity_delete removes pending/retired identities; their keys cascade.
+    Repo.delete_all(from(i in Identity, where: i.id not in ^ids), log: false)
+
+    for identity <- identities do
+      row =
+        identity
+        |> Map.take(@identity_fields)
+        |> Map.merge(%{inserted_at: now, updated_at: now})
+
+      Repo.insert_all(Identity, [row],
+        on_conflict: {:replace, replace},
+        conflict_target: :id,
+        log: false
+      )
+
+      key_ids = Enum.map(identity.keys, & &1.id)
+
+      Repo.delete_all(
+        from(k in IdentityKey, where: k.identity_id == ^identity.id and k.id not in ^key_ids),
+        log: false
+      )
+
+      keys =
+        for key <- identity.keys,
+            do:
+              key
+              |> Map.take(@key_fields)
+              |> Map.update!(:inserted_at, &DateTime.truncate(&1, :second))
+              |> Map.put(:identity_id, identity.id)
+
+      Repo.insert_all(IdentityKey, keys,
+        on_conflict: {:replace, [:not_after]},
+        conflict_target: :id,
+        log: false
+      )
     end
+
+    :ok
   end
 
   defp put_record(inventory, field, record, key \\ :id),
@@ -673,19 +804,6 @@ defmodule SecretHub.Core.SSH do
         |> Enum.sort_by(&Map.fetch!(&1, key))
       end)
 
-  defp provisioning_key(%{"private_key" => pem}), do: Key.import_private(pem)
-  defp provisioning_key(attrs), do: Key.generate(Map.get(attrs, "algorithm", "ed25519"))
-
-  defp identity_encryption_key(master_key, identity),
-    do:
-      :crypto.mac(
-        :hmac,
-        :sha256,
-        master_key,
-        "secrethub:ssh:identity:" <>
-          identity.id <> ":" <> Integer.to_string(identity.key_revision)
-      )
-
   defp valid_user?(user),
     do: is_binary(user) and Regex.match?(~r/\A[a-zA-Z_][a-zA-Z0-9_.-]{0,63}\$?\z/, user)
 
@@ -694,8 +812,17 @@ defmodule SecretHub.Core.SSH do
   defp agent_exists?(id),
     do: is_binary(id) and Repo.exists?(from(a in Agent, where: a.agent_id == ^id))
 
-  defp selector_exists?(_, "agent", id), do: agent_exists?(id)
-  defp selector_exists?(inventory, "group", id), do: Enum.any?(inventory.groups, &(&1.id == id))
+  defp selector_exists?(inventory, "identity", id),
+    do: Enum.any?(inventory.identities, &(&1.id == id))
+
+  defp selector_exists?(inventory, "identity_group", id),
+    do: Enum.any?(inventory.groups, &(&1.id == id and &1.kind == "identity"))
+
+  defp selector_exists?(_, "endpoint", id), do: agent_exists?(id)
+
+  defp selector_exists?(inventory, "host_group", id),
+    do: Enum.any?(inventory.groups, &(&1.id == id and &1.kind == "host"))
+
   defp selector_exists?(_, _, _), do: false
 
   defp reported_users(users) when is_list(users) and length(users) <= 1024 do
@@ -790,110 +917,82 @@ defmodule SecretHub.Core.SSH do
   defp known_host_name(host, port), do: "[#{host}]:#{port}"
 
   defp scrub_changes(changes),
-    do: Enum.map(changes, &Map.take(&1, @record_keys ++ ~w(op group_id username uid algorithm)))
+    do:
+      Enum.map(
+        changes,
+        &Map.take(&1, @record_keys ++ ~w(op group_id member_ids public_key rotation_days))
+      )
 
   defp decision_granted?({:ok, %{lines: lines}}), do: lines != []
-  defp decision_granted?({:ok, %{identities: identities}}), do: identities != []
+
+  defp decision_granted?({:ok, %{identities: identities}}) when is_list(identities),
+    do: identities != []
+
   defp decision_granted?({:ok, _}), do: true
   defp decision_granted?(_), do: false
 
   defp audit_metadata(inventory, agent_id, operation, payload, result) do
     identity =
-      Enum.find(
-        inventory.identities,
-        &(&1.agent_id == agent_id and &1.username == payload["username"] and
-            &1.uid == payload["uid"])
-      )
+      if is_integer(payload["uid"]),
+        do: Identities.find_agent_identity(inventory.identities, agent_id, payload["uid"])
 
-    metadata =
-      if identity,
-        do: %{
-          "source_identity_id" => identity.id,
-          "source_agent_id" => identity.agent_id,
-          "source_user" => identity.username,
-          "source_uid" => identity.uid,
-          "key_fingerprint" => identity.fingerprint
-        },
-        else: %{}
-
-    metadata =
-      if operation == "authorized_keys" and valid_user?(payload["username"]),
-        do:
-          Map.merge(metadata, %{
-            "destination_agent_id" => agent_id,
-            "destination_user" => payload["username"]
-          }),
-        else: metadata
-
-    metadata =
-      if valid_user?(payload["username"]),
-        do: Map.put(metadata, "username", payload["username"]),
-        else: metadata
-
-    metadata =
-      if is_integer(payload["uid"]) and payload["uid"] in 0..4_294_967_295,
-        do: Map.put(metadata, "uid", payload["uid"]),
-        else: metadata
-
-    metadata =
-      if payload["reason"] in ["ORDER", "HOSTNAME", "ADDRESS"],
-        do: Map.put(metadata, "reason", payload["reason"]),
-        else: metadata
-
-    metadata =
-      case lookup_alias(payload["host"], payload["port"]) do
-        {:ok, host} -> Map.put(metadata, "host", host)
-        _ -> metadata
+    presented =
+      case Key.decode_public(payload["public_key"] || payload["key"]) do
+        {:ok, public} -> public
+        _ -> nil
       end
 
-    metadata =
-      if is_integer(payload["port"]) and payload["port"] in 1..65_535,
-        do: Map.put(metadata, "port", payload["port"]),
-        else: metadata
+    identity =
+      identity ||
+        (presented &&
+           Enum.find(inventory.identities, fn i ->
+             Enum.any?(i.keys, &(&1.public_key == presented.public_line))
+           end))
 
-    metadata =
-      case Enum.find(inventory.endpoints, fn endpoint ->
-             operation == "known_hosts" and endpoint.port == metadata["port"] and
-               metadata["host"] in endpoint.aliases
-           end) do
-        nil ->
-          metadata
+    endpoint =
+      Enum.find(inventory.endpoints, fn endpoint ->
+        operation == "known_hosts" and endpoint.port == payload["port"] and
+          match?({:ok, _}, lookup_alias(payload["host"], payload["port"])) and
+          elem(lookup_alias(payload["host"], payload["port"]), 1) in endpoint.aliases
+      end)
 
-        endpoint ->
-          Map.merge(metadata, %{
-            "destination_agent_id" => endpoint.agent_id,
-            "destination_port" => endpoint.port,
-            "destination_alias" => metadata["host"]
-          })
-      end
-
-    public =
-      case result do
-        {:ok, %{public_key: public}} -> public
-        _ -> payload["public_key"] || payload["key"]
-      end
-
-    case Key.decode_public(public) do
-      {:ok, public} ->
-        metadata = Map.put(metadata, "key_fingerprint", public.fingerprint)
-
-        case Enum.find(inventory.identities, &(&1.public_key == public.public_line)) do
-          nil ->
-            metadata
-
-          identity ->
-            Map.merge(metadata, %{
-              "source_identity_id" => identity.id,
-              "source_agent_id" => identity.agent_id,
-              "source_user" => identity.username,
-              "source_uid" => identity.uid
-            })
-        end
-
-      _ ->
-        metadata
-    end
+    %{}
+    |> put_present(
+      identity,
+      &%{
+        "source_identity_id" => &1.id,
+        "source_identity_name" => &1.name,
+        "source_origin" => &1.origin
+      }
+    )
+    |> put_present(presented, &%{"key_fingerprint" => &1.fingerprint})
+    |> put_present(valid_user?(payload["username"]) && payload["username"], &%{"username" => &1})
+    |> put_present(
+      is_integer(payload["uid"]) && payload["uid"] in 0..4_294_967_295 && payload["uid"],
+      &%{"uid" => &1}
+    )
+    |> put_present(
+      is_integer(payload["generation"]) && payload["generation"],
+      &%{"generation" => &1}
+    )
+    |> put_present(
+      payload["reason"] in ["ORDER", "HOSTNAME", "ADDRESS"] && payload["reason"],
+      &%{"reason" => &1}
+    )
+    |> put_present(
+      endpoint,
+      &%{"destination_agent_id" => &1.agent_id, "destination_port" => &1.port}
+    )
+    |> put_present(
+      (operation == "authorized_keys" and valid_user?(payload["username"])) &&
+        payload["username"],
+      &%{"destination_agent_id" => agent_id, "destination_user" => &1}
+    )
+    |> put_present(match?({:error, _}, result) && elem(result, 1), &%{"error" => to_string(&1)})
   end
+
+  defp put_present(metadata, value, _) when value in [nil, false], do: metadata
+  defp put_present(metadata, value, fun), do: Map.merge(metadata, fun.(value))
 
   defp master_key do
     case SealState.get_master_key() do

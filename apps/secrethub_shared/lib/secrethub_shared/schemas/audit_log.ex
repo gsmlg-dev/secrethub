@@ -414,6 +414,7 @@ defmodule SecretHub.Shared.Schemas.AuditLog do
       "ssh.authorized_keys",
       "ssh.known_hosts",
       "ssh.inventory",
+      "ssh.identity_report",
       # System events
       "system.unsealed",
       "system.sealed",
