@@ -24,6 +24,16 @@ defmodule SecretHub.Core.SSH do
   @key_fields [:id, :generation, :public_key, :fingerprint, :not_after, :inserted_at]
   @inventory_fields [:groups, :endpoints, :rules, :reports]
   @mutating_ops ["inventory", "identity_report"]
+  # identity_report rejections are audited with their reason but replied to as :denied.
+  @report_rejections [
+    :invalid_request,
+    :invalid_public_key,
+    :account_changed,
+    :retired,
+    :duplicate_key,
+    :name_taken,
+    :unexpected_generation
+  ]
   @record_keys ~w(id name kind agent_ids identity_ids agent_id aliases port host_keys approved enabled effect source_kind source_id destination_kind destination_id destination_user candidate_host_keys)
 
   def snapshot do
@@ -160,6 +170,10 @@ defmodule SecretHub.Core.SSH do
           broadcast(revision)
           {:ok, reply}
 
+        {:ok, {:error, reason}}
+        when operation == "identity_report" and reason in @report_rejections ->
+          {:error, :denied}
+
         {:ok, result} ->
           result
 
@@ -270,7 +284,7 @@ defmodule SecretHub.Core.SSH do
     end
   end
 
-  defp runtime_view(inventory, agent_id, "inventory", payload, _now) do
+  defp runtime_view(inventory, agent_id, "inventory", payload, now) do
     with {:ok, keys} <- public_keys(Map.get(payload, "host_keys", [])),
          {:ok, users} <- reported_users(Map.get(payload, "users", [])) do
       endpoint = Enum.find(inventory.endpoints, &(&1.agent_id == agent_id))
@@ -286,7 +300,7 @@ defmodule SecretHub.Core.SSH do
          candidate_host_keys: keys,
          users: users,
          unchanged: unchanged,
-         identity_generations: identity_generations(inventory, agent_id)
+         identity_generations: identity_generations(inventory, agent_id, now)
        }}
     else
       _ -> {:error, :invalid_request}
@@ -294,9 +308,10 @@ defmodule SecretHub.Core.SSH do
   end
 
   defp runtime_view(inventory, agent_id, "identity_report", payload, now) do
-    with true <- local_account?(payload),
-         true <- is_integer(payload["generation"]) and payload["generation"] >= 1,
-         %Agent{} = agent <- Repo.get_by(Agent, agent_id: agent_id),
+    with true <-
+           (local_account?(payload) and is_integer(payload["generation"]) and
+              payload["generation"] >= 1) || {:error, :invalid_request},
+         %Agent{} = agent <- Repo.get_by(Agent, agent_id: agent_id) || {:error, :invalid_request},
          {:ok, identities, event} <-
            Identities.report(
              inventory.identities,
@@ -316,10 +331,9 @@ defmodule SecretHub.Core.SSH do
        %{
          revision: inventory.revision + if(unchanged, do: 0, else: 1),
          unchanged: unchanged,
-         identities: identities
+         identities: identities,
+         event: event
        }}
-    else
-      _ -> {:error, :denied}
     end
   end
 
@@ -334,7 +348,7 @@ defmodule SecretHub.Core.SSH do
          _agent_id,
          {:ok, %{unchanged: true} = reply}
        ),
-       do: {:ok, Map.delete(reply, :identities)}
+       do: {:ok, Map.drop(reply, [:identities, :event])}
 
   defp persist_runtime(
          "identity_report",
@@ -365,7 +379,8 @@ defmodule SecretHub.Core.SSH do
 
     report = %{"users" => users, "seen_at" => DateTime.to_iso8601(DateTime.utc_now())}
     updated = %{updated | reports: Map.put(updated.reports, agent_id, report)}
-    persist!(Repo.get!(Inventory, 1), updated, revision)
+    # Inventory heartbeats change endpoints and reports only, never identities.
+    persist_inventory!(Repo.get!(Inventory, 1), updated, revision)
     {:ok, %{revision: revision, identity_generations: reply.identity_generations}}
   end
 
@@ -385,9 +400,7 @@ defmodule SecretHub.Core.SSH do
     end
   end
 
-  defp identity_generations(inventory, agent_id) do
-    now = DateTime.utc_now()
-
+  defp identity_generations(inventory, agent_id, now) do
     for identity <- inventory.identities,
         identity.origin == "agent" and identity.agent_id == agent_id and
           identity.status != "retired",
@@ -436,8 +449,12 @@ defmodule SecretHub.Core.SSH do
 
   defp trusted_source?(%{origin: "agent", agent_id: agent_id}) do
     case lock_machine(agent_id) do
-      %Agent{} = agent -> trusted_agent?(agent)
-      _ -> false
+      %Agent{certificate_id: certificate_id} ->
+        Agents.trusted_identity_source?(agent_id, certificate_id) and
+          current_certificate_start(certificate_id) == :ok
+
+      _ ->
+        false
     end
   end
 
@@ -760,14 +777,17 @@ defmodule SecretHub.Core.SSH do
   defp identities(_, {:error, reason}), do: {:error, reason}
 
   defp persist!(row, inventory, revision) do
+    persist_inventory!(row, inventory, revision)
+    persist_identities!(inventory.identities)
+  end
+
+  defp persist_inventory!(row, inventory, revision) do
     row
     |> Ecto.Changeset.change(
       Map.take(inventory, @inventory_fields)
       |> Map.put(:revision, revision)
     )
     |> Repo.update!(log: false)
-
-    persist_identities!(inventory.identities)
   end
 
   defp persist_identities!(identities) do
@@ -943,6 +963,8 @@ defmodule SecretHub.Core.SSH do
       )
 
   defp decision_granted?({:ok, %{lines: lines}}), do: lines != []
+  # An accepted or unchanged identity_report; rejections are {:error, reason}.
+  defp decision_granted?({:ok, %{event: _}}), do: true
 
   defp decision_granted?({:ok, %{identities: identities}}) when is_list(identities),
     do: identities != []
@@ -1019,8 +1041,16 @@ defmodule SecretHub.Core.SSH do
         payload["username"],
       &%{"destination_agent_id" => agent_id, "destination_user" => &1}
     )
+    |> put_present(report_event(result), & &1)
     |> put_present(match?({:error, _}, result) && elem(result, 1), &%{"error" => to_string(&1)})
   end
+
+  defp report_event({:ok, %{event: :unchanged}}), do: %{"event" => "unchanged"}
+
+  defp report_event({:ok, %{event: {event, id}}}),
+    do: %{"event" => Atom.to_string(event), "source_identity_id" => id}
+
+  defp report_event(_), do: nil
 
   defp put_present(metadata, value, _) when value in [nil, false], do: metadata
   defp put_present(metadata, value, fun), do: Map.merge(metadata, fun.(value))

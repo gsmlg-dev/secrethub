@@ -329,6 +329,152 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
     Repo.update!(Ecto.Changeset.change(Repo.get!(Agent, ctx.source.id), status: :suspended))
     assert [] = served.(key)
     assert [_] = served.(ext)
+
+    Repo.update!(Ecto.Changeset.change(Repo.get!(Agent, ctx.source.id), status: :revoked))
+    assert [] = served.(key)
+    assert [_] = served.(ext)
+
+    # An offline (disconnected) Agent is still a trusted source.
+    Repo.update!(Ecto.Changeset.change(Repo.get!(Agent, ctx.source.id), status: :disconnected))
+    assert [_] = served.(key)
+
+    Repo.update!(
+      Ecto.Changeset.change(Repo.get!(Certificate, cert.id),
+        valid_until: DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), -30)
+      )
+    )
+
+    assert [] = served.(key)
+    assert [_] = served.(ext)
+  end
+
+  test "identity_report audits the event and the specific rejection reason", ctx do
+    {key, identity} = enroll(ctx)
+
+    assert %{"event" => "reported", "source_identity_id" => id, "outcome" => "allowed"} =
+             latest_event_data("ssh.identity_report")
+
+    assert id == identity.id
+    report = %{"uid" => 1000, "username" => "gao", "public_key" => key.public.public_line}
+
+    assert {:ok, _} =
+             SSH.runtime_operation(
+               principal(ctx.source),
+               "identity_report",
+               Map.put(report, "generation", 1)
+             )
+
+    assert %{"event" => "unchanged", "source_identity_id" => ^id} =
+             latest_event_data("ssh.identity_report")
+
+    {:ok, other} = Key.generate("ed25519")
+
+    assert {:error, :denied} =
+             SSH.runtime_operation(
+               principal(ctx.source),
+               "identity_report",
+               %{
+                 report
+                 | "public_key" => other.public.public_line
+               }
+               |> Map.put("generation", 3)
+             )
+
+    data = latest_event_data("ssh.identity_report")
+    assert data["error"] == "unexpected_generation"
+    assert data["outcome"] == "denied"
+
+    assert {:error, :denied} =
+             SSH.runtime_operation(
+               principal(ctx.source),
+               "identity_report",
+               Map.put(report, "generation", "1")
+             )
+
+    assert latest_event_data("ssh.identity_report")["error"] == "invalid_request"
+  end
+
+  test "another Agent cannot report or sign for the source Agent's identity", ctx do
+    {key, identity} = enroll(ctx)
+    grant(ctx, identity)
+
+    Repo.update!(
+      Ecto.Changeset.change(ctx.target, runtime_capabilities: ["ssh_lookup_v1", "ssh_signing_v1"])
+    )
+
+    before = SSH.snapshot().identities
+    {:ok, other} = Key.generate("ed25519")
+    report = %{"uid" => 1000, "username" => "gao", "public_key" => other.public.public_line}
+
+    # Rotating the source's identity from another Agent is rejected.
+    assert {:error, :denied} =
+             SSH.runtime_operation(
+               principal(ctx.target),
+               "identity_report",
+               Map.put(report, "generation", 2)
+             )
+
+    # Re-registering the source's public key under another Agent is rejected.
+    assert {:error, :denied} =
+             SSH.runtime_operation(
+               principal(ctx.target),
+               "identity_report",
+               %{
+                 report
+                 | "public_key" => key.public.public_line
+               }
+               |> Map.put("generation", 1)
+             )
+
+    assert {:error, :denied} =
+             SSH.runtime_operation(principal(ctx.target), "authorize_sign", sign(key))
+
+    assert SSH.snapshot().identities == before
+
+    # A generation-1 report with a fresh key is the target's own account: it
+    # becomes a separate pending identity and leaves the source's untouched.
+    assert {:ok, %{accepted: true}} =
+             SSH.runtime_operation(
+               principal(ctx.target),
+               "identity_report",
+               Map.put(report, "generation", 1)
+             )
+
+    identities = SSH.snapshot().identities
+    assert Enum.find(identities, &(&1.id == identity.id)) == hd(before)
+
+    assert %{name: "gao@target", status: "pending"} =
+             Enum.find(identities, &(&1.agent_id == "target"))
+  end
+
+  test "changed inventory heartbeats do not rewrite identity rows", ctx do
+    {_key, identity} = enroll(ctx)
+    grant(ctx, identity)
+
+    Repo.query!("""
+    CREATE FUNCTION ssh_identities_frozen() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      RAISE EXCEPTION 'identity rows rewritten';
+    END; $$
+    """)
+
+    for table <- ["ssh_identities", "ssh_identity_keys"] do
+      Repo.query!("""
+      CREATE TRIGGER #{table}_frozen BEFORE INSERT OR UPDATE OR DELETE ON #{table}
+      FOR EACH ROW EXECUTE FUNCTION ssh_identities_frozen()
+      """)
+    end
+
+    {:ok, candidate} = Key.generate("ed25519")
+
+    assert {:ok, %{revision: _, identity_generations: [_]}} =
+             SSH.runtime_operation(principal(ctx.source), "inventory", %{
+               "host_keys" => [candidate.public.public_line],
+               "users" => []
+             })
+
+    assert [%{candidate_host_keys: [_]}] =
+             Enum.filter(SSH.snapshot().endpoints, &(&1.agent_id == "source"))
   end
 
   test "external identities appear in authorized_keys", ctx do

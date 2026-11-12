@@ -261,6 +261,63 @@ defmodule SecretHub.Core.SSH.StoreTest do
     assert %{identities: []} = SSH.snapshot()
   end
 
+  test "deleting one identity leaves other identities and their keys intact", ctx do
+    {:ok, other} = Key.generate("ed25519")
+
+    {:ok, %{identities: identities}} =
+      SSH.apply_changes(
+        [
+          %{"op" => "identity_external_add", "name" => "ci", "public_key" => ctx.user_key},
+          %{
+            "op" => "identity_external_add",
+            "name" => "deploy",
+            "public_key" => other.public.public_line
+          }
+        ],
+        0
+      )
+
+    ci = Enum.find(identities, &(&1.name == "ci"))
+    deploy = Enum.find(identities, &(&1.name == "deploy"))
+
+    {:ok, %{identities: [kept]}} =
+      SSH.apply_changes(
+        [
+          %{"op" => "identity_revoke", "id" => ci.id},
+          %{"op" => "identity_delete", "id" => ci.id}
+        ],
+        1
+      )
+
+    assert kept == deploy
+    assert [%{id: id}] = Repo.all(Identity)
+    assert id == deploy.id
+    assert [%{identity_id: ^id, fingerprint: fingerprint}] = Repo.all(IdentityKey)
+    assert [%{fingerprint: ^fingerprint}] = deploy.keys
+  end
+
+  test "preview names identities and scrubs change fields", ctx do
+    allowed =
+      ~w(id name kind agent_ids identity_ids agent_id aliases port host_keys approved enabled effect source_kind source_id destination_kind destination_id destination_user candidate_host_keys op group_id member_ids public_key rotation_days)
+
+    changes = [
+      %{
+        "op" => "identity_external_add",
+        "name" => "ci",
+        "public_key" => ctx.user_key,
+        "private_key" => "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "secret" => "x"
+      }
+    ]
+
+    assert {:ok, %{identity_names: names, changes: [scrubbed]}} = SSH.preview(changes, 0)
+    assert ["ci"] = Map.values(names)
+    assert Map.keys(scrubbed) -- allowed == []
+    refute Map.has_key?(scrubbed, "private_key")
+    refute inspect(scrubbed) =~ "PRIVATE KEY"
+    assert %{revision: 0, identities: []} = SSH.snapshot()
+  end
+
   test "an active identity cannot be deleted", ctx do
     {:ok, %{identities: [ext]}} =
       SSH.apply_changes(

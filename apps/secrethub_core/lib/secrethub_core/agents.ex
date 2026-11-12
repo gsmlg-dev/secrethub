@@ -156,6 +156,23 @@ defmodule SecretHub.Core.Agents do
   end
 
   @doc """
+  Whether an enrolled Agent is still a trusted source for its device-held keys.
+
+  Unlike `authorize_runtime/2` this does not require a live connection: a
+  disconnected Agent stays trusted, while suspended, revoked or otherwise
+  non-connectable Agents and revoked, expired or mismatched certificates do not.
+  """
+  def trusted_identity_source?(agent_id, certificate_id) do
+    with {:ok, certificate_id} <- cast_certificate_id(certificate_id),
+         :ok <-
+           runtime_authorization_error(agent_id, certificate_id, @runtime_connectable_statuses) do
+      true
+    else
+      _ -> false
+    end
+  end
+
+  @doc """
   Suspend an agent (temporary disable).
   """
   def suspend_agent(agent_id, reason \\ nil) do
