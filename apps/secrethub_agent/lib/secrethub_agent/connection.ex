@@ -351,7 +351,7 @@ defmodule SecretHub.Agent.Connection do
   def handle_call({:ssh_request, operation, payload, timeout}, from, state) do
     capability =
       case operation do
-        op when op in ["identities", "authorize_sign"] ->
+        op when op in ["identities", "authorize_sign", "identity_report"] ->
           "ssh_signing_v1"
 
         op when op in ["authorized_keys", "known_hosts"] ->

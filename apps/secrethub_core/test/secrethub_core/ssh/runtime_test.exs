@@ -532,7 +532,11 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
       )
 
     assert {:ok,
-            %{identity_generations: [%{uid: 1000, requested_generation: 2, generations: [1]}]}} =
+            %{
+              identity_generations: [
+                %{uid: 1000, status: "active", requested_generation: 2, generations: [1]}
+              ]
+            }} =
              SSH.runtime_operation(principal(ctx.source), "inventory", %{
                "host_keys" => [],
                "users" => []
@@ -563,7 +567,28 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
                SSH.runtime_operation(principal(ctx.source), "authorize_sign", sign(key))
     end
 
-    assert {:ok, %{identity_generations: [%{requested_generation: 2, generations: [1, 2]}]}} =
+    assert {:ok,
+            %{
+              identity_generations: [
+                %{status: "active", requested_generation: 2, generations: [1, 2]}
+              ]
+            }} =
+             SSH.runtime_operation(principal(ctx.source), "inventory", %{
+               "host_keys" => [],
+               "users" => []
+             })
+  end
+
+  test "inventory lists retired identities with no valid generations", ctx do
+    {_key, identity} = enroll(ctx)
+
+    {:ok, _} =
+      SSH.apply_changes(
+        [%{"op" => "identity_revoke", "id" => identity.id}],
+        SSH.snapshot().revision
+      )
+
+    assert {:ok, %{identity_generations: [%{uid: 1000, status: "retired", generations: []}]}} =
              SSH.runtime_operation(principal(ctx.source), "inventory", %{
                "host_keys" => [],
                "users" => []

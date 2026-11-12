@@ -451,12 +451,16 @@ defmodule SecretHub.Core.SSH do
 
   defp identity_generations(inventory, agent_id, now) do
     for identity <- inventory.identities,
-        identity.origin == "agent" and identity.agent_id == agent_id and
-          identity.status != "retired",
+        identity.origin == "agent" and identity.agent_id == agent_id,
         do: %{
           uid: identity.local_uid,
+          status: identity.status,
           requested_generation: identity.requested_generation,
-          generations: Enum.map(Identities.valid_keys(identity, now), & &1.generation)
+          generations:
+            if(identity.status == "retired",
+              do: [],
+              else: Enum.map(Identities.valid_keys(identity, now), & &1.generation)
+            )
         }
   end
 

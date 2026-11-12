@@ -50,6 +50,39 @@ defmodule SecretHub.Agent.SSH.ConnectionTest do
     assert_receive {^reference, {:ok, %{"identities" => []}}}
   end
 
+  test "identity reports are pushed when only signing is negotiated" do
+    tasks = start_supervised!({Task.Supervisor, []})
+    parent = self()
+    payload = %{"uid" => 1000, "username" => "gao", "generation" => 1, "public_key" => "k"}
+
+    channel =
+      spawn(fn ->
+        receive do
+          {:"$gen_call", from, {:push, "ssh:identity_report", ^payload}} ->
+            send(parent, :pushed)
+            GenServer.reply(from, {:ok, %{"accepted" => true}})
+        end
+      end)
+
+    on_exit(fn -> if Process.alive?(channel), do: Process.exit(channel, :kill) end)
+
+    state = %{
+      connection_status: :connected,
+      channel: channel,
+      ssh_capabilities: ["ssh_signing_v1"],
+      ssh_task_supervisor: tasks
+    }
+
+    assert {:noreply, ^state} =
+             Connection.handle_call(
+               {:ssh_request, "identity_report", payload, 500},
+               {self(), make_ref()},
+               state
+             )
+
+    assert_receive :pushed
+  end
+
   test "unresponsive runtime calls return a bounded unavailable error" do
     unresponsive =
       spawn(fn ->

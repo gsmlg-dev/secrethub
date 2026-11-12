@@ -101,6 +101,41 @@ defmodule SecretHub.Agent.SSH.ServerTest do
     :gen_tcp.close(socket)
   end
 
+  test "Core allowed=false or a different returned key is not signed", ctx do
+    {:ok, identity} = Identity.current()
+    key_root = Path.join(ctx.dir, "keys")
+    {:ok, local} = SecretHub.Agent.SSH.KeyStore.create(identity.uid, 1, key_root)
+    {:ok, other} = SecretHub.Shared.SSH.Key.generate("ed25519")
+    blob = local.public.blob
+    sign = <<13, byte_size(blob)::32, blob::binary, 1::32, "x", 0::32>>
+
+    replies = [
+      %{"allowed" => false, "public_key" => local.public.encoded},
+      %{"allowed" => true, "public_key" => other.public.encoded}
+    ]
+
+    for {reply, index} <- Enum.with_index(replies) do
+      path = Path.join(ctx.dir, "bad#{index}.sock")
+
+      start_supervised!(
+        Supervisor.child_spec(
+          {Server,
+           path: path,
+           kind: :signing,
+           task_supervisor: ctx.task_supervisor,
+           key_root: key_root,
+           request: fn "authorize_sign", _ -> {:ok, reply} end},
+          id: {:bad, index}
+        )
+      )
+
+      {:ok, socket} = :gen_tcp.connect({:local, path}, 0, [:binary, active: false, packet: 4])
+      :ok = :gen_tcp.send(socket, sign)
+      assert {:ok, <<5>>} = :gen_tcp.recv(socket, 0, 2000)
+      :gen_tcp.close(socket)
+    end
+  end
+
   test "public lookup rejects forged fields and never accepts private RPCs", ctx do
     parent = self()
 

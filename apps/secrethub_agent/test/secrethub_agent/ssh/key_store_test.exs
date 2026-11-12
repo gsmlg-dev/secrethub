@@ -36,4 +36,30 @@ defmodule SecretHub.Agent.SSH.KeyStoreTest do
     assert KeyStore.uids(root) == [1000]
     assert KeyStore.generations(1000, root) == []
   end
+
+  test "empty, loose-mode and symlinked keys are not loaded", %{tmp_dir: root} do
+    {:ok, %{private_pem: pem}} = KeyStore.create(1000, 1, root)
+    File.mkdir_p!(Path.join(root, "1000"))
+    File.write!(Path.join([root, "1000", "2.key"]), "")
+    File.chmod!(Path.join([root, "1000", "2.key"]), 0o600)
+    File.write!(Path.join([root, "1000", "3.key"]), pem)
+    File.chmod!(Path.join([root, "1000", "3.key"]), 0o644)
+    File.ln_s!(Path.join([root, "1000", "1.key"]), Path.join([root, "1000", "4.key"]))
+
+    assert KeyStore.generations(1000, root) == [1]
+    assert {:error, :not_found} = KeyStore.load(1000, 3, root)
+    assert {:error, :not_found} = KeyStore.load(1000, 4, root)
+  end
+
+  test "a failed create leaves no temporary or partial key file", %{tmp_dir: root} do
+    {:ok, _} = KeyStore.create(1000, 1, root)
+    assert {:error, :exists} = KeyStore.create(1000, 1, root)
+    assert File.ls!(Path.join(root, "1000")) == ["1.key"]
+  end
+
+  test "root honours the state dir environment override" do
+    System.put_env("SECRET_HUB_AGENT_STATE_DIR", "/tmp/kstest")
+    on_exit(fn -> System.delete_env("SECRET_HUB_AGENT_STATE_DIR") end)
+    assert KeyStore.root() == "/tmp/kstest/ssh-identities"
+  end
 end

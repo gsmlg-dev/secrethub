@@ -83,4 +83,18 @@ defmodule SecretHub.Agent.SSH.ReconcilerTest do
 
     assert KeyStore.generations(1000, ctx.root) == [1]
   end
+
+  test "unknown to Core with only a later local generation reports nothing", ctx do
+    {:ok, _} = KeyStore.create(1000, 2, ctx.root)
+    :ok = Reconciler.reconcile([], ctx.request, ctx.root, ctx.account)
+    refute_receive {"identity_report", _}
+  end
+
+  test "a corrupt generation 1 file is replaced on enrollment", ctx do
+    File.mkdir_p!(Path.join(ctx.root, "1000"))
+    File.write!(Path.join([ctx.root, "1000", "1.key"]), "")
+    :ok = Reconciler.ensure_enrolled(%{uid: 1000, username: "gao"}, ctx.request, ctx.root)
+    assert_receive {"identity_report", %{"generation" => 1}}
+    assert KeyStore.generations(1000, ctx.root) == [1]
+  end
 end

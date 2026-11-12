@@ -5,7 +5,15 @@ defmodule SecretHub.Agent.SSH.KeyStore do
   """
   alias SecretHub.Shared.SSH.Key
 
-  def root, do: Path.join(Application.fetch_env!(:secrethub_agent, :state_dir), "ssh-identities")
+  def root do
+    state_dir =
+      System.get_env(
+        "SECRET_HUB_AGENT_STATE_DIR",
+        Application.get_env(:secrethub_agent, :state_dir)
+      ) || Path.expand("~/.local/state/secrethub/agent")
+
+    Path.join(state_dir, "ssh-identities")
+  end
 
   def uids(root \\ root()) do
     case File.ls(root) do
@@ -30,6 +38,7 @@ defmodule SecretHub.Agent.SSH.KeyStore do
             _ -> []
           end
         end)
+        |> Enum.filter(&match?({:ok, _}, load(uid, &1, root)))
         |> Enum.sort()
 
       _ ->
@@ -38,7 +47,9 @@ defmodule SecretHub.Agent.SSH.KeyStore do
   end
 
   def load(uid, generation, root \\ root()) do
-    with {:ok, pem} <- File.read(path(uid, generation, root)),
+    with {:ok, %{type: :regular, mode: mode}} <- File.lstat(path(uid, generation, root)),
+         0o600 <- Bitwise.band(mode, 0o777),
+         {:ok, pem} <- File.read(path(uid, generation, root)),
          {:ok, imported} <- Key.import_private(pem) do
       {:ok, %{generation: generation, private_pem: imported.private_pem, public: imported.public}}
     else
@@ -64,13 +75,44 @@ defmodule SecretHub.Agent.SSH.KeyStore do
     :ok = File.chmod(directory, 0o700)
     {:ok, key} = Key.generate("ed25519")
     target = path(uid, generation, root)
+    temporary = target <> ".tmp." <> Base.url_encode64(:crypto.strong_rand_bytes(9), padding: false)
 
-    case File.open(target, [:write, :exclusive, :binary]) do
-      {:ok, file} ->
-        :ok = File.chmod(target, 0o600)
-        :ok = IO.binwrite(file, key.private_pem)
-        :ok = File.close(file)
-        {:ok, %{generation: generation, private_pem: key.private_pem, public: key.public}}
+    result =
+      with {:ok, fd} <- :file.open(to_charlist(temporary), [:write, :binary, :raw, :exclusive]) do
+        try do
+          with :ok <- File.chmod(temporary, 0o600),
+               :ok <- :file.write(fd, key.private_pem),
+               do: :file.sync(fd)
+        after
+          :file.close(fd)
+        end
+      end
+
+    with :ok <- result,
+         :ok <- discard_invalid(uid, generation, root),
+         :ok <- publish(temporary, target) do
+      {:ok, %{generation: generation, private_pem: key.private_pem, public: key.public}}
+    else
+      error ->
+        File.rm(temporary)
+        error
+    end
+  end
+
+  # A corrupt, empty or unsafe leftover must not wedge the uid forever.
+  defp discard_invalid(uid, generation, root) do
+    case {File.lstat(path(uid, generation, root)), load(uid, generation, root)} do
+      {{:ok, _}, {:error, _}} -> File.rm(path(uid, generation, root))
+      _ -> :ok
+    end
+  end
+
+  # link/unlink refuses to replace an existing target, unlike rename.
+  defp publish(temporary, target) do
+    case :file.make_link(to_charlist(temporary), to_charlist(target)) do
+      :ok ->
+        File.rm(temporary)
+        :ok
 
       {:error, :eexist} ->
         {:error, :exists}
