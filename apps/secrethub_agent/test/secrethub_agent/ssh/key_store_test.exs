@@ -1,5 +1,6 @@
 defmodule SecretHub.Agent.SSH.KeyStoreTest do
-  use ExUnit.Case, async: true
+  # Not async: one test mutates the global SECRET_HUB_AGENT_STATE_DIR.
+  use ExUnit.Case, async: false
   alias SecretHub.Agent.SSH.KeyStore
   @moduletag :tmp_dir
 
@@ -58,8 +59,15 @@ defmodule SecretHub.Agent.SSH.KeyStoreTest do
   end
 
   test "root honours the state dir environment override" do
+    previous = System.get_env("SECRET_HUB_AGENT_STATE_DIR")
     System.put_env("SECRET_HUB_AGENT_STATE_DIR", "/tmp/kstest")
-    on_exit(fn -> System.delete_env("SECRET_HUB_AGENT_STATE_DIR") end)
+
+    on_exit(fn ->
+      if previous,
+        do: System.put_env("SECRET_HUB_AGENT_STATE_DIR", previous),
+        else: System.delete_env("SECRET_HUB_AGENT_STATE_DIR")
+    end)
+
     assert KeyStore.root() == "/tmp/kstest/ssh-identities"
   end
 end
