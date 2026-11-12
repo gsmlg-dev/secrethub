@@ -2,7 +2,10 @@
 
 **Date:** 2026-10-19
 
-**Status:** Approved by the owner on 2026-10-19
+**Status:** Superseded by 2026-11-12-ssh-identity-access-design.md
+
+> **Superseded.** This design describes the earlier Core-held-key model. See the
+> [2026-11-12 SSH identity and access design](2026-11-12-ssh-identity-access-design.md) and the [managed SSH access operator guide](../../deployment/ssh-access-management.md).
 
 ## Confirmed Decisions
 

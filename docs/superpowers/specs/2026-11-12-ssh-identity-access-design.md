@@ -130,8 +130,9 @@ to use it.
 1. A local user connects to the signing socket. The Agent resolves the peer
    UID, as it does today.
 2. If the user has no local key, the Agent generates ed25519 key generation 1.
-3. The Agent sends `ssh:identity_report` with `local_uid`, `local_username`,
-   `generation`, and the public key.
+3. The Agent sends `ssh:identity_report` with `uid`, `username`,
+   `generation`, and the public key. Core stores them as the identity's
+   `local_uid` and `local_username`.
 4. Core creates a `pending` identity and pushes `ssh:policy_changed`.
 5. The operator approves the identity in the UI, which sets `status = active`.
 
@@ -150,23 +151,33 @@ keys that Core reports as authorized.
 ### Rotation (pull-based reconcile)
 
 1. Core increases `requested_generation` and pushes `ssh:policy_changed`.
-2. On each `identities` view fetch (on push, on reconnect, and periodically),
-   the Agent compares its local generation with `requested_generation`.
-3. If the local generation is lower, the Agent generates a new key and reports
-   it with `ssh:identity_report`, using generation = requested.
+   The Agent does not react to this push.
+2. The Agent reconciles only on its `inventory` heartbeat (about every 30 s,
+   and shortly after each connect). The inventory reply carries
+   `identity_generations`: for each of this Agent's identities, its `uid`,
+   `status`, `requested_generation` and valid generations. `identities` view
+   fetches do not trigger a reconcile.
+3. If the local generation is lower than `requested_generation`, the Agent
+   generates a new key and reports it with `ssh:identity_report`, using
+   generation = requested.
 4. Core accepts the report **automatically**, because it arrives over the
    Agent's runtime mTLS certificate for the identity's `agent_id` and the
    generation matches the request. Core then sets
    `not_after = now + grace` (default 3 days) on the previous key.
 5. The Agent deletes local key files whose generation Core no longer lists as
    valid.
+6. For a `retired` identity, the Agent discards all of that user's local keys
+   and sends no report. After the operator deletes the identity, the user's
+   next signing-socket identity list enrolls a fresh generation 1 with a new
+   key, so a revoked key is never revived.
 
-An offline Agent loses no rotation request: it reconciles when it reconnects.
-Reports that do not match the requested generation are rejected and audited.
+An offline Agent loses no rotation request: it reconciles on the first
+inventory heartbeat after it reconnects. Reports that do not match the
+requested generation are rejected and audited.
 
 ## Rotation scheduling (Styx)
 
-`SecretHub.Core.Workers.SshIdentityRotationWorker` runs as an hourly cron on
+`SecretHub.Core.Workers.SSHIdentityRotationWorker` runs as an hourly cron on
 `SecretHub.Core.Styx`. Each run does three things:
 
 1. For each active Agent identity with `next_rotation_at <= now`, it increases
@@ -219,8 +230,12 @@ preview. They replace the single 935-line page.
 2. **Identities**
    - One table lists Agent and external identities: name, origin,
      fingerprint, status, rotation period and countdown, and overdue warnings.
-   - Actions: approve, rotate now, revoke, edit rotation days, add external
-     public key, and replace external public key.
+   - Actions: approve, rotate now, revoke, delete (pending or retired only),
+     edit rotation days, add external public key, and replace external public
+     key.
+   - `identity_delete` cascades: in the same change it removes every rule
+     whose source is the identity and removes the identity from every
+     identity group. The preview names the access rules it removes.
 3. **Access**
    - The matrix shows identities and identity groups as rows, and host groups
      and endpoints as columns.

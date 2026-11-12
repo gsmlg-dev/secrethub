@@ -4,9 +4,9 @@ SSH signing and public lookups have passed native Linux x86_64 qualification
 with `phoenix_socket_client` 0.8.7 and `http_web_socket` 0.21.14, including real
 Core/Agent/OpenSSH login and revocation. These fixed dependency versions are
 required for private-response confidentiality. SSH remains disabled by default.
-See the [qualification record](../testing/ssh-access-evidence.md) for exact
-evidence, remaining lint debt and unexecuted target-runtime checks. Installation
-examples do not establish deployment acceptance.
+The [historical qualification evidence](../testing/ssh-access-evidence.md)
+covers the earlier Core-held-key model, not the current device-held identity
+model. Installation examples do not establish deployment acceptance.
 
 SecretHub manages source signing identities, destination authorized keys and host
 trust from one directed policy. A rule binds a source machine/group **and Unix
@@ -99,9 +99,11 @@ tabs. Each badge on a tab counts the items that are waiting for an operator.
    Agents without the lookup capability, such as mobile Agents, appear only as
    sources.
 2. **Identities.** A source identity is either:
-   - **Agent**: the Agent creates it the first time a local user signs through
-     the signing socket. Each Agent identity starts as *pending* until you
-     approve it.
+   - **Agent**: the Agent creates it the first time a local user lists
+     identities on the signing socket, for example
+     `SSH_AUTH_SOCK=/run/secrethub-ssh-signing/agent.sock ssh-add -L`. Users
+     should run that once before their first `ssh`, then wait for approval.
+     Each Agent identity starts as *pending* until you approve it.
    - **External**: you paste an OpenSSH public key and a name, for example a
      CI deploy key.
 
@@ -110,9 +112,11 @@ tabs. Each badge on a tab counts the items that are waiting for an operator.
    only by the Agent service user). Local users can use their key only through
    the signing socket. A fingerprint cannot belong to two identities.
 
-   You can revoke an identity, which invalidates all of its keys immediately. A
-   pending or retired identity can be deleted, so that the device's next report
-   enrolls it again as pending.
+   You can revoke an identity, which invalidates all of its keys immediately.
+   For an Agent identity, the Agent then discards its local keys on the next
+   inventory heartbeat. A pending or retired identity can be deleted. Deleting
+   an identity also removes its access rules and group memberships. The user's next identity list on that device enrolls
+   a new generation 1 key as a new pending identity.
 3. **Access.** Each matrix row is an identity or identity group, and each column
    is a host group or approved endpoint. A cell lists the destination users the
    row may log in as, and the matrix offers the usernames that the destination
@@ -257,6 +261,6 @@ Audit records distinguish a signing authorization or key lookup from a completed
 signature or SSH login. sshd owns actual login/session evidence. Never place
 private keys or raw signing payloads in troubleshooting logs.
 
-See the [implementation evidence](../testing/ssh-access-evidence.md) for scoped
-tests, packaged consumer and actual Core/Agent/OpenSSH results, and explicit
-platform/build limitations.
+See the [historical implementation evidence](../testing/ssh-access-evidence.md)
+for the earlier Core-held-key model's tests, packaged consumer and
+Core/Agent/OpenSSH results. Those results do not cover the current code.

@@ -1,5 +1,8 @@
 # SSH Access Management Implementation Plan
 
+> **Superseded.** This plan implemented the earlier Core-held-key model. See the
+> [2026-11-12 SSH identity and access design](../specs/2026-11-12-ssh-identity-access-design.md) and the [managed SSH access operator guide](../../deployment/ssh-access-management.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use [subagent-driven-development](/home/gao/.agents/skills/subagent-driven-development/SKILL.md) to execute these tasks and review each responsibility. Steps use checkboxes for tracking.
 
 **Goal:** Deliver grouped, user-specific SSH signing, authorized-key lookup, and known-host trust with batch management.

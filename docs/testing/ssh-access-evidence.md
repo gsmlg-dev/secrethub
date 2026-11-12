@@ -1,5 +1,9 @@
 # SSH access implementation evidence
 
+> **Superseded.** These results cover the earlier Core-held-key model, not the
+> current code. For the current device-held identity model see the
+> [2026-11-12 SSH identity and access design](../superpowers/specs/2026-11-12-ssh-identity-access-design.md) and the [managed SSH access operator guide](../deployment/ssh-access-management.md).
+
 ## Current qualification (2026-10-20)
 
 **Verdict: confidentiality and Linux x86_64 runtime qualification PASS.** The
@@ -84,6 +88,8 @@ The deterministic, key-free diagnostic is:
 MIX_ENV=test ERL_FLAGS='+S 4:4' \
   mix run --no-start scripts/ssh/transport_redaction_probe.exs
 ```
+
+(The probe script has since been removed: replies no longer carry private keys.)
 
 Observed exit **1**:
 
