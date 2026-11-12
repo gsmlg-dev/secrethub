@@ -79,6 +79,7 @@ defmodule SecretHub.Web.SSHAccess.Devices do
               <div class="col-span-3 flex gap-2">
                 <.dm_btn
                   :if={device.candidates != []}
+                  id={"trust-" <> device.agent.agent_id}
                   type="submit"
                   name="trust"
                   value="candidates"
@@ -86,7 +87,14 @@ defmodule SecretHub.Web.SSHAccess.Devices do
                 >
                   Trust reported keys
                 </.dm_btn>
-                <.dm_btn type="submit" name="trust" value="keep" variant="ghost">
+                <.dm_btn
+                  :if={device.candidates == [] or device.trusted?}
+                  id={"keep-" <> device.agent.agent_id}
+                  type="submit"
+                  name="trust"
+                  value="keep"
+                  variant="ghost"
+                >
                   {if device.candidates != [], do: "Keep current keys", else: "Save"}
                 </.dm_btn>
               </div>
@@ -187,11 +195,14 @@ defmodule SecretHub.Web.SSHAccess.Devices do
 
   defp device(inventory, agent) do
     endpoint = Enum.find(inventory.endpoints, &(&1.agent_id == agent.agent_id))
+    # Only lookup-capable Agents are SSH targets; source-only host keys need no trust.
+    target? = "ssh_lookup_v1" in agent.runtime_capabilities
 
     %{
       agent: agent,
       endpoint: endpoint,
-      candidates: pending_keys(endpoint),
+      trusted?: endpoint != nil and endpoint.approved and endpoint.host_keys != [],
+      candidates: if(target?, do: pending_keys(endpoint), else: []),
       identities: Enum.filter(inventory.identities, &(&1.agent_id == agent.agent_id)),
       logins: logins(inventory, agent.agent_id)
     }

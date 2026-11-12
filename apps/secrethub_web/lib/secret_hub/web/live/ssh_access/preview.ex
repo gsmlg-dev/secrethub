@@ -50,8 +50,24 @@ defmodule SecretHub.Web.SSHAccess.Preview do
   defp describe(%{"op" => "identity_external_replace", "id" => id}, inv),
     do: "Replace the public key of #{identity(inv, id)}"
 
-  defp describe(%{"op" => "endpoint_upsert", "agent_id" => id, "host_keys" => keys}, inv),
-    do: "Trust #{length(keys)} host key#{plural(keys)} for #{agent_name(inv, id)}"
+  defp describe(%{"op" => "endpoint_upsert", "agent_id" => id, "host_keys" => keys} = op, inv) do
+    current = Enum.find(Map.get(inv, :endpoints, []), &(&1.agent_id == id))
+    name = agent_name(inv, id)
+
+    cond do
+      keys == [] or op["approved"] == false ->
+        "Save endpoint #{name} without trusted host keys"
+
+      current && current.approved && Enum.sort(current.host_keys) == Enum.sort(keys) ->
+        aliases = Enum.join(op["aliases"] || [], ", ")
+
+        "Save endpoint #{name} (aliases #{if aliases == "", do: "none", else: aliases}, " <>
+          "port #{op["port"]}); host keys unchanged"
+
+      true ->
+        "Trust #{length(keys)} host key#{plural(keys)} for #{name}"
+    end
+  end
 
   defp describe(%{"op" => "endpoint_delete", "agent_id" => id}, inv),
     do: "Remove SSH endpoint #{agent_name(inv, id)}"

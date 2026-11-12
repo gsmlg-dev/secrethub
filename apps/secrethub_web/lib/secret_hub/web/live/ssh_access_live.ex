@@ -70,7 +70,7 @@ defmodule SecretHub.Web.SSHAccessLive do
   def handle_event("identity_rotation", %{"rotation" => %{"id" => id, "days" => days}}, socket),
     do:
       stage(socket, [
-        %{"op" => "identity_rotation", "id" => id, "rotation_days" => integer(days)}
+        %{"op" => "identity_rotation", "id" => id, "rotation_days" => rotation_days(days)}
       ])
 
   def handle_event("external_add", %{"external" => attrs}, socket),
@@ -80,7 +80,7 @@ defmodule SecretHub.Web.SSHAccessLive do
           "op" => "identity_external_add",
           "name" => String.trim(attrs["name"] || ""),
           "public_key" => String.trim(attrs["public_key"] || ""),
-          "rotation_days" => integer(attrs["rotation_days"])
+          "rotation_days" => rotation_days(attrs["rotation_days"])
         }
       ])
 
@@ -94,8 +94,12 @@ defmodule SecretHub.Web.SSHAccessLive do
           %{"op" => "identity_external_replace", "id" => id, "public_key" => String.trim(key)}
         ])
 
-  def handle_event("cell", %{"cell" => attrs}, socket),
-    do: stage(socket, Access.cell_changes(socket.assigns.inventory, attrs))
+  def handle_event("cell", %{"cell" => attrs}, socket) do
+    case Access.cell_changes(socket.assigns.inventory, attrs) do
+      {:ok, changes} -> stage(socket, changes)
+      {:error, reason} -> {:noreply, assign(socket, pending: nil, message: error_message(reason))}
+    end
+  end
 
   def handle_event("group_edit", %{"id" => id}, socket),
     do:
@@ -170,7 +174,8 @@ defmodule SecretHub.Web.SSHAccessLive do
   def handle_event(_, _, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_info({:ssh_policy_changed, _}, socket), do: {:noreply, reload(socket)}
+  def handle_info({:ssh_policy_changed, _}, socket),
+    do: {:noreply, socket |> reload() |> refresh_editing_group()}
 
   defp stage(socket, changes) when changes == [] or length(changes) > 500,
     do: {:noreply, assign(socket, pending: nil, message: "Select between 1 and 500 changes.")}
@@ -205,13 +210,30 @@ defmodule SecretHub.Web.SSHAccessLive do
     end
   end
 
+  # A group being created has no id yet; an edited group follows the reloaded inventory.
+  defp refresh_editing_group(%{assigns: %{editing_group: %{id: id}}} = socket)
+       when is_binary(id),
+       do:
+         assign(socket,
+           editing_group: Enum.find(socket.assigns.inventory.groups, &(&1.id == id))
+         )
+
+  defp refresh_editing_group(socket), do: socket
+
   # Inventory reports always create an endpoint record holding candidate_host_keys,
   # so counting endpoints also covers Agents that have never been trusted.
+  # Only lookup-capable Agents can be SSH targets, so only their host keys need trust.
   defp counts(inventory) do
+    lookup_agents =
+      for agent <- inventory.agents,
+          "ssh_lookup_v1" in agent.runtime_capabilities,
+          do: agent.agent_id
+
     %{
       "devices" =>
         Enum.count(inventory.endpoints, fn endpoint ->
-          Map.get(endpoint, :candidate_host_keys, []) not in [[], endpoint.host_keys]
+          endpoint.agent_id in lookup_agents and
+            Map.get(endpoint, :candidate_host_keys, []) not in [[], endpoint.host_keys]
         end),
       "identities" =>
         Enum.count(inventory.identities, &(&1.status == "pending" or &1.rotation_overdue)),
@@ -227,6 +249,14 @@ defmodule SecretHub.Web.SSHAccessLive do
     case Integer.parse(to_string(value)) do
       {number, ""} -> number
       _ -> nil
+    end
+  end
+
+  # Blank disables scheduled rotation; anything else non-integer reaches Core and is rejected.
+  defp rotation_days(value) do
+    case String.trim(to_string(value)) do
+      "" -> nil
+      text -> integer(text) || text
     end
   end
 
@@ -253,6 +283,8 @@ defmodule SecretHub.Web.SSHAccessLive do
     do: "Remove this identity's access cells and group memberships before deleting it."
 
   defp error_message(:name_taken), do: "That identity name is already used."
+
+  defp error_message(:destination_user_required), do: "Enter a destination user."
 
   defp error_message(:group_in_use),
     do: "Remove this group's access cells before deleting the group."
@@ -308,7 +340,14 @@ defmodule SecretHub.Web.SSHAccessLive do
           phx_click={JS.push("tab", value: %{tab: tab})}
         >
           {label}
-          <.dm_badge :if={@counts[tab] > 0} variant="warning" size="sm">{@counts[tab]}</.dm_badge>
+          <.dm_badge
+            :if={@counts[tab] > 0}
+            id={"ssh-tab-count-" <> tab}
+            variant="warning"
+            size="sm"
+          >
+            {@counts[tab]}
+          </.dm_badge>
         </:tab>
         <:tab_content name="devices">
           <Devices.tab inventory={@inventory} profile={@profile} />

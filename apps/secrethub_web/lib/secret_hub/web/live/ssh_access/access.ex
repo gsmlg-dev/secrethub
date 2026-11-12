@@ -60,12 +60,15 @@ defmodule SecretHub.Web.SSHAccess.Access do
                     source={{row_kind, row_id}}
                     destination={{col_kind, col_id}}
                     rules={cell_rules(@inventory, row_kind, row_id, col_kind, col_id)}
-                    users={destination_users(@inventory, col_kind, col_id)}
+                    list_id={users_list_id(col_kind, col_id)}
                   />
                 </td>
               </tr>
             </tbody>
           </table>
+          <datalist :for={{kind, id, _} <- @columns} id={users_list_id(kind, id)}>
+            <option :for={user <- destination_users(@inventory, kind, id)} value={user} />
+          </datalist>
         </div>
       </.dm_card>
 
@@ -87,10 +90,22 @@ defmodule SecretHub.Web.SSHAccess.Access do
               </span>
             </span>
             <span class="flex gap-1">
-              <.dm_btn size="sm" variant="ghost" phx-click="group_edit" phx-value-id={group.id}>
+              <.dm_btn
+                id={"edit-group-" <> group.id}
+                size="sm"
+                variant="ghost"
+                phx-click="group_edit"
+                phx-value-id={group.id}
+              >
                 Edit
               </.dm_btn>
-              <.dm_btn size="sm" variant="error" phx-click="group_delete" phx-value-id={group.id}>
+              <.dm_btn
+                id={"delete-group-" <> group.id}
+                size="sm"
+                variant="error"
+                phx-click="group_delete"
+                phx-value-id={group.id}
+              >
                 Delete
               </.dm_btn>
             </span>
@@ -140,7 +155,7 @@ defmodule SecretHub.Web.SSHAccess.Access do
   attr :source, :any, required: true
   attr :destination, :any, required: true
   attr :rules, :list, required: true
-  attr :users, :list, required: true
+  attr :list_id, :string, required: true
 
   defp cell(assigns) do
     {source_kind, source_id} = assigns.source
@@ -150,8 +165,7 @@ defmodule SecretHub.Web.SSHAccess.Access do
       assign(assigns,
         id: "cell-#{source_kind}-#{source_id}-#{destination_kind}-#{destination_id}",
         source_value: "#{source_kind}/#{source_id}",
-        destination_value: "#{destination_kind}/#{destination_id}",
-        list_id: "users-#{destination_kind}-#{destination_id}"
+        destination_value: "#{destination_kind}/#{destination_id}"
       )
 
     ~H"""
@@ -166,9 +180,6 @@ defmodule SecretHub.Web.SSHAccess.Access do
         class="w-24 rounded border border-outline bg-surface px-1 text-xs"
         aria-label="Destination user"
       />
-      <datalist id={@list_id}>
-        <option :for={user <- @users} value={user} />
-      </datalist>
       <span class="flex gap-1">
         <.dm_btn native_submit size="xs" variant="ghost" name="cell[effect]" value="allow">
           allow
@@ -191,20 +202,26 @@ defmodule SecretHub.Web.SSHAccess.Access do
     """
   end
 
-  @doc "Translates one matrix cell edit into a rule batch."
+  @doc """
+  Translates one matrix cell edit into a rule batch.
+
+  `allow`/`deny` replace only the cell's rules for that destination user;
+  `clear` removes every rule in the cell.
+  """
   def cell_changes(
         inventory,
         %{"source" => source, "destination" => destination, "effect" => effect} = attrs
       ) do
+    user = String.trim(attrs["user"] || "")
+
     with [source_kind, source_id] <- String.split(source, "/", parts: 2),
          [destination_kind, destination_id] <- String.split(destination, "/", parts: 2),
-         true <- effect in ["allow", "deny", "clear"] do
-      deletes =
-        for rule <-
-              cell_rules(inventory, source_kind, source_id, destination_kind, destination_id),
-            do: %{"op" => "rule_delete", "id" => rule.id}
+         true <- effect in ["allow", "deny", "clear"] || :invalid,
+         true <- (effect == "clear" or user != "") || :destination_user_required do
+      rules = cell_rules(inventory, source_kind, source_id, destination_kind, destination_id)
 
-      user = String.trim(attrs["user"] || "")
+      replaced =
+        if effect == "clear", do: rules, else: Enum.filter(rules, &(&1.destination_user == user))
 
       upsert =
         if effect == "clear",
@@ -222,13 +239,16 @@ defmodule SecretHub.Web.SSHAccess.Access do
             }
           ]
 
-      deletes ++ upsert
+      {:ok, Enum.map(replaced, &%{"op" => "rule_delete", "id" => &1.id}) ++ upsert}
     else
-      _ -> []
+      :destination_user_required -> {:error, :destination_user_required}
+      _ -> {:error, :invalid_cell}
     end
   end
 
-  def cell_changes(_, _), do: []
+  def cell_changes(_, _), do: {:error, :invalid_cell}
+
+  defp users_list_id(kind, id), do: "users-#{kind}-#{id}"
 
   defp rows(inventory) do
     Enum.map(

@@ -40,4 +40,55 @@ defmodule SecretHub.Web.SSHAccess.PreviewTest do
              "Remove 1 access rule"
            ]
   end
+
+  describe "endpoint_upsert" do
+    @endpoint_inventory Map.put(@inventory, :endpoints, [
+                          %{agent_id: "a1", host_keys: ["k1"], approved: true}
+                        ])
+
+    test "trusts changed keys" do
+      change = %{
+        "op" => "endpoint_upsert",
+        "agent_id" => "a1",
+        "aliases" => ["a.example"],
+        "port" => 22,
+        "host_keys" => ["k2", "k3"],
+        "approved" => true
+      }
+
+      assert Preview.changes([change], @endpoint_inventory) == [
+               "Trust 2 host keys for vultr-01"
+             ]
+    end
+
+    test "saves aliases and port when keys are unchanged" do
+      change = %{
+        "op" => "endpoint_upsert",
+        "agent_id" => "a1",
+        "aliases" => ["a.example", "a"],
+        "port" => 2222,
+        "host_keys" => ["k1"],
+        "approved" => true
+      }
+
+      assert Preview.changes([change], @endpoint_inventory) == [
+               "Save endpoint vultr-01 (aliases a.example, a, port 2222); host keys unchanged"
+             ]
+    end
+
+    test "saves an endpoint without trusted keys" do
+      change = %{
+        "op" => "endpoint_upsert",
+        "agent_id" => "a2",
+        "aliases" => [],
+        "port" => 22,
+        "host_keys" => [],
+        "approved" => false
+      }
+
+      assert Preview.changes([change], @endpoint_inventory) == [
+               "Save endpoint vultr-02 without trusted host keys"
+             ]
+    end
+  end
 end
