@@ -178,6 +178,72 @@ defmodule SecretHub.Web.SSHAccessLiveTest do
     refute render(view) =~ "PRIVATE KEY"
   end
 
+  test "matrix cells allow a reported destination user and preview readable gains", %{
+    conn: conn
+  } do
+    {:ok, host} = Key.generate("ed25519")
+    {:ok, user} = Key.generate("ed25519")
+
+    {:ok, %{identities: [identity]}} =
+      SSH.apply_changes(
+        [
+          %{
+            "op" => "endpoint_upsert",
+            "agent_id" => "destination",
+            "aliases" => ["dest.example"],
+            "port" => 22,
+            "host_keys" => [host.public.public_line],
+            "approved" => true
+          },
+          %{
+            "op" => "identity_external_add",
+            "name" => "gh-deploy",
+            "public_key" => user.public.public_line,
+            "rotation_days" => 90
+          }
+        ],
+        0
+      )
+
+    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
+    view |> element("#ssh-tab-access") |> render_click()
+
+    html =
+      view
+      |> form("#cell-identity-#{identity.id}-endpoint-destination", %{
+        "cell" => %{"user" => "deploy"}
+      })
+      |> render_submit(%{"cell" => %{"effect" => "allow"}})
+
+    assert html =~ "+ gh-deploy can log in as deploy on destination"
+    view |> element("#ssh-confirm") |> render_click()
+    assert [%{effect: "allow", destination_user: "deploy"}] = SSH.snapshot().rules
+
+    html =
+      view
+      |> form("#cell-identity-#{identity.id}-endpoint-destination", %{"cell" => %{"user" => ""}})
+      |> render_submit(%{"cell" => %{"effect" => "clear"}})
+
+    assert html =~ "− gh-deploy can no longer log in as deploy on destination"
+  end
+
+  test "groups are created in the drawer with typed members", %{conn: conn} do
+    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
+    view |> element("#ssh-tab-access") |> render_click()
+    view |> element("#new-host-group") |> render_click()
+
+    html =
+      view
+      |> form("#group-form", %{
+        "group" => %{"name" => "Servers", "kind" => "host", "member_ids" => ["destination"]}
+      })
+      |> render_submit()
+
+    assert html =~ "Save group Servers"
+    view |> element("#ssh-confirm") |> render_click()
+    assert [%{name: "Servers", kind: "host", agent_ids: ["destination"]}] = SSH.snapshot().groups
+  end
+
   defp report_identity(agent_id, public_line) do
     agent = Repo.get_by!(Agent, agent_id: agent_id)
 
