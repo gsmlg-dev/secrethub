@@ -70,17 +70,53 @@ defmodule SecretHub.Agent.SSH.ReconcilerTest do
     assert_receive {"identity_report", %{"generation" => 2}}
   end
 
-  test "an empty valid list (retired identity) keeps local keys", ctx do
+  test "a retired identity's local keys are discarded and no report is sent", ctx do
     {:ok, _} = KeyStore.create(1000, 1, ctx.root)
 
     :ok =
       Reconciler.reconcile(
-        [%{"uid" => 1000, "requested_generation" => 1, "generations" => []}],
+        [
+          %{
+            "uid" => 1000,
+            "status" => "retired",
+            "requested_generation" => 1,
+            "generations" => []
+          }
+        ],
         ctx.request,
         ctx.root,
         ctx.account
       )
 
+    refute_receive {"identity_report", _}
+    assert KeyStore.generations(1000, ctx.root) == []
+  end
+
+  test "a deleted rotated identity re-enrolls with a fresh generation 1 key", ctx do
+    {:ok, old_one} = KeyStore.create(1000, 1, ctx.root)
+    {:ok, old_two} = KeyStore.create(1000, 2, ctx.root)
+
+    :ok =
+      Reconciler.reconcile(
+        [
+          %{
+            "uid" => 1000,
+            "status" => "retired",
+            "requested_generation" => 2,
+            "generations" => []
+          }
+        ],
+        ctx.request,
+        ctx.root,
+        ctx.account
+      )
+
+    assert KeyStore.generations(1000, ctx.root) == []
+
+    :ok = Reconciler.ensure_enrolled(%{uid: 1000, username: "u1000"}, ctx.request, ctx.root)
+
+    assert_receive {"identity_report", %{"generation" => 1, "public_key" => line}}
+    refute line in [old_one.public.public_line, old_two.public.public_line]
     assert KeyStore.generations(1000, ctx.root) == [1]
   end
 

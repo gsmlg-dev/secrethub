@@ -42,8 +42,10 @@ defmodule SecretHub.Agent.SSH.Reconciler do
 
   def after_inventory(_, _), do: :ok
 
-  # Retired identities are neither reported nor pruned.
-  defp reconcile_uid(_account, %{"status" => "retired"}, _request, _root), do: :ok
+  # A retired identity's keys are discarded without a report, so the next
+  # first use after the operator deletes it enrolls a fresh generation 1.
+  defp reconcile_uid(account, %{"status" => "retired"}, _request, root),
+    do: KeyStore.prune(account.uid, [], root)
 
   # Core does not know this uid. Only generation 1 can be reported first;
   # Core would reject a later generation, so report nothing in that case.
