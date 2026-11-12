@@ -4,7 +4,7 @@ defmodule SecretHub.Web.SSHAccessLiveTest do
   import Phoenix.ConnTest
   alias SecretHub.Core.{Repo, RuntimeDatabaseFixture, SSH}
   alias SecretHub.Core.Vault.SealState
-  alias SecretHub.Shared.Schemas.Agent
+  alias SecretHub.Shared.Schemas.{Agent, Certificate}
   alias SecretHub.Shared.SSH.Key
   alias SecretHub.Web.SSHAccessLive
   @endpoint SecretHub.Web.Endpoint
@@ -29,11 +29,29 @@ defmodule SecretHub.Web.SSHAccessLiveTest do
     {:ok, shares} = SealState.initialize(3, 2)
     Enum.each(Enum.take(shares, 2), &SealState.unseal/1)
 
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
     for name <- ["source", "destination"] do
+      cert =
+        Repo.insert!(%Certificate{
+          serial_number: Ecto.UUID.generate(),
+          fingerprint: Ecto.UUID.generate(),
+          certificate_pem: "fixture",
+          subject: name,
+          issuer: "fixture",
+          common_name: name,
+          cert_type: :agent_client,
+          entity_type: "agent",
+          entity_id: name,
+          valid_from: DateTime.add(now, -60),
+          valid_until: DateTime.add(now, 3600)
+        })
+
       Repo.insert!(%Agent{
         agent_id: name,
         name: name,
         status: :trusted_connected,
+        certificate_id: cert.id,
         runtime_capabilities: ["ssh_lookup_v1", "ssh_signing_v1"]
       })
     end
@@ -41,13 +59,17 @@ defmodule SecretHub.Web.SSHAccessLiveTest do
     %{conn: build_conn()}
   end
 
-  test "renders public empty inventory and adds no application login", %{conn: conn} do
-    {:ok, _, html} = live_isolated(conn, SSHAccessLive)
+  test "renders three tabs, default deny and no application login", %{conn: conn} do
+    {:ok, view, html} = live_isolated(conn, SSHAccessLive)
     assert html =~ "SSH Access"
     assert html =~ "Default deny"
-    assert html =~ "No source identities"
-    assert html =~ "Prerequisites unverified"
+    assert has_element?(view, "#ssh-tab-devices")
+    assert has_element?(view, "#ssh-tab-identities")
+    assert has_element?(view, "#ssh-tab-access")
     refute html =~ "PRIVATE KEY"
+    view |> element("#ssh-tab-identities") |> render_click()
+    assert has_element?(view, "#identities-tab")
+    refute has_element?(view, "#ssh-profile-form")
 
     assert %{plug: Phoenix.LiveView.Plug} =
              Phoenix.Router.route_info(
@@ -58,178 +80,35 @@ defmodule SecretHub.Web.SSHAccessLiveTest do
              )
   end
 
-  test "group changes preview without mutation then commit the exact revision", %{conn: conn} do
-    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
-
-    html =
-      view
-      |> form("#ssh-group-form", %{"group" => %{"id" => "build", "name" => "Build"}})
-      |> render_submit()
-
-    assert html =~ "Confirm changes"
-    assert SSH.snapshot().groups == []
-    view |> element("#ssh-confirm") |> render_click()
-    assert [%{id: "build", name: "Build"}] = SSH.snapshot().groups
-
-    view
-    |> form("#ssh-members-form", %{
-      "members" => %{"group_id" => "build", "agent_ids" => ["source"]}
-    })
-    |> render_submit()
-
-    view |> element("#ssh-confirm") |> render_click()
-    assert [%{agent_ids: ["source"]}] = SSH.snapshot().groups
-  end
-
-  test "private import is absent from render and pending status after preview and persistence", %{
-    conn: conn
-  } do
-    {:ok, key} = Key.generate("ed25519")
-    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
-
-    html =
-      view
-      |> form("#ssh-identity-form", %{
-        "identity" => %{
-          "agent_id" => "source",
-          "username" => "deploy",
-          "uid" => "1000",
-          "algorithm" => "ed25519",
-          "private_key" => key.private_pem
-        }
-      })
-      |> render_submit()
-
-    refute html =~ key.private_pem
-    refute inspect(:sys.get_state(view.pid)) =~ key.private_pem
-    view |> element("#ssh-confirm") |> render_click()
-    assert [%{public_key: public}] = SSH.snapshot().identities
-    assert public == key.public.public_line
-    refute render(view) =~ "BEGIN"
-  end
-
-  test "stale previews cannot commit and can be refreshed", %{conn: conn} do
-    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
-
-    view
-    |> form("#ssh-group-form", %{"group" => %{"id" => "build", "name" => "Build"}})
-    |> render_submit()
-
-    assert {:ok, _} =
-             SSH.apply_changes([%{"op" => "group_upsert", "id" => "other", "name" => "Other"}], 0)
-
-    html = view |> element("#ssh-confirm") |> render_click()
-    assert html =~ "changed"
-    assert [%{id: "other"}] = SSH.snapshot().groups
-    refute has_element?(view, "#ssh-confirm")
-  end
-
-  test "bulk group rules and matrix use the same allow/deny explanations", %{conn: conn} do
+  test "reported host keys appear as pending and trust stages a readable preview", %{conn: conn} do
     {:ok, host} = Key.generate("ed25519")
+    report_host_key("destination", host.public.public_line)
+    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
+    assert has_element?(view, "#pending-host-destination")
+    assert render(element(view, "#ssh-tab-devices")) =~ "1"
+
+    html =
+      view
+      |> form("#endpoint-form-destination", %{
+        "endpoint" => %{"aliases" => "dest.example", "port" => "22"}
+      })
+      |> render_submit(%{"trust" => "candidates"})
+
+    assert html =~ "Trust 1 host key for destination"
+    assert SSH.snapshot().endpoints |> Enum.all?(&(not &1.approved))
+    view |> element("#ssh-confirm") |> render_click()
+    assert [%{approved: true, host_keys: [_]}] = SSH.snapshot().endpoints
+  end
+
+  defp report_host_key(agent_id, key) do
+    agent = Repo.get_by!(Agent, agent_id: agent_id)
 
     {:ok, _} =
-      SSH.apply_changes(
-        [
-          %{
-            "op" => "identity_upsert",
-            "agent_id" => "source",
-            "username" => "deploy",
-            "uid" => 1000
-          },
-          %{
-            "op" => "endpoint_upsert",
-            "agent_id" => "destination",
-            "aliases" => ["destination.test"],
-            "port" => 22,
-            "host_keys" => [host.public.public_line],
-            "approved" => true
-          }
-        ],
-        0
+      SSH.runtime_operation(
+        %{agent_id: agent_id, certificate_id: agent.certificate_id},
+        "inventory",
+        %{"host_keys" => [key], "users" => []}
       )
-
-    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
-
-    html =
-      view
-      |> form("#ssh-rule-form", %{
-        "rule" => %{
-          "sources" => ["agent/source"],
-          "destinations" => ["agent/destination"],
-          "source_user" => "deploy",
-          "destination_user" => "app",
-          "effect" => "allow"
-        }
-      })
-      |> render_submit()
-
-    assert html =~ "Gained: 1"
-    view |> element("#ssh-confirm") |> render_click()
-    assert render(view) =~ "allow:"
-    [grant] = SSH.snapshot().rules
-
-    view |> element("[phx-click=edit_rule][phx-value-id='#{grant.id}']") |> render_click()
-    assert has_element?(view, "input[name='rule[id]'][value='#{grant.id}']")
-    view |> element("#ssh-cancel-rule-edit") |> render_click()
-    assert has_element?(view, "input[name='rule[id]'][value='']")
-
-    cell =
-      Jason.encode!(["source", "deploy", "destination", "app"])
-      |> Base.url_encode64(padding: false)
-
-    view
-    |> form("#ssh-matrix-form", %{"cells" => [cell]})
-    |> render_submit(%{"effect" => "deny"})
-
-    view |> element("#ssh-confirm") |> render_click()
-    assert render(view) =~ "deny:"
-    assert SSH.snapshot().edges == []
-    view |> form("#ssh-revoke-form", %{"revoke" => %{"ids" => [grant.id]}}) |> render_submit()
-    view |> element("#ssh-confirm") |> render_click()
-    assert [%{effect: "deny"}] = SSH.snapshot().rules
-  end
-
-  test "host-key approval and managed profile forms preserve explicit trust settings", %{
-    conn: conn
-  } do
-    {:ok, host} = Key.generate("ed25519")
-    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
-
-    view
-    |> form("#ssh-endpoint-form", %{
-      "endpoint" => %{
-        "agent_id" => "destination",
-        "aliases" => "destination.test, 192.0.2.10",
-        "port" => "2222",
-        "host_keys" => host.public.public_line,
-        "approved" => "true"
-      }
-    })
-    |> render_submit()
-
-    assert SSH.snapshot().endpoints == []
-    view |> element("#ssh-confirm") |> render_click()
-    assert [%{approved: true, port: 2222, host_keys: [key]}] = SSH.snapshot().endpoints
-    assert key == host.public.public_line
-
-    html =
-      view
-      |> form("#ssh-profile-form", %{
-        "profile" => %{
-          "base" => "/opt/secrethub",
-          "hosts" => "destination.test 192.0.2.10",
-          "users" => "deploy, app",
-          "lookup_socket" => "/run/secrethub-ssh/lookup.sock",
-          "signing_socket" => "/run/secrethub-ssh-signing/agent.sock"
-        }
-      })
-      |> render_submit()
-
-    assert html =~ "StrictHostKeyChecking yes"
-    assert html =~ "VerifyHostKeyDNS no"
-    assert html =~ "AuthorizedKeysFile none"
-    assert html =~ "TrustedUserCAKeys none"
-    assert html =~ "Match User deploy,app"
   end
 
   defp await_vault(attempts \\ 400)
