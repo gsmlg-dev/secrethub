@@ -566,7 +566,7 @@ defmodule SecretHub.Core.SSH do
         Enum.find(inventory.identities, &(&1.agent_id == agent_id and &1.username == username))
 
       identity =
-        old || %Identity{id: Ecto.UUID.generate(), agent_id: agent_id, username: username}
+        old || struct(Identity, id: Ecto.UUID.generate(), agent_id: agent_id, username: username)
 
       duplicate =
         Enum.any?(
