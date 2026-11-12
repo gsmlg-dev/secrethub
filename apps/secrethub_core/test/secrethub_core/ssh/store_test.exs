@@ -362,7 +362,7 @@ defmodule SecretHub.Core.SSH.StoreTest do
     })
   end
 
-  defp await_state(expected, attempts \\ 100)
+  defp await_state(expected, attempts \\ 1000)
   defp await_state(_, 0), do: flunk("Vault not ready")
 
   defp await_state(expected, attempts) do

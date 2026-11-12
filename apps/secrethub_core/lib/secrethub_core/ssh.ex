@@ -237,6 +237,7 @@ defmodule SecretHub.Core.SSH do
             Identities.usable?(identity, now),
             key <- Identities.valid_keys(identity, now),
             key.public_key == public.public_line,
+            trusted_source?(identity),
             approved_endpoint?(inventory, agent_id),
             Evaluator.decision(inventory, identity.id, agent_id, payload["username"]).allowed,
             do: "no-agent-forwarding " <> key.public_key
@@ -420,14 +421,32 @@ defmodule SecretHub.Core.SSH do
 
   defp live_agent?(agent_id, capability) do
     case lock_machine(agent_id) do
-      %Agent{certificate_id: certificate_id, runtime_capabilities: capabilities} ->
-        capability in capabilities and Agents.authorize_runtime(agent_id, certificate_id) == :ok and
-          current_certificate_start(certificate_id) == :ok
+      %Agent{runtime_capabilities: capabilities} = agent ->
+        capability in capabilities and trusted_agent?(agent)
 
       _ ->
         false
     end
   end
+
+  # A device-held private key stays usable on a revoked device, so an Agent
+  # identity is served only while its source Agent is still trusted. It need
+  # not be online or advertise ssh_signing_v1.
+  defp trusted_source?(%{origin: "external"}), do: true
+
+  defp trusted_source?(%{origin: "agent", agent_id: agent_id}) do
+    case lock_machine(agent_id) do
+      %Agent{} = agent -> trusted_agent?(agent)
+      _ -> false
+    end
+  end
+
+  defp trusted_source?(_), do: false
+
+  defp trusted_agent?(%Agent{agent_id: agent_id, certificate_id: certificate_id}),
+    do:
+      Agents.authorize_runtime(agent_id, certificate_id) == :ok and
+        current_certificate_start(certificate_id) == :ok
 
   defp lock_machine(agent_id) do
     agent = Repo.one(from(agent in Agent, where: agent.agent_id == ^agent_id, lock: "FOR SHARE"))
@@ -949,11 +968,17 @@ defmodule SecretHub.Core.SSH do
              Enum.any?(i.keys, &(&1.public_key == presented.public_line))
            end))
 
+    host =
+      case lookup_alias(payload["host"], payload["port"]) do
+        {:ok, host} -> host
+        _ -> nil
+      end
+
+    port = is_integer(payload["port"]) and payload["port"] in 1..65_535 and payload["port"]
+
     endpoint =
       Enum.find(inventory.endpoints, fn endpoint ->
-        operation == "known_hosts" and endpoint.port == payload["port"] and
-          match?({:ok, _}, lookup_alias(payload["host"], payload["port"])) and
-          elem(lookup_alias(payload["host"], payload["port"]), 1) in endpoint.aliases
+        operation == "known_hosts" and endpoint.port == port and host in endpoint.aliases
       end)
 
     %{}
@@ -979,9 +1004,15 @@ defmodule SecretHub.Core.SSH do
       payload["reason"] in ["ORDER", "HOSTNAME", "ADDRESS"] && payload["reason"],
       &%{"reason" => &1}
     )
+    |> put_present(host, &%{"host" => &1})
+    |> put_present(port, &%{"port" => &1})
     |> put_present(
       endpoint,
-      &%{"destination_agent_id" => &1.agent_id, "destination_port" => &1.port}
+      &%{
+        "destination_agent_id" => &1.agent_id,
+        "destination_port" => &1.port,
+        "destination_alias" => host
+      }
     )
     |> put_present(
       (operation == "authorized_keys" and valid_user?(payload["username"])) &&

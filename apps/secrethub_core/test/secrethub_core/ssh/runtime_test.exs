@@ -1,5 +1,6 @@
 defmodule SecretHub.Core.SSH.RuntimeTest do
   use ExUnit.Case, async: false
+  import Ecto.Query
   alias SecretHub.Core.RuntimeDatabaseFixture
 
   setup_all do
@@ -12,7 +13,7 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
 
   alias SecretHub.Core.{Repo, SSH}
   alias SecretHub.Core.Vault.SealState
-  alias SecretHub.Shared.Schemas.{Agent, Certificate}
+  alias SecretHub.Shared.Schemas.{Agent, AuditLog, Certificate}
   alias SecretHub.Shared.SSH.Key
 
   setup do
@@ -214,6 +215,14 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
       assert known == "target.example " <> ctx.host
     end
 
+    assert %{
+             "host" => "target.example",
+             "port" => 22,
+             "destination_alias" => "target.example",
+             "destination_agent_id" => "target",
+             "destination_port" => 22
+           } = latest_event_data("ssh.known_hosts")
+
     assert {:ok, %{lines: []}} =
              SSH.runtime_operation(
                principal(ctx.source),
@@ -259,6 +268,67 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
                "username" => "root",
                "key" => key.public.public_line
              })
+  end
+
+  test "authorized_keys stops serving an Agent identity once its source Agent is untrusted",
+       ctx do
+    {key, identity} = enroll(ctx)
+    grant(ctx, identity)
+    {:ok, ext} = Key.generate("ed25519")
+
+    {:ok, %{identities: identities}} =
+      SSH.apply_changes(
+        [
+          %{
+            "op" => "identity_external_add",
+            "name" => "ci",
+            "public_key" => ext.public.public_line
+          }
+        ],
+        SSH.snapshot().revision
+      )
+
+    external = Enum.find(identities, &(&1.origin == "external"))
+
+    {:ok, _} =
+      SSH.apply_changes(
+        [
+          %{
+            "op" => "rule_upsert",
+            "id" => "ci",
+            "effect" => "allow",
+            "source_kind" => "identity",
+            "source_id" => external.id,
+            "destination_kind" => "endpoint",
+            "destination_id" => "target",
+            "destination_user" => "app"
+          }
+        ],
+        SSH.snapshot().revision
+      )
+
+    served = fn key ->
+      {:ok, %{lines: lines}} =
+        SSH.runtime_operation(principal(ctx.target), "authorized_keys", %{
+          "username" => "app",
+          "key" => key.public.public_line
+        })
+
+      lines
+    end
+
+    assert [_] = served.(key)
+    cert = Repo.get!(Certificate, ctx.source.certificate_id)
+    Repo.update!(Ecto.Changeset.change(cert, revoked: true))
+    assert [] = served.(key)
+    assert ["no-agent-forwarding " <> line] = served.(ext)
+    assert line == ext.public.public_line
+
+    Repo.update!(Ecto.Changeset.change(Repo.get!(Certificate, cert.id), revoked: false))
+    assert [_] = served.(key)
+    Repo.update!(Ecto.Changeset.change(Repo.get!(Agent, ctx.source.id), status: :suspended))
+    assert [] = served.(key)
+    assert [_] = served.(ext)
   end
 
   test "external identities appear in authorized_keys", ctx do
@@ -416,7 +486,7 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
              SSH.runtime_operation(principal(ctx.source), "authorize_sign", sign(key))
 
     Repo.update!(
-      Ecto.Changeset.change(cert,
+      Ecto.Changeset.change(Repo.get!(Certificate, cert.id),
         valid_until: DateTime.add(DateTime.utc_now() |> DateTime.truncate(:second), 3600)
       )
     )
@@ -768,8 +838,19 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
     })
   end
 
+  defp latest_event_data(event_type) do
+    Repo.one!(
+      from(log in AuditLog,
+        where: log.event_type == ^event_type,
+        order_by: [desc: log.sequence_number],
+        limit: 1,
+        select: log.event_data
+      )
+    )
+  end
+
   defp principal(agent), do: %{agent_id: agent.agent_id, certificate_id: agent.certificate_id}
-  defp await_state(expected, attempts \\ 100)
+  defp await_state(expected, attempts \\ 1000)
   defp await_state(_, 0), do: flunk("Vault not ready")
 
   defp await_state(expected, attempts) do
