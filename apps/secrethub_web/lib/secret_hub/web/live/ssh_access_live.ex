@@ -279,9 +279,6 @@ defmodule SecretHub.Web.SSHAccessLive do
   defp error_message(:endpoint_conflict),
     do: "That endpoint alias and port already belong to another machine."
 
-  defp error_message(:identity_in_use),
-    do: "Remove this identity's access cells and group memberships before deleting it."
-
   defp error_message(:name_taken), do: "That identity name is already used."
 
   defp error_message(:destination_user_required), do: "Enter a destination user."

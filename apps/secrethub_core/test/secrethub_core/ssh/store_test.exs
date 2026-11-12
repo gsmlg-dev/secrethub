@@ -209,7 +209,7 @@ defmodule SecretHub.Core.SSH.StoreTest do
              )
   end
 
-  test "identity_delete rejects referenced identities and removes rows and keys", ctx do
+  test "identity_delete removes referencing rules, memberships, rows and keys", ctx do
     {:ok, %{identities: [ext]}} =
       SSH.apply_changes(
         [
@@ -242,23 +242,21 @@ defmodule SecretHub.Core.SSH.StoreTest do
       "destination_user" => "deploy"
     }
 
-    {:ok, _} = SSH.apply_changes([rule, %{"op" => "identity_revoke", "id" => ext.id}], 1)
-    delete = %{"op" => "identity_delete", "id" => ext.id}
-    assert {:error, :identity_in_use} = SSH.apply_changes([delete], 2)
-
     group = %{"op" => "group_upsert", "id" => "ops", "name" => "Ops", "kind" => "identity"}
     members = %{"op" => "group_members", "group_id" => "ops", "member_ids" => [ext.id]}
-    unrule = %{"op" => "rule_delete", "id" => "deploy"}
 
-    assert {:error, :identity_in_use} =
-             SSH.apply_changes([unrule, group, members, delete], 2)
+    {:ok, _} =
+      SSH.apply_changes([rule, group, members, %{"op" => "identity_revoke", "id" => ext.id}], 1)
 
-    assert [_] = Repo.all(Identity)
+    delete = %{"op" => "identity_delete", "id" => ext.id}
 
-    assert {:ok, %{revision: 3, identities: []}} = SSH.apply_changes([unrule, delete], 2)
+    assert {:ok, %{revision: 3, identities: [], rules: [], groups: [%{id: "ops"} = ops]}} =
+             SSH.apply_changes([delete], 2)
+
+    assert ops.identity_ids == []
     assert [] = Repo.all(Identity)
     assert [] = Repo.all(IdentityKey)
-    assert %{identities: []} = SSH.snapshot()
+    assert %{identities: [], rules: [], groups: [%{identity_ids: []}]} = SSH.snapshot()
   end
 
   test "deleting one identity leaves other identities and their keys intact", ctx do

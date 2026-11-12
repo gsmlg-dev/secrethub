@@ -41,6 +41,28 @@ defmodule SecretHub.Web.SSHAccess.PreviewTest do
            ]
   end
 
+  test "identity_delete names the access rules it removes" do
+    rule = %{source_kind: "identity", source_id: "i1"}
+
+    inventory =
+      Map.put(@inventory, :rules, [
+        rule,
+        %{rule | source_id: "i1"},
+        %{source_kind: "identity", source_id: "i2"},
+        %{source_kind: "identity_group", source_id: "i1"}
+      ])
+
+    delete = %{"op" => "identity_delete", "id" => "i1"}
+
+    assert Preview.changes([delete], inventory) == [
+             "Delete identity gao@laptop and its 2 access rules"
+           ]
+
+    one = Map.put(@inventory, :rules, [rule])
+    assert Preview.changes([delete], one) == ["Delete identity gao@laptop and its 1 access rule"]
+    assert Preview.changes([delete], @inventory) == ["Delete identity gao@laptop"]
+  end
+
   describe "endpoint_upsert" do
     @endpoint_inventory Map.put(@inventory, :endpoints, [
                           %{agent_id: "a1", host_keys: ["k1"], approved: true}

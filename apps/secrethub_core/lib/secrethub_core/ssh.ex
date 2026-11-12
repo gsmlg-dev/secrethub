@@ -749,14 +749,24 @@ defmodule SecretHub.Core.SSH do
   defp change(inventory, %{"op" => "identity_approve", "id" => id}, now),
     do: identities(inventory, Identities.approve(inventory.identities, id, now))
 
+  # Deleting an identity also removes its access rules and group memberships;
+  # the UI hides retired identities, so they could not be removed there.
   defp change(inventory, %{"op" => "identity_delete", "id" => id}, _now) do
-    used =
-      Enum.any?(inventory.rules, &(&1.source_kind == "identity" and &1.source_id == id)) or
-        Enum.any?(inventory.groups, &(&1.kind == "identity" and id in &1.identity_ids))
+    rules = Enum.reject(inventory.rules, &(&1.source_kind == "identity" and &1.source_id == id))
 
-    if used,
-      do: {:error, :identity_in_use},
-      else: identities(inventory, Identities.delete(inventory.identities, id))
+    groups =
+      Enum.map(inventory.groups, fn
+        %{kind: "identity"} = group ->
+          %{group | identity_ids: Enum.reject(group.identity_ids, &(&1 == id))}
+
+        group ->
+          group
+      end)
+
+    identities(
+      %{inventory | rules: rules, groups: groups},
+      Identities.delete(inventory.identities, id)
+    )
   end
 
   defp change(inventory, %{"op" => "identity_revoke", "id" => id}, now),

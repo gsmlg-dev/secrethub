@@ -32,8 +32,21 @@ defmodule SecretHub.Web.SSHAccess.Preview do
   defp describe(%{"op" => "identity_revoke", "id" => id}, inv),
     do: "Revoke identity #{identity(inv, id)}"
 
-  defp describe(%{"op" => "identity_delete", "id" => id}, inv),
-    do: "Delete identity #{identity(inv, id)}"
+  defp describe(%{"op" => "identity_delete", "id" => id}, inv) do
+    rules =
+      Enum.filter(
+        Map.get(inv, :rules, []),
+        &(&1.source_kind == "identity" and &1.source_id == id)
+      )
+
+    case rules do
+      [] ->
+        "Delete identity #{identity(inv, id)}"
+
+      _ ->
+        "Delete identity #{identity(inv, id)} and its #{length(rules)} access rule#{plural(rules)}"
+    end
+  end
 
   defp describe(%{"op" => "identity_rotate", "id" => id}, inv),
     do: "Rotate identity #{identity(inv, id)} now"
