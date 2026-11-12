@@ -82,37 +82,76 @@ override the defaults above. The module installs
 configured public socket path. It does not install a permissive sshd policy or
 replace managed account configuration. Generate and validate profiles separately.
 
-## Approve inventory and directed rules
+## Approve devices, identities and access
 
-Open `/admin/ssh-access` through the protected management proxy:
+Open `/admin/ssh-access` through the protected management proxy. It has three
+tabs. Each badge on a tab counts the items that are waiting for an operator.
 
-1. Create server groups and preview/confirm their member lists. Existing
-   enrolled Agents are the machine inventory.
-2. Set each destination's host aliases/IPs, SSH port and actual served public host
-   keys. Agent-reported candidates are advisory and require explicit approval.
-   Approve only keys whose binding to that host you have verified. Endpoint
-   aliases and ports cannot silently be claimed by another machine.
-3. Create one source identity per machine/Unix user with its approved numeric
-   UID. Generate Ed25519/RSA or import one unencrypted supported private key.
-   Core encrypts it in dedicated storage; public views contain no private key.
-   The same private key cannot be reused by another source identity. Duplicate
-   UID aliases and changed username/UID bindings fail closed.
-4. Select source machines/groups, source user, destination machines/groups and
-   destination user. Preview the gained/lost concrete edges, then confirm. For
-   example `build:builder → app:deploy` grants no reverse or other-user access.
-   Matrix cells support batch allow/deny; existing rules can be edited, disabled
-   or removed in a batch. Another matching allow can survive removal of one
-   allow; use an explicit deny when that is the intended result.
-5. Review prerequisite observations. A configured allow still needs current
-   certificates, enabled capabilities, the local user/UID and socket access.
-   Missing observations are shown as unverified. Observations do not grant access.
+1. **Devices.** Each enrolled Agent gets one card. When an Agent reports host
+   keys that differ from the approved ones, the card lists them as pending. Set
+   the host aliases/IPs and the SSH port, then choose one of:
+   - **Trust reported keys**: approve only keys whose binding to that host you
+     have verified.
+   - **Keep current keys**: keep the approved keys and dismiss the reported
+     candidates.
 
-All changes commit atomically against the previewed revision. A changed revision
-requires a fresh preview. Private import input is cleared after submission and
-never rendered in the preview. Replacing a source key immediately revokes its
-previous public-key grants; graceful overlapping user-key rotation is not
-implemented. Host-key rotation supports explicit overlap: approve the new host
-key alongside the old, deploy/verify it, then remove the old approved key.
+   Endpoint aliases and ports cannot silently be claimed by another machine.
+   Agents without the lookup capability, such as mobile Agents, appear only as
+   sources.
+2. **Identities.** A source identity is either:
+   - **Agent**: the Agent creates it the first time a local user signs through
+     the signing socket. Each Agent identity starts as *pending* until you
+     approve it.
+   - **External**: you paste an OpenSSH public key and a name, for example a
+     CI deploy key.
+
+   Core stores public keys only. An Agent keeps its private keys on the device
+   at `<state_dir>/ssh-identities/<uid>/<generation>.key` (mode 0600, readable
+   only by the Agent service user). Local users can use their key only through
+   the signing socket. A fingerprint cannot belong to two identities.
+
+   You can revoke an identity, which invalidates all of its keys immediately. A
+   pending or retired identity can be deleted, so that the device's next report
+   enrolls it again as pending.
+3. **Access.** Each matrix row is an identity or identity group, and each column
+   is a host group or approved endpoint. A cell lists the destination users the
+   row may log in as, and the matrix offers the usernames that the destination
+   Agents report.
+   - Clicking **allow**, **deny** or **clear** replaces every rule in that cell.
+   - Deny wins over allow, and the default is deny.
+   - Groups are typed: identity groups contain identities, and host groups
+     contain Agents.
+
+   For example, `gao@laptop → servers as gao` grants no reverse access and no
+   access as any other user.
+
+Every change opens a preview. It lists each configuration step and every login
+gained (+) or lost (−) as a sentence. The change then commits atomically against
+the previewed revision. If the revision changed in the meantime, you need a
+fresh preview.
+
+### Rotation
+
+- **Agent identities.** By default an Agent identity rotates every 90 days; you
+  can set the period per identity or leave it blank to turn rotation off.
+  **Rotate now** requests a rotation immediately.
+  - The hourly Styx job `SSHIdentityRotationWorker` requests due rotations.
+  - Within one heartbeat (about 30 s) the Agent generates the next generation
+    locally and reports its public key. Core accepts only the exact requested
+    generation.
+  - The previous key stays valid for a 3-day grace period, then expires. Keys
+    that expired more than 30 days ago are pruned, and the audit log keeps
+    their fingerprints.
+  - An offline Agent picks up a pending rotation when it reconnects.
+- **External identities.** These are never rotated automatically. When one is
+  due it is flagged *rotation overdue* but stays active. Replace its public key
+  on the Identities tab, then update the private key wherever it is used, for
+  example a GitHub Actions secret. Automating that update is tracked in
+  [issue #22](https://github.com/gsmlg-dev/secrethub/issues/22).
+- **Host keys.** Host keys are not rotated by SecretHub, because Agent
+  enrollment and sops-nix depend on them. To change a host key safely, trust
+  the new key alongside the old one, deploy and verify it, then keep only the
+  new one.
 
 ## Install dedicated OpenSSH profiles
 
@@ -193,15 +232,26 @@ forwarding and destination-constrained signing are outside this delivery.
 
 ## Failure, revocation and evidence
 
-Every list/sign/lookup obtains fresh Core authorization through the certificate
-authenticated runtime. The Agent fetches a private signing key only for that
-request and holds no cross-request private-key cache. Seal, disconnection, audit
-failure, expired/revoked credentials, missing capability and mismatched identity
-all fail closed. Removing rules, membership, identities or approved endpoints
-affects the next authorization even if a change notification is delayed.
-An already authorized in-flight operation can finish. Established SSH sessions
-continue; this feature does not terminate them. Dropping BEAM references does
-not guarantee physical memory zeroization.
+Every list and sign request gets fresh Core authorization over the
+certificate-authenticated runtime. The Agent signs locally only after Core
+returns `allowed`; Core never sends key material.
+
+All of the following fail closed:
+- a sealed vault
+- an audit failure
+- expired or revoked credentials
+- a missing capability
+- a mismatched local identity
+
+`authorized_keys` does not require the source device to be online. It does stop
+serving the keys of an Agent identity as soon as that Agent is suspended or
+revoked, or its certificate expires or is revoked. This matters because the
+private key file stays on that device.
+
+Removing rules, group membership, identities or approved endpoints affects the
+next authorization even if a change notification is delayed. An operation that
+was already authorized can still finish. Established SSH sessions continue;
+this feature does not terminate them.
 
 Audit records distinguish a signing authorization or key lookup from a completed
 signature or SSH login. sshd owns actual login/session evidence. Never place

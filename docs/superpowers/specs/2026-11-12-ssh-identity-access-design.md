@@ -180,13 +180,11 @@ Reports that do not match the requested generation are rejected and audited.
 
 Every state transition writes an audit event to the hash chain:
 
-- `ssh_identity.reported`
-- `approved`
-- `rotation_requested`
-- `rotated`
-- `key_expired`
-- `rotation_overdue`
-- `revoked`
+- **Management changes** are recorded as `ssh.configuration`, with each operation in the record: `identity_approve`, `identity_revoke`, `identity_delete`, `identity_rotate`, `identity_rotation`, `identity_external_add`, `identity_external_replace`.
+- **Agent reports** are recorded as `ssh.identity_report`. The record holds the outcome (`reported`, `rotated` or `unchanged`). For a rejected report it holds the reason instead.
+- **The worker** records `ssh.identity_rotation_requested`, `ssh.identity_rotation_overdue` and `ssh.identity_keys_pruned`.
+
+Key expiry needs no event of its own, because validity is computed from `not_after`.
 
 The UI's "rotate now" action follows path 1 for a single identity.
 
