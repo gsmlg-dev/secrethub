@@ -2,7 +2,7 @@ defmodule SecretHub.Agent.SSH.Server do
   @moduledoc "Separate bounded SSH signing and public lookup Unix listeners."
   use GenServer
   alias SecretHub.Agent.Connection
-  alias SecretHub.Agent.SSH.{Identity, Lookup, Protocol, SocketPath}
+  alias SecretHub.Agent.SSH.{Identity, KeyStore, Lookup, Protocol, Reconciler, SocketPath}
   alias SecretHub.Shared.SSH.Key
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -21,7 +21,8 @@ defmodule SecretHub.Agent.SSH.Server do
       config = %{
         kind: Keyword.fetch!(opts, :kind),
         timeout: Keyword.get(opts, :timeout, 5000),
-        request: Keyword.get(opts, :request)
+        request: Keyword.get(opts, :request),
+        key_root: Keyword.get(opts, :key_root)
       }
 
       task_supervisor = Keyword.fetch!(opts, :task_supervisor)
@@ -143,7 +144,7 @@ defmodule SecretHub.Agent.SSH.Server do
 
     case receive_frame(socket, deadline) do
       {:ok, payload} ->
-        reply = signing(payload, uid, request(config, deadline), deadline)
+        reply = signing(payload, uid, request(config, deadline), deadline, config.key_root)
         :erlang.garbage_collect()
         if send_frame(socket, reply, deadline) == :ok, do: serve(socket, uid, config)
 
@@ -152,18 +153,20 @@ defmodule SecretHub.Agent.SSH.Server do
     end
   end
 
-  defp signing(payload, uid, request, deadline) do
+  defp signing(payload, uid, request, deadline, key_root) do
     with {:ok, identity} <- Identity.account(uid, remaining(deadline)),
          {:ok, operation} <- Protocol.decode(payload),
-         {:ok, result} <- sign_operation(operation, identity, request) do
+         {:ok, result} <-
+           sign_operation(operation, identity, request, key_root || KeyStore.root()) do
       result
     else
       _ -> Protocol.failure()
     end
   end
 
-  defp sign_operation(:identities, identity, request) do
-    with {:ok, reply} <- request.("identities", identity_payload(identity)),
+  defp sign_operation(:identities, identity, request, key_root) do
+    with :ok <- Reconciler.ensure_enrolled(identity, request, key_root),
+         {:ok, reply} <- request.("identities", identity_payload(identity)),
          identities when is_list(identities) and length(identities) <= 128 <-
            Lookup.value(reply, "identities") do
       encode_identities(identities)
@@ -172,19 +175,18 @@ defmodule SecretHub.Agent.SSH.Server do
     end
   end
 
-  defp sign_operation({:sign, blob, data, flags}, identity, request) do
+  defp sign_operation({:sign, blob, data, flags}, identity, request, key_root) do
     with {:ok, public} <- Key.decode_public(Base.encode64(blob)),
+         {:ok, local} <- KeyStore.find_by_blob(identity.uid, blob, key_root),
          {:ok, reply} <-
            request.(
              "authorize_sign",
              Map.put(identity_payload(identity), "public_key", public.encoded)
            ),
+         true <- Lookup.value(reply, "allowed") == true,
          {:ok, returned} <- Key.decode_public(Lookup.value(reply, "public_key")),
          true <- returned.blob == blob,
-         pem when is_binary(pem) <- Lookup.value(reply, "private_key"),
-         {:ok, imported} <- Key.import_private(pem),
-         true <- imported.public.blob == blob,
-         {:ok, signature} <- Key.sign(pem, data, flags) do
+         {:ok, signature} <- Key.sign(local.private_pem, data, flags) do
       {:ok, Protocol.signature(signature)}
     else
       _ -> {:error, :signing_unavailable}

@@ -38,6 +38,13 @@ defmodule SecretHub.Agent.SSH.OpenSSHTest do
 
       pem = File.read!(key_path)
 
+      {:ok, identity} = SecretHub.Agent.SSH.Identity.current()
+      key_root = Path.join(ctx.dir, "keys")
+      File.mkdir_p!(Path.join(key_root, Integer.to_string(identity.uid)))
+      local = Path.join([key_root, Integer.to_string(identity.uid), "1.key"])
+      File.write!(local, pem)
+      File.chmod!(local, 0o600)
+
       public =
         (key_path <> ".pub") |> File.read!() |> String.split() |> Enum.take(2) |> Enum.join(" ")
 
@@ -46,13 +53,13 @@ defmodule SecretHub.Agent.SSH.OpenSSHTest do
 
       request = fn
         "identities", _ ->
-          {:ok, %{"identities" => [%{"public_key" => public}]}}
+          {:ok, %{"identities" => [%{"public_key" => public, "generation" => 1}]}}
 
         "authorize_sign", _ ->
           Agent.get_and_update(authorization, fn state ->
             result =
               if state.allowed,
-                do: {:ok, %{"public_key" => public, "private_key" => pem}},
+                do: {:ok, %{"allowed" => true, "public_key" => public, "generation" => 1}},
                 else: {:error, :denied}
 
             {result, %{state | requests: state.requests + 1}}
@@ -63,7 +70,12 @@ defmodule SecretHub.Agent.SSH.OpenSSHTest do
 
       server =
         start_supervised!(
-          {Server, path: socket, kind: :signing, task_supervisor: ctx.tasks, request: request}
+          {Server,
+           path: socket,
+           kind: :signing,
+           task_supervisor: ctx.tasks,
+           request: request,
+           key_root: key_root}
         )
 
       {listed, 0} = System.cmd("ssh-add", ["-L"], env: [{"SSH_AUTH_SOCK", socket}])

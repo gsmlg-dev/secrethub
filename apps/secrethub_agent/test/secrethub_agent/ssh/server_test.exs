@@ -16,32 +16,89 @@ defmodule SecretHub.Agent.SSH.ServerTest do
     %{dir: dir, task_supervisor: task_supervisor}
   end
 
-  test "real peer UID is used, forged signing identity is ignored, mutations fail", ctx do
+  test "first use enrolls locally, lists Core-authorized keys and signs without key material",
+       ctx do
     {:ok, identity} = Identity.current()
     parent = self()
+    key_root = Path.join(ctx.dir, "keys")
 
-    request = fn operation, payload ->
-      send(parent, {operation, payload})
-      {:ok, %{"identities" => []}}
+    request = fn
+      "identity_report", payload ->
+        send(parent, {:report, payload})
+        {:ok, %{"accepted" => true}}
+
+      "identities", payload ->
+        send(parent, {:identities, payload})
+        {:ok, local} = SecretHub.Agent.SSH.KeyStore.load(identity.uid, 1, key_root)
+
+        {:ok, %{"identities" => [%{"public_key" => local.public.public_line, "generation" => 1}]}}
+
+      "authorize_sign", payload ->
+        send(parent, {:authorize, payload})
+        {:ok, %{"allowed" => true, "public_key" => payload["public_key"]}}
     end
 
     path = Path.join(ctx.dir, "sign.sock")
 
     start_supervised!(
-      {Server, path: path, kind: :signing, task_supervisor: ctx.task_supervisor, request: request}
+      {Server,
+       path: path,
+       kind: :signing,
+       task_supervisor: ctx.task_supervisor,
+       request: request,
+       key_root: key_root}
     )
 
     {:ok, socket} = :gen_tcp.connect({:local, path}, 0, [:binary, active: false, packet: 4])
     :ok = :gen_tcp.send(socket, <<11>>)
-    assert {:ok, <<12, 0::32>>} = :gen_tcp.recv(socket, 0, 2000)
-    assert_receive {"identities", %{"uid" => uid, "username" => user}}
+    assert {:ok, <<12, 1::32, _::binary>>} = :gen_tcp.recv(socket, 0, 2000)
+    assert_receive {:report, %{"uid" => uid, "generation" => 1, "public_key" => line}}
     assert uid == identity.uid
+    refute line =~ "PRIVATE"
+    assert_receive {:identities, %{"uid" => ^uid, "username" => user}}
     assert user == identity.username
+
+    {:ok, local} = SecretHub.Agent.SSH.KeyStore.load(identity.uid, 1, key_root)
+    blob = local.public.blob
+    data = "challenge"
+    sign = <<13, byte_size(blob)::32, blob::binary, byte_size(data)::32, data::binary, 0::32>>
+    :ok = :gen_tcp.send(socket, sign)
+    assert {:ok, <<14, _::binary>>} = :gen_tcp.recv(socket, 0, 2000)
+    assert_receive {:authorize, %{"public_key" => _}}
+
     :ok = :gen_tcp.send(socket, <<17>>)
     assert {:ok, <<5>>} = :gen_tcp.recv(socket, 0, 2000)
     :gen_tcp.close(socket)
     assert {:ok, %{mode: mode}} = File.stat(path)
     assert Bitwise.band(mode, 0o777) == 0o660
+  end
+
+  test "a key unknown locally or denied by Core is not signed", ctx do
+    {:ok, identity} = Identity.current()
+    key_root = Path.join(ctx.dir, "keys")
+    {:ok, local} = SecretHub.Agent.SSH.KeyStore.create(identity.uid, 1, key_root)
+    {:ok, other} = SecretHub.Shared.SSH.Key.generate("ed25519")
+    blob = local.public.blob
+    path = Path.join(ctx.dir, "deny.sock")
+
+    start_supervised!(
+      {Server,
+       path: path,
+       kind: :signing,
+       task_supervisor: ctx.task_supervisor,
+       key_root: key_root,
+       request: fn "authorize_sign", _ -> {:error, :denied} end}
+    )
+
+    {:ok, socket} = :gen_tcp.connect({:local, path}, 0, [:binary, active: false, packet: 4])
+
+    for key <- [blob, other.public.blob] do
+      sign = <<13, byte_size(key)::32, key::binary, 1::32, "x", 0::32>>
+      :ok = :gen_tcp.send(socket, sign)
+      assert {:ok, <<5>>} = :gen_tcp.recv(socket, 0, 2000)
+    end
+
+    :gen_tcp.close(socket)
   end
 
   test "public lookup rejects forged fields and never accepts private RPCs", ctx do
@@ -90,6 +147,7 @@ defmodule SecretHub.Agent.SSH.ServerTest do
        path: path,
        kind: :signing,
        task_supervisor: ctx.task_supervisor,
+       key_root: Path.join(ctx.dir, "keys"),
        request: fn _, _ -> {:ok, %{"identities" => []}} end}
 
     supervisor =
@@ -141,6 +199,7 @@ defmodule SecretHub.Agent.SSH.ServerTest do
        kind: :signing,
        task_supervisor: ctx.task_supervisor,
        timeout: 200,
+       key_root: Path.join(ctx.dir, "keys"),
        request: fn _, _ -> {:ok, %{"identities" => []}} end}
     )
 
