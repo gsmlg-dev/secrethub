@@ -1,5 +1,8 @@
 # Explicit local qualification only. Requires disposable PG, passwordless sudo,
-# OpenSSH tools and SECRETHUB_SSH_RELEASE pointing at a built Agent release.
+# OpenSSH tools and SECRETHUB_SSH_RELEASE pointing at a built Agent release
+# (MIX_ENV=prod mix release secrethub_agent --overwrite -> _build/prod/rel/secrethub_agent).
+# Uses the device-held identity model: Agents enroll and sign with local keys;
+# Core approves identities and authorizes signatures without key material.
 # MIX_ENV=test mix run --no-start -r scripts/ssh/test_boot.exs scripts/ssh/qualify_openssh.exs
 ExUnit.start(assert_receive_timeout: 15_000)
 {:ok, _} = Application.ensure_all_started(:secrethub_web)
@@ -14,14 +17,15 @@ Ecto.Adapters.SQL.Sandbox.mode(SecretHub.Core.Repo, :manual)
 
 defmodule SecretHub.SSH.OpenSSHQualification do
   use ExUnit.Case, async: false
+  import Ecto.Query, only: [from: 2]
   alias SecretHub.Core.{Repo, RuntimeDatabaseFixture, SSH}
   alias SecretHub.Core.Agents.ConnectionManager
   alias SecretHub.Core.PKI.{CA, Issuer}
   alias SecretHub.Core.Vault.SealState
-  alias SecretHub.Shared.Schemas.Agent
+  alias SecretHub.Shared.Schemas.{Agent, AuditLog}
   alias SecretHub.Shared.SSH.{Key, Profiles}
   alias SecretHub.Agent.{Connection, IdentityStore}
-  alias SecretHub.Agent.SSH.Server
+  alias SecretHub.Agent.SSH.{KeyStore, Server}
 
   @moduletag timeout: 240_000
   setup_all do
@@ -128,12 +132,26 @@ defmodule SecretHub.SSH.OpenSSHQualification do
     {:ok, {_, tls_port}} = SecretHub.Web.AgentEndpoint.server_info(:https)
     endpoint = "wss://localhost:#{tls_port}/agent/socket/websocket"
 
+    # Device-held keys live under <state_dir>/ssh-identities. The listeners get
+    # an explicit key root; each Connection's inventory reconcile resolves the
+    # same root through :state_dir, so rotation and pruning act on these files.
+    source_keys = fixture <> "/ssh-source/ssh-identities"
+    destination_keys = fixture <> "/ssh-target/ssh-identities"
+
+    settings = %{
+      ssh_lookup_enabled: true,
+      ssh_signing_enabled: true,
+      state_dir: fixture <> "/ssh-source"
+    }
+
     previous =
-      for key <- [:ssh_lookup_enabled, :ssh_signing_enabled],
+      for key <- Map.keys(settings),
           into: %{},
           do: {key, Application.get_env(:secrethub_agent, key)}
 
-    for key <- Map.keys(previous), do: Application.put_env(:secrethub_agent, key, true)
+    Enum.each(settings, fn {key, value} -> Application.put_env(:secrethub_agent, key, value) end)
+    previous_state_env = System.get_env("SECRET_HUB_AGENT_STATE_DIR")
+    System.delete_env("SECRET_HUB_AGENT_STATE_DIR")
 
     on_exit(fn ->
       Enum.each(previous, fn {key, value} ->
@@ -141,96 +159,108 @@ defmodule SecretHub.SSH.OpenSSHQualification do
           do: Application.delete_env(:secrethub_agent, key),
           else: Application.put_env(:secrethub_agent, key, value)
       end)
+
+      if previous_state_env, do: System.put_env("SECRET_HUB_AGENT_STATE_DIR", previous_state_env)
     end)
 
     start_supervised!({Task.Supervisor, name: SecretHub.Agent.SSH.Tasks, max_children: 40})
     source = connect!("ssh-source", endpoint, server_tls.ca_certificate_pem, fixture)
-    peer = agent_peer!()
+    peer = agent_peer!(fixture <> "/ssh-target")
     destination = connect!("ssh-target", endpoint, server_tls.ca_certificate_pem, fixture, peer)
     await(fn -> Enum.all?(SSH.snapshot().agents, &is_binary(&1.ssh_inventory_seen_at)) end)
     tasks = SecretHub.Agent.SSH.Tasks
 
-    for {kind, path, connection} <- [
-          {:lookup, source_lookup, source},
-          {:signing, signing, source},
-          {:lookup, destination_lookup, destination},
-          {:signing, destination_signing, destination}
-        ] do
-      pid =
-        start_supervised!(%{
-          id: path,
-          start:
-            {Server, :start_link,
-             [
+    servers =
+      for {kind, path, connection, key_root} <- [
+            {:lookup, source_lookup, source, source_keys},
+            {:signing, signing, source, source_keys},
+            {:lookup, destination_lookup, destination, destination_keys},
+            {:signing, destination_signing, destination, destination_keys}
+          ] do
+        pid =
+          start_supervised!(%{
+            id: path,
+            start:
+              {Server, :start_link,
                [
-                 kind: kind,
-                 path: path,
-                 task_supervisor: tasks,
-                 request: fn operation, payload ->
-                   ssh_request(connection, operation, payload)
-                 end
-               ]
-             ]}
-        })
+                 [
+                   kind: kind,
+                   path: path,
+                   task_supervisor: tasks,
+                   key_root: key_root,
+                   request: fn operation, payload ->
+                     ssh_request(connection, operation, payload)
+                   end
+                 ]
+               ]}
+          })
 
-      assert Process.alive?(pid)
-      sudo!("chgrp", [group, path])
-    end
+        assert Process.alive?(pid)
+        sudo!("chgrp", [group, path])
+        pid
+      end
 
     source_uid = command!("id", ["-u"]) |> String.trim() |> String.to_integer()
 
-    changes = [
-      %{"op" => "group_upsert", "id" => "sources", "name" => "Sources"},
-      %{"op" => "group_members", "group_id" => "sources", "agent_ids" => ["ssh-source"]},
-      %{
-        "op" => "endpoint_upsert",
-        "agent_id" => "ssh-target",
-        "aliases" => ["127.0.0.1", "localhost"],
-        "port" => port,
-        "host_keys" => [host.public_line],
-        "approved" => true
-      },
-      %{
-        "op" => "endpoint_upsert",
-        "agent_id" => "ssh-source",
-        "aliases" => ["127.0.0.2"],
-        "port" => port,
-        "host_keys" => [host.public_line],
-        "approved" => true
-      },
-      %{
-        "op" => "identity_upsert",
-        "agent_id" => "ssh-source",
-        "username" => "gao",
-        "uid" => source_uid,
-        "algorithm" => "ed25519"
-      },
-      %{
-        "op" => "identity_upsert",
-        "agent_id" => "ssh-source",
-        "username" => "nobody",
-        "uid" => 65534,
-        "algorithm" => "ed25519"
-      },
-      %{
-        "op" => "identity_upsert",
-        "agent_id" => "ssh-target",
-        "username" => "gao",
-        "uid" => source_uid,
-        "algorithm" => "ed25519"
-      },
-      rule("gao", Enum.at(users, 0), "allow", "gao-allow"),
-      rule("nobody", Enum.at(users, 1), "allow", "nobody-allow")
-    ]
+    # Enrollment: a local user's first identity list on a signing socket makes
+    # the Agent generate generation 1 locally and report only its public key.
+    # Core records a pending identity that is not served until approved.
+    for {user, socket, agent} <- [
+          {"gao", signing, "ssh-source"},
+          {"nobody", signing, "ssh-source"},
+          {"gao", destination_signing, "ssh-target"}
+        ] do
+      {pending_list, _} = list_identities(user, socket, group)
+      await(fn -> identity(SSH.snapshot(), agent, user) end)
+      pending = identity(SSH.snapshot(), agent, user)
+
+      assert %{status: "pending", origin: "agent", requested_generation: 1} = pending
+      assert pending.name == user <> "@" <> agent
+      assert Enum.map(pending.keys, & &1.generation) == [1]
+      refute pending_list =~ current_key(pending)
+    end
+
+    snapshot = SSH.snapshot()
+    gao = identity(snapshot, "ssh-source", "gao")
+    nobody = identity(snapshot, "ssh-source", "nobody")
+    reverse = identity(snapshot, "ssh-target", "gao")
+    assert gao.local_uid == source_uid
+
+    # Private keys stay owner-only in the Agent key store; a local user cannot
+    # read even their own key and can use it only through the signing socket.
+    for {uid, root} <- [{source_uid, source_keys}, {nobody.local_uid, source_keys}] do
+      assert KeyStore.generations(uid, root) == [1]
+      {:ok, %{mode: mode}} = File.stat(Path.join([root, to_string(uid), "1.key"]))
+      assert Bitwise.band(mode, 0o777) == 0o600
+    end
+
+    {_, unreadable} =
+      sudo_as("nobody", group, [
+        "cat",
+        Path.join([source_keys, to_string(nobody.local_uid), "1.key"])
+      ])
+
+    assert unreadable != 0
+
+    changes =
+      Enum.map([gao, nobody, reverse], &%{"op" => "identity_approve", "id" => &1.id}) ++
+        [
+          %{"op" => "group_upsert", "id" => "sources", "kind" => "identity", "name" => "Sources"},
+          %{"op" => "group_members", "group_id" => "sources", "member_ids" => [nobody.id]},
+          endpoint("ssh-target", ["127.0.0.1", "localhost"], port, host.public_line),
+          endpoint("ssh-source", ["127.0.0.2"], port, host.public_line),
+          rule("gao-allow", "allow", {"identity", gao.id}, Enum.at(users, 0)),
+          rule("nobody-allow", "allow", {"identity_group", "sources"}, Enum.at(users, 1))
+        ]
 
     {:ok, snapshot} = SSH.apply_changes(changes, SSH.snapshot().revision)
 
-    for identity <- snapshot.identities do
-      File.write!(
-        fixture <> "/" <> identity.agent_id <> "-" <> identity.username <> ".pub",
-        identity.public_key <> "\n"
-      )
-    end
+    assert Enum.all?(
+             [gao, nobody, reverse],
+             &(identity_by_id(snapshot, &1.id).status == "active")
+           )
+
+    Enum.each(snapshot.identities, &write_public!(fixture, &1))
 
     {:ok, client} =
       Profiles.client(
@@ -353,8 +383,8 @@ defmodule SecretHub.SSH.OpenSSHQualification do
     {listed, 0} =
       System.cmd("ssh-add", ["-L"], env: [{"SSH_AUTH_SOCK", signing}], stderr_to_stdout: true)
 
-    assert listed =~ identity(snapshot, "ssh-source", "gao").public_key
-    refute listed =~ identity(snapshot, "ssh-source", "nobody").public_key
+    assert listed =~ current_key(identity(snapshot, "ssh-source", "gao"))
+    refute listed =~ current_key(identity(snapshot, "ssh-source", "nobody"))
 
     {fingerprints, 0} =
       System.cmd("ssh-add", ["-l"], env: [{"SSH_AUTH_SOCK", signing}], stderr_to_stdout: true)
@@ -364,8 +394,8 @@ defmodule SecretHub.SSH.OpenSSHQualification do
     {other_list, 0} =
       sudo_as("nobody", group, ["env", "SSH_AUTH_SOCK=" <> signing, "ssh-add", "-L"])
 
-    assert other_list =~ identity(snapshot, "ssh-source", "nobody").public_key
-    refute other_list =~ identity(snapshot, "ssh-source", "gao").public_key
+    assert other_list =~ current_key(identity(snapshot, "ssh-source", "nobody"))
+    refute other_list =~ current_key(identity(snapshot, "ssh-source", "gao"))
 
     {_, other_sign_exit} =
       sudo_as("nobody", group, [
@@ -394,6 +424,31 @@ defmodule SecretHub.SSH.OpenSSHQualification do
         env: [{"SSH_AUTH_SOCK", signing}],
         stderr_to_stdout: true
       )
+
+    # The Agent signed locally above. Core's runtime replies authorize only and
+    # never carry key material.
+    account = %{"uid" => source_uid, "username" => "gao"}
+
+    {:ok, authorized} =
+      ssh_request(
+        source,
+        "authorize_sign",
+        Map.put(account, "public_key", current_key(identity(snapshot, "ssh-source", "gao")))
+      )
+
+    assert field(authorized, "allowed") == true
+    assert field(authorized, "public_key") == current_key(identity(snapshot, "ssh-source", "gao"))
+    assert field(authorized, "generation") == 1
+
+    assert Enum.map(Map.keys(authorized), &to_string/1) --
+             ~w(allowed public_key generation revision) == []
+
+    {:ok, listed_reply} = ssh_request(source, "identities", account)
+
+    for reply <- [authorized, listed_reply] do
+      refute Enum.any?(Map.keys(reply), &(to_string(&1) =~ "private"))
+      refute inspect(reply, limit: :infinity, printable_limit: :infinity) =~ "PRIVATE KEY"
+    end
 
     base_args = [
       "-F",
@@ -427,7 +482,7 @@ defmodule SecretHub.SSH.OpenSSHQualification do
     assert wrong_user =~ "Permission denied"
 
     source_key =
-      identity(snapshot, "ssh-source", "gao").public_key |> Key.decode_public() |> elem(1)
+      identity(snapshot, "ssh-source", "gao") |> current_key() |> Key.decode_public() |> elem(1)
 
     {public_lookup, 0} =
       sudo_as("nobody", group, [
@@ -441,8 +496,10 @@ defmodule SecretHub.SSH.OpenSSHQualification do
 
     assert String.trim(public_lookup) == "no-agent-forwarding " <> source_key.public_line
 
+    # The approved target identity has no outgoing rule, so the reverse edge
+    # is denied by default.
     reverse_key =
-      identity(snapshot, "ssh-target", "gao").public_key |> Key.decode_public() |> elem(1)
+      identity(snapshot, "ssh-target", "gao") |> current_key() |> Key.decode_public() |> elem(1)
 
     {"", 0} =
       sudo_as("nobody", group, [
@@ -454,7 +511,7 @@ defmodule SecretHub.SSH.OpenSSHQualification do
         reverse_key.encoded
       ])
 
-    denied = rule("gao", Enum.at(users, 0), "deny", "gao-deny")
+    denied = rule("gao-deny", "deny", {"identity", gao.id}, Enum.at(users, 0))
 
     pinned = [
       "-o",
@@ -475,18 +532,20 @@ defmodule SecretHub.SSH.OpenSSHQualification do
 
     assert reverse_output =~ "Permission denied"
 
+    # Removing an identity from its identity group revokes only the access
+    # granted through that group.
     {:ok, _} =
       SSH.apply_changes(
-        [%{"op" => "group_members", "group_id" => "sources", "agent_ids" => []}],
+        [%{"op" => "group_members", "group_id" => "sources", "member_ids" => []}],
         SSH.snapshot().revision
       )
 
-    assert_login!(base_args, fixture, "gao", Enum.at(users, 0), 255, group)
     assert_login!(base_args, fixture, "nobody", Enum.at(users, 1), 255, group)
+    assert_login!(base_args, fixture, "gao", Enum.at(users, 0), 0, group)
 
     {:ok, _} =
       SSH.apply_changes(
-        [%{"op" => "group_members", "group_id" => "sources", "agent_ids" => ["ssh-source"]}],
+        [%{"op" => "group_members", "group_id" => "sources", "member_ids" => [nobody.id]}],
         SSH.snapshot().revision
       )
 
@@ -514,28 +573,100 @@ defmodule SecretHub.SSH.OpenSSHQualification do
     {:ok, _} =
       SSH.apply_changes([%{"op" => "rule_delete", "id" => "gao-deny"}], SSH.snapshot().revision)
 
+    # Rotation: Core requests generation 2; the Agent generates it on its next
+    # inventory heartbeat and reports only the public key. The superseded key
+    # stays valid for the grace period.
+    {:ok, _} =
+      SSH.apply_changes([%{"op" => "identity_rotate", "id" => gao.id}], SSH.snapshot().revision)
+
+    send(source, :ssh_inventory)
+    await(fn -> generations(identity(SSH.snapshot(), "ssh-source", "gao")) == [1, 2] end, 600)
+    rotated = identity(SSH.snapshot(), "ssh-source", "gao")
+    assert rotated.status == "active" and rotated.requested_generation == 2
+    [previous_key, rotated_key] = Enum.sort_by(rotated.keys, & &1.generation)
+    refute is_nil(previous_key.not_after)
+    assert is_nil(rotated_key.not_after)
+    assert KeyStore.generations(source_uid, source_keys) == [1, 2]
+
+    {rotated_list, 0} =
+      System.cmd("ssh-add", ["-L"], env: [{"SSH_AUTH_SOCK", signing}], stderr_to_stdout: true)
+
+    assert rotated_list =~ previous_key.public_key
+    assert rotated_list =~ rotated_key.public_key
+    # The generation 1 public file still names the superseded key.
+    assert_login!(base_args, fixture, "gao", Enum.at(users, 0), 0, group)
+    write_public!(fixture, rotated)
+    assert_login!(base_args, fixture, "gao", Enum.at(users, 0), 0, group)
+
+    # No Agent private key reached Core state, the audit chain, or the
+    # Connection and listener process state.
+    private_pems =
+      for {uid, root} <- [
+            {source_uid, source_keys},
+            {nobody.local_uid, source_keys},
+            {source_uid, destination_keys}
+          ],
+          generation <- KeyStore.generations(uid, root),
+          {:ok, key} <- [KeyStore.load(uid, generation, root)],
+          do: key.private_pem
+
+    assert length(private_pems) == 4
+
+    audit =
+      Repo.all(
+        from(log in AuditLog, where: like(log.event_type, "ssh.%"), select: log.event_data)
+      )
+
+    for {label, term} <- [{"Core snapshot", SSH.snapshot()}, {"SSH audit", audit}] do
+      refute inspect(term, limit: :infinity, printable_limit: :infinity) =~ "PRIVATE KEY"
+      refute_private_material!(label, term, private_pems)
+    end
+
+    refute_private_material!("source Connection", :sys.get_state(source), private_pems)
+
+    refute_private_material!(
+      "target Connection",
+      :peer.call(peer, :sys, :get_state, [Connection]),
+      private_pems
+    )
+
+    Enum.each(
+      servers,
+      &refute_private_material!("SSH listener", :sys.get_state(&1), private_pems)
+    )
+
     {:ok, wrong_host} = Key.generate("ed25519")
 
     {:ok, _} =
       SSH.apply_changes(
-        [
-          %{
-            "op" => "endpoint_upsert",
-            "agent_id" => "ssh-target",
-            "aliases" => ["127.0.0.1", "localhost"],
-            "port" => port,
-            "host_keys" => [wrong_host.public.public_line],
-            "approved" => true
-          }
-        ],
+        [endpoint("ssh-target", ["127.0.0.1", "localhost"], port, wrong_host.public.public_line)],
         SSH.snapshot().revision
       )
 
     wrong_host = assert_login!(base_args, fixture, "gao", Enum.at(users, 0), 255, group)
     assert wrong_host =~ "Host key verification failed"
 
+    {:ok, _} =
+      SSH.apply_changes(
+        [endpoint("ssh-target", ["127.0.0.1", "localhost"], port, host.public_line)],
+        SSH.snapshot().revision
+      )
+
+    assert_login!(base_args, fixture, "gao", Enum.at(users, 0), 0, group)
+
+    # Revocation takes effect immediately; other identities keep their access,
+    # and the next reconcile discards the retired identity's local keys.
+    {:ok, _} =
+      SSH.apply_changes([%{"op" => "identity_revoke", "id" => gao.id}], SSH.snapshot().revision)
+
+    revoked = assert_login!(base_args, fixture, "gao", Enum.at(users, 0), 255, group)
+    assert revoked =~ "Permission denied"
+    assert_login!(base_args, fixture, "nobody", Enum.at(users, 1), 0, group)
+    send(source, :ssh_inventory)
+    await(fn -> KeyStore.generations(source_uid, source_keys) == [] end, 600)
+
     IO.puts(
-      "SSH qualification: real mTLS, two source UIDs/two target accounts, SSH-agent sign, helper nobody, directed/wrong-user/reverse/group-removal/deny/revoke/host-key/local-file/CA checks passed; fixture #{suffix}"
+      "SSH qualification: real mTLS, device-held identity enrollment/approval, two source UIDs/two target accounts, local SSH-agent sign, no private key in Core/audit/process state, helper nobody, directed/wrong-user/reverse/identity-group-removal/deny/rotation/host-key/revocation/local-file/CA checks passed; fixture #{suffix}"
     )
   end
 
@@ -622,7 +753,8 @@ defmodule SecretHub.SSH.OpenSSHQualification do
 
   # A deployed Agent owns one socket-client supervisor per BEAM. Run the second
   # real Connection in its own VM, retaining the production registration names.
-  defp agent_peer! do
+  # The peer reconciles its own key store, so it gets its own state_dir.
+  defp agent_peer!(state_dir) do
     {:ok, peer, _} =
       :peer.start_link(%{connection: :standard_io, args: [~c"+S", ~c"2:2"]})
 
@@ -638,6 +770,8 @@ defmodule SecretHub.SSH.OpenSSHQualification do
         [{:secrethub_agent, Application.get_all_env(:secrethub_agent)}]
       ])
 
+    :ok = :peer.call(peer, Application, :put_env, [:secrethub_agent, :state_dir, state_dir])
+
     {:ok, _} =
       :peer.call(peer, Code, :eval_string, [
         "{:ok, pid} = Task.Supervisor.start_link(name: SecretHub.Agent.SSH.Tasks, max_children: 40); Process.unlink(pid); :ok"
@@ -652,22 +786,69 @@ defmodule SecretHub.SSH.OpenSSHQualification do
   defp ssh_request(connection, operation, payload),
     do: Connection.ssh_request(connection, operation, payload, 5000)
 
-  defp rule(source_user, destination_user, effect, id),
+  defp rule(id, effect, {source_kind, source_id}, destination_user),
     do: %{
       "op" => "rule_upsert",
       "id" => id,
       "effect" => effect,
       "enabled" => true,
-      "source_kind" => "group",
-      "source_id" => "sources",
-      "source_user" => source_user,
-      "destination_kind" => "agent",
+      "source_kind" => source_kind,
+      "source_id" => source_id,
+      "destination_kind" => "endpoint",
       "destination_id" => "ssh-target",
       "destination_user" => destination_user
     }
 
+  defp endpoint(agent_id, aliases, port, host_key),
+    do: %{
+      "op" => "endpoint_upsert",
+      "agent_id" => agent_id,
+      "aliases" => aliases,
+      "port" => port,
+      "host_keys" => [host_key],
+      "approved" => true
+    }
+
+  defp list_identities("gao", socket, _group),
+    do: System.cmd("ssh-add", ["-L"], env: [{"SSH_AUTH_SOCK", socket}], stderr_to_stdout: true)
+
+  defp list_identities(user, socket, group),
+    do: sudo_as(user, group, ["env", "SSH_AUTH_SOCK=" <> socket, "ssh-add", "-L"])
+
   defp identity(snapshot, agent, user),
-    do: Enum.find(snapshot.identities, &(&1.agent_id == agent and &1.username == user))
+    do:
+      Enum.find(
+        snapshot.identities,
+        &(&1.origin == "agent" and &1.agent_id == agent and &1.local_username == user)
+      )
+
+  defp identity_by_id(snapshot, id), do: Enum.find(snapshot.identities, &(&1.id == id))
+
+  defp generations(nil), do: []
+  defp generations(identity), do: identity.keys |> Enum.map(& &1.generation) |> Enum.sort()
+
+  defp current_key(identity),
+    do: identity.keys |> Enum.max_by(& &1.generation) |> Map.fetch!(:public_key)
+
+  defp write_public!(fixture, %{origin: "agent"} = identity),
+    do:
+      File.write!(
+        fixture <> "/" <> identity.agent_id <> "-" <> identity.local_username <> ".pub",
+        current_key(identity) <> "\n"
+      )
+
+  defp field(reply, key), do: Map.get(reply, key, Map.get(reply, String.to_atom(key)))
+
+  defp refute_private_material!(label, term, private_pems) do
+    encoded = :erlang.term_to_binary(term)
+
+    for pem <- private_pems,
+        {_, der, _} <- :public_key.pem_decode(pem),
+        needle <- [pem, der] do
+      assert :binary.match(encoded, needle) == :nomatch,
+             "#{label} holds SSH identity private key material"
+    end
+  end
 
   defp assert_login!(base, fixture, source, target, expected, group) do
     args =

@@ -171,6 +171,11 @@ certificate-authenticated Agent Connections (one in an isolated BEAM), separate
 Unix sockets, two disposable target accounts and owned loopback sshd processes.
 It uses the packaged release helpers. It never reloads the system sshd.
 
+On 2026-11-12 the harness was updated for the device-held identity model
+(signing-socket enrollment, identity approval, identity/identity-group rules,
+local signing, rotation and revocation). It has **not been re-run** since; the
+results below predate that update.
+
 Last run: **1 test, 1 failure**, seed `626104`, exit **2**, log
 `/tmp/secrethub-ssh-astra-round2.log`, Linux x86_64, OpenSSH 10.5p1.
 
