@@ -477,6 +477,50 @@ defmodule SecretHub.Core.SSH.RuntimeTest do
              Enum.filter(SSH.snapshot().endpoints, &(&1.agent_id == "source"))
   end
 
+  test "snapshot edges drop identities whose source Agent is untrusted", ctx do
+    {_key, identity} = enroll(ctx)
+    grant(ctx, identity)
+    {:ok, ext} = Key.generate("ed25519")
+
+    {:ok, %{identities: identities}} =
+      SSH.apply_changes(
+        [
+          %{
+            "op" => "identity_external_add",
+            "name" => "ci",
+            "public_key" => ext.public.public_line
+          }
+        ],
+        SSH.snapshot().revision
+      )
+
+    external = Enum.find(identities, &(&1.origin == "external"))
+
+    {:ok, _} =
+      SSH.apply_changes(
+        [
+          %{
+            "op" => "rule_upsert",
+            "id" => "ci",
+            "effect" => "allow",
+            "source_kind" => "identity",
+            "source_id" => external.id,
+            "destination_kind" => "endpoint",
+            "destination_id" => "target",
+            "destination_user" => "app"
+          }
+        ],
+        SSH.snapshot().revision
+      )
+
+    edge_ids = fn -> SSH.snapshot().edges |> Enum.map(& &1.identity_id) |> Enum.sort() end
+
+    assert edge_ids.() == Enum.sort([identity.id, external.id])
+
+    Repo.update!(Ecto.Changeset.change(Repo.get!(Agent, ctx.source.id), status: :suspended))
+    assert edge_ids.() == [external.id]
+  end
+
   test "external identities appear in authorized_keys", ctx do
     {:ok, ext} = Key.generate("ed25519")
 

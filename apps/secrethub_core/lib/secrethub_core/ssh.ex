@@ -641,7 +641,19 @@ defmodule SecretHub.Core.SSH do
     |> Map.delete(:reports)
     |> Map.put(:identities, inventory.identities)
     |> Map.put(:agents, agents)
-    |> Map.put(:edges, Evaluator.edges(inventory))
+    |> Map.put(:edges, served_edges(inventory))
+  end
+
+  # Only edges Core would actually serve: authorized_keys skips identities
+  # whose source Agent is no longer trusted.
+  defp served_edges(inventory) do
+    trusted =
+      for identity <- inventory.identities,
+          trusted_source?(identity),
+          into: MapSet.new(),
+          do: identity.id
+
+    Enum.filter(Evaluator.edges(inventory), &MapSet.member?(trusted, &1.identity_id))
   end
 
   defp change_batch!(inventory, changes, now)
