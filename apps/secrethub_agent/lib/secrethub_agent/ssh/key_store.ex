@@ -75,7 +75,9 @@ defmodule SecretHub.Agent.SSH.KeyStore do
     :ok = File.chmod(directory, 0o700)
     {:ok, key} = Key.generate("ed25519")
     target = path(uid, generation, root)
-    temporary = target <> ".tmp." <> Base.url_encode64(:crypto.strong_rand_bytes(9), padding: false)
+
+    temporary =
+      target <> ".tmp." <> Base.url_encode64(:crypto.strong_rand_bytes(9), padding: false)
 
     result =
       with {:ok, fd} <- :file.open(to_charlist(temporary), [:write, :binary, :raw, :exclusive]) do
