@@ -100,6 +100,95 @@ defmodule SecretHub.Web.SSHAccessLiveTest do
     assert [%{approved: true, host_keys: [_]}] = SSH.snapshot().endpoints
   end
 
+  test "pending Agent identities can be approved and rotated from the identities tab", %{
+    conn: conn
+  } do
+    {:ok, key} = Key.generate("ed25519")
+    report_identity("source", key.public.public_line)
+
+    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
+    view |> element("#ssh-tab-identities") |> render_click()
+    [identity] = SSH.snapshot().identities
+    assert has_element?(view, "#identity-#{identity.id}", "pending")
+
+    html = view |> element("#approve-#{identity.id}") |> render_click()
+    assert html =~ "Approve identity gao@source"
+    view |> element("#ssh-confirm") |> render_click()
+    assert [%{status: "active"}] = SSH.snapshot().identities
+
+    html = view |> element("#rotate-#{identity.id}") |> render_click()
+    assert html =~ "Rotate identity gao@source now"
+  end
+
+  test "revoked identities can be deleted from the identities tab", %{conn: conn} do
+    {:ok, key} = Key.generate("ed25519")
+    report_identity("source", key.public.public_line)
+
+    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
+    view |> element("#ssh-tab-identities") |> render_click()
+    [identity] = SSH.snapshot().identities
+
+    view |> element("#revoke-#{identity.id}") |> render_click()
+    view |> element("#ssh-confirm") |> render_click()
+    assert [%{status: "retired"}] = SSH.snapshot().identities
+    refute has_element?(view, "#revoke-#{identity.id}")
+
+    html = view |> element("#delete-#{identity.id}") |> render_click()
+    assert html =~ "Delete identity gao@source"
+    view |> element("#ssh-confirm") |> render_click()
+    assert [] = SSH.snapshot().identities
+    refute has_element?(view, "#identity-#{identity.id}")
+  end
+
+  test "external public keys are added with validation and never render private material", %{
+    conn: conn
+  } do
+    {:ok, view, _} = live_isolated(conn, SSHAccessLive)
+    view |> element("#ssh-tab-identities") |> render_click()
+
+    html =
+      view
+      |> form("#external-form", %{
+        "external" => %{
+          "name" => "gh-deploy",
+          "public_key" => "not a key",
+          "rotation_days" => "90"
+        }
+      })
+      |> render_submit()
+
+    assert html =~ "Paste one OpenSSH public key line."
+
+    {:ok, key} = Key.generate("ed25519")
+
+    html =
+      view
+      |> form("#external-form", %{
+        "external" => %{
+          "name" => "gh-deploy",
+          "public_key" => key.public.public_line,
+          "rotation_days" => "90"
+        }
+      })
+      |> render_submit()
+
+    assert html =~ "Add external identity gh-deploy"
+    view |> element("#ssh-confirm") |> render_click()
+    assert [%{name: "gh-deploy", origin: "external"}] = SSH.snapshot().identities
+    refute render(view) =~ "PRIVATE KEY"
+  end
+
+  defp report_identity(agent_id, public_line) do
+    agent = Repo.get_by!(Agent, agent_id: agent_id)
+
+    {:ok, _} =
+      SSH.runtime_operation(
+        %{agent_id: agent_id, certificate_id: agent.certificate_id},
+        "identity_report",
+        %{"uid" => 1000, "username" => "gao", "generation" => 1, "public_key" => public_line}
+      )
+  end
+
   defp report_host_key(agent_id, key) do
     agent = Repo.get_by!(Agent, agent_id: agent_id)
 
