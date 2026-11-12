@@ -171,10 +171,36 @@ certificate-authenticated Agent Connections (one in an isolated BEAM), separate
 Unix sockets, two disposable target accounts and owned loopback sshd processes.
 It uses the packaged release helpers. It never reloads the system sshd.
 
-On 2026-11-12 the harness was updated for the device-held identity model
-(signing-socket enrollment, identity approval, identity/identity-group rules,
-local signing, rotation and revocation). It has **not been re-run** since; the
-results below predate that update.
+On 2026-11-12 the harness was updated for the device-held identity model:
+signing-socket enrollment, identity approval, identity and identity-group
+rules, local signing, rotation and revocation. It was re-run that day against
+a `MIX_ENV=prod` Agent release built from that revision.
+
+Result: **1 test, 0 failures**, seed `216179`, exit **0**, on NixOS x86_64
+with OpenSSH_10.5p1, OpenSSL 3.6.3 9 Jun 2026. Cleanup removed the temporary users, the group and
+`/run/secrethub-ssh-qualification-*`. The run passed these checks:
+
+- directed access, wrong-user denial and reverse-direction denial
+- removing an identity from an identity group
+- deny overrides allow
+- rotation: both generations are valid during the grace period
+- host-key mismatch is rejected
+- revocation:
+  - the managed client gets no host key
+  - with a pinned host key, `Permission denied`
+  - `fetch-ssh-keys` returns nothing for every generation
+  - local keys are discarded on the next reconcile
+- local-file and user-CA logins are rejected
+- no private key appears in Core replies, snapshots, audit or process state
+
+To run it, the harness process's real gid must equal the user's passwd
+primary gid, because OpenSSH drops `KnownHostsCommand` privileges to that
+group. From an editor or service session with a different gid, start it
+through `sudo -n -u "$USER" env PATH=... HOME=... DEVENV_STATE=... MIX_ENV=test
+SECRETHUB_SSH_RELEASE=... mix run --no-start -r scripts/ssh/test_boot.exs
+scripts/ssh/qualify_openssh.exs`.
+
+The earlier run below predates this update.
 
 Last run: **1 test, 1 failure**, seed `626104`, exit **2**, log
 `/tmp/secrethub-ssh-astra-round2.log`, Linux x86_64, OpenSSH 10.5p1.

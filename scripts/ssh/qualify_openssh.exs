@@ -49,7 +49,9 @@ defmodule SecretHub.SSH.OpenSSHQualification do
     on_exit(fn -> sudo!("groupdel", [group]) end)
 
     for user <- users do
-      password = Base.url_encode64(:crypto.strong_rand_bytes(32))
+      # The prefix keeps a leading "-" from the URL-safe alphabet from being
+      # parsed as an openssl option.
+      password = "p" <> Base.url_encode64(:crypto.strong_rand_bytes(32))
       {hash, 0} = System.cmd("openssl", ["passwd", "-6", password])
 
       sudo!("useradd", [
@@ -71,6 +73,9 @@ defmodule SecretHub.SSH.OpenSSHQualification do
 
     sudo!("cp", ["-a", release, root <> "/release"])
     sudo!("chown", ["-R", "root:root", root <> "/release"])
+    # mix release may create 0700 directories; sshd's Command helpers run as
+    # unprivileged users and must traverse the root-owned, read-only release.
+    sudo!("chmod", ["-R", "go+rX,go-w", root <> "/release"])
     sudo!("install", ["-d", "-m", "755", "-o", "gao", root <> "/fixture"])
     fixture = root <> "/fixture"
     source_lookup = fixture <> "/source.sock"
@@ -659,8 +664,45 @@ defmodule SecretHub.SSH.OpenSSHQualification do
     {:ok, _} =
       SSH.apply_changes([%{"op" => "identity_revoke", "id" => gao.id}], SSH.snapshot().revision)
 
+    # A retired source receives no managed host keys, so the managed client
+    # stops before authentication.
     revoked = assert_login!(base_args, fixture, "gao", Enum.at(users, 0), 255, group)
-    assert revoked =~ "Permission denied"
+    assert revoked =~ "Host key verification failed"
+
+    # With the host key pinned out of band, authentication itself is refused.
+    {revoked_auth, 255} =
+      System.cmd(
+        "ssh",
+        pinned ++
+          ["-o", "StrictHostKeyChecking=yes"] ++
+          base_args ++
+          [
+            "-i",
+            fixture <> "/ssh-source-gao.pub",
+            Enum.at(users, 0) <> "@127.0.0.1",
+            "true"
+          ],
+        stderr_to_stdout: true
+      )
+
+    assert revoked_auth =~ "Permission denied"
+
+    # The destination no longer authorizes any generation of the retired key,
+    # even for a client holding the raw private key file.
+    for key <- [previous_key, rotated_key] do
+      {:ok, public} = Key.decode_public(key.public_key)
+
+      {"", 0} =
+        sudo_as("nobody", group, [
+          root <> "/release/bin/secrethub_agent",
+          "fetch-ssh-keys",
+          "--socket",
+          destination_lookup,
+          Enum.at(users, 0),
+          public.encoded
+        ])
+    end
+
     assert_login!(base_args, fixture, "nobody", Enum.at(users, 1), 0, group)
     send(source, :ssh_inventory)
     await(fn -> KeyStore.generations(source_uid, source_keys) == [] end, 600)
