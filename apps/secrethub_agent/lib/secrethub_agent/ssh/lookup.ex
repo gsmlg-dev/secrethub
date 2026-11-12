@@ -85,5 +85,6 @@ defmodule SecretHub.Agent.SSH.Lookup do
   defp existing_key("lines"), do: :lines
   defp existing_key("identities"), do: :identities
   defp existing_key("public_key"), do: :public_key
-  defp existing_key("private_key"), do: :private_key
+  defp existing_key("allowed"), do: :allowed
+  defp existing_key("identity_generations"), do: :identity_generations
 end

@@ -705,7 +705,9 @@ defmodule SecretHub.Agent.Connection do
         connection = self()
 
         Task.Supervisor.start_child(SecretHub.Agent.SSH.Tasks, fn ->
-          SecretHub.Agent.SSH.Inventory.report(connection)
+          connection
+          |> SecretHub.Agent.SSH.Inventory.report()
+          |> SecretHub.Agent.SSH.Reconciler.after_inventory(connection)
         end)
       else
         Process.send_after(self(), :ssh_inventory, 1000)
