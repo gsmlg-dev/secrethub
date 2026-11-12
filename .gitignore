@@ -113,3 +113,7 @@ priv/cert/*.key
 
 # Host keyring local artifacts
 /native/secrethub-exec/secrethub-exec
+
+# Local operator secrets and brainstorming artifacts
+.secrets.txt
+.superpowers/
