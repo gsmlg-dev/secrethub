@@ -275,6 +275,7 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
       when operation in [
              "identities",
              "authorize_sign",
+             "identity_report",
              "authorized_keys",
              "known_hosts",
              "inventory"
@@ -284,9 +285,14 @@ defmodule SecretHub.Web.AgentRuntimeChannel do
 
       supported =
         case operation do
-          "inventory" -> Enum.any?(["ssh_lookup_v1", "ssh_signing_v1"], &(&1 in negotiated))
-          op when op in ["identities", "authorize_sign"] -> "ssh_signing_v1" in negotiated
-          _ -> "ssh_lookup_v1" in negotiated
+          "inventory" ->
+            Enum.any?(["ssh_lookup_v1", "ssh_signing_v1"], &(&1 in negotiated))
+
+          op when op in ["identities", "authorize_sign", "identity_report"] ->
+            "ssh_signing_v1" in negotiated
+
+          _ ->
+            "ssh_lookup_v1" in negotiated
         end
 
       cond do

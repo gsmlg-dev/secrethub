@@ -143,6 +143,41 @@ defmodule SecretHub.Web.SSHRuntimeChannelTest do
     end
   end
 
+  test "identity_report requires signing and derives the Agent from the certificate", ctx do
+    {:ok, _, socket} = join_with(ctx, ["ssh_lookup_v1", "ssh_signing_v1"])
+    {:ok, key} = SecretHub.Shared.SSH.Key.generate("ed25519")
+
+    payload = %{
+      "uid" => 1000,
+      "username" => "gao",
+      "generation" => 1,
+      "public_key" => key.public.public_line,
+      "agent_id" => "forged"
+    }
+
+    assert {:reply, {:ok, %{accepted: true}}, _} =
+             AgentRuntimeChannel.handle_in("ssh:identity_report", payload, socket)
+
+    assert [%{agent_id: agent_id}] = SSH.snapshot().identities
+    assert agent_id == ctx.agent.agent_id
+
+    lookup_only = %{
+      socket
+      | assigns: Map.put(socket.assigns, :runtime_capabilities, ["ssh_lookup_v1"])
+    }
+
+    assert {:reply, {:error, %{reason: "SSH_UNAVAILABLE"}}, _} =
+             AgentRuntimeChannel.handle_in("ssh:identity_report", payload, lookup_only)
+  end
+
+  defp join_with(ctx, capabilities),
+    do:
+      AgentRuntimeChannel.join(
+        "agent:runtime",
+        %{"runtime_capabilities" => capabilities},
+        ctx.socket
+      )
+
   defp await_vault(attempts \\ 400)
   defp await_vault(0), do: flunk("Vault did not load")
 
