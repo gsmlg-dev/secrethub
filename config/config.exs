@@ -140,7 +140,7 @@ config :duskmoon_bundler, :secrethub_web,
       %{base: web_lib, pattern: "**/*.{ex,heex}"},
       %{base: web_assets, pattern: "**/*.{css,js}"},
       %{
-        base: Path.expand("../deps/phoenix_duskmoon/lib", __DIR__),
+        base: Path.expand("../deps/duskmoon_phoenix/lib", __DIR__),
         pattern: "**/*.{ex,heex}"
       }
     ]

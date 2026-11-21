@@ -4,18 +4,16 @@ The Core package builds frontend assets with `mix npm.ci` and
 `mix duskmoon_bundler.build secrethub_web --tailwind`. Asset compilation does not
 start SecretHub or load production runtime configuration.
 
-GNU asset builds require Ubuntu 26.04 and glibc 2.43 or newer. The published Vize
-10.1.2 GNU compiler requires `GLIBC_2.43`; the current local Nix environment
-provides glibc 2.42 and cannot load it. Production asset generation is therefore
-`BLOCKED_ENV` on that environment, even when Mix compilation succeeds. Prefetching
-the native archive preserves its ABI requirements.
+The published Vize 10.1.11 GNU compiler requires glibc 2.43 or newer.
+Run `devenv update` before building assets locally. On Linux, the devenv
+shell uses Erlang/Elixir from rolling Nixpkgs, where the compiler can load
+against glibc 2.44. PostgreSQL continues to use the stable Nixpkgs input.
 
-This is the [upstream maintainer's supported environment contract](https://github.com/duskmoon-dev/duskmoon-bundler/issues/9#issuecomment-6396025627).
-Issue #9 is closed as not planned; support for older glibc versions is outside
-that contract. Core GNU release builds use the available GitHub-hosted
+The release flake's Nixpkgs 25.11 input provides glibc 2.40. Core GNU
+release builds use GitHub-hosted
 [`ubuntu-26.04` and `ubuntu-26.04-arm` images](https://github.com/actions/runner-images#available-images).
-The Alpine Docker builders use separate musl native artifacts and need their own
-asset-build qualification.
+The [upstream maintainer documents the GNU compiler baseline](https://github.com/duskmoon-dev/duskmoon-bundler/issues/9#issuecomment-6396025627).
+The Alpine Docker builders use separate musl native artifacts.
 
 `npm-cache.nix` fetches packages using the integrity values in the root
 `package-lock.json`. `tailwind-runtime.json` pins the bundler's separate compiler

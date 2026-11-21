@@ -1,7 +1,7 @@
 defmodule SecretHub.Web.SSHAccess.Identities do
   @moduledoc "Identities tab: Agent-held and external SSH identities with rotation state."
   use Phoenix.Component
-  use PhoenixDuskmoon.Component
+  use DuskmoonPhoenix.Component
   alias SecretHub.Core.SSH.Identities, as: Lifecycle
 
   attr :inventory, :map, required: true

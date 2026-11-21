@@ -25,9 +25,8 @@ import {LiveSocket} from "phoenix_live_view"
 import topbar from "../vendor/topbar"
 import AdminSidebar, {AdminSidebarNavigation} from "./hooks/admin_sidebar"
 
-// DuskMoon UI hooks and element registration
-import * as DuskmoonHooks from "phoenix_duskmoon/hooks"
-import "@duskmoon-dev/elements/register"
+import * as DuskmoonHooks from "duskmoon_phoenix/hooks"
+import "@duskmoon-dev/el-alert/register"
 
 const writeClipboard = async (text) => {
   if (navigator.clipboard?.writeText && window.isSecureContext) {

@@ -126,18 +126,15 @@ Other top-level directories: `caddy-secrethub-pki/` (Go Caddy module that verifi
 - Build assets with `assets-build` (`mix duskmoon_bundler.build secrethub_web --tailwind`); production builds then run `mix phx.digest --no-compile`
 - `duskmoon_bundler_runtime` resolves production manifests inside the installed web OTP app; the development/build toolchain is excluded from releases
 - **`@duskmoon-dev/core`** — TailwindCSS plugin (CSS/design tokens only)
-- **`phoenix_duskmoon`** — Phoenix component module (Elixir/HEEx components, `dm_*` prefix)
+- **`duskmoon_phoenix`** — Phoenix HEEx components (`DuskmoonPhoenix.Component`, `dm_*` prefix), with matching CSS and LiveView hooks on npm
 - **Heroicons** for icons
 - Phoenix LiveView for interactive admin dashboard components
 
 #### UI Constraints
 - **Do not** vendor or copy component internals — consume via the package APIs only
 - **Do not** override `@duskmoon-dev/core` design tokens locally; propose upstream changes instead
-- **Do not** patch `phoenix_duskmoon` component logic inline; wrap or compose instead
-- Upstream bugs/gaps → file GitHub issue with label `internal request` in the correct repo:
-  - CSS/token/plugin → `duskmoon-dev/duskmoonui`
-  - Web component/element → `duskmoon-dev/duskmoon-elements`
-  - Phoenix component → `duskmoon-dev/phoenix-duskmoon-ui`
+- **Do not** patch `duskmoon_phoenix` component logic inline; wrap or compose instead
+- File upstream CSS, Elements, and Phoenix issues in `duskmoon-dev/duskmoon-web` with the label `internal request`.
 
 ### Authentication & Security
 - Management/admin UI authentication is enforced by Caddy mTLS; no additional application-level admin authentication is required (see Design Principles).

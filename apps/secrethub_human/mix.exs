@@ -35,7 +35,7 @@ defmodule SecretHub.Human.MixProject do
       {:bandit, "~> 1.5"},
       {:websock_adapter, "~> 0.5"},
       {:jason, "~> 1.4"},
-      {:styx, "~> 0.1.1"},
+      {:styx, "~> 0.2"},
       {:secrethub_core, in_umbrella: true},
       {:secrethub_web, in_umbrella: true, only: :test, runtime: false}
     ]

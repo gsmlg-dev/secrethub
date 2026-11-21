@@ -3,7 +3,7 @@ defmodule SecretHub.Web.CoreComponents do
   Provides core UI components.
 
   Built on top of DuskMoon Design System (`@duskmoon-dev/core`) and
-  `phoenix_duskmoon` components. Uses Tailwind CSS for layout utilities
+  `duskmoon_phoenix` components. Uses Tailwind CSS for layout utilities
   and Heroicons for icon support.
   """
   use Phoenix.Component

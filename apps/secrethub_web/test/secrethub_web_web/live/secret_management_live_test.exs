@@ -40,15 +40,11 @@ defmodule SecretHub.Web.SecretManagementLiveTest do
   end
 
   test "new secret button opens the create form", %{conn: conn} do
-    {:ok, view, html} = live(conn, "/admin/secrets")
-
-    assert html =~ "New Secret"
-    assert html =~ ~s(id="new-secret-button")
-    assert html =~ ~s(<el-dm-button)
+    {:ok, view, _html} = live(conn, "/admin/secrets")
 
     html =
       view
-      |> element("#new-secret-button", "New Secret")
+      |> element("button#new-secret-button[type=button]", "New Secret")
       |> render_click()
 
     assert html =~ "Create New Secret"

@@ -1,7 +1,7 @@
 defmodule SecretHub.Web.SSHAccess.Access do
   @moduledoc "Access tab: identity × destination matrix and typed group drawer."
   use Phoenix.Component
-  use PhoenixDuskmoon.Component
+  use DuskmoonPhoenix.Component
 
   attr :inventory, :map, required: true
   attr :editing_group, :map, default: nil

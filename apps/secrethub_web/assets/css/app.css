@@ -1,7 +1,10 @@
 /* See the Tailwind configuration guide for advanced usage
    https://tailwindcss.com/docs/configuration */
 
+@layer properties, theme, base, components, utilities;
 @import "tailwindcss" source(none);
+@import "duskmoon_phoenix/css";
+@import "duskmoon_phoenix/elements.css";
 @source "../css";
 @source "../js";
 @source "../../lib/secret_hub/web";
@@ -12,10 +15,6 @@
 
 /* DuskMoon Design System */
 @plugin "@duskmoon-dev/core/plugin";
-@import "@duskmoon-dev/core/themes/sunshine";
-@import "@duskmoon-dev/core/themes/moonlight";
-@import "@duskmoon-dev/core/components";
-@import "phoenix_duskmoon/css";
 
 /* Add variants based on LiveView classes */
 @custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);

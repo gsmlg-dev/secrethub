@@ -1,7 +1,7 @@
 defmodule SecretHub.Web.SSHAccess.Devices do
   @moduledoc "Devices tab: pending host keys and one card per Agent as SSH target and source."
   use Phoenix.Component
-  use PhoenixDuskmoon.Component
+  use DuskmoonPhoenix.Component
   alias SecretHub.Shared.SSH.Key
 
   attr :inventory, :map, required: true

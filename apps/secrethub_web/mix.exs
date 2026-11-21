@@ -55,7 +55,7 @@ defmodule SecretHub.Web.MixProject do
       {:phoenix_live_dashboard, "~> 0.9.1"},
       {:duskmoon_bundler_runtime, "~> 10.1"},
       {:duskmoon_bundler, "~> 10.1", runtime: Mix.env() == :dev},
-      {:phoenix_duskmoon, "~> 10.1.0"},
+      {:duskmoon_phoenix, "2.0.0-rc.4"},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",

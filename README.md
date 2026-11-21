@@ -184,8 +184,8 @@ Core GNU release archives build on the documented GitHub-hosted
 [`ubuntu-26.04` and `ubuntu-26.04-arm` runners](https://github.com/actions/runner-images#available-images),
 so deployment hosts must support that GNU runtime baseline.
 
-HTTP callers use `http_fetch 1.0.0-rc.8`, and the Agent uses
-`http_web_socket 1.0.0-rc.8` through Phoenix Socket Client's public transport.
+HTTP callers use `http_fetch`, and the Agent uses `http_web_socket` through
+Phoenix Socket Client's public transport. The shared HTTP versions are in `mix.lock`.
 TLS 1.2 / TLS 1.3 interoperability and the real Core-Agent mTLS flows pass
 with the original verification policy. See the
 [HTTP migration status](docs/agents/http-client-migration-preflight.md).

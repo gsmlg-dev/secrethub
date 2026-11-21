@@ -2,7 +2,7 @@ defmodule SecretHub.Web.SSHAccessLive do
   @moduledoc "SSH devices, identities and access with revisioned, readable batch previews."
   # Events may carry key material. Disable LiveView parameter logging.
   use Phoenix.LiveView, layout: {SecretHub.Web.Layouts, :app}, log: false
-  use PhoenixDuskmoon.Component
+  use DuskmoonPhoenix.Component
   use SecretHub.Web, :verified_routes
   alias Phoenix.LiveView.JS
   alias SecretHub.Core.SSH

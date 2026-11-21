@@ -28,7 +28,9 @@ in
 
   # Language configuration
   languages.elixir.enable = true;
-  languages.elixir.package = pkgs-stable.beam.packages.erlang_28.elixir_1_18;
+  # The Linux asset compiler needs the newer glibc from rolling Nixpkgs.
+  languages.elixir.package =
+    (if pkgs.stdenv.isLinux then pkgs else pkgs-stable).beam.packages.erlang_28.elixir_1_18;
 
   processes.core = {
     after = [ "devenv:processes:postgres" ];

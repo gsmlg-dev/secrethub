@@ -657,20 +657,17 @@ jobs:
 
           ## Changes
 
-          - HTTP clients now use \`http_fetch 1.0.0-rc.8\`. Agent WebSockets
-            use \`http_web_socket 1.0.0-rc.8\` through the public Phoenix Socket
-            Client transport; Req, websocket_client, and the custom transport
-            have been removed. Real Core-Agent mTLS and both TLS 1.2 and TLS 1.3
-            trust/hostname regressions passed with this package cohort.
-          - Core and Human persistent jobs now use \`Styx 0.1.1\`. Existing Oban
+          - HTTP clients use \`http_fetch\`. Agent WebSockets use \`http_web_socket\`
+            through the public Phoenix Socket Client transport.
+          - Core and Human persistent jobs use Styx. Existing Oban
             v14 jobs are preserved by an explicit database migration. Back up
             the database and read the
             [Styx migration guide](https://github.com/${REPOSITORY}/blob/${RELEASE_TAG}/docs/styx-migration.md)
             before upgrading. Job processing remains subject to the configured
             launch profile and feature gates.
-          - DuskmoonBundler 10.1.2 replaces the Bun and Tailwind Mix packages.
-            Production assets use relocated runtime manifests; build-only
-            dependencies are excluded from packaged applications. Agent archive
+          - DuskmoonBundler builds production assets with relocated runtime
+            manifests. Build-only dependencies are excluded from packaged
+            applications. Agent archive
             builds compile only the Agent dependency graph, including on Windows.
           - Hex dependencies and the shared HTTP release cohort are refreshed.
             Bandit remains in use while Gaoxy's explicit dual-stack listener
