@@ -90,7 +90,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version-file: caddy-secrethub-pki/go.mod
 
       - name: Run Go tests
         working-directory: caddy-secrethub-pki
