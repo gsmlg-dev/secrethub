@@ -84,6 +84,7 @@ defmodule SecretHub.Agent.ApplicationTest do
 
     refute Process.whereis(SecretHub.Agent.LeaseRenewer)
     assert Process.whereis(SecretHub.Agent.PKI.TrustBundleManager)
+    assert %{state_dir: ^state_dir} = :sys.get_state(EndpointManager)
     assert Process.whereis(RuntimeBootstrapper)
     assert Process.whereis(UDSServer)
     assert Process.whereis(SecretHub.Agent.AccessAudit.Journal)

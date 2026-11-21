@@ -40,6 +40,8 @@ defmodule SecretHub.Agent.EndpointManager do
   use GenServer
   require Logger
 
+  alias SecretHub.Agent.{HTTPClient, IdentityStore}
+
   @type endpoint :: String.t()
   @type endpoint_status :: %{
           url: endpoint(),
@@ -57,7 +59,9 @@ defmodule SecretHub.Agent.EndpointManager do
     :current_index,
     :health_check_interval,
     :failover_threshold,
-    :health_check_timer
+    :health_check_timer,
+    :state_dir,
+    :http_options
   ]
 
   # 30 seconds
@@ -172,7 +176,9 @@ defmodule SecretHub.Agent.EndpointManager do
         current_index: 0,
         health_check_interval: health_check_interval,
         failover_threshold: failover_threshold,
-        health_check_timer: nil
+        health_check_timer: nil,
+        state_dir: Keyword.get(opts, :state_dir),
+        http_options: Keyword.get(opts, :http_options)
       }
 
       # Schedule periodic health check
@@ -356,7 +362,7 @@ defmodule SecretHub.Agent.EndpointManager do
       Enum.reduce(state.endpoint_status, state.endpoint_status, fn {endpoint, status}, acc ->
         acc
         |> maybe_clear_backoff(endpoint, status)
-        |> maybe_ping_endpoint(endpoint)
+        |> maybe_ping_endpoint(endpoint, state)
       end)
 
     %{state | endpoint_status: new_status}
@@ -374,12 +380,12 @@ defmodule SecretHub.Agent.EndpointManager do
 
   defp maybe_clear_backoff(acc, _endpoint, _status), do: acc
 
-  defp maybe_ping_endpoint(acc, endpoint) do
+  defp maybe_ping_endpoint(acc, endpoint, state) do
     status = Map.get(acc, endpoint)
 
     # Only ping endpoints not in active backoff
     if status.status != :unhealthy or status.backoff_until == nil do
-      apply_ping_result(acc, endpoint, status, ping_endpoint(endpoint))
+      apply_ping_result(acc, endpoint, status, ping_endpoint(endpoint, state))
     else
       acc
     end
@@ -406,7 +412,7 @@ defmodule SecretHub.Agent.EndpointManager do
     })
   end
 
-  defp ping_endpoint(endpoint) do
+  defp ping_endpoint(endpoint, state) do
     # Derive HTTP health URL from WebSocket endpoint
     health_url =
       endpoint
@@ -415,19 +421,192 @@ defmodule SecretHub.Agent.EndpointManager do
       |> URI.merge("/v1/sys/health")
       |> URI.to_string()
 
-    case SecretHub.Agent.HTTPClient.request(:get, health_url, timeout: 3000) do
-      {:ok, %HTTP.Response{status: code}} when code in 200..299 ->
-        :ok
+    with {:ok, request_opts} <- health_request_options(health_url, state) do
+      {transport, options} =
+        Keyword.pop(request_opts, :transport, &HTTPClient.request/3)
 
-      {:ok, %HTTP.Response{status: code}} ->
-        {:error, {:unhealthy_status, code}}
+      case transport.(:get, health_url, options) do
+        {:ok, %HTTP.Response{status: code}} when code in 200..299 ->
+          :ok
 
-      {:error, reason} ->
-        {:error, reason}
+        {:ok, %HTTP.Response{status: code}} ->
+          {:error, {:unhealthy_status, code}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
     end
   rescue
     e -> {:error, {:exception, e}}
   end
+
+  defp health_request_options(health_url, state) do
+    http_opts = configured_http_options(state)
+    base_opts = [timeout: 3000, redirect: :manual] |> maybe_put_transport(http_opts)
+
+    case URI.parse(health_url) do
+      %URI{scheme: "https", host: host} = uri when is_binary(host) and host != "" ->
+        with {:ok, ssl_opts} <- resolve_tls_options(uri, state, http_opts) do
+          {:ok, Keyword.put(base_opts, :ssl, ssl_opts)}
+        end
+
+      _ ->
+        {:ok, base_opts}
+    end
+  end
+
+  defp configured_http_options(%__MODULE__{http_options: opts}) when is_list(opts), do: opts
+
+  defp configured_http_options(_state) do
+    Application.get_env(:secrethub_agent, :enrollment_http_options, [])
+  end
+
+  defp maybe_put_transport(base_opts, http_opts) do
+    case Keyword.fetch(http_opts, :transport) do
+      {:ok, transport} -> Keyword.put(base_opts, :transport, transport)
+      :error -> base_opts
+    end
+  end
+
+  defp resolve_tls_options(%URI{} = uri, state, http_opts) do
+    case persisted_tls_options(uri, state.state_dir) do
+      {:ok, ssl_opts} ->
+        {:ok, enforce_peer_verification(ssl_opts)}
+
+      :no_match ->
+        {:ok, http_opts |> enrollment_tls_options() |> enforce_peer_verification()}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp persisted_tls_options(_uri, state_dir) when not is_binary(state_dir) or state_dir == "",
+    do: :no_match
+
+  defp persisted_tls_options(%URI{} = uri, state_dir) do
+    case IdentityStore.load(state_dir) do
+      {:ok, %IdentityStore{} = material} ->
+        persisted_tls_for_material(uri, material)
+
+      {:error, :missing_trusted_material} ->
+        :no_match
+
+      {:error, reason} ->
+        {:error, {:invalid_persisted_trust, reason}}
+    end
+  end
+
+  defp persisted_tls_for_material(%URI{} = uri, %IdentityStore{} = material) do
+    trusted_endpoint =
+      connect_info_value(
+        material.connect_info,
+        "trusted_websocket_endpoint",
+        :trusted_websocket_endpoint
+      )
+
+    if matching_tls_origin?(uri, trusted_endpoint) do
+      ca_pem =
+        material.ca_chain_pem ||
+          connect_info_value(material.connect_info, "core_ca_cert_pem", :core_ca_cert_pem)
+
+      case pem_certificates_der(ca_pem) do
+        [_ | _] = cacerts ->
+          expected_server_name =
+            connect_info_value(
+              material.connect_info,
+              "expected_core_server_name",
+              :expected_core_server_name
+            )
+
+          {:ok, maybe_put_sni([cacerts: cacerts], expected_server_name)}
+
+        [] ->
+          {:error, :invalid_persisted_ca_chain}
+      end
+    else
+      :no_match
+    end
+  end
+
+  defp enrollment_tls_options(http_opts) do
+    ssl_opts = Keyword.get(http_opts, :ssl, [])
+
+    if Keyword.keyword?(ssl_opts) do
+      ssl_opts
+      |> Keyword.take([:cacerts, :cacertfile, :versions, :depth])
+      |> drop_nil_ca_options()
+      |> normalize_ca_source()
+    else
+      []
+    end
+  end
+
+  defp drop_nil_ca_options(ssl_opts) do
+    Enum.reject(ssl_opts, fn {key, value} -> key in [:cacerts, :cacertfile] and is_nil(value) end)
+  end
+
+  defp normalize_ca_source(ssl_opts) do
+    if Keyword.has_key?(ssl_opts, :cacerts) do
+      Keyword.delete(ssl_opts, :cacertfile)
+    else
+      ssl_opts
+    end
+  end
+
+  defp enforce_peer_verification(ssl_opts) do
+    ssl_opts
+    |> Keyword.put(:verify, :verify_peer)
+    |> Keyword.put(:customize_hostname_check,
+      match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+    )
+  end
+
+  defp matching_tls_origin?(%URI{} = uri, endpoint) when is_binary(endpoint) and endpoint != "" do
+    case {tls_origin(uri), tls_origin(URI.parse(endpoint))} do
+      {{:ok, origin}, {:ok, origin}} -> true
+      _ -> false
+    end
+  end
+
+  defp matching_tls_origin?(_uri, _endpoint), do: false
+
+  defp tls_origin(%URI{scheme: scheme, host: host, port: port})
+       when scheme in ["https", "wss"] and is_binary(host) and host != "" do
+    {:ok, {String.downcase(host), port || 443}}
+  end
+
+  defp tls_origin(_uri), do: :error
+
+  defp maybe_put_sni(ssl_opts, server_name) when is_binary(server_name) and server_name != "" do
+    charlist = String.to_charlist(server_name)
+
+    case :inet.parse_address(charlist) do
+      {:ok, _ip} -> ssl_opts
+      {:error, :einval} -> Keyword.put(ssl_opts, :server_name_indication, charlist)
+    end
+  end
+
+  defp maybe_put_sni(ssl_opts, _server_name), do: ssl_opts
+
+  defp pem_certificates_der(pem) when is_binary(pem) do
+    pem
+    |> :public_key.pem_decode()
+    |> Enum.flat_map(fn
+      {:Certificate, der, :not_encrypted} -> [der]
+      _entry -> []
+    end)
+  rescue
+    _ -> []
+  end
+
+  defp pem_certificates_der(_pem), do: []
+
+  defp connect_info_value(connect_info, string_key, atom_key) when is_map(connect_info) do
+    Map.get(connect_info, string_key) || Map.get(connect_info, atom_key)
+  end
+
+  defp connect_info_value(_connect_info, _string_key, _atom_key), do: nil
 
   defp schedule_health_check(interval) do
     Process.send_after(self(), :health_check, interval)

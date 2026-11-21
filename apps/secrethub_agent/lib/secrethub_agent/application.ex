@@ -89,6 +89,7 @@ defmodule SecretHub.Agent.Application do
         {SecretHub.Agent.EndpointManager,
          [
            core_endpoints: core_endpoints,
+           state_dir: state_dir,
            health_check_interval:
              Application.get_env(:secrethub_agent, :endpoint_health_check_interval, 30_000),
            failover_threshold:

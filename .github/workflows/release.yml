@@ -657,6 +657,10 @@ jobs:
 
           ## Changes
 
+          - Fixes [#21](https://github.com/${REPOSITORY}/issues/21): Agent endpoint
+            health probes now verify HTTPS endpoints using the persisted runtime CA
+            chain for the enrolled endpoint or the configured enrollment CA while
+            retaining peer and hostname verification.
           - HTTP clients use \`http_fetch\`. Agent WebSockets use \`http_web_socket\`
             through the public Phoenix Socket Client transport.
           - Core and Human persistent jobs use Styx. Existing Oban
