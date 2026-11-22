@@ -17,16 +17,21 @@ defmodule SecretHub.MixProject do
       # Testing
       test_coverage: [tool: ExCoveralls, summary: [threshold: 0]],
       dialyzer: [plt_add_apps: [:jose, :aws_signature]],
-      preferred_cli_env: [
+
+      # The reloader is only available in builds that include the web app.
+      listeners: if(Mix.env() == :dev, do: [Phoenix.CodeReloader], else: [])
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
         test: :test,
         coveralls: :test,
         "coveralls.detail": :test,
         "coveralls.post": :test,
         "coveralls.html": :test
-      ],
-
-      # The reloader is only available in builds that include the web app.
-      listeners: if(Mix.env() == :dev, do: [Phoenix.CodeReloader], else: [])
+      ]
     ]
   end
 
