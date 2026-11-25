@@ -28,6 +28,20 @@ let
     ssh.sourceUsers = [ "deploy" ];
   })).config;
   sshService = ssh.systemd.services.secrethub-agent;
+  customSsh = (evaluate (settings // {
+    ssh.lookup = {
+      enable = true;
+      socketPath = "/run/custom-ssh/lookup/lookup.sock";
+      group = "custom-ssh-lookup";
+    };
+    ssh.signing = {
+      enable = true;
+      socketPath = "/run/custom-ssh/signing/agent.sock";
+      group = "custom-ssh-signing";
+    };
+    ssh.sourceUsers = [ "deploy" ];
+  })).config;
+  customSshService = customSsh.systemd.services.secrethub-agent;
   agentFailures = config:
     lib.filter (item: !item.assertion && lib.hasPrefix "services.secrethub-agent." item.message) config.assertions;
   rejected = overrides:
@@ -47,10 +61,30 @@ let
       "Source accounts need both signing and public known-host lookup access")
     (lib.assertMsg (builtins.elem "secrethub-ssh" sshService.serviceConfig.RuntimeDirectory && builtins.elem "secrethub-ssh-signing" sshService.serviceConfig.RuntimeDirectory)
       "Shared SSH directories must be separate from private Agent runtime state")
-    (lib.assertMsg (lib.hasInfix "0750" sshService.preStart && lib.hasInfix "chgrp" sshService.preStart)
-      "SSH parent directories must be traversable but not writable by clients")
+    (lib.assertMsg (sshService.serviceConfig.RuntimeDirectoryMode == "0700")
+      "Private Agent runtime state must keep RuntimeDirectoryMode 0700")
+    (lib.assertMsg (
+      !(lib.hasInfix "0750" sshService.preStart)
+      && !(lib.hasInfix "chgrp" sshService.preStart)
+      && lib.hasInfix "chgrp ${lib.escapeShellArg "secrethub-ssh-lookup"} ${lib.escapeShellArg "/run/secrethub-ssh"}" sshService.script
+      && lib.hasInfix "chmod 0750 ${lib.escapeShellArg "/run/secrethub-ssh"}" sshService.script
+      && lib.hasInfix "chgrp ${lib.escapeShellArg "secrethub-ssh-signing"} ${lib.escapeShellArg "/run/secrethub-ssh-signing"}" sshService.script
+      && lib.hasInfix "chmod 0750 ${lib.escapeShellArg "/run/secrethub-ssh-signing"}" sshService.script
+    )
+      "SSH parent directories must be granted group traversal in ExecStart, not ExecStartPre")
+    (lib.assertMsg (
+      builtins.elem "custom-ssh/lookup" customSshService.serviceConfig.RuntimeDirectory
+      && builtins.elem "custom-ssh/signing" customSshService.serviceConfig.RuntimeDirectory
+      && lib.hasInfix "chgrp ${lib.escapeShellArg "custom-ssh-lookup"} ${lib.escapeShellArg "/run/custom-ssh/lookup"}" customSshService.script
+      && lib.hasInfix "chmod 0750 ${lib.escapeShellArg "/run/custom-ssh/lookup"}" customSshService.script
+      && lib.hasInfix "chgrp ${lib.escapeShellArg "custom-ssh-signing"} ${lib.escapeShellArg "/run/custom-ssh/signing"}" customSshService.script
+      && lib.hasInfix "chmod 0750 ${lib.escapeShellArg "/run/custom-ssh/signing"}" customSshService.script
+    )
+      "Configurable SSH parent directories must receive their own group and mode 0750 in ExecStart")
     (lib.assertMsg (rejected { ssh.lookup.enable = true; ssh.signing.enable = true; ssh.signing.socketPath = "/run/secrethub-ssh/signing.sock"; })
       "Lookup and signing parent directories must differ")
+    (lib.assertMsg (rejected { ssh.lookup.enable = true; ssh.signing.enable = true; ssh.signing.socketPath = "/run/secrethub-ssh/nested/signing.sock"; })
+      "Lookup and signing parent directories must not nest inside one another")
 
     (lib.assertMsg ((service.environment.SECRET_HUB_AGENT_CORE_URL or null) == settings.coreUrl)
       "The Agent service must pass the current HTTPS enrollment input")

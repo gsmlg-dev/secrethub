@@ -225,6 +225,11 @@
               agentModule = self.nixosModules.agent;
               launcher = self.packages.${system}.secrethub-exec;
             };
+
+            ssh-sockets-systemd = import ./nix/tests/ssh-sockets-systemd.nix {
+              inherit pkgs;
+              agentModule = self.nixosModules.agent;
+            };
           };
 
           # Dev shell (standalone alternative to devenv)
@@ -553,7 +558,12 @@
                 message = "services.secrethub-agent.ssh.signing.socketPath must use a separate shared directory under /run and fit Linux socket limits.";
               }
               {
-                assertion = !(cfg.ssh.lookup.enable && cfg.ssh.signing.enable) || (lookupDir != signingDir && cfg.ssh.lookup.group != cfg.ssh.signing.group);
+                assertion = !(cfg.ssh.lookup.enable && cfg.ssh.signing.enable) || (
+                  lookupDir != signingDir
+                  && !(lib.hasPrefix "${lookupDir}/" signingDir)
+                  && !(lib.hasPrefix "${signingDir}/" lookupDir)
+                  && cfg.ssh.lookup.group != cfg.ssh.signing.group
+                );
                 message = "services.secrethub-agent.ssh lookup and signing directories and groups must differ.";
               }
               {
@@ -648,15 +658,19 @@
 
               preStart = ''
                 install -d -m 0700 "$SECRET_HUB_CLIENT_AUTH_BUNDLE_DIR"
+              '';
+
+              script = ''
+                # systemd re-applies RuntimeDirectoryMode=0700 and primary group
+                # ownership before each Exec* phase, so shared SSH parent
+                # directories must be granted group traversal inside ExecStart.
               '' + lib.optionalString cfg.ssh.lookup.enable ''
                 chgrp ${lib.escapeShellArg cfg.ssh.lookup.group} ${lib.escapeShellArg lookupDir}
                 chmod 0750 ${lib.escapeShellArg lookupDir}
               '' + lib.optionalString cfg.ssh.signing.enable ''
                 chgrp ${lib.escapeShellArg cfg.ssh.signing.group} ${lib.escapeShellArg signingDir}
                 chmod 0750 ${lib.escapeShellArg signingDir}
-              '';
-
-              script = ''
+              '' + ''
                 # mixRelease removes its build-time cookie. Distribution is off,
                 # so a fresh process-local cookie needs no persistent secret.
                 export RELEASE_COOKIE="$(head -c 32 /dev/urandom | base64)"
